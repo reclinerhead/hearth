@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { Icon } from "@/components/icon";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -46,54 +47,109 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-8">
+    <main
+      className="flex min-h-dvh flex-col items-center justify-center px-6"
+      style={{
+        background:
+          "radial-gradient(900px 600px at 50% -10%, color-mix(in oklab, var(--color-accent) 12%, transparent), transparent 60%)",
+      }}
+    >
       <div className="w-full max-w-sm">
-        <h1 className="text-4xl font-bold text-center">Hearth</h1>
-        <p className="mt-2 text-center text-gray-600">Your home, documented.</p>
+        <div className="flex flex-col items-center gap-2 mb-8">
+          <span style={{ color: "var(--color-accent)" }}>
+            <Icon name="flame" size={24} aria-label="Hearth" />
+          </span>
+          <h1
+            className="h1"
+            style={{ fontSize: "var(--text-h2)", letterSpacing: 0 }}
+          >
+            Hearth
+          </h1>
+          <p
+            className="text-small"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            Your home, documented.
+          </p>
+        </div>
 
-        <div className="mt-8 space-y-4">
+        <div className="surface p-5 sm:p-6">
           <button
+            type="button"
             onClick={handleGoogleSignIn}
-            className="w-full rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            className="btn btn-ghost w-full"
+            style={{ height: 40 }}
           >
             Continue with Google
           </button>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="bg-white px-2 text-gray-500">or</span>
-            </div>
+          <div className="relative my-5 flex items-center">
+            <span
+              className="flex-1 h-px"
+              style={{ backgroundColor: "var(--color-border-subtle)" }}
+            />
+            <span
+              className="px-3 eyebrow"
+              style={{ color: "var(--color-text-tertiary)" }}
+            >
+              or
+            </span>
+            <span
+              className="flex-1 h-px"
+              style={{ backgroundColor: "var(--color-border-subtle)" }}
+            />
           </div>
 
           {status === "sent" ? (
-            <div className="rounded-md bg-green-50 p-4 text-sm text-green-800">
+            <div
+              className="surface p-4 text-small"
+              style={{
+                backgroundColor:
+                  "color-mix(in oklab, var(--color-success) 14%, var(--color-bg-surface))",
+                borderColor:
+                  "color-mix(in oklab, var(--color-success) 30%, var(--color-border-subtle))",
+                color: "var(--color-text-primary)",
+              }}
+            >
               Check your email for the sign-in link.
             </div>
           ) : (
             <form onSubmit={handleMagicLink} className="space-y-3">
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-gray-500 focus:outline-none"
-              />
+              <div>
+                <label className="label" htmlFor="email">
+                  Email
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="input"
+                />
+              </div>
               <button
                 type="submit"
                 disabled={status === "sending"}
-                className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+                className="btn btn-primary w-full"
+                style={{ height: 40 }}
               >
-                {status === "sending" ? "Sending..." : "Send magic link"}
+                {status === "sending" ? "Sending…" : "Send magic link"}
               </button>
             </form>
           )}
 
           {errorMessage && (
-            <div className="rounded-md bg-red-50 p-4 text-sm text-red-800">
+            <div
+              className="surface mt-4 p-3 text-small"
+              style={{
+                backgroundColor:
+                  "color-mix(in oklab, var(--color-danger) 12%, var(--color-bg-surface))",
+                borderColor:
+                  "color-mix(in oklab, var(--color-danger) 30%, var(--color-border-subtle))",
+              }}
+            >
               {errorMessage}
             </div>
           )}
