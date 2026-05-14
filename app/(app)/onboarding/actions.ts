@@ -35,27 +35,6 @@ export async function createHouseFromMapboxFeature(
     };
   }
 
-  // Ensure the shared public.profiles row exists for this user. The Supabase
-  // project is shared with other apps that own public.profiles and create
-  // rows from their own application code on signup, not via an auth.users
-  // trigger. A Hearth-only signup never touches those apps, so the profile
-  // row might not exist yet — and hearth.houses.owner_id has a FK into
-  // public.profiles. Idempotent: does nothing if a row is already there.
-  const { error: profileError } = await supabase
-    .schema("public")
-    .from("profiles")
-    .upsert({ id: user.id }, { onConflict: "id", ignoreDuplicates: true });
-  if (profileError) {
-    console.error("profiles.upsert failed", {
-      code: profileError.code,
-      message: profileError.message,
-    });
-    return {
-      ok: false,
-      error: "We couldn't set up your account. Please try again.",
-    };
-  }
-
   const { data: inserted, error } = await supabase
     .from("houses")
     .insert({
