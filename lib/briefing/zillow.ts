@@ -49,8 +49,14 @@ type ZillowRawResponse = {
 // always returned data_found=false for real addresses. The fallback uses
 // the cheaper sonar variant rather than a non-search model so a failover
 // still produces real lookup data instead of a silent miss.
-const DEFAULT_PRIMARY_MODEL = "perplexity/sonar-pro";
-const DEFAULT_FALLBACK_MODELS = "perplexity/sonar";
+// sonar-reasoning-pro adds chain-of-thought before the final answer. We're
+// testing whether the extra reasoning steps make Sonar pick deeper snippets
+// off Zillow (heating/cooling sit in the Interior subsection, parcel sits
+// on the Public records tab — both are often missed by snippet-only models).
+// Fallback stays on sonar-pro so a reasoning-model failure still produces
+// real lookup data instead of a silent miss.
+const DEFAULT_PRIMARY_MODEL = "perplexity/sonar-reasoning-pro";
+const DEFAULT_FALLBACK_MODELS = "perplexity/sonar-pro,perplexity/sonar";
 
 const SQFT_PER_ACRE = 43560;
 
@@ -72,9 +78,9 @@ Required JSON schema:
   "lot_size_acres": "number or null (fill if Zillow displays lot size in acres, decimals allowed)",
   "bedrooms": "number or null (decimals allowed, e.g. 2.5)",
   "bathrooms": "number or null (decimals allowed, e.g. 1.5)",
-  "heating": "string or null (e.g. 'Forced air, Gas' — copy what Zillow shows under Heating)",
-  "cooling": "string or null (e.g. 'Central' — copy what Zillow shows under Cooling)",
-  "parcel_number": "string or null (the parcel number from the Property > Details section, as a string to preserve leading zeros)",
+  "heating": "string or null (look under Interior > Heating in Zillow's 'Facts and features' panel; examples: 'Forced air, Gas', 'Heat pump', 'Radiant', 'Baseboard')",
+  "cooling": "string or null (look under Interior > Cooling in the same panel; examples: 'Central', 'Window unit', 'Ductless mini-split', 'None')",
+  "parcel_number": "string or null (look under the 'Public records' tab on Zillow — sometimes labeled 'APN' or 'Parcel ID'; preserve leading zeros as a string)",
   "description": "string or null (the listing description if one is available, otherwise null)",
   "source_url": "string or null (the Zillow URL you used)"
 }
