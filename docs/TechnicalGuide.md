@@ -283,10 +283,12 @@ onboarding action (server)        workflows/briefing.ts (durable)            das
 
 Two env vars, read at call time so models can be swapped without redeploying:
 
-- `BRIEFING_PRIMARY_MODEL` — default `anthropic/claude-opus-4.7`
-- `BRIEFING_FALLBACK_MODELS` — comma-separated, default `openai/gpt-5.5,xai/grok-4.3`
+- `BRIEFING_PRIMARY_MODEL` — default `perplexity/sonar-pro`
+- `BRIEFING_FALLBACK_MODELS` — comma-separated, default `perplexity/sonar`
 
 These are passed to the AI Gateway as `providerOptions.gateway.models`, which gives automatic model-level fallback if the primary errors.
+
+**Why Perplexity Sonar.** Zillow lookup requires *live web access* — the model has to actually open Zillow's site and read what's there. Claude / GPT-5 / Grok through the AI Gateway don't have web access enabled by default, so they answer from training data and return `data_found=false` for any real address they haven't memorized. Perplexity's Sonar family is search-grounded: every answer cites and synthesizes from live web pages. For a "find facts on Zillow" task that's exactly the capability we need; the trade-off is slightly less raw reasoning than the frontier models, which doesn't matter here.
 
 ### Realtime publication
 

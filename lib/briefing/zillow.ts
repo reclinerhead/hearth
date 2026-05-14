@@ -35,8 +35,14 @@ type ZillowRawResponse = {
   source_url?: unknown;
 };
 
-const DEFAULT_PRIMARY_MODEL = "anthropic/claude-opus-4.7";
-const DEFAULT_FALLBACK_MODELS = "openai/gpt-5.5,xai/grok-4.3";
+// Perplexity Sonar models are search-grounded by default — they fetch live
+// web pages (including Zillow) as part of answering. The earlier Claude /
+// GPT-5 / Grok defaults had no web access via the AI Gateway, so they
+// always returned data_found=false for real addresses. The fallback uses
+// the cheaper sonar variant rather than a non-search model so a failover
+// still produces real lookup data instead of a silent miss.
+const DEFAULT_PRIMARY_MODEL = "perplexity/sonar-pro";
+const DEFAULT_FALLBACK_MODELS = "perplexity/sonar";
 
 const PROMPT_TEMPLATE = `You are an assistant helping to populate a homeowner's record with publicly available information about their property.
 
