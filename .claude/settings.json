@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Select-Object FullName)",
+      "PowerShell(Get-ChildItem -Path c:\\\\WEBDEV\\\\hearth\\\\app -Recurse -File -Depth 4 | Where-Object { $_.FullName -notmatch 'node_modules|\\\\.next' } | Select-Object FullName)"
+    ]
+  }
+}
