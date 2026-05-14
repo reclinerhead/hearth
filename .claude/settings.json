@@ -1,8 +1,35 @@
 {
   "permissions": {
     "allow": [
-      "Bash(Select-Object FullName)",
-      "PowerShell(Get-ChildItem -Path c:\\\\WEBDEV\\\\hearth\\\\app -Recurse -File -Depth 4 | Where-Object { $_.FullName -notmatch 'node_modules|\\\\.next' } | Select-Object FullName)"
-    ]
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Bash(xargs grep *)",
+      "Bash(xargs ls *)",
+      "Bash(pnpm tsc *)",
+      "Bash(pnpm add *)",
+      "Bash(pnpm build *)",
+      "Bash(npx tsx *)",
+      "Bash(echo \"BUILD_EXIT=$?\")",
+      "Read(//tmp/**)",
+      "Bash(pnpm lint *)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm exec *)",
+      "Bash(gh label list *)",
+      "Bash(gh pr edit *)",
+      "Bash(gh auth *)",
+      "Bash(git fetch *)",
+      "Bash(gh api *)",
+      "Bash(gh issue create *)",
+      "Bash(gh pr create *)",
+      "Bash(grep *)",
+      "mcp__plugin_vercel_vercel__get_deployment_build_logs",
+      "mcp__plugin_vercel_vercel__web_fetch_vercel_url",
+      "mcp__plugin_vercel_vercel__list_teams",
+      "mcp__plugin_vercel_vercel__search_vercel_documentation",
+      "mcp__plugin_vercel_vercel__get_runtime_logs",
+      "mcp__plugin_vercel_vercel__list_projects",
+      "mcp__plugin_vercel_vercel__get_deployment",
+      "Bash(pnpm --version)"
+    ],
+    "additionalDirectories": ["C:\\Users\\toddw\\AppData\\Local\\Temp", "\\tmp"]
   }
 }

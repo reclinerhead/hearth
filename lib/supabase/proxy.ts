@@ -37,17 +37,35 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  const pathname = request.nextUrl.pathname;
+
   // Route protection: redirect unauthenticated users to /login,
   // except when they're already on a public auth route.
   const isPublicRoute =
-    request.nextUrl.pathname === "/" ||
-    request.nextUrl.pathname.startsWith("/login") ||
-    request.nextUrl.pathname.startsWith("/auth");
+    pathname === "/" ||
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/auth");
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
+  }
+
+  // Onboarding gate: authenticated users with no house in hearth.houses go
+  // to /onboarding before any of the protected app routes. We skip this
+  // check on public routes (which already render fine pre-house) and on
+  // /onboarding itself (otherwise we'd loop). This adds one count query
+  // per protected request; revisit if it shows up in perf work.
+  if (user && !isPublicRoute && pathname !== "/onboarding") {
+    const { count } = await supabase
+      .from("houses")
+      .select("id", { count: "exact", head: true });
+    if ((count ?? 0) === 0) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/onboarding";
+      return NextResponse.redirect(url);
+    }
   }
 
   return supabaseResponse;
