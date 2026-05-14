@@ -23,3 +23,22 @@ alter default privileges in schema hearth
 
 alter default privileges in schema hearth
   grant execute on functions to authenticated, service_role;
+
+
+
+
+  -- Local-only stub for the shared public.profiles table.
+-- On the remote Supabase project, public.profiles is owned by another app
+-- (Echoes) and already exists with its own full schema. This migration uses
+-- `create table if not exists` so it's a no-op against the remote, but
+-- ensures the table exists locally so Hearth's foreign keys resolve.
+--
+-- Do NOT add Hearth-specific columns here. Hearth's data lives in the
+-- hearth schema. This stub only exists to make local development work.
+
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+
