@@ -1,7 +1,9 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { start } from "workflow/api";
 import { createClient } from "@/lib/supabase/server";
+import { runBriefing } from "@/workflows/briefing";
 import {
   extractAddress,
   type MapboxRetrievedFeature,
@@ -33,11 +35,15 @@ export async function createHouseFromMapboxFeature(
     };
   }
 
-  const { error } = await supabase.from("houses").insert({
-    owner_id: user.id,
-    ...address,
-    mapbox_raw: feature as unknown as Record<string, unknown>,
-  });
+  const { data: inserted, error } = await supabase
+    .from("houses")
+    .insert({
+      owner_id: user.id,
+      ...address,
+      mapbox_raw: feature as unknown as Record<string, unknown>,
+    })
+    .select("id")
+    .single();
 
   if (error) {
     // 23505 = unique_violation on the (owner_id, mapbox_id) index. The user
@@ -56,6 +62,20 @@ export async function createHouseFromMapboxFeature(
       ok: false,
       error: "We couldn't save your house. Please try again.",
     };
+  }
+
+  // Kick off the Day One Briefing in the background. The dashboard
+  // subscribes to row updates via Realtime and shows progress in place,
+  // so we don't await here. If start() throws (workflow infrastructure
+  // issue), log and continue — the dashboard handles the resulting
+  // 'pending' status gracefully and the user shouldn't be blocked from
+  // reaching their dashboard.
+  if (inserted?.id) {
+    try {
+      await start(runBriefing, [inserted.id]);
+    } catch (briefingError) {
+      console.error("briefing workflow start failed", briefingError);
+    }
   }
 
   redirect("/dashboard");

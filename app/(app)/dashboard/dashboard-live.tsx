@@ -1,0 +1,297 @@
+"use client";
+
+import { useHouseRealtime } from "@/lib/hooks/use-house-realtime";
+import { Icon, type IconName } from "@/components/icon";
+import { AICard, MetricCard, PlaceholderImage } from "@/components/ui";
+import type { BriefingStatus, House } from "@/types/house";
+
+type HouseFact = {
+  eyebrow: string;
+  icon: IconName;
+  value: string | null;
+  meta?: string | null;
+};
+
+const EMPTY = "—";
+
+function formatNumber(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
+function formatBuilt(year: number | null): HouseFact {
+  if (year === null) return { eyebrow: "Built", icon: "calendar", value: null };
+  const age = new Date().getFullYear() - year;
+  return {
+    eyebrow: "Built",
+    icon: "calendar",
+    value: String(year),
+    meta: age > 0 ? `${age} years old` : undefined,
+  };
+}
+
+function formatLivingArea(sqft: number | null): HouseFact {
+  if (sqft === null)
+    return { eyebrow: "Living area", icon: "ruler", value: null };
+  return {
+    eyebrow: "Living area",
+    icon: "ruler",
+    value: `${formatNumber(sqft)} sf`,
+  };
+}
+
+function formatLot(sqft: number | null): HouseFact {
+  if (sqft === null) return { eyebrow: "Lot", icon: "map-pin", value: null };
+  // Surface acres alongside square feet once the lot crosses ~quarter-acre,
+  // since that's the unit listings usually quote at that size.
+  const acres = sqft / 43_560;
+  if (acres >= 0.1) {
+    return {
+      eyebrow: "Lot",
+      icon: "map-pin",
+      value: `${acres.toFixed(2)} ac`,
+      meta: `${formatNumber(sqft)} sf`,
+    };
+  }
+  return {
+    eyebrow: "Lot",
+    icon: "map-pin",
+    value: `${formatNumber(sqft)} sf`,
+  };
+}
+
+function formatBedrooms(n: number | null): HouseFact {
+  if (n === null) return { eyebrow: "Bedrooms", icon: "bed", value: null };
+  return {
+    eyebrow: "Bedrooms",
+    icon: "bed",
+    value: Number.isInteger(n) ? String(n) : n.toFixed(1),
+  };
+}
+
+function formatBathrooms(n: number | null): HouseFact {
+  if (n === null) return { eyebrow: "Bathrooms", icon: "bath", value: null };
+  return {
+    eyebrow: "Bathrooms",
+    icon: "bath",
+    value: Number.isInteger(n) ? String(n) : n.toFixed(1),
+  };
+}
+
+function buildFacts(house: House): HouseFact[] {
+  return [
+    formatBuilt(house.year_built),
+    formatLivingArea(house.living_area_sqft),
+    formatLot(house.lot_size_sqft),
+    formatBedrooms(house.bedrooms),
+    formatBathrooms(house.bathrooms),
+  ];
+}
+
+function HeroAddress({ house }: { house: House }) {
+  const display = house.nickname ?? house.address_line1;
+  const region = `${house.city}, ${house.state}`;
+  return (
+    <div>
+      <div className="eyebrow">Your house</div>
+      <h1 className="h1" style={{ marginTop: 4 }}>
+        {display}
+      </h1>
+      <p
+        className="text-small mt-1"
+        style={{ color: "var(--color-text-secondary)" }}
+      >
+        {region}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Renders a metric value in one of three states depending on briefing
+ * progress and whether we got a real value back:
+ *  - running + no value: a small pulsing skeleton inline
+ *  - completed + no value: an em-dash in tertiary text
+ *  - any state with a value: render the value
+ */
+function FactValue({
+  value,
+  status,
+}: {
+  value: string | null;
+  status: BriefingStatus;
+}) {
+  if (value !== null) return <span>{value}</span>;
+  if (status === "running" || status === "pending") {
+    return (
+      <span
+        aria-label="Discovering"
+        className="inline-block animate-pulse rounded-sm align-middle"
+        style={{
+          width: "3.5rem",
+          height: "1em",
+          backgroundColor: "var(--color-bg-surface-raised)",
+        }}
+      />
+    );
+  }
+  return (
+    <span style={{ color: "var(--color-text-tertiary)" }}>{EMPTY}</span>
+  );
+}
+
+function FactMeta({
+  meta,
+  hasValue,
+  status,
+}: {
+  meta: string | null | undefined;
+  hasValue: boolean;
+  status: BriefingStatus;
+}) {
+  if (meta) return <>{meta}</>;
+  if (!hasValue && status === "completed") return <>Not found</>;
+  return null;
+}
+
+function BriefingErrorBanner({ message }: { message: string | null }) {
+  return (
+    <div
+      className="surface flex items-start gap-3 p-3 sm:p-4"
+      style={{
+        backgroundColor:
+          "color-mix(in oklab, var(--color-danger) 10%, var(--color-bg-surface))",
+        borderColor:
+          "color-mix(in oklab, var(--color-danger) 28%, var(--color-border-subtle))",
+      }}
+    >
+      <span
+        aria-hidden
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
+        style={{
+          backgroundColor:
+            "color-mix(in oklab, var(--color-danger) 16%, transparent)",
+          color: "var(--color-danger)",
+        }}
+      >
+        <Icon name="alert-triangle" size={16} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            color: "var(--color-text-primary)",
+          }}
+        >
+          We had trouble pulling all the public data for your house.
+        </div>
+        {message ? (
+          <div
+            className="text-small mt-0.5 truncate"
+            style={{ color: "var(--color-text-tertiary)" }}
+            title={message}
+          >
+            {message}
+          </div>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        className="btn btn-ghost"
+        disabled
+        title="Manual refresh is coming in a follow-up"
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+
+export function DashboardLive({ houseId }: { houseId: string }) {
+  const { house, loading, error } = useHouseRealtime(houseId);
+
+  if (loading) {
+    return (
+      <div className="surface p-6">
+        <div className="eyebrow mb-2">Loading your house</div>
+        <div
+          className="text-small"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          One moment…
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !house) {
+    return (
+      <div
+        className="surface p-6"
+        style={{
+          backgroundColor:
+            "color-mix(in oklab, var(--color-danger) 12%, var(--color-bg-surface))",
+        }}
+      >
+        <div className="eyebrow mb-2">Couldn&apos;t load your house</div>
+        <div
+          className="text-small"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          {error ?? "House not found."}
+        </div>
+      </div>
+    );
+  }
+
+  const facts = buildFacts(house);
+  const status = house.briefing_status;
+  const heroLabel = house.nickname ?? house.address_line1;
+
+  return (
+    <section className="grid gap-4 md:grid-cols-2">
+      <div className="surface overflow-hidden">
+        <PlaceholderImage ratio="4 / 3" label={heroLabel} icon="home" />
+      </div>
+      <div className="flex flex-col gap-3">
+        <HeroAddress house={house} />
+
+        {status === "failed" ? (
+          <BriefingErrorBanner message={house.briefing_error} />
+        ) : null}
+
+        <div className="grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-3">
+          {facts.map((f) => (
+            <MetricCard
+              key={f.eyebrow}
+              eyebrow={f.eyebrow}
+              icon={f.icon}
+              value={<FactValue value={f.value} status={status} />}
+              meta={
+                <FactMeta
+                  meta={f.meta}
+                  hasValue={f.value !== null}
+                  status={status}
+                />
+              }
+            />
+          ))}
+        </div>
+
+        {house.description ? (
+          <AICard eyebrow="About your house">
+            {house.description}
+          </AICard>
+        ) : status === "running" || status === "pending" ? (
+          <div
+            className="surface p-4 text-small flex items-center gap-2"
+            style={{ color: "var(--color-text-tertiary)" }}
+          >
+            <span className="inline-block h-2 w-2 animate-pulse rounded-full" style={{ backgroundColor: "var(--color-accent)" }} />
+            Discovering details about your house…
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
