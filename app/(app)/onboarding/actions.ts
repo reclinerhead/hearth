@@ -46,6 +46,12 @@ export async function createHouseFromMapboxFeature(
     if (error.code === "23505") {
       redirect("/dashboard");
     }
+    console.error("houses.insert failed", {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
     return {
       ok: false,
       error: "We couldn't save your house. Please try again.",

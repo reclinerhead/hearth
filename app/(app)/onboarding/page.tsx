@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Icon } from "@/components/icon";
-import { AddressForm } from "./address-form";
+import { AddressForm } from "./address-form-loader";
 
 export default async function OnboardingPage() {
   const supabase = await createClient();
