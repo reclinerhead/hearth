@@ -75,13 +75,15 @@ Required JSON schema:
   "heating": "string or null (look under Interior > Heating in Zillow's 'Facts and features' panel; examples: 'Forced air, Gas', 'Heat pump', 'Radiant', 'Baseboard')",
   "cooling": "string or null (look under Interior > Cooling in the same panel; examples: 'Central', 'Window unit', 'Ductless mini-split', 'None')",
   "parcel_number": "string or null (look under the 'Public records' tab on Zillow — sometimes labeled 'APN' or 'Parcel ID'; preserve leading zeros as a string)",
-  "description": "string or null (the listing description if one is available, otherwise null)",
+  "description": "string or null (physical facts about the house — see instructions below)",
   "source_url": "string or null (the Zillow URL you used)"
 }
 
 For lot size: if Zillow displays the value in acres (common for lots over ~0.25 acres), fill lot_size_acres. If displayed in square feet, fill lot_size_sqft. Filling both is fine if Zillow provides both. Do not convert between units yourself.
 
 For parcel_number: return it exactly as displayed, including any leading zeros or formatting. Parcel numbers are identifiers, not arithmetic — preserve the original string.
+
+For description: include only facts about the physical house — layout, rooms, features, finishes, fireplace, garage, basement, exterior, and similar. Strip out any sentences about sale or listing status, including "Available immediately", "Off market", "Currently listed", "Last sold", asking prices, listing dates, agent contact info, and the standard Zillow off-market disclaimer ("This property is off market…"). The description should read like a description of the house itself, not of a real estate transaction. If after stripping there is nothing substantive left, return null.
 
 Return only the JSON object. No preamble, no commentary, no markdown code fences.`;
 
