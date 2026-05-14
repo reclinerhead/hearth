@@ -84,20 +84,12 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
       scheduleNextPoll(row);
     }
 
-    async function setupRealtime() {
-      // Bind the user's JWT to the Realtime socket BEFORE subscribing —
-      // otherwise the broadcast hits RLS as anon and the policy rejects
-      // the event silently. createBrowserClient propagates auth to the
-      // socket eventually via onAuthStateChange, but the timing races
-      // with our subscribe() call so set it explicitly here.
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (cancelled) return null;
-      if (session?.access_token) {
-        await supabase.realtime.setAuth(session.access_token);
-      }
-
+    function setupRealtime() {
+      // Auth propagation to the realtime socket is handled by
+      // @supabase/ssr's onAuthStateChange wiring inside the cached
+      // singleton client (see lib/supabase/client.ts). Calling
+      // realtime.setAuth() manually here used to cause a redundant
+      // reconnect that churned the websocket, so we don't.
       const channel = supabase
         .channel(`house:${houseId}`)
         .on(
@@ -108,12 +100,12 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
             table: "houses",
             filter: `id=eq.${houseId}`,
           },
-          (payload) => {
+          (payload: { new: Partial<House> }) => {
             if (cancelled) return;
             // hearth.houses uses REPLICA IDENTITY DEFAULT, so payload.new
             // only includes the primary key plus the columns that actually
             // changed. Merge into existing state rather than replacing.
-            const partial = payload.new as Partial<House>;
+            const partial = payload.new;
             setHouse((prev) =>
               prev ? { ...prev, ...partial } : (partial as House),
             );
@@ -124,14 +116,12 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
     }
 
     loadInitial();
-    const channelPromise = setupRealtime();
+    const channel = setupRealtime();
 
     return () => {
       cancelled = true;
       if (pollTimer) clearTimeout(pollTimer);
-      channelPromise.then((ch) => {
-        if (ch) supabase.removeChannel(ch);
-      });
+      supabase.removeChannel(channel);
     };
   }, [houseId]);
 
