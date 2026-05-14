@@ -1,12 +1,18 @@
 import type { ReactNode } from "react";
-import { TopNav } from "./top-nav";
+import { TopNav, type TopNavHouse } from "./top-nav";
 import { BottomNav } from "./bottom-nav";
 import { DesktopSidebar } from "./desktop-sidebar";
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  children,
+  house,
+}: {
+  children: ReactNode;
+  house: TopNavHouse;
+}) {
   return (
     <div className="flex flex-col min-h-dvh">
-      <TopNav />
+      <TopNav house={house} />
       <div className="flex flex-1 min-h-0">
         <DesktopSidebar />
         <main

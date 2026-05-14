@@ -5,9 +5,13 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "./icon";
 import { ThemeToggle } from "./theme-toggle";
 
-const PROPERTY_ADDRESS = "604 Norton Drive, Ann Arbor MI";
+export type TopNavHouse = {
+  address_line1: string;
+  city: string;
+  state: string;
+} | null;
 
-export function TopNav() {
+export function TopNav({ house }: { house: TopNavHouse }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -59,14 +63,18 @@ export function TopNav() {
           </span>
         </Link>
 
-        <div
-          className="hidden md:flex items-center gap-1 text-[color:var(--color-text-tertiary)] truncate"
-          style={{ fontSize: 13 }}
-        >
-          <span style={{ color: "var(--color-border-emphasis)" }}>·</span>
-          <Icon name="map-pin" size={14} />
-          <span className="truncate">{PROPERTY_ADDRESS}</span>
-        </div>
+        {house ? (
+          <div
+            className="hidden md:flex items-center gap-1 text-[color:var(--color-text-tertiary)] truncate"
+            style={{ fontSize: 13 }}
+          >
+            <span style={{ color: "var(--color-border-emphasis)" }}>·</span>
+            <Icon name="map-pin" size={14} />
+            <span className="truncate">
+              {house.address_line1}, {house.city} {house.state}
+            </span>
+          </div>
+        ) : null}
 
         <div className="ml-auto flex items-center gap-2">
           <button
