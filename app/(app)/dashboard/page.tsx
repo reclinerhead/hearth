@@ -1,22 +1,20 @@
+import { redirect } from "next/navigation";
 import {
-  AICard,
   EmergencyTile,
   EntityRow,
-  MetricCard,
-  PlaceholderImage,
   SectionHeader,
 } from "@/components/ui";
 import { Icon, type IconName } from "@/components/icon";
 import { DocumentTrigger, SAMPLE_DOCUMENT } from "@/components/document-modal";
+import { createClient } from "@/lib/supabase/server";
+import { DashboardLive } from "./dashboard-live";
 
-const HOUSE_FACTS: { eyebrow: string; value: string; meta?: string; icon: IconName }[] = [
-  { eyebrow: "Built", value: "1934", meta: "91 years old", icon: "calendar" },
-  { eyebrow: "Living area", value: "1,840 sf", meta: "2 floors + finished attic", icon: "ruler" },
-  { eyebrow: "Lot", value: "0.18 ac", meta: "7,840 sf", icon: "map-pin" },
-  { eyebrow: "Bedrooms", value: "3", meta: "+ office nook", icon: "bed" },
-  { eyebrow: "Bathrooms", value: "1.5", meta: "Original 1934 + 1972 half", icon: "bath" },
-  { eyebrow: "Owned since", value: "Aug 2019", meta: "6 years", icon: "key" },
-];
+// Sections below the hero are placeholders pending their own issues:
+// - Appliances + the latest document tile (#TBD: inventory CRUD)
+// - Emergencies (#TBD: emergency capture flow)
+// - Habitat (#TBD: FEMA flood zone + EPA radon lookup)
+// They keep their hardcoded copy for now so the dashboard isn't half-empty
+// during day-one demos; the hero + house facts above is what's live.
 
 const APPLIANCES: {
   icon: IconName;
@@ -68,44 +66,28 @@ const EMERGENCIES: { icon: IconName; label: string; hint: string }[] = [
   { icon: "bolt", label: "Electrical panel", hint: "Basement, by stairs" },
 ];
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("houses")
+    .select("id")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .single();
+
+  // Onboarding gate in proxy.ts ensures users have at least one house here,
+  // but guard defensively in case of a race or session edge.
+  if (error || !data?.id) {
+    redirect("/onboarding");
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      {/* Hero */}
-      <section className="grid gap-4 md:grid-cols-2">
-        <div className="surface overflow-hidden">
-          <PlaceholderImage
-            ratio="4 / 3"
-            label="604 Norton Drive"
-            icon="home"
-          />
-        </div>
-        <div className="flex flex-col gap-3">
-          <div>
-            <div className="eyebrow">Your house</div>
-            <h1 className="h1" style={{ marginTop: 4 }}>
-              604 Norton Drive
-            </h1>
-            <p
-              className="text-small mt-1"
-              style={{ color: "var(--color-text-secondary)" }}
-            >
-              Ann Arbor, Michigan
-            </p>
-          </div>
-          <div className="grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-3">
-            {HOUSE_FACTS.map((f) => (
-              <MetricCard key={f.eyebrow} {...f} />
-            ))}
-          </div>
-        </div>
-      </section>
+      <DashboardLive houseId={data.id} />
 
-      {/* Bottom two columns */}
       <section className="grid gap-4 md:grid-cols-2">
-        {/* Left column */}
         <div className="flex flex-col gap-4">
-          {/* Emergencies */}
           <div>
             <SectionHeader
               eyebrow="If something goes wrong"
@@ -132,33 +114,22 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Habitat */}
           <div>
             <SectionHeader
               eyebrow="The world around your house"
               title="Habitat"
             />
-            <div className="flex flex-col gap-2">
-              <HabitatRow
-                label="EPA radon zone"
-                value="Zone 1 (high)"
-                detail="Testing recommended within first year of occupancy."
-              />
-              <HabitatRow
-                label="Lead disclosure"
-                value="Pre-1978 structure"
-                detail="Federal disclosure required at sale; assume lead paint."
-              />
-              <HabitatRow
-                label="FEMA flood zone"
-                value="Zone X (minimal)"
-                detail="Outside the 500-year floodplain; no NFIP required."
-              />
+            <div
+              className="surface p-4 text-small"
+              style={{ color: "var(--color-text-tertiary)" }}
+            >
+              FEMA flood zone, EPA radon zone, and lead disclosure are coming
+              in a follow-up. We&apos;ll pull them in the same way we pull
+              Zillow data — automatically, in the background.
             </div>
           </div>
         </div>
 
-        {/* Right column — Appliances */}
         <div>
           <SectionHeader
             eyebrow="Things that need a little attention"
@@ -201,34 +172,5 @@ export default function DashboardPage() {
         </div>
       </section>
     </div>
-  );
-}
-
-function HabitatRow({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <AICard
-      eyebrow={label}
-      title={
-        <span
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 18,
-            fontWeight: 500,
-          }}
-        >
-          {value}
-        </span>
-      }
-    >
-      {detail}
-    </AICard>
   );
 }

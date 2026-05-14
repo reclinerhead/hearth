@@ -11,8 +11,10 @@ A living description of what Hearth is built on and how the pieces fit together.
 | Framework | Next.js 16 App Router on Turbopack (React 19, React Compiler enabled) |
 | Language | TypeScript (strict) |
 | Styling | Tailwind CSS v4 + design tokens in `app/globals.css` |
-| Auth + DB | Supabase (Postgres + GoTrue + RLS) |
+| Auth + DB | Supabase (Postgres + GoTrue + RLS + Realtime) |
 | Maps / geocoding | Mapbox Address Autofill via `@mapbox/search-js-react` |
+| AI | Vercel AI SDK v6 + Vercel AI Gateway (BYOK Anthropic / OpenAI / xAI) |
+| Background jobs | Vercel Workflow SDK (`workflow` + `@workflow/ai`) |
 | Hosting | Vercel |
 | Tests | Vitest (selective coverage on pure logic) |
 | Package manager | pnpm |
@@ -27,7 +29,7 @@ The repo is a flat layout — `app/`, `lib/`, `components/`, `types/`, `supabase
 app/                       # Next.js App Router
   (app)/                   # Authenticated app group, wrapped in AppShell
     layout.tsx             # Mounts AppShell (top/bottom nav + sidebar)
-    dashboard/             # Currently hardcoded placeholder data
+    dashboard/             # Live house facts + placeholder lower sections
     onboarding/            # First-run address capture
     appliances/            # Inventory list
     habitat/               # Public-records surface (placeholder)
@@ -41,19 +43,30 @@ app/                       # Next.js App Router
   login/                   # Public sign-in page (OTP + Google)
   layout.tsx               # Root html/body shell, font wiring
   page.tsx                 # Public landing; redirects authed users to /dashboard
+  .well-known/workflow/    # Auto-generated Workflow SDK endpoints (gitignored)
 components/                # Shared UI primitives (see "Design system")
 lib/
+  briefing/
+    zillow.ts              # AI Gateway lookup + pure validation
+    zillow.test.ts         # Vitest coverage of validation helper
+  hooks/
+    use-house-realtime.ts  # Supabase Realtime subscription for one house row
   supabase/
     client.ts              # Browser Supabase client (hearth schema)
     server.ts              # Server component / action client (hearth schema)
+    service.ts             # Service-role client for background work (workflow steps)
     proxy.ts               # Edge-style session refresh + route guards
+workflows/
+  briefing.ts              # Day One Briefing workflow (use workflow + use step)
 proxy.ts                   # Next entry that calls lib/supabase/proxy.ts
+next.config.ts             # Wrapped with withWorkflow() to enable directives
 supabase/
   config.toml              # Local Supabase project config
   migrations/              # Forward-only migrations, schema-qualified
 docs/
   TechnicalGuide.md        # This file
-types/                     # Shared TS types (currently empty)
+types/
+  house.ts                 # Hand-typed House row, mirrors hearth.houses
 ```
 
 Next.js' middleware file is named **`proxy.ts`** in this repo. We have not renamed it back to `middleware.ts` — do not introduce one alongside it.
@@ -76,7 +89,7 @@ public.profiles               (shared; references auth.users)
 
 Key facts about each table:
 
-- **`hearth.houses`** — one row per house. Address fields populated by Mapbox Address Autofill (`address_line1`, `city`, `state`, `postal_code`, `country`, `county`, `latitude`, `longitude`, `mapbox_id`, `mapbox_raw` jsonb). House facts (`year_built`, `living_area_sqft`, `bedrooms`, `bathrooms`, `purchase_date`, `purchase_price_cents`) start null and are filled in by the Day One Briefing pull or by the user. RLS scopes all rows to `owner_id = auth.uid()`. Unique on `(owner_id, mapbox_id)` prevents accidental duplicate creation.
+- **`hearth.houses`** — one row per house. Address fields populated by Mapbox Address Autofill (`address_line1`, `city`, `state`, `postal_code`, `country`, `county`, `latitude`, `longitude`, `mapbox_id`, `mapbox_raw` jsonb). House facts (`year_built`, `living_area_sqft`, `lot_size_sqft`, `bedrooms`, `bathrooms`, `purchase_date`, `purchase_price_cents`) start null and are filled in by the Day One Briefing workflow or by the user. The `description` (user-visible) and `description_source` (unmodified provenance copy) hold the listing description. Briefing lifecycle columns (`briefing_status`, `briefing_started_at`, `briefing_generated_at`, `briefing_error`) drive the dashboard's loading and failure states. RLS scopes all rows to `owner_id = auth.uid()`. Unique on `(owner_id, mapbox_id)` prevents accidental duplicate creation. The row is in the `supabase_realtime` publication so the dashboard receives UPDATE events as the briefing populates.
 - **`hearth.rooms`** — physical spaces inside a house. `kind` is `indoor | outdoor | utility`. The **`houses_seed_default_rooms`** trigger fires `after insert on hearth.houses` and inserts a 9-room default set (Kitchen, Living Room, Primary Bedroom, Primary Bathroom, Basement, Attic, Garage, Laundry, Exterior). The Exterior room exists so outdoor inventory has a non-null home.
 - **`hearth.inventory`** — every appliance, system, and exterior element. `type` is `appliance | system | exterior` and drives UI grouping. `room_id` is NOT NULL with `ON DELETE RESTRICT`. Identification fields (manufacturer/model/serial), install/service dates, status, and an optional hero photo path round it out.
 
@@ -234,13 +247,66 @@ All tokens are defined in `app/globals.css` and projected through Tailwind v4's 
 
 ---
 
+## Day One Briefing
+
+When a user submits an address through onboarding, the house row is inserted and a **briefing workflow** is started in the background. The dashboard subscribes to that row via Supabase Realtime, so house facts appear in place as the workflow discovers them — no manual refresh, no second round trip.
+
+### Pipeline
+
+```
+onboarding action (server)        workflows/briefing.ts (durable)            dashboard (client)
+  insert hearth.houses     ──▶    start(runBriefing, [houseId])
+  redirect /dashboard             │
+                                  ├─▶ step: startBriefing
+                                  │     read address, set status='running'
+                                  ├─▶ step: lookupZillow
+                                  │     AI Gateway → Zillow JSON
+                                  │     pure validation (clamp to ranges)
+                                  ├─▶ step: persistBriefingSuccess
+                                  │     write facts, status='completed'
+                                  └─▶ on throw → markBriefingFailed
+                                                                  ──▶  useHouseRealtime
+                                                                       re-renders on UPDATE
+```
+
+### Files
+
+- **`lib/briefing/zillow.ts`** — `lookupHouseOnZillow(input)` calls the AI Gateway via `generateText` and returns a typed `ZillowLookupResult`. The exported `validateZillowResponse` is a pure helper that clamps year/sqft/bedroom/bathroom values to plausible ranges and is the unit-tested surface (`zillow.test.ts`).
+- **`workflows/briefing.ts`** — `runBriefing(houseId)` is the `"use workflow"` orchestrator. It calls three `"use step"` functions (`startBriefing`, `lookupZillow`, `persistBriefingSuccess`) and falls back to `markBriefingFailed` on any throw. Steps retry automatically — by default three attempts — before the workflow's catch handler marks the row failed. Step functions use the service-role Supabase client (`lib/supabase/service.ts`) because the workflow runs outside a request context.
+- **`app/(app)/onboarding/actions.ts`** — after the house insert, calls `start(runBriefing, [houseId])` from `workflow/api`. The call is not awaited; a `start()` failure is logged but never blocks the user from reaching the dashboard.
+- **`lib/hooks/use-house-realtime.ts`** — generic single-row subscription. Fetches the house once on mount, then re-renders on every UPDATE event. Reusable for any future "live row" pattern; not Zillow-specific.
+- **`app/(app)/dashboard/dashboard-live.tsx`** — client component that renders the hero, the five house-facts cards, and the description from the realtime row, with three states per field: skeleton pulse (`briefing_status = 'running' | 'pending'` + null value), em-dash with "Not found" meta (`completed` + null value), and a soft error banner with a disabled "Try again" button (`failed`).
+- **`next.config.ts`** — wrapped with `withWorkflow()`. Required for the `"use workflow"` and `"use step"` directives to compile.
+- **`proxy.ts`** — matcher excludes `.well-known/workflow/*` so the Workflow SDK's internal endpoints aren't intercepted by session refresh.
+
+### Model selection
+
+Two env vars, read at call time so models can be swapped without redeploying:
+
+- `BRIEFING_PRIMARY_MODEL` — default `anthropic/claude-opus-4.7`
+- `BRIEFING_FALLBACK_MODELS` — comma-separated, default `openai/gpt-5.5,xai/grok-4.3`
+
+These are passed to the AI Gateway as `providerOptions.gateway.models`, which gives automatic model-level fallback if the primary errors.
+
+### Realtime publication
+
+Supabase Realtime only broadcasts changes for tables explicitly added to `supabase_realtime`. The publication is enabled by migration `20260514180500_houses_realtime_publication.sql` for `hearth.houses`. Future tables that the dashboard subscribes to need a similar migration. RLS continues to enforce scope — only the row's owner receives the events.
+
+### Service-role client
+
+`lib/supabase/service.ts` exports `createServiceClient()` for background work that has no session cookie (workflow steps, cron jobs). It uses `SUPABASE_SERVICE_ROLE_KEY` and bypasses RLS, so every call must filter by the right id. Never use it from a server action or route handler under a user session — those keep using the cookie-bound client in `lib/supabase/server.ts` so RLS keeps doing its job.
+
+---
+
 ## What isn't built yet
 
 These appear in the schema or the dashboard mockup but are not real flows. Treat as roadmap, not as currently-working features:
 
 - **Storage buckets** for hero photos. `hero_photo_path` columns exist; the storage bucket and upload UI do not.
-- **Day One Briefing** — the public-records pull (assessor, FEMA, EPA radon, etc.) that fills in `year_built`, `living_area_sqft`, etc. The `briefing_generated_at` column is a placeholder.
-- **Dashboard** at `/dashboard` reads no data from Supabase yet — `HOUSE_FACTS`, `APPLIANCES`, `EMERGENCIES`, and `HABITAT` are hardcoded placeholders. Refactoring it to read the real house created in onboarding is a separate issue.
+- **Public-records sources beyond Zillow** — FEMA flood zone, EPA radon zone, BS&A assessor data, etc. Each will be a new step in `workflows/briefing.ts` writing into new columns; the Habitat dashboard section is wired with a "coming soon" placeholder until then.
+- **Manual briefing refresh** — the dashboard's "Try again" button on a failed briefing is currently disabled. A follow-up issue will wire it to re-`start()` the workflow on demand.
+- **Description synthesis** — for v1 we show `description_source` (Zillow's raw copy) as `description`. A future LLM step will rewrite `description` in Hearth's voice while leaving `description_source` intact.
 - **Multi-house** UI. Schema supports it; onboarding gate currently locks to one house per user.
 - **Inventory CRUD**. Schema exists; the `/appliances`, `/entities/[id]`, and `/documents/[id]` routes are placeholder shells.
 - **OCR + extraction routing** (receipts, nameplates, permits) — schema work has not started.
+- **Supabase-generated types**. `types/house.ts` is hand-maintained today; once `supabase gen types typescript --local` is wired into the workflow, it'll replace the hand-typed row.
