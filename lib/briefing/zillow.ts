@@ -49,24 +49,18 @@ type ZillowRawResponse = {
 // always returned data_found=false for real addresses. The fallback uses
 // the cheaper sonar variant rather than a non-search model so a failover
 // still produces real lookup data instead of a silent miss.
-// sonar-reasoning-pro adds chain-of-thought before the final answer. We're
-// testing whether the extra reasoning steps make Sonar pick deeper snippets
-// off Zillow (heating/cooling sit in the Interior subsection, parcel sits
-// on the Public records tab — both are often missed by snippet-only models).
-// Fallback stays on sonar-pro so a reasoning-model failure still produces
-// real lookup data instead of a silent miss.
-const DEFAULT_PRIMARY_MODEL = "perplexity/sonar-reasoning-pro";
-const DEFAULT_FALLBACK_MODELS = "perplexity/sonar-pro,perplexity/sonar";
+const DEFAULT_PRIMARY_MODEL = "perplexity/sonar-pro";
+const DEFAULT_FALLBACK_MODELS = "perplexity/sonar";
 
 const SQFT_PER_ACRE = 43560;
 
 const PROMPT_TEMPLATE = `You are an assistant helping to populate a homeowner's record with publicly available information about their property.
 
-Look up the property at this address using Zillow as your primary source:
+Look up the property at this address:
 
 {ADDRESS_LINE1}, {CITY}, {STATE} {POSTAL_CODE}
 
-Return a JSON object with the fields below. For any field where you cannot find reliable information, use null rather than guessing. Do not fabricate values.
+Use Zillow as your primary source. When Zillow doesn't display a particular field, use other reputable real estate sources (Realtor.com, Redfin, Trulia, Compass, Homes.com) or public county assessor records as secondary sources. When sources disagree, prefer the value Zillow shows. For any field where no reliable source has the information, use null rather than guessing. Do not fabricate values.
 
 Required JSON schema:
 
@@ -236,6 +230,18 @@ function stripJsonFence(text: string): string {
 }
 
 /**
+ * Strip any <think>...</think> block. Perplexity's reasoning models
+ * (sonar-reasoning, sonar-reasoning-pro) and DeepSeek r1 emit their chain
+ * of thought directly into the response text rather than into a separate
+ * reasoning field. We don't currently use a reasoning model as primary,
+ * but the fallback list could roll one in and we want graceful handling
+ * rather than a JSON parse error.
+ */
+function stripReasoningBlock(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>\s*/gi, "");
+}
+
+/**
  * Call the AI Gateway to look up a property on Zillow and return structured
  * facts. The function does not write to the database — that happens in the
  * workflow step that wraps this call. Keeping the lookup pure makes it easy
@@ -283,7 +289,7 @@ export async function lookupHouseOnZillow(
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(stripJsonFence(text));
+    parsed = JSON.parse(stripJsonFence(stripReasoningBlock(text)));
   } catch (cause) {
     throw new Error("Zillow LLM response was not valid JSON", { cause });
   }
