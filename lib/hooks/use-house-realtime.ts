@@ -85,25 +85,17 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
     }
 
     async function setupRealtime() {
-      // Make sure the user's JWT is bound to the Realtime socket BEFORE we
-      // subscribe — otherwise the broadcast hits RLS as anon and the policy
-      // rejects the event silently. createBrowserClient propagates auth to
-      // the socket eventually via onAuthStateChange, but the timing races
-      // with our subscribe() call so we set it explicitly here.
+      // Bind the user's JWT to the Realtime socket BEFORE subscribing —
+      // otherwise the broadcast hits RLS as anon and the policy rejects
+      // the event silently. createBrowserClient propagates auth to the
+      // socket eventually via onAuthStateChange, but the timing races
+      // with our subscribe() call so set it explicitly here.
       const {
         data: { session },
       } = await supabase.auth.getSession();
       if (cancelled) return null;
-
-      console.log("[realtime] session present:", !!session?.access_token);
-
       if (session?.access_token) {
         await supabase.realtime.setAuth(session.access_token);
-        console.log("[realtime] setAuth complete");
-      } else {
-        console.warn(
-          "[realtime] no session at subscribe time — RLS will reject events",
-        );
       }
 
       const channel = supabase
@@ -111,31 +103,23 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
         .on(
           "postgres_changes",
           {
-            event: "*",
+            event: "UPDATE",
             schema: "hearth",
             table: "houses",
             filter: `id=eq.${houseId}`,
           },
           (payload) => {
-            console.log("[realtime] event received:", {
-              eventType: payload.eventType,
-              new: payload.new,
-              old: payload.old,
-            });
             if (cancelled) return;
             // hearth.houses uses REPLICA IDENTITY DEFAULT, so payload.new
             // only includes the primary key plus the columns that actually
-            // changed. Merge into existing state rather than replacing, or
-            // the address and other unchanged fields would disappear.
+            // changed. Merge into existing state rather than replacing.
             const partial = payload.new as Partial<House>;
             setHouse((prev) =>
               prev ? { ...prev, ...partial } : (partial as House),
             );
           },
         )
-        .subscribe((status, err) => {
-          console.log("[realtime] subscribe status:", status, err ?? "");
-        });
+        .subscribe();
       return channel;
     }
 

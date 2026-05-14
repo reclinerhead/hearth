@@ -218,9 +218,11 @@ All tokens are defined in `app/globals.css` and projected through Tailwind v4's 
 ### Local development
 
 - `supabase start` runs a full local Postgres + GoTrue + Storage stack on the developer's machine.
-- `.env.development.local` holds local Supabase URL + anon key + Mapbox token. Next.js loads this *over* `.env.local` for `next dev`, so the local stack is the default during development.
+- `.env.development.local` holds local Supabase URL + anon key + service-role key + Mapbox token. Next.js loads this *over* `.env.local` for `next dev`, so the local stack is the default during development.
 - `.env.local` is populated by `vercel env pull` and holds production secrets; it is only consulted when `.env.development.local` is absent.
 - Fast iteration loop: `supabase migration new <name>` → edit SQL → `supabase db reset` (wipes + replays).
+
+**Local key-format gotcha.** Supabase introduced a new API key format (`sb_publishable_*` for browsers, `sb_secret_*` for servers) that production uses. The Kong gateway shipped with the current local Supabase CLI accepts the new format on `/rest/v1/*` and `/auth/v1/*` but rejects it with a 400 on `/realtime/v1/websocket`. So local dev must use the *legacy JWT* anon and service-role keys (the `eyJ…` strings emitted by `supabase status -o env` as `ANON_KEY` / `SERVICE_ROLE_KEY`), not the `sb_publishable_*` / `sb_secret_*` strings. `.env.development.local` is the place to keep those. Production keeps the new format because Vercel's Supabase integration provisions it that way and that Kong config is up to date. When the Supabase CLI updates its Kong config, we can switch local back to the new format.
 
 ### Vercel
 
