@@ -64,7 +64,14 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
         },
         (payload) => {
           if (cancelled) return;
-          setHouse(payload.new as House);
+          // hearth.houses uses REPLICA IDENTITY DEFAULT, so payload.new only
+          // includes the primary key plus the columns that actually changed.
+          // Merge into existing state rather than replacing, or the address
+          // and other unchanged fields would disappear on every update.
+          const partial = payload.new as Partial<House>;
+          setHouse((prev) =>
+            prev ? { ...prev, ...partial } : (partial as House),
+          );
         },
       )
       .subscribe();

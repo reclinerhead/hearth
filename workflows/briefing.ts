@@ -20,9 +20,8 @@ type HouseAddress = {
 export async function runBriefing(houseId: string): Promise<void> {
   "use workflow";
 
-  const address = await startBriefing(houseId);
-
   try {
+    const address = await startBriefing(houseId);
     const result = await lookupZillow(address);
     await persistBriefingSuccess(houseId, result);
   } catch (err) {
