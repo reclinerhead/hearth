@@ -94,8 +94,16 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
         data: { session },
       } = await supabase.auth.getSession();
       if (cancelled) return null;
+
+      console.log("[realtime] session present:", !!session?.access_token);
+
       if (session?.access_token) {
         await supabase.realtime.setAuth(session.access_token);
+        console.log("[realtime] setAuth complete");
+      } else {
+        console.warn(
+          "[realtime] no session at subscribe time — RLS will reject events",
+        );
       }
 
       const channel = supabase
@@ -103,12 +111,17 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
         .on(
           "postgres_changes",
           {
-            event: "UPDATE",
+            event: "*",
             schema: "hearth",
             table: "houses",
             filter: `id=eq.${houseId}`,
           },
           (payload) => {
+            console.log("[realtime] event received:", {
+              eventType: payload.eventType,
+              new: payload.new,
+              old: payload.old,
+            });
             if (cancelled) return;
             // hearth.houses uses REPLICA IDENTITY DEFAULT, so payload.new
             // only includes the primary key plus the columns that actually
@@ -120,7 +133,9 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
             );
           },
         )
-        .subscribe();
+        .subscribe((status, err) => {
+          console.log("[realtime] subscribe status:", status, err ?? "");
+        });
       return channel;
     }
 
