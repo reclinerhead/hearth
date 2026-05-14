@@ -8,8 +8,12 @@ describe("validateZillowResponse", () => {
       year_built: 1934,
       living_area_sqft: 1840,
       lot_size_sqft: 7840,
+      lot_size_acres: 0.18,
       bedrooms: 3,
       bathrooms: 1.5,
+      heating: "Forced air, Gas",
+      cooling: "Central",
+      parcel_number: "0627437339",
       description: "Charming 1934 craftsman with original woodwork.",
       source_url: "https://www.zillow.com/homedetails/123/",
     });
@@ -19,8 +23,12 @@ describe("validateZillowResponse", () => {
       yearBuilt: 1934,
       livingAreaSqft: 1840,
       lotSizeSqft: 7840,
+      lotSizeAcres: 0.18,
       bedrooms: 3,
       bathrooms: 1.5,
+      heating: "Forced air, Gas",
+      cooling: "Central",
+      parcelNumber: "0627437339",
       description: "Charming 1934 craftsman with original woodwork.",
       sourceUrl: "https://www.zillow.com/homedetails/123/",
     });
@@ -116,6 +124,9 @@ describe("validateZillowResponse", () => {
       living_area_sqft: 1840,
       bedrooms: 3,
       bathrooms: 1.5,
+      heating: "Forced air, Gas",
+      cooling: "Central",
+      parcel_number: "0627437339",
       description: "Should be ignored",
       source_url: "https://example.com",
     });
@@ -125,8 +136,12 @@ describe("validateZillowResponse", () => {
       yearBuilt: null,
       livingAreaSqft: null,
       lotSizeSqft: null,
+      lotSizeAcres: null,
       bedrooms: null,
       bathrooms: null,
+      heating: null,
+      cooling: null,
+      parcelNumber: null,
       description: null,
       sourceUrl: null,
     });
@@ -190,5 +205,79 @@ describe("validateZillowResponse", () => {
     });
 
     expect(result.yearBuilt).toBeNull();
+  });
+
+  it("derives sqft from acres when only acres is returned", () => {
+    const result = validateZillowResponse({
+      data_found: true,
+      lot_size_acres: 0.25,
+    });
+
+    expect(result.lotSizeAcres).toBe(0.25);
+    expect(result.lotSizeSqft).toBe(10890);
+  });
+
+  it("derives acres from sqft when only sqft is returned", () => {
+    const result = validateZillowResponse({
+      data_found: true,
+      lot_size_sqft: 10890,
+    });
+
+    expect(result.lotSizeSqft).toBe(10890);
+    expect(result.lotSizeAcres).toBe(0.25);
+  });
+
+  it("keeps both values when both are returned and plausible", () => {
+    const result = validateZillowResponse({
+      data_found: true,
+      lot_size_acres: 0.25,
+      lot_size_sqft: 10890,
+    });
+
+    expect(result.lotSizeAcres).toBe(0.25);
+    expect(result.lotSizeSqft).toBe(10890);
+  });
+
+  it("captures heating, cooling, and parcel number", () => {
+    const result = validateZillowResponse({
+      data_found: true,
+      heating: "Forced air, Gas",
+      cooling: "Central",
+      parcel_number: "0627437339",
+    });
+
+    expect(result.heating).toBe("Forced air, Gas");
+    expect(result.cooling).toBe("Central");
+    expect(result.parcelNumber).toBe("0627437339");
+  });
+
+  it("preserves leading zeros on parcel numbers", () => {
+    // Numeric coercion would lose the leading zero; the parcel must stay
+    // a string from prompt through validation through persistence.
+    const result = validateZillowResponse({
+      data_found: true,
+      parcel_number: "0627437339",
+    });
+
+    expect(result.parcelNumber).toBe("0627437339");
+    expect(typeof result.parcelNumber).toBe("string");
+  });
+
+  it("nulls a parcel number that is too long to be plausible", () => {
+    const result = validateZillowResponse({
+      data_found: true,
+      parcel_number: "x".repeat(200),
+    });
+
+    expect(result.parcelNumber).toBeNull();
+  });
+
+  it("nulls an absurdly large lot size in acres", () => {
+    const result = validateZillowResponse({
+      data_found: true,
+      lot_size_acres: 500,
+    });
+
+    expect(result.lotSizeAcres).toBeNull();
   });
 });
