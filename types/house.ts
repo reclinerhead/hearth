@@ -24,8 +24,12 @@ export type House = {
   year_built: number | null;
   living_area_sqft: number | null;
   lot_size_sqft: number | null;
+  lot_size_acres: number | null;
   bedrooms: number | null;
   bathrooms: number | null;
+  heating_summary: string | null;
+  cooling_summary: string | null;
+  parcel_id: string | null;
 
   purchase_date: string | null;
   purchase_price_cents: number | null;

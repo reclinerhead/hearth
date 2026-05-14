@@ -8,8 +8,12 @@ export type ZillowLookupResult = {
   yearBuilt: number | null;
   livingAreaSqft: number | null;
   lotSizeSqft: number | null;
+  lotSizeAcres: number | null;
   bedrooms: number | null;
   bathrooms: number | null;
+  heating: string | null;
+  cooling: string | null;
+  parcelNumber: string | null;
   description: string | null;
   sourceUrl: string | null;
 };
@@ -29,8 +33,12 @@ type ZillowRawResponse = {
   year_built?: unknown;
   living_area_sqft?: unknown;
   lot_size_sqft?: unknown;
+  lot_size_acres?: unknown;
   bedrooms?: unknown;
   bathrooms?: unknown;
+  heating?: unknown;
+  cooling?: unknown;
+  parcel_number?: unknown;
   description?: unknown;
   source_url?: unknown;
 };
@@ -43,6 +51,8 @@ type ZillowRawResponse = {
 // still produces real lookup data instead of a silent miss.
 const DEFAULT_PRIMARY_MODEL = "perplexity/sonar-pro";
 const DEFAULT_FALLBACK_MODELS = "perplexity/sonar";
+
+const SQFT_PER_ACRE = 43560;
 
 const PROMPT_TEMPLATE = `You are an assistant helping to populate a homeowner's record with publicly available information about their property.
 
@@ -58,12 +68,20 @@ Required JSON schema:
   "data_found": "boolean (true if you were able to find this property on Zillow, false if not)",
   "year_built": "integer or null",
   "living_area_sqft": "integer or null",
-  "lot_size_sqft": "integer or null",
+  "lot_size_sqft": "integer or null (fill if Zillow displays lot size in square feet)",
+  "lot_size_acres": "number or null (fill if Zillow displays lot size in acres, decimals allowed)",
   "bedrooms": "number or null (decimals allowed, e.g. 2.5)",
   "bathrooms": "number or null (decimals allowed, e.g. 1.5)",
+  "heating": "string or null (e.g. 'Forced air, Gas' — copy what Zillow shows under Heating)",
+  "cooling": "string or null (e.g. 'Central' — copy what Zillow shows under Cooling)",
+  "parcel_number": "string or null (the parcel number from the Property > Details section, as a string to preserve leading zeros)",
   "description": "string or null (the listing description if one is available, otherwise null)",
   "source_url": "string or null (the Zillow URL you used)"
 }
+
+For lot size: if Zillow displays the value in acres (common for lots over ~0.25 acres), fill lot_size_acres. If displayed in square feet, fill lot_size_sqft. Filling both is fine if Zillow provides both. Do not convert between units yourself.
+
+For parcel_number: return it exactly as displayed, including any leading zeros or formatting. Parcel numbers are identifiers, not arithmetic — preserve the original string.
 
 Return only the JSON object. No preamble, no commentary, no markdown code fences.`;
 
@@ -92,15 +110,49 @@ export function validateZillowResponse(raw: unknown): ZillowLookupResult {
   const r = raw as ZillowRawResponse;
   const dataFound = r.data_found === true;
 
+  if (!dataFound) {
+    return {
+      dataFound: false,
+      yearBuilt: null,
+      livingAreaSqft: null,
+      lotSizeSqft: null,
+      lotSizeAcres: null,
+      bedrooms: null,
+      bathrooms: null,
+      heating: null,
+      cooling: null,
+      parcelNumber: null,
+      description: null,
+      sourceUrl: null,
+    };
+  }
+
+  // Reconcile lot size units: prefer what Zillow actually displayed, derive
+  // the other if missing. Acres is the higher-precision source for large
+  // lots; sqft is the higher-precision source for small lots. When both
+  // are present we trust the model and keep both as-is.
+  let lotSizeAcres = validateLotAcres(r.lot_size_acres);
+  let lotSizeSqft = validateLotSqft(r.lot_size_sqft);
+
+  if (lotSizeAcres !== null && lotSizeSqft === null) {
+    lotSizeSqft = Math.round(lotSizeAcres * SQFT_PER_ACRE);
+  } else if (lotSizeSqft !== null && lotSizeAcres === null) {
+    lotSizeAcres = Math.round((lotSizeSqft / SQFT_PER_ACRE) * 10000) / 10000;
+  }
+
   return {
-    dataFound,
-    yearBuilt: dataFound ? validateYearBuilt(r.year_built) : null,
-    livingAreaSqft: dataFound ? validateSqft(r.living_area_sqft) : null,
-    lotSizeSqft: dataFound ? validateLotSqft(r.lot_size_sqft) : null,
-    bedrooms: dataFound ? validateBedrooms(r.bedrooms) : null,
-    bathrooms: dataFound ? validateBathrooms(r.bathrooms) : null,
-    description: dataFound ? validateString(r.description) : null,
-    sourceUrl: dataFound ? validateString(r.source_url) : null,
+    dataFound: true,
+    yearBuilt: validateYearBuilt(r.year_built),
+    livingAreaSqft: validateSqft(r.living_area_sqft),
+    lotSizeSqft,
+    lotSizeAcres,
+    bedrooms: validateBedrooms(r.bedrooms),
+    bathrooms: validateBathrooms(r.bathrooms),
+    heating: validateString(r.heating),
+    cooling: validateString(r.cooling),
+    parcelNumber: validateParcelNumber(r.parcel_number),
+    description: validateString(r.description),
+    sourceUrl: validateString(r.source_url),
   };
 }
 
@@ -116,11 +168,21 @@ function validateSqft(v: unknown): number | null {
   return v;
 }
 
+// Lot sqft accepts any finite number in range — derive-from-acres produces
+// integers, but the model itself may return a non-integer sqft. We round
+// to an integer at the boundary since lot_size_sqft is an integer column.
 function validateLotSqft(v: unknown): number | null {
-  if (typeof v !== "number" || !Number.isInteger(v)) return null;
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
   // Lots can be quite large — up to ~100 acres before we get suspicious.
   if (v < 100 || v > 4_356_000) return null;
-  return v;
+  return Math.round(v);
+}
+
+function validateLotAcres(v: unknown): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  if (v <= 0 || v > 100) return null;
+  // Round to 4 decimal places to match the numeric(8,4) column precision.
+  return Math.round(v * 10000) / 10000;
 }
 
 function validateBedrooms(v: unknown): number | null {
@@ -139,6 +201,17 @@ function validateString(v: unknown): string | null {
   if (typeof v !== "string") return null;
   const trimmed = v.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+// Parcel numbers are identifiers, not arithmetic — they must stay strings
+// to preserve leading zeros and any source-specific formatting. The 64-char
+// cap is generous (real parcel ids are well under that) and rejects junk
+// like a paragraph of description leaking into the wrong field.
+function validateParcelNumber(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const trimmed = v.trim();
+  if (trimmed.length === 0 || trimmed.length > 64) return null;
+  return trimmed;
 }
 
 /**
