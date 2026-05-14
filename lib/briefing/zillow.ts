@@ -258,7 +258,7 @@ export async function lookupHouseOnZillow(
     .map((m) => m.trim())
     .filter(Boolean);
 
-  const { text, finishReason, usage } = await generateText({
+  const { text } = await generateText({
     model: primary,
     prompt: buildZillowPrompt(input),
     providerOptions: {
@@ -269,22 +269,6 @@ export async function lookupHouseOnZillow(
         models: [primary, ...fallbacks],
       },
     },
-  });
-
-  // Temporary instrumentation — diagnosing why year_built / lot_size /
-  // heating / cooling / parcel come back null on properties Zillow clearly
-  // has data for. We want to distinguish three failure modes:
-  //   - finishReason === 'length' + JSON ends mid-field  → output token cap
-  //   - raw text contains explicit `null`s for missing fields → off-market
-  //     page (Zillow hides those fields) or Sonar laziness
-  //   - raw text omits the fields entirely → prompt schema not respected
-  // Remove once diagnosed (tracked in #11).
-  console.log("[briefing.zillow] raw", {
-    address: `${input.addressLine1}, ${input.city}, ${input.state} ${input.postalCode}`,
-    finishReason,
-    usage,
-    textLength: text.length,
-    text,
   });
 
   let parsed: unknown;
