@@ -1,9 +1,42 @@
 "use client";
 
+import { useEffect, useState, useTransition } from "react";
 import { useHouseRealtime } from "@/lib/hooks/use-house-realtime";
 import { Icon, type IconName } from "@/components/icon";
 import { AICard, MetricCard, PlaceholderImage } from "@/components/ui";
+import { diffHouseFacts } from "@/lib/briefing/diff";
+import type { MergeableHouseFacts } from "@/lib/briefing/merge";
 import type { BriefingStatus, House } from "@/types/house";
+import { refreshBriefing } from "./actions";
+
+type RefreshSummary =
+  | { kind: "updated"; fields: string[] }
+  | { kind: "nothing_new" };
+
+// Aggressive polling cadence while a manual refresh is in flight. Faster
+// than the hook's idle polling because the user is actively watching the
+// page and a fresh briefing typically resolves in 10-30 seconds.
+const REFRESH_POLL_INTERVAL_MS = 2000;
+// Hard cap on the active refresh window. Two minutes is well past the
+// typical workflow runtime — if we hit it, something is wedged and the
+// user should know the spinner isn't reliable.
+const REFRESH_POLL_TIMEOUT_MS = 120_000;
+
+function snapshotFacts(house: House): MergeableHouseFacts {
+  return {
+    year_built: house.year_built,
+    living_area_sqft: house.living_area_sqft,
+    lot_size_sqft: house.lot_size_sqft,
+    lot_size_acres: house.lot_size_acres,
+    bedrooms: house.bedrooms,
+    bathrooms: house.bathrooms,
+    heating_summary: house.heating_summary,
+    cooling_summary: house.cooling_summary,
+    parcel_id: house.parcel_id,
+    description: house.description,
+    description_source: house.description_source,
+  };
+}
 
 type HouseFact = {
   eyebrow: string;
@@ -87,22 +120,76 @@ function buildFacts(house: House): HouseFact[] {
   ];
 }
 
-function HeroAddress({ house }: { house: House }) {
+function HeroAddress({
+  house,
+  onRefresh,
+  refreshing,
+}: {
+  house: House;
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
   const display = house.nickname ?? house.address_line1;
   const region = `${house.city}, ${house.state}`;
   return (
-    <div>
-      <div className="eyebrow">Your house</div>
-      <h1 className="h1" style={{ marginTop: 4 }}>
-        {display}
-      </h1>
-      <p
-        className="text-small mt-1"
-        style={{ color: "var(--color-text-secondary)" }}
-      >
-        {region}
-      </p>
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="eyebrow">Your house</div>
+        <h1 className="h1" style={{ marginTop: 4 }}>
+          {display}
+        </h1>
+        <p
+          className="text-small mt-1"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          {region}
+        </p>
+      </div>
+      <RefreshBriefingButton
+        onClick={onRefresh}
+        refreshing={refreshing}
+      />
     </div>
+  );
+}
+
+/**
+ * Re-runs the Day One Briefing on demand. Sonar's results are stochastic,
+ * so a second run usually fills in fields the first run missed. The merge
+ * step (lib/briefing/merge.ts) guarantees a null from a fresh run never
+ * clobbers an existing non-null value, so re-rolling is always safe.
+ */
+function RefreshBriefingButton({
+  onClick,
+  refreshing,
+}: {
+  onClick: () => void;
+  refreshing: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={refreshing}
+      aria-label="Refresh house facts"
+      title={refreshing ? "Refreshing house facts…" : "Refresh house facts"}
+      className="btn btn-ghost shrink-0"
+      style={{
+        opacity: refreshing ? 0.75 : 1,
+        cursor: refreshing ? "default" : "pointer",
+      }}
+    >
+      <span
+        aria-hidden
+        className={refreshing ? "animate-spin" : undefined}
+        style={{ display: "inline-flex" }}
+      >
+        <Icon name="refresh-cw" size={14} />
+      </span>
+      <span className="hidden sm:inline">
+        {refreshing ? "Refreshing…" : "Refresh"}
+      </span>
+    </button>
   );
 }
 
@@ -153,6 +240,73 @@ function FactMeta({
   return null;
 }
 
+/**
+ * Summarizes the result of a manual refresh. Uses the surface-ai treatment
+ * so it visually reads as an AI-driven update, matching the AICard pattern
+ * used elsewhere for assistant output.
+ */
+function RefreshSummaryBanner({
+  summary,
+  onDismiss,
+}: {
+  summary: RefreshSummary;
+  onDismiss: () => void;
+}) {
+  const isUpdated = summary.kind === "updated";
+  const title = isUpdated
+    ? `Refresh found ${summary.fields.length} new ${
+        summary.fields.length === 1 ? "fact" : "facts"
+      } about your house.`
+    : "We couldn't find anything new — your house facts are up to date.";
+
+  return (
+    <div
+      className="surface-ai flex items-start gap-3 p-3 sm:p-4"
+      style={{ borderRadius: "var(--radius-lg)" }}
+      role="status"
+    >
+      <span
+        aria-hidden
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
+        style={{
+          backgroundColor:
+            "color-mix(in oklab, var(--color-accent) 16%, transparent)",
+          color: "var(--color-accent)",
+        }}
+      >
+        <Icon name={isUpdated ? "sparkles" : "circle-check"} size={16} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            color: "var(--color-text-primary)",
+          }}
+        >
+          {title}
+        </div>
+        {isUpdated ? (
+          <div
+            className="text-small mt-0.5"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            {summary.fields.join(" · ")}
+          </div>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="btn btn-ghost btn-icon shrink-0"
+      >
+        <Icon name="x" size={14} />
+      </button>
+    </div>
+  );
+}
+
 function BriefingErrorBanner({ message }: { message: string | null }) {
   return (
     <div
@@ -185,30 +339,136 @@ function BriefingErrorBanner({ message }: { message: string | null }) {
         >
           We had trouble pulling all the public data for your house.
         </div>
-        {message ? (
-          <div
-            className="text-small mt-0.5 truncate"
-            style={{ color: "var(--color-text-tertiary)" }}
-            title={message}
-          >
-            {message}
-          </div>
-        ) : null}
+        <div
+          className="text-small mt-0.5"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          Use Refresh above to try again.
+          {message ? (
+            <>
+              {" "}
+              <span title={message}>{message}</span>
+            </>
+          ) : null}
+        </div>
       </div>
-      <button
-        type="button"
-        className="btn btn-ghost"
-        disabled
-        title="Manual refresh is coming in a follow-up"
-      >
-        Try again
-      </button>
     </div>
   );
 }
 
 export function DashboardLive({ houseId }: { houseId: string }) {
-  const { house, loading, error } = useHouseRealtime(houseId);
+  const { house, loading, error, refetch } = useHouseRealtime(houseId);
+  const [isPending, startTransition] = useTransition();
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  // Snapshot of the row at click time, kept until the workflow reaches a
+  // terminal state so we can diff before vs after and tell the user what
+  // the refresh actually changed. We also capture briefing_generated_at
+  // so we can tell "the workflow has actually completed a new run" apart
+  // from "briefing_status is still 'completed' from the previous run."
+  // Without that guard the effect below would fire immediately on click.
+  const [pendingRefresh, setPendingRefresh] = useState<{
+    snapshot: MergeableHouseFacts;
+    generatedAt: string | null;
+  } | null>(null);
+  const [summary, setSummary] = useState<RefreshSummary | null>(null);
+
+  // Refresh is "in flight" while we're waiting for a new run to finish OR
+  // the realtime row currently shows a non-terminal status. pendingRefresh
+  // is the authoritative signal for "we clicked Refresh and haven't seen
+  // it complete yet" — using it (instead of only briefingInFlight) means
+  // the spinner stays on even if Realtime is blocked and we haven't yet
+  // observed the status flip to 'running'.
+  const briefingInFlight =
+    house?.briefing_status === "running" ||
+    house?.briefing_status === "pending";
+  const refreshing = isPending || briefingInFlight || pendingRefresh !== null;
+
+  function handleRefresh() {
+    if (!house) return;
+    setRefreshError(null);
+    setSummary(null);
+    setPendingRefresh({
+      snapshot: snapshotFacts(house),
+      generatedAt: house.briefing_generated_at,
+    });
+    startTransition(async () => {
+      const result = await refreshBriefing(houseId);
+      if (!result.ok) {
+        setRefreshError(result.error);
+        // The workflow never started, so there's nothing to diff against.
+        setPendingRefresh(null);
+      }
+    });
+  }
+
+  // Watch for the workflow reaching a terminal state. On 'completed', diff
+  // the snapshot we captured at click time against the current row and
+  // surface a summary — but only when briefing_generated_at has actually
+  // moved forward, so the click itself doesn't fire the summary against
+  // the still-stale 'completed' from the previous run. On 'failed', drop
+  // the snapshot — the failed banner already covers the error case.
+  useEffect(() => {
+    if (!house || !pendingRefresh) return;
+    if (house.briefing_status === "completed") {
+      if (house.briefing_generated_at === pendingRefresh.generatedAt) return;
+      const changes = diffHouseFacts(
+        pendingRefresh.snapshot,
+        snapshotFacts(house),
+      );
+      setSummary(
+        changes.length > 0
+          ? { kind: "updated", fields: changes }
+          : { kind: "nothing_new" },
+      );
+      setPendingRefresh(null);
+    } else if (house.briefing_status === "failed") {
+      setPendingRefresh(null);
+    }
+  }, [house, pendingRefresh]);
+
+  // Drive the page through a manual refresh even when Realtime is dead.
+  // The hook's own status-based polling can't help here because at click
+  // time the row still shows briefing_status='completed' from the previous
+  // run, so the hook has nothing to react to. We poll aggressively for the
+  // whole pending-refresh window, which (a) discovers the transition to
+  // 'running' so briefingInFlight flips and skeletons appear, and (b)
+  // discovers the eventual transition back to 'completed' with a fresh
+  // generated_at, which is what fires the summary banner.
+  //
+  // Bounded at REFRESH_POLL_TIMEOUT_MS so a stuck workflow can't pin the
+  // spinner forever — on timeout we surface a soft error and let the user
+  // try again.
+  useEffect(() => {
+    if (!pendingRefresh) return;
+
+    const start = Date.now();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function tick() {
+      if (cancelled) return;
+      if (Date.now() - start > REFRESH_POLL_TIMEOUT_MS) {
+        setRefreshError(
+          "Refresh is taking longer than expected. You can try again.",
+        );
+        setPendingRefresh(null);
+        return;
+      }
+      await refetch();
+      if (cancelled) return;
+      timer = setTimeout(tick, REFRESH_POLL_INTERVAL_MS);
+    }
+
+    // Fire the first poll quickly — the workflow's startBriefing step
+    // typically flips status within a second or two and we want the
+    // skeletons to appear without a long visual lag.
+    timer = setTimeout(tick, 800);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [pendingRefresh, refetch]);
 
   if (loading) {
     return (
@@ -254,10 +514,31 @@ export function DashboardLive({ houseId }: { houseId: string }) {
         <PlaceholderImage ratio="4 / 3" label={heroLabel} icon="home" />
       </div>
       <div className="flex flex-col gap-3">
-        <HeroAddress house={house} />
+        {summary ? (
+          <RefreshSummaryBanner
+            summary={summary}
+            onDismiss={() => setSummary(null)}
+          />
+        ) : null}
+
+        <HeroAddress
+          house={house}
+          onRefresh={handleRefresh}
+          refreshing={refreshing}
+        />
 
         {status === "failed" ? (
           <BriefingErrorBanner message={house.briefing_error} />
+        ) : null}
+
+        {refreshError ? (
+          <div
+            className="text-small"
+            style={{ color: "var(--color-danger)" }}
+            role="status"
+          >
+            {refreshError}
+          </div>
         ) : null}
 
         <div className="grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-3">

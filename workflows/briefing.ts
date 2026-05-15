@@ -1,3 +1,7 @@
+import {
+  buildBriefingSuccessUpdate,
+  type MergeableHouseFacts,
+} from "@/lib/briefing/merge";
 import { lookupHouseOnZillow, type ZillowLookupResult } from "@/lib/briefing/zillow";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -84,10 +88,13 @@ async function lookupZillow(address: HouseAddress): Promise<ZillowLookupResult> 
 
 /**
  * Write the Zillow result back to the house and mark the briefing complete.
- * Populates both `description` (the displayed copy) and `description_source`
- * (provenance for future synthesis) with the same value — the synthesis
- * step will eventually overwrite `description` and leave `description_source`
- * untouched.
+ *
+ * Merges the new result into the existing row rather than overwriting it.
+ * Sonar's results are stochastic — successive runs surface different
+ * subsets of the available fields — so the manual refresh feature relies
+ * on this step never clobbering a non-null value with a fresh null. The
+ * merge rules (and the description_source provenance lock) live in
+ * `lib/briefing/merge.ts` so they are unit-tested without touching the DB.
  */
 async function persistBriefingSuccess(
   houseId: string,
@@ -97,24 +104,29 @@ async function persistBriefingSuccess(
 
   const supabase = createServiceClient();
 
+  const { data: current, error: readError } = await supabase
+    .from("houses")
+    .select(
+      "year_built, living_area_sqft, lot_size_sqft, lot_size_acres, bedrooms, bathrooms, heating_summary, cooling_summary, parcel_id, description, description_source",
+    )
+    .eq("id", houseId)
+    .single<MergeableHouseFacts>();
+
+  if (readError || !current) {
+    throw new Error(
+      `Could not read current row for merge on ${houseId}: ${readError?.message ?? "not found"}`,
+    );
+  }
+
+  const payload = buildBriefingSuccessUpdate({
+    current,
+    result,
+    now: new Date().toISOString(),
+  });
+
   const { error } = await supabase
     .from("houses")
-    .update({
-      year_built: result.yearBuilt,
-      living_area_sqft: result.livingAreaSqft,
-      lot_size_sqft: result.lotSizeSqft,
-      lot_size_acres: result.lotSizeAcres,
-      bedrooms: result.bedrooms,
-      bathrooms: result.bathrooms,
-      heating_summary: result.heating,
-      cooling_summary: result.cooling,
-      parcel_id: result.parcelNumber,
-      description: result.description,
-      description_source: result.description,
-      briefing_status: "completed",
-      briefing_generated_at: new Date().toISOString(),
-      briefing_error: null,
-    })
+    .update(payload)
     .eq("id", houseId);
 
   if (error) {
