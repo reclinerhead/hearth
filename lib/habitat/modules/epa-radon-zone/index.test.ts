@@ -2,20 +2,23 @@ import { describe, expect, it } from "vitest";
 import type { HouseContext } from "@/lib/habitat/types";
 import EpaRadonZoneModule, {
   normalizeForLookup,
+  normalizeStateForLookup,
   zoneToSeverity,
 } from "./index";
 
 /**
- * Builds a minimal HouseContext for tests. Coordinates default to
- * Kalamazoo's so we can pass the value through without thinking,
- * even though this module doesn't use them.
+ * Builds a minimal HouseContext for tests. State defaults to the
+ * 2-letter USPS code because that's what hearth.houses actually
+ * stores — Mapbox's address_level1 returns the abbreviation for US
+ * addresses. Coordinates are Kalamazoo's so we can pass the value
+ * through without thinking, even though this module doesn't use them.
  */
 function makeHouse(overrides: Partial<HouseContext> = {}): HouseContext {
   return {
     houseId: "test-house",
     addressLine1: "604 Norton Dr",
     city: "Kalamazoo",
-    state: "Michigan",
+    state: "MI",
     county: "Kalamazoo",
     postalCode: "49006",
     latitude: 42.2917,
@@ -65,6 +68,39 @@ describe("normalizeForLookup", () => {
   });
 });
 
+describe("normalizeStateForLookup", () => {
+  it("uppercases a 2-letter code", () => {
+    expect(normalizeStateForLookup("mi")).toBe("MI");
+  });
+
+  it("passes a 2-letter code through unchanged when already uppercase", () => {
+    expect(normalizeStateForLookup("MI")).toBe("MI");
+  });
+
+  it("maps a full state name to its USPS code", () => {
+    expect(normalizeStateForLookup("Michigan")).toBe("MI");
+  });
+
+  it("is case-insensitive for full state names", () => {
+    expect(normalizeStateForLookup("michigan")).toBe("MI");
+  });
+
+  it("handles multi-word state names", () => {
+    expect(normalizeStateForLookup("New Hampshire")).toBe("NH");
+    expect(normalizeStateForLookup("district of columbia")).toBe("DC");
+  });
+
+  it("trims surrounding whitespace", () => {
+    expect(normalizeStateForLookup("  MI  ")).toBe("MI");
+    expect(normalizeStateForLookup("  Michigan  ")).toBe("MI");
+  });
+
+  it("falls back to upper-cased input for unknown states", () => {
+    // The caller then throws because the dataset has no such key.
+    expect(normalizeStateForLookup("Atlantis")).toBe("ATLANTIS");
+  });
+});
+
 describe("zoneToSeverity", () => {
   it("maps Zone 1 to high severity", () => {
     expect(zoneToSeverity(1)).toBe("high");
@@ -80,19 +116,16 @@ describe("zoneToSeverity", () => {
 });
 
 describe("EpaRadonZoneModule.isApplicable", () => {
-  it("returns true when state and county are both present", () => {
+  it("always returns true, including for houses with null state/county", () => {
+    // Radon zone data covers all US counties — applicability is
+    // unconditional. The check() step surfaces missing state/county as a
+    // 'failed' finding rather than silently skipping the module.
     expect(EpaRadonZoneModule.isApplicable(makeHouse())).toBe(true);
-  });
-
-  it("returns false when county is missing", () => {
     expect(EpaRadonZoneModule.isApplicable(makeHouse({ county: null }))).toBe(
-      false,
+      true,
     );
-  });
-
-  it("returns false when state is empty string", () => {
     expect(EpaRadonZoneModule.isApplicable(makeHouse({ state: "" }))).toBe(
-      false,
+      true,
     );
   });
 });
@@ -104,9 +137,19 @@ describe("EpaRadonZoneModule.check", () => {
     expect(finding.headline).toBe("EPA Radon Zone 1 — highest potential");
     expect(finding.findings.zone).toBe(1);
     expect(finding.findings.county).toBe("Kalamazoo");
-    expect(finding.findings.state).toBe("Michigan");
+    expect(finding.findings.state).toBe("MI");
     expect(finding.findings.action_threshold_pci_l).toBe(4.0);
     expect(finding.sourceUrl).toContain("epa.gov");
+  });
+
+  it("accepts the full state name as a fallback", async () => {
+    // Belt-and-suspenders: if any future code path stores
+    // address_level1 verbatim and Mapbox returned the full name, the
+    // module still resolves correctly via normalizeStateForLookup.
+    const finding = await EpaRadonZoneModule.check(
+      makeHouse({ state: "Michigan" }),
+    );
+    expect(finding.findings.zone).toBe(1);
   });
 
   it("handles a county arriving with a 'County' suffix", async () => {

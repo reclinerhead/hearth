@@ -122,11 +122,17 @@ async function main(): Promise<void> {
 
   // Group by state, then by normalized county name within state.
   // The final shape we emit is:
-  //   Record<stateName, Record<normalizedCountyName, 1 | 2 | 3>>
+  //   Record<stateCode, Record<normalizedCountyName, 1 | 2 | 3>>
   //
-  // State name matches hearth.houses.state (Mapbox's address_level1,
-  // e.g. "Michigan"). County key is normalized to match
-  // normalizeForLookup() in the module.
+  // State key is the 2-letter USPS code (e.g. "MI") parsed from the
+  // upstream's "County,State" field ("Kalamazoo, MI"). Houses are
+  // stored with the abbreviation (Mapbox's address_level1 typically
+  // returns the code for US addresses), and the module's
+  // normalizeStateForLookup() also accepts the full name and maps it
+  // to the code for defense in depth.
+  //
+  // County key is normalized to match normalizeForLookup() in the
+  // module — lowercased, geography-type suffix stripped.
   const byState: Record<string, Record<string, RadonZone>> = {};
 
   let countiesSeen = 0;
@@ -155,7 +161,26 @@ async function main(): Promise<void> {
       continue;
     }
 
-    const state = row.STATE.trim();
+    // Pull the 2-letter USPS code from the trailing ", XX" of
+    // "County,State". Most rows look like "Kalamazoo, MI"; the one
+    // known outlier is the District of Columbia (a single row whose
+    // County,State is just "District of Columbia" because it isn't a
+    // county-of-a-state), handled inline. Defensive: warn and skip on
+    // anything else that doesn't match.
+    let state: string;
+    if (row["County,State"] === "District of Columbia") {
+      state = "DC";
+    } else {
+      const stateMatch = row["County,State"].match(/,\s*([A-Z]{2})\s*$/);
+      if (!stateMatch) {
+        console.warn(
+          `Could not extract state code from "${row["County,State"]}"`,
+        );
+        skipped++;
+        continue;
+      }
+      state = stateMatch[1];
+    }
     const county = normalizeCountyName(row["COUNTY LABEL"]);
 
     if (!byState[state]) {
@@ -199,7 +224,7 @@ async function main(): Promise<void> {
 
   console.log(`Wrote ${OUTPUT_PATH}`);
   // Spot-check Kalamazoo, MI = Zone 1 since that's the live test case.
-  const kalamazoo = sortedByState["Michigan"]?.["kalamazoo"];
+  const kalamazoo = sortedByState["MI"]?.["kalamazoo"];
   if (kalamazoo !== 1) {
     throw new Error(
       `Sanity check failed: expected Kalamazoo, MI = Zone 1, got ${kalamazoo}`,
@@ -235,13 +260,16 @@ function renderDataFile(
     "export type RadonZone = 1 | 2 | 3;",
     "",
     "/**",
-    " * Lookup table keyed by full state name (matches hearth.houses.state)",
-    " * and normalized county name (lowercased, geography-type suffix",
-    " * stripped — e.g. 'kalamazoo' for 'Kalamazoo County',",
+    " * Lookup table keyed by 2-letter USPS state code (e.g. 'MI') and",
+    " * normalized county name (lowercased, geography-type suffix",
+    " * stripped — 'kalamazoo' for 'Kalamazoo County',",
     " * 'aleutians east' for 'Aleutians East Borough').",
     " *",
-    " * Use normalizeForLookup() from the module's index.ts to produce the",
-    " * county key — do not access this object directly with raw input.",
+    " * Houses are typically stored with the abbreviation (Mapbox's",
+    " * address_level1), but the module's normalizeStateForLookup()",
+    " * accepts the full name too and maps it to the code. Always go",
+    " * through the module's normalizer rather than indexing this object",
+    " * with raw input.",
     " */",
     "export const RADON_ZONES_BY_STATE: Readonly<",
     "  Record<string, Readonly<Record<string, RadonZone>>>",
