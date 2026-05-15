@@ -41,6 +41,87 @@ const MODULE_KEY = "epa_radon_zone";
 const SOURCE_URL = "https://www.epa.gov/radon/epa-map-radon-zones-0";
 
 /**
+ * Full state name → 2-letter USPS code. Used by
+ * normalizeStateForLookup() to accept either the abbreviation
+ * (Mapbox's typical address_level1 for US addresses) or the full
+ * name. Only the 50 states + DC are listed — the EPA dataset doesn't
+ * cover territories, so falling through to "unknown" for AS/GU/MP/PR/VI
+ * just produces a 'failed' finding, which is the right behavior.
+ */
+const STATE_NAME_TO_CODE: Record<string, string> = {
+  alabama: "AL",
+  alaska: "AK",
+  arizona: "AZ",
+  arkansas: "AR",
+  california: "CA",
+  colorado: "CO",
+  connecticut: "CT",
+  delaware: "DE",
+  "district of columbia": "DC",
+  florida: "FL",
+  georgia: "GA",
+  hawaii: "HI",
+  idaho: "ID",
+  illinois: "IL",
+  indiana: "IN",
+  iowa: "IA",
+  kansas: "KS",
+  kentucky: "KY",
+  louisiana: "LA",
+  maine: "ME",
+  maryland: "MD",
+  massachusetts: "MA",
+  michigan: "MI",
+  minnesota: "MN",
+  mississippi: "MS",
+  missouri: "MO",
+  montana: "MT",
+  nebraska: "NE",
+  nevada: "NV",
+  "new hampshire": "NH",
+  "new jersey": "NJ",
+  "new mexico": "NM",
+  "new york": "NY",
+  "north carolina": "NC",
+  "north dakota": "ND",
+  ohio: "OH",
+  oklahoma: "OK",
+  oregon: "OR",
+  pennsylvania: "PA",
+  "rhode island": "RI",
+  "south carolina": "SC",
+  "south dakota": "SD",
+  tennessee: "TN",
+  texas: "TX",
+  utah: "UT",
+  vermont: "VT",
+  virginia: "VA",
+  washington: "WA",
+  "west virginia": "WV",
+  wisconsin: "WI",
+  wyoming: "WY",
+};
+
+/**
+ * Normalize a state value to the 2-letter USPS code used as the key
+ * in RADON_ZONES_BY_STATE. Accepts:
+ *   - "MI" / "mi" / " MI " — already-coded inputs, upper-cased and
+ *     trimmed.
+ *   - "Michigan" / "michigan" — full names, mapped via
+ *     STATE_NAME_TO_CODE.
+ * Falls back to upper-cased input when neither matches; the caller
+ * then throws because that key is absent from the dataset.
+ *
+ * Exported for the test suite.
+ */
+export function normalizeStateForLookup(state: string): string {
+  const trimmed = state.trim();
+  if (trimmed.length === 2) return trimmed.toUpperCase();
+  const code = STATE_NAME_TO_CODE[trimmed.toLowerCase()];
+  return code ?? trimmed.toUpperCase();
+}
+
+/**
  * Normalize a county name for lookup against RADON_ZONES_BY_STATE.
  * Mirrors normalizeCountyName() in scripts/build-radon-data.ts —
  * the two MUST stay in sync. Exported for the test suite.
@@ -133,7 +214,8 @@ const EpaRadonZoneModule: HabitatModule = {
       throw new Error("Radon check requires state and county");
     }
 
-    const stateData = RADON_ZONES_BY_STATE[house.state];
+    const stateKey = normalizeStateForLookup(house.state);
+    const stateData = RADON_ZONES_BY_STATE[stateKey];
     if (!stateData) {
       throw new Error(
         `EPA radon dataset has no entry for state "${house.state}"`,
