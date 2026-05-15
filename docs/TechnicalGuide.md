@@ -328,12 +328,40 @@ Supabase Realtime only broadcasts changes for tables explicitly added to `supaba
 
 ---
 
+## Habitat surface
+
+The `/habitat` route renders one tile per completed habitat finding for the user's house. It is a server component (`app/(app)/habitat/page.tsx`) that reads the user's first house, fetches `habitat_findings` rows with `status = 'completed'`, sorts them by severity (concerns first: critical → high → moderate → low → neutral → good), and renders each through `<HabitatFindingTile>`. Failed and `not_applicable` findings are intentionally not rendered in v1 — they'll get their own tile variants later. The trailing "What we know about your location" `AICard` is still a static placeholder pending live-data wiring.
+
+### Tile component
+
+`components/habitat-finding-tile.tsx` is a server-component-safe tile that renders an optional ~128px square hero image on the left, then an eyebrow (module label) + severity dot, headline (h3), summary, and an optional row of action chips. Layout switches between two columns (`128px 1fr`) and a single column based on whether the module declared an `iconImage` — no empty image gutter when absent. The tile uses the existing `.surface-ai` treatment so it sits visually alongside other AI-authored content, and severity dots are colour-mapped against `--color-danger` / `--color-warning` / `--color-success` / `--color-text-tertiary`. Each action opens in a new tab via `target="_blank" rel="noopener noreferrer"`.
+
+### `HabitatFinding.actions` and `FindingAction`
+
+A module's `check()` may return an `actions: FindingAction[]` field on its finding. The orchestrator persists it into the `hearth.habitat_findings.actions` jsonb column on the completed-status upsert. `FindingAction` is a discriminated union of three kinds:
+
+- `product` — a consumable (e.g. test kit). URL is wrapped in `affiliateLink()` at construction time. Optional `priceHint` shown subtly next to the label.
+- `link` — informational link (EPA page, county GIS, etc.).
+- `service` — a directory or finder for local professionals (mitigators, inspectors).
+
+Actions are per-finding rather than per-module because the right call to action depends on what the module actually returned: Zone 1 radon and Zone 3 radon share a module but surface different next steps. The dashboard renders product chips with the accent treatment so they read as the primary affordance; link and service chips stay subtler.
+
+### Affiliate-link chokepoint
+
+`lib/affiliate/link.ts` exports a single `affiliateLink(url)` function. It is identity passthrough today and is the only place we will later inject Amazon Associates tags (or per-region storefront swaps, AAX redirects, etc.). Every module that emits a product URL routes it through this helper, so adopting affiliate revenue becomes a one-file change. A trivial test in `link.test.ts` asserts identity today and will fail the moment we start mutating URLs, prompting an update of the contract callers rely on.
+
+### `HabitatModule.iconImage`
+
+Each module may declare an optional `iconImage` (a root-relative path under `/public`). When present, the tile renders it as a 128px square hero on the left. Module definitions stay serializable — we use string paths, not imported asset modules. Module hero images live under `public/habitat_module_images/` (e.g. `radon.jpg`).
+
+---
+
 ## What isn't built yet
 
 These appear in the schema or the dashboard mockup but are not real flows. Treat as roadmap, not as currently-working features:
 
 - **Storage buckets** for hero photos. `hero_photo_path` columns exist; the storage bucket and upload UI do not.
-- **Public-records sources beyond Zillow** — FEMA flood zone, EPA radon zone, BS&A assessor data, etc. Each will be a new step in `workflows/briefing.ts` writing into new columns; the Habitat dashboard section is wired with a "coming soon" placeholder until then.
+- **Public-records sources beyond EPA radon** — FEMA flood zone, EPA Superfund proximity, BS&A assessor data, lead-disclosure heuristics, etc. Each is a new habitat module under `lib/habitat/modules/<key>/`; the orchestrator already iterates the registry, so adding a module is a contained change. The "What we know about your location" `AICard` at the bottom of `/habitat` is still a static placeholder pending its own wiring.
 - **Description synthesis** — for v1 we show `description_source` (Zillow's raw copy) as `description`. A future LLM step will rewrite `description` in Hearth's voice while leaving `description_source` intact.
 - **Multi-house** UI. Schema supports it; onboarding gate currently locks to one house per user.
 - **Inventory CRUD**. Schema exists; the `/appliances`, `/entities/[id]`, and `/documents/[id]` routes are placeholder shells.

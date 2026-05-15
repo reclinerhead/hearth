@@ -140,6 +140,7 @@ async function runOneModule(
         headline: finding.headline,
         summary: finding.summary,
         findings: finding.findings,
+        actions: finding.actions ?? null,
         source_url: finding.sourceUrl ?? null,
         checked_at: new Date().toISOString(),
         next_check_due_at: nextCheck ? nextCheck.toISOString() : null,

@@ -28,8 +28,13 @@
       "mcp__plugin_vercel_vercel__get_runtime_logs",
       "mcp__plugin_vercel_vercel__list_projects",
       "mcp__plugin_vercel_vercel__get_deployment",
-      "Bash(pnpm --version)"
+      "Bash(pnpm --version)",
+      "Skill(frontend-design:frontend-design)",
+      "Skill(frontend-design:frontend-design:*)"
     ],
-    "additionalDirectories": ["C:\\Users\\toddw\\AppData\\Local\\Temp", "\\tmp"]
+    "additionalDirectories": [
+      "C:\\Users\\toddw\\AppData\\Local\\Temp",
+      "\\tmp"
+    ]
   }
 }

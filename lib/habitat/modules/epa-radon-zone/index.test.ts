@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { affiliateLink } from "@/lib/affiliate/link";
 import type { HabitatFinding, HouseContext } from "@/lib/habitat/types";
 import EpaRadonZoneModule, {
+  buildActions,
   buildOnboardingMessage,
   normalizeForLookup,
   normalizeStateForLookup,
@@ -169,6 +171,41 @@ describe("EpaRadonZoneModule.check", () => {
     expect(finding.findings.source_dataset_note).toMatch(/individual home/i);
   });
 
+  it("returns Zone 1 actions including a 'service' (mitigator) entry", async () => {
+    const finding = await EpaRadonZoneModule.check(makeHouse());
+    expect(finding.actions).toBeDefined();
+    const kinds = (finding.actions ?? []).map((a) => a.kind);
+    expect(kinds).toContain("service");
+    expect(kinds).toContain("product");
+    expect(kinds).toContain("link");
+  });
+
+  it("does not include the 'service' (mitigator) action for Zone 3", async () => {
+    // Honolulu, HI sits in Zone 3 — used as the canonical low-potential
+    // county for this assertion. If the dataset ever reclassifies, swap
+    // for any other documented Zone 3 county.
+    const finding = await EpaRadonZoneModule.check(
+      makeHouse({ state: "HI", county: "Honolulu" }),
+    );
+    expect(finding.findings.zone).toBe(3);
+    const kinds = (finding.actions ?? []).map((a) => a.kind);
+    expect(kinds).not.toContain("service");
+    expect(kinds).toContain("product");
+    expect(kinds).toContain("link");
+  });
+
+  it("wraps every product URL through affiliateLink()", async () => {
+    // affiliateLink is identity today, so this is a soft snapshot — but
+    // it guarantees that whenever the helper starts mutating URLs, every
+    // product URL the module emits flows through it.
+    const finding = await EpaRadonZoneModule.check(makeHouse());
+    const products = (finding.actions ?? []).filter((a) => a.kind === "product");
+    expect(products.length).toBeGreaterThan(0);
+    for (const product of products) {
+      expect(product.url).toBe(affiliateLink(product.url));
+    }
+  });
+
   it("throws when state is not in the dataset", async () => {
     await expect(
       EpaRadonZoneModule.check(
@@ -259,5 +296,36 @@ describe("EpaRadonZoneModule metadata", () => {
 
   it("has a non-empty description", () => {
     expect(EpaRadonZoneModule.description.length).toBeGreaterThan(0);
+  });
+
+  it("declares a root-relative iconImage", () => {
+    expect(EpaRadonZoneModule.iconImage).toBe(
+      "/habitat_module_images/radon.jpg",
+    );
+  });
+});
+
+describe("buildActions", () => {
+  it("returns three actions for Zone 1 in the order [product, service, link]", () => {
+    const actions = buildActions(1);
+    expect(actions.map((a) => a.kind)).toEqual(["product", "service", "link"]);
+  });
+
+  it("returns two actions for Zone 2 (no mitigator)", () => {
+    const actions = buildActions(2);
+    expect(actions.map((a) => a.kind)).toEqual(["product", "link"]);
+  });
+
+  it("returns two actions for Zone 3 (no mitigator)", () => {
+    const actions = buildActions(3);
+    expect(actions.map((a) => a.kind)).toEqual(["product", "link"]);
+  });
+
+  it("includes a priceHint on the product action", () => {
+    const product = buildActions(1)[0];
+    expect(product.kind).toBe("product");
+    if (product.kind === "product") {
+      expect(product.priceHint).toBeTruthy();
+    }
   });
 });

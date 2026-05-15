@@ -30,7 +30,9 @@
  *   - LLM-rewritten summary in Hearth's voice via a synthesis step.
  */
 
+import { affiliateLink } from "@/lib/affiliate/link";
 import type {
+  FindingAction,
   HabitatFinding,
   HabitatModule,
   HouseContext,
@@ -192,6 +194,41 @@ function zoneSummary(zone: RadonZone, county: string, state: string): string {
 }
 
 /**
+ * Zone-aware recommended next steps for a radon finding. Product URLs
+ * pass through affiliateLink() so a future Associates-tag migration is a
+ * one-file change.
+ *
+ * Zone 1 surfaces the "find a certified mitigator" service alongside the
+ * test kit, because the regional average there exceeds the EPA action
+ * threshold and mitigation is a likely follow-up. Zones 2 and 3 stay
+ * with the kit + EPA learn-more pair — testing is still the first step,
+ * but most homes in those zones won't need professional mitigation.
+ *
+ * Exported for the test suite.
+ */
+export function buildActions(zone: RadonZone): FindingAction[] {
+  const testKit: FindingAction = {
+    kind: "product",
+    label: "Short-term radon test kit",
+    url: affiliateLink("https://www.amazon.com/s?k=radon+test+kit"),
+    priceHint: "~$15",
+  };
+  const epaLearnMore: FindingAction = {
+    kind: "link",
+    label: "EPA radon overview",
+    url: "https://www.epa.gov/radon",
+  };
+  const findMitigator: FindingAction = {
+    kind: "service",
+    label: "Find a certified mitigator",
+    url: "https://www.nrpp.info/proSearch.shtml",
+  };
+
+  if (zone === 1) return [testKit, findMitigator, epaLearnMore];
+  return [testKit, epaLearnMore];
+}
+
+/**
  * Short, user-facing string rendered in the first-run onboarding modal
  * after this module's check() resolves. Leads with the finding (zone +
  * what it means) and uses the county name when present so the line
@@ -222,6 +259,7 @@ const EpaRadonZoneModule: HabitatModule = {
   description:
     "Looks up the county's EPA radon potential classification (Zone 1, 2, or 3).",
   cadence: "once",
+  iconImage: "/habitat_module_images/radon.jpg",
 
   isApplicable(): boolean {
     // Radon zone data covers all US counties. We always apply; check()
@@ -269,6 +307,7 @@ const EpaRadonZoneModule: HabitatModule = {
         source_dataset_note:
           "County-level regional potential. Not a substitute for testing an individual home.",
       },
+      actions: buildActions(zone),
       sourceUrl: SOURCE_URL,
     };
   },

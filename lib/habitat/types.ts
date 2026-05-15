@@ -94,6 +94,38 @@ export type HabitatCadence =
   | "fast";
 
 /**
+ * A recommended next-step the user can take in response to a finding.
+ *
+ * Returned by a module's check() and persisted on the habitat_findings
+ * row. Per-finding rather than per-module — Zone 1 radon and Zone 3
+ * radon share a module but should not share the same call to action.
+ *
+ * Kinds:
+ *   'product' — a consumable/test kit the user can buy. URL goes through
+ *               affiliateLink() at construction time.
+ *   'link'    — informational link (EPA page, county GIS, etc).
+ *   'service' — a directory or finder for local professionals
+ *               (mitigators, inspectors). May be geographic.
+ */
+export type FindingAction =
+  | {
+      kind: "product";
+      label: string;
+      url: string;
+      priceHint?: string;
+    }
+  | {
+      kind: "link";
+      label: string;
+      url: string;
+    }
+  | {
+      kind: "service";
+      label: string;
+      url: string;
+    };
+
+/**
  * What a module's check() returns. The orchestrator translates this
  * into a row in hearth.habitat_findings via upsert on
  * (house_id, module_key).
@@ -109,6 +141,11 @@ export interface HabitatFinding {
   summary: string;
   findings: Record<string, unknown>;
   sourceUrl?: string;
+  /**
+   * Recommended next steps for this finding. Optional — modules can
+   * return findings without actions while we backfill them.
+   */
+  actions?: FindingAction[];
 }
 
 /**
@@ -131,6 +168,15 @@ export interface HabitatModule {
 
   /** Declared re-check cadence. */
   cadence: HabitatCadence;
+
+  /**
+   * Optional path to a hero image for this module, served from /public.
+   * When present, HabitatFindingTile renders it as a ~128px square on
+   * the left of the card. Use a root-relative public URL
+   * ("/habitat_module_images/radon.jpg"), not an imported asset, to keep
+   * module definitions serializable.
+   */
+  iconImage?: string;
 
   /**
    * Whether this module applies to the given house. Returns false to
