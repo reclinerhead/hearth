@@ -1,5 +1,5 @@
 import { HabitatFindingTile } from "@/components/habitat-finding-tile";
-import { AICard, AskAboutStrip, SectionHeader } from "@/components/ui";
+import { SectionHeader } from "@/components/ui";
 import { HABITAT_MODULES } from "@/lib/habitat/registry";
 import type {
   FindingAction,
@@ -64,13 +64,16 @@ export default async function HabitatPage() {
         title="Habitat"
       />
 
-      <AskAboutStrip
-        scopeLabel="this location"
-        placeholder="Is my neighborhood in a high-radon zone? What about flood risk?"
-      />
-
       {sortedFindings.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        // Cap at two tiles per row at md+. With a single finding, drop to
+        // one column so the tile stretches to the container width instead
+        // of sitting in a half-width cell with a visual hole next to it.
+        // Single-column on small screens regardless.
+        <div
+          className={`grid gap-4 ${
+            sortedFindings.length > 1 ? "md:grid-cols-2" : ""
+          }`}
+        >
           {sortedFindings.map((row) => {
             const habitatModule = HABITAT_MODULES.find(
               (m) => m.key === row.module_key,
@@ -95,24 +98,6 @@ export default async function HabitatPage() {
           })}
         </div>
       ) : null}
-
-      <AICard
-        eyebrow="What we know about your location"
-        title="Ann Arbor, Washtenaw County, MI"
-      >
-        <p>
-          The lot is on the southern slope of a wooded ridge in the Burns Park
-          neighborhood. Average winter low is 16&deg;F and the heating season
-          runs roughly Oct&nbsp;15&nbsp;–&nbsp;Apr&nbsp;10. The 2024 average
-          electricity rate from DTE was about 18.3&cent;/kWh, with summer peak
-          pricing in effect Jun&nbsp;–&nbsp;Sep.
-        </p>
-        <p className="mt-2">
-          The closest fire station is Station&nbsp;3 on Stadium Boulevard,
-          roughly 1.1&nbsp;miles north. Trash and recycling pick up
-          Wednesdays; yard waste runs Apr&nbsp;–&nbsp;Nov.
-        </p>
-      </AICard>
     </div>
   );
 }
