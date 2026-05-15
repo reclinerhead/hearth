@@ -10,27 +10,33 @@ type UseHouseRealtimeResult = {
   error: string | null;
 };
 
-// Polling fallback for the period between insert and briefing completion.
-// Realtime is the primary path, but if the websocket auth race or any other
-// transport issue eats an UPDATE, the dashboard would sit on the initial
-// snapshot forever. A short refetch interval bounds that to a few seconds
-// of staleness; once briefing_status reaches a terminal state we stop.
+// Polling cadence for the fallback. Realtime is the primary path, but if
+// the websocket is blocked (browser extensions, tracking-prevention) or
+// flakes for any other reason, polling fills in. The interval is short
+// enough that a manual refresh feels responsive even when the websocket
+// is dead.
 const POLL_INTERVAL_MS = 2500;
-const POLL_MAX_DURATION_MS = 90_000;
 
 const TERMINAL_STATUSES = new Set(["completed", "failed"]);
 
 /**
- * Subscribe to a single hearth.houses row over Supabase Realtime. Fetches
- * the row once on mount, re-renders whenever an UPDATE event arrives, and
- * polls every few seconds while briefing_status is non-terminal as a
- * fallback for Realtime auth/transport hiccups.
+ * Subscribe to a single hearth.houses row over Supabase Realtime, with a
+ * polling fallback that activates whenever briefing_status is non-terminal.
+ * Fetches the row once on mount, re-renders on every UPDATE event, and
+ * polls every few seconds while the briefing is in flight.
+ *
+ * The polling effect is keyed on briefing_status, so it naturally restarts
+ * each time the row transitions from a terminal state ('completed' /
+ * 'failed') back to a non-terminal state — e.g., after a manual refresh
+ * kicks the workflow off again. That means users on flaky realtime
+ * transports still see the updated row within a poll interval, not
+ * "never until they reload the page."
  *
  * Realtime broadcasts require the table to be in the `supabase_realtime`
  * publication (see migration 20260514180500). RLS on hearth.houses scopes
  * SELECT to owner_id = auth.uid(), so the channel needs the user's JWT to
- * pass the policy check on broadcast — we call `supabase.realtime.setAuth`
- * with the access token before subscribing so the JWT is present.
+ * pass the policy check on broadcast — that auth propagation is handled
+ * by the cached singleton client in lib/supabase/client.ts.
  *
  * This hook is intentionally generic to a single row, not Zillow-specific
  * — every future "live dashboard data" feature will reuse it.
@@ -39,91 +45,98 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
   const [house, setHouse] = useState<House | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const briefingStatus = house?.briefing_status;
 
+  // Initial fetch + realtime subscription. Runs once per houseId.
   useEffect(() => {
     const supabase = createClient();
     let cancelled = false;
-    let pollTimer: ReturnType<typeof setTimeout> | undefined;
-    const pollStart = Date.now();
 
-    function scheduleNextPoll(current: House | null) {
-      if (cancelled) return;
-      if (!current) return;
-      if (TERMINAL_STATUSES.has(current.briefing_status)) return;
-      if (Date.now() - pollStart > POLL_MAX_DURATION_MS) return;
-      pollTimer = setTimeout(refetch, POLL_INTERVAL_MS);
-    }
-
-    async function fetchRow(): Promise<House | null> {
+    async function loadInitial() {
       const { data, error: fetchError } = await supabase
         .from("houses")
         .select("*")
         .eq("id", houseId)
         .single();
-      if (fetchError) {
-        if (!cancelled) setError(fetchError.message);
-        return null;
-      }
-      return data as House;
-    }
-
-    async function loadInitial() {
-      const row = await fetchRow();
       if (cancelled) return;
       setLoading(false);
-      if (row) {
-        setHouse(row);
-        scheduleNextPoll(row);
+      if (fetchError) {
+        setError(fetchError.message);
+        return;
       }
-    }
-
-    async function refetch() {
-      const row = await fetchRow();
-      if (cancelled || !row) return;
-      setHouse(row);
-      scheduleNextPoll(row);
-    }
-
-    function setupRealtime() {
-      // Auth propagation to the realtime socket is handled by
-      // @supabase/ssr's onAuthStateChange wiring inside the cached
-      // singleton client (see lib/supabase/client.ts). Calling
-      // realtime.setAuth() manually here used to cause a redundant
-      // reconnect that churned the websocket, so we don't.
-      const channel = supabase
-        .channel(`house:${houseId}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "hearth",
-            table: "houses",
-            filter: `id=eq.${houseId}`,
-          },
-          (payload: { new: Partial<House> }) => {
-            if (cancelled) return;
-            // hearth.houses uses REPLICA IDENTITY DEFAULT, so payload.new
-            // only includes the primary key plus the columns that actually
-            // changed. Merge into existing state rather than replacing.
-            const partial = payload.new;
-            setHouse((prev) =>
-              prev ? { ...prev, ...partial } : (partial as House),
-            );
-          },
-        )
-        .subscribe();
-      return channel;
+      if (data) setHouse(data as House);
     }
 
     loadInitial();
-    const channel = setupRealtime();
+
+    // Auth propagation to the realtime socket is handled by
+    // @supabase/ssr's onAuthStateChange wiring inside the cached
+    // singleton client (see lib/supabase/client.ts). Calling
+    // realtime.setAuth() manually here used to cause a redundant
+    // reconnect that churned the websocket, so we don't.
+    const channel = supabase
+      .channel(`house:${houseId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "hearth",
+          table: "houses",
+          filter: `id=eq.${houseId}`,
+        },
+        (payload: { new: Partial<House> }) => {
+          if (cancelled) return;
+          // hearth.houses uses REPLICA IDENTITY DEFAULT, so payload.new
+          // only includes the primary key plus the columns that actually
+          // changed. Merge into existing state rather than replacing.
+          const partial = payload.new;
+          setHouse((prev) =>
+            prev ? { ...prev, ...partial } : (partial as House),
+          );
+        },
+      )
+      .subscribe();
 
     return () => {
       cancelled = true;
-      if (pollTimer) clearTimeout(pollTimer);
       supabase.removeChannel(channel);
     };
   }, [houseId]);
+
+  // Polling fallback. Active only while briefing_status is non-terminal,
+  // and re-triggered each time status transitions back into a non-terminal
+  // state. The effect tears down (cleanup clears the timer) when status
+  // reaches a terminal value or the component unmounts.
+  useEffect(() => {
+    if (!briefingStatus) return;
+    if (TERMINAL_STATUSES.has(briefingStatus)) return;
+
+    const supabase = createClient();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function poll() {
+      if (cancelled) return;
+      const { data } = await supabase
+        .from("houses")
+        .select("*")
+        .eq("id", houseId)
+        .single();
+      if (cancelled || !data) return;
+      const fresh = data as House;
+      setHouse(fresh);
+      if (!TERMINAL_STATUSES.has(fresh.briefing_status)) {
+        timer = setTimeout(poll, POLL_INTERVAL_MS);
+      }
+    }
+
+    timer = setTimeout(poll, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [houseId, briefingStatus]);
 
   return { house, loading, error };
 }

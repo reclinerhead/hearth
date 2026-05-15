@@ -353,9 +353,14 @@ export function DashboardLive({ houseId }: { houseId: string }) {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   // Snapshot of the row at click time, kept until the workflow reaches a
   // terminal state so we can diff before vs after and tell the user what
-  // the refresh actually changed.
-  const [pendingSnapshot, setPendingSnapshot] =
-    useState<MergeableHouseFacts | null>(null);
+  // the refresh actually changed. We also capture briefing_generated_at
+  // so we can tell "the workflow has actually completed a new run" apart
+  // from "briefing_status is still 'completed' from the previous run."
+  // Without that guard the effect below would fire immediately on click.
+  const [pendingRefresh, setPendingRefresh] = useState<{
+    snapshot: MergeableHouseFacts;
+    generatedAt: string | null;
+  } | null>(null);
   const [summary, setSummary] = useState<RefreshSummary | null>(null);
 
   // Refresh is "in flight" if either (a) the server action hasn't returned
@@ -372,35 +377,44 @@ export function DashboardLive({ houseId }: { houseId: string }) {
     if (!house) return;
     setRefreshError(null);
     setSummary(null);
-    setPendingSnapshot(snapshotFacts(house));
+    setPendingRefresh({
+      snapshot: snapshotFacts(house),
+      generatedAt: house.briefing_generated_at,
+    });
     startTransition(async () => {
       const result = await refreshBriefing(houseId);
       if (!result.ok) {
         setRefreshError(result.error);
         // The workflow never started, so there's nothing to diff against.
-        setPendingSnapshot(null);
+        setPendingRefresh(null);
       }
     });
   }
 
   // Watch for the workflow reaching a terminal state. On 'completed', diff
   // the snapshot we captured at click time against the current row and
-  // surface a summary. On 'failed', drop the snapshot — the failed banner
-  // already covers the error case, so a second banner would be noise.
+  // surface a summary — but only when briefing_generated_at has actually
+  // moved forward, so the click itself doesn't fire the summary against
+  // the still-stale 'completed' from the previous run. On 'failed', drop
+  // the snapshot — the failed banner already covers the error case.
   useEffect(() => {
-    if (!house || !pendingSnapshot) return;
+    if (!house || !pendingRefresh) return;
     if (house.briefing_status === "completed") {
-      const changes = diffHouseFacts(pendingSnapshot, snapshotFacts(house));
+      if (house.briefing_generated_at === pendingRefresh.generatedAt) return;
+      const changes = diffHouseFacts(
+        pendingRefresh.snapshot,
+        snapshotFacts(house),
+      );
       setSummary(
         changes.length > 0
           ? { kind: "updated", fields: changes }
           : { kind: "nothing_new" },
       );
-      setPendingSnapshot(null);
+      setPendingRefresh(null);
     } else if (house.briefing_status === "failed") {
-      setPendingSnapshot(null);
+      setPendingRefresh(null);
     }
-  }, [house, pendingSnapshot]);
+  }, [house, pendingRefresh]);
 
   if (loading) {
     return (
