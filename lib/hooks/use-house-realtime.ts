@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { House } from "@/types/house";
 
@@ -8,6 +8,14 @@ type UseHouseRealtimeResult = {
   house: House | null;
   loading: boolean;
   error: string | null;
+  /**
+   * Imperative refetch. Lets callers drive polling for cases the hook's
+   * status-based polling can't reach on its own — most notably, polling
+   * during a just-clicked manual refresh while briefing_status is still
+   * 'completed' from the previous run, so the hook hasn't yet observed
+   * the transition that would kick its own polling on.
+   */
+  refetch: () => Promise<void>;
 };
 
 // Polling cadence for the fallback. Realtime is the primary path, but if
@@ -46,6 +54,20 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const briefingStatus = house?.briefing_status;
+
+  const refetch = useCallback(async () => {
+    const supabase = createClient();
+    const { data, error: fetchError } = await supabase
+      .from("houses")
+      .select("*")
+      .eq("id", houseId)
+      .single();
+    // Don't surface transient fetch failures via setError — that would flash
+    // an error banner on routine polling hiccups. Persistent failures will
+    // manifest as a stale row, which is the lesser evil.
+    if (fetchError || !data) return;
+    setHouse(data as House);
+  }, [houseId]);
 
   // Initial fetch + realtime subscription. Runs once per houseId.
   useEffect(() => {
@@ -138,5 +160,5 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
     };
   }, [houseId, briefingStatus]);
 
-  return { house, loading, error };
+  return { house, loading, error, refetch };
 }

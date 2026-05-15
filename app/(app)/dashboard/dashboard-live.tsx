@@ -13,6 +13,15 @@ type RefreshSummary =
   | { kind: "updated"; fields: string[] }
   | { kind: "nothing_new" };
 
+// Aggressive polling cadence while a manual refresh is in flight. Faster
+// than the hook's idle polling because the user is actively watching the
+// page and a fresh briefing typically resolves in 10-30 seconds.
+const REFRESH_POLL_INTERVAL_MS = 2000;
+// Hard cap on the active refresh window. Two minutes is well past the
+// typical workflow runtime — if we hit it, something is wedged and the
+// user should know the spinner isn't reliable.
+const REFRESH_POLL_TIMEOUT_MS = 120_000;
+
 function snapshotFacts(house: House): MergeableHouseFacts {
   return {
     year_built: house.year_built,
@@ -348,7 +357,7 @@ function BriefingErrorBanner({ message }: { message: string | null }) {
 }
 
 export function DashboardLive({ houseId }: { houseId: string }) {
-  const { house, loading, error } = useHouseRealtime(houseId);
+  const { house, loading, error, refetch } = useHouseRealtime(houseId);
   const [isPending, startTransition] = useTransition();
   const [refreshError, setRefreshError] = useState<string | null>(null);
   // Snapshot of the row at click time, kept until the workflow reaches a
@@ -363,15 +372,16 @@ export function DashboardLive({ houseId }: { houseId: string }) {
   } | null>(null);
   const [summary, setSummary] = useState<RefreshSummary | null>(null);
 
-  // Refresh is "in flight" if either (a) the server action hasn't returned
-  // yet, or (b) the workflow has flipped briefing_status to running/pending
-  // and the realtime row hasn't yet flipped back to a terminal state. Both
-  // signals keep the button disabled so a second click can't double-start
-  // the workflow.
+  // Refresh is "in flight" while we're waiting for a new run to finish OR
+  // the realtime row currently shows a non-terminal status. pendingRefresh
+  // is the authoritative signal for "we clicked Refresh and haven't seen
+  // it complete yet" — using it (instead of only briefingInFlight) means
+  // the spinner stays on even if Realtime is blocked and we haven't yet
+  // observed the status flip to 'running'.
   const briefingInFlight =
     house?.briefing_status === "running" ||
     house?.briefing_status === "pending";
-  const refreshing = isPending || briefingInFlight;
+  const refreshing = isPending || briefingInFlight || pendingRefresh !== null;
 
   function handleRefresh() {
     if (!house) return;
@@ -415,6 +425,50 @@ export function DashboardLive({ houseId }: { houseId: string }) {
       setPendingRefresh(null);
     }
   }, [house, pendingRefresh]);
+
+  // Drive the page through a manual refresh even when Realtime is dead.
+  // The hook's own status-based polling can't help here because at click
+  // time the row still shows briefing_status='completed' from the previous
+  // run, so the hook has nothing to react to. We poll aggressively for the
+  // whole pending-refresh window, which (a) discovers the transition to
+  // 'running' so briefingInFlight flips and skeletons appear, and (b)
+  // discovers the eventual transition back to 'completed' with a fresh
+  // generated_at, which is what fires the summary banner.
+  //
+  // Bounded at REFRESH_POLL_TIMEOUT_MS so a stuck workflow can't pin the
+  // spinner forever — on timeout we surface a soft error and let the user
+  // try again.
+  useEffect(() => {
+    if (!pendingRefresh) return;
+
+    const start = Date.now();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function tick() {
+      if (cancelled) return;
+      if (Date.now() - start > REFRESH_POLL_TIMEOUT_MS) {
+        setRefreshError(
+          "Refresh is taking longer than expected. You can try again.",
+        );
+        setPendingRefresh(null);
+        return;
+      }
+      await refetch();
+      if (cancelled) return;
+      timer = setTimeout(tick, REFRESH_POLL_INTERVAL_MS);
+    }
+
+    // Fire the first poll quickly — the workflow's startBriefing step
+    // typically flips status within a second or two and we want the
+    // skeletons to appear without a long visual lag.
+    timer = setTimeout(tick, 800);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [pendingRefresh, refetch]);
 
   if (loading) {
     return (
