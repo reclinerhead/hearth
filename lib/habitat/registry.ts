@@ -1,4 +1,5 @@
 import type { HabitatModule } from "./types";
+import EpaRadonZone from "./modules/epa-radon-zone";
 
 /**
  * Every habitat module in the system.
@@ -15,7 +16,7 @@ import type { HabitatModule } from "./types";
  * module_key value the module writes to hearth.habitat_findings.
  */
 export const HABITAT_MODULES: readonly HabitatModule[] = [
-  // EpaRadonZone,          // coming next
+  EpaRadonZone,
   // FemaFloodZone,
   // EpaSuperfundProximity,
 ] as const;
