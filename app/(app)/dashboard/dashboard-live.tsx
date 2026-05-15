@@ -431,6 +431,20 @@ export function DashboardLive({ houseId }: { houseId: string }) {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [modalManuallyDismissed, setModalManuallyDismissed] = useState(false);
   const firstRun = useFirstRunDiscoveryModal(house);
+
+  // One-shot latch for the discovery modal. The first-run detection in
+  // useFirstRunDiscoveryModal computes `show` from live data conditions —
+  // but those conditions flip false the moment the briefing workflow
+  // completes (briefing_generated_at gets set in the same write that
+  // marks status='completed'), which would unmount the modal mid-narration
+  // and never let the user see the radon line or click the button. The
+  // data conditions are the right gate for "should this open?" but once
+  // open, the button is the only thing that closes it (per spec).
+  const [hasOpenedDiscoveryModal, setHasOpenedDiscoveryModal] =
+    useState(false);
+  useEffect(() => {
+    if (firstRun.ready && firstRun.show) setHasOpenedDiscoveryModal(true);
+  }, [firstRun.ready, firstRun.show]);
   // Snapshot of the row at click time, kept until the workflow reaches a
   // terminal state so we can diff before vs after and tell the user what
   // the refresh actually changed. We also capture briefing_generated_at
@@ -593,8 +607,11 @@ export function DashboardLive({ houseId }: { houseId: string }) {
     setModalManuallyDismissed(true);
   }
 
+  // Mount the modal iff we've ever opened it AND the user hasn't yet
+  // clicked Start Managing my Home. Live data-condition changes do not
+  // close it — see hasOpenedDiscoveryModal above.
   const showDiscoveryModal =
-    firstRun.ready && firstRun.show && !modalManuallyDismissed;
+    hasOpenedDiscoveryModal && !modalManuallyDismissed;
 
   return (
     <>
