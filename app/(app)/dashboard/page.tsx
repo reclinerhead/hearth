@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   EmergencyTile,
@@ -6,15 +7,36 @@ import {
 } from "@/components/ui";
 import { Icon, type IconName } from "@/components/icon";
 import { DocumentTrigger, SAMPLE_DOCUMENT } from "@/components/document-modal";
+import { HabitatFindingTileCompact } from "@/components/habitat-finding-tile-compact";
+import { HABITAT_MODULES } from "@/lib/habitat/registry";
+import type { HabitatSeverity } from "@/lib/habitat/types";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardLive } from "./dashboard-live";
 
 // Sections below the hero are placeholders pending their own issues:
 // - Appliances + the latest document tile (#TBD: inventory CRUD)
 // - Emergencies (#TBD: emergency capture flow)
-// - Habitat (#TBD: FEMA flood zone + EPA radon lookup)
 // They keep their hardcoded copy for now so the dashboard isn't half-empty
 // during day-one demos; the hero + house facts above is what's live.
+
+// Concerns first, positives last. Mirrors the ordering on /habitat — same
+// rule, two surfaces. Extracting a shared helper for six lines is premature
+// at two call sites.
+const SEVERITY_WEIGHT: Record<HabitatSeverity, number> = {
+  critical: 0,
+  high: 1,
+  moderate: 2,
+  low: 3,
+  neutral: 4,
+  good: 5,
+};
+
+type HabitatFindingPreviewRow = {
+  module_key: string;
+  severity: HabitatSeverity | null;
+  headline: string | null;
+  summary: string | null;
+};
 
 const APPLIANCES: {
   icon: IconName;
@@ -82,6 +104,20 @@ export default async function DashboardPage() {
     redirect("/onboarding");
   }
 
+  const { data: habitatRows } = await supabase
+    .from("habitat_findings")
+    .select("module_key, severity, headline, summary")
+    .eq("house_id", data.id)
+    .eq("status", "completed");
+
+  const habitatFindings = [...((habitatRows ?? []) as HabitatFindingPreviewRow[])].sort(
+    (a, b) => {
+      const wa = a.severity ? SEVERITY_WEIGHT[a.severity] : SEVERITY_WEIGHT.neutral;
+      const wb = b.severity ? SEVERITY_WEIGHT[b.severity] : SEVERITY_WEIGHT.neutral;
+      return wa - wb;
+    },
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <DashboardLive houseId={data.id} />
@@ -118,15 +154,50 @@ export default async function DashboardPage() {
             <SectionHeader
               eyebrow="The world around your house"
               title="Habitat"
+              trailing={
+                <Link
+                  href="/habitat"
+                  className="text-small inline-flex items-center gap-1"
+                  style={{ color: "var(--color-text-secondary)" }}
+                >
+                  See all
+                  <Icon name="chevron-right" size={14} />
+                </Link>
+              }
             />
-            <div
-              className="surface p-4 text-small"
-              style={{ color: "var(--color-text-tertiary)" }}
-            >
-              FEMA flood zone, EPA radon zone, and lead disclosure are coming
-              in a follow-up. We&apos;ll pull them in the same way we pull
-              Zillow data — automatically, in the background.
-            </div>
+            {habitatFindings.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {habitatFindings.map((row) => {
+                  const habitatModule = HABITAT_MODULES.find(
+                    (m) => m.key === row.module_key,
+                  );
+                  if (!habitatModule) return null;
+                  if (!row.headline || !row.summary || !row.severity) return null;
+
+                  return (
+                    <HabitatFindingTileCompact
+                      key={row.module_key}
+                      moduleLabel={habitatModule.name}
+                      headline={row.headline}
+                      summary={row.summary}
+                      severity={row.severity}
+                      iconImage={habitatModule.iconImage}
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              // First-run state: briefing/habitat workflows are still
+              // discovering. The onboarding discovery modal narrates the
+              // process; this placeholder keeps the dashboard layout
+              // stable underneath while it runs.
+              <div
+                className="surface p-4 text-small"
+                style={{ color: "var(--color-text-tertiary)" }}
+              >
+                Looking up public records for your area…
+              </div>
+            )}
           </div>
         </div>
 
