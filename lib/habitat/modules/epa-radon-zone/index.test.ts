@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { HouseContext } from "@/lib/habitat/types";
+import type { HabitatFinding, HouseContext } from "@/lib/habitat/types";
 import EpaRadonZoneModule, {
+  buildOnboardingMessage,
   normalizeForLookup,
   normalizeStateForLookup,
   zoneToSeverity,
@@ -188,6 +189,62 @@ describe("EpaRadonZoneModule.check", () => {
     await expect(
       EpaRadonZoneModule.check(makeHouse({ county: null })),
     ).rejects.toThrow(/state and county/);
+  });
+});
+
+/**
+ * Helper to construct a finding payload as it would arrive from check().
+ * Only the fields buildOnboardingMessage reads are populated; everything
+ * else is filler.
+ */
+function makeFinding(
+  zone: 1 | 2 | 3,
+  county: string | null = "Kalamazoo",
+): HabitatFinding {
+  return {
+    severity: zone === 1 ? "high" : zone === 2 ? "moderate" : "good",
+    headline: `EPA Radon Zone ${zone}`,
+    summary: "",
+    findings: {
+      zone,
+      county,
+      state: "MI",
+    },
+  };
+}
+
+describe("buildOnboardingMessage", () => {
+  it("leads with the Zone 1 finding and flags it for follow-up", () => {
+    const message = buildOnboardingMessage(makeFinding(1));
+    expect(message).toContain("Zone 1");
+    expect(message).toContain("Kalamazoo County");
+    expect(message).toMatch(/highest/i);
+    expect(message).toMatch(/flag/i);
+  });
+
+  it("describes Zone 2 as moderate potential", () => {
+    const message = buildOnboardingMessage(makeFinding(2));
+    expect(message).toContain("Zone 2");
+    expect(message).toContain("Kalamazoo County");
+    expect(message).toMatch(/moderate/i);
+  });
+
+  it("opens Zone 3 with a positive framing", () => {
+    const message = buildOnboardingMessage(makeFinding(3));
+    expect(message).toContain("Zone 3");
+    expect(message).toContain("Kalamazoo County");
+    expect(message).toMatch(/good news|lowest/i);
+  });
+
+  it("falls back to 'your county' when no county is in the finding", () => {
+    // Defensive: the module's check() always populates county, but a
+    // future module variant or a manually-constructed finding might not.
+    // The copy should still read like a sentence, not "in ".
+    const finding = makeFinding(1);
+    delete (finding.findings as Record<string, unknown>).county;
+    const message = buildOnboardingMessage(finding);
+    expect(message).toContain("your county");
+    expect(message).not.toContain("undefined");
   });
 });
 

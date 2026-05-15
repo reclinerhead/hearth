@@ -191,6 +191,31 @@ function zoneSummary(zone: RadonZone, county: string, state: string): string {
   );
 }
 
+/**
+ * Short, user-facing string rendered in the first-run onboarding modal
+ * after this module's check() resolves. Leads with the finding (zone +
+ * what it means) and uses the county name when present so the line
+ * reads as something a person would say, not a system status.
+ *
+ * Exported for the test suite.
+ */
+export function buildOnboardingMessage(finding: HabitatFinding): string {
+  const zone = finding.findings.zone;
+  const county =
+    typeof finding.findings.county === "string" && finding.findings.county
+      ? `${finding.findings.county} County`
+      : "your county";
+
+  if (zone === 1) {
+    return `Found Zone 1 radon in ${county} — the highest of three tiers. We'll flag this for follow-up.`;
+  }
+  if (zone === 2) {
+    return `${county} is in EPA Radon Zone 2 — moderate potential. Worth testing when you get a chance.`;
+  }
+  // Zone 3 (the only remaining value the radon dataset produces) — positive framing.
+  return `Good news — ${county} is in EPA Radon Zone 3, the lowest radon tier.`;
+}
+
 const EpaRadonZoneModule: HabitatModule = {
   key: MODULE_KEY,
   name: "EPA Radon Zone",
@@ -246,6 +271,10 @@ const EpaRadonZoneModule: HabitatModule = {
       },
       sourceUrl: SOURCE_URL,
     };
+  },
+
+  getOnboardingMessage(finding): string {
+    return buildOnboardingMessage(finding);
   },
 };
 

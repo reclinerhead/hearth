@@ -153,4 +153,18 @@ export interface HabitatModule {
    * and marks the finding 'failed' with the error message.
    */
   check(house: HouseContext): Promise<HabitatFinding>;
+
+  /**
+   * Optional short, user-facing string rendered in the first-run
+   * onboarding modal after this module's check() resolves. Should
+   * lead with what was found, not what was checked — the modal
+   * already renders "Checking <module.name>..." before this fires.
+   *
+   *   "Found a Zone 1 radon risk — adding to your home's concerns"
+   *   "Your area is outside the FEMA flood plain — good news"
+   *
+   * Modules without this function get a generic "Checked successfully"
+   * fallback in the modal.
+   */
+  getOnboardingMessage?: (finding: HabitatFinding) => string;
 }

@@ -6,8 +6,10 @@ import { Icon, type IconName } from "@/components/icon";
 import { AICard, MetricCard, PlaceholderImage } from "@/components/ui";
 import { diffHouseFacts } from "@/lib/briefing/diff";
 import type { MergeableHouseFacts } from "@/lib/briefing/merge";
+import { createClient } from "@/lib/supabase/client";
 import type { BriefingStatus, House } from "@/types/house";
 import { refreshBriefing } from "./actions";
+import { OnboardingDiscoveryModal } from "./onboarding-discovery-modal";
 
 type RefreshSummary =
   | { kind: "updated"; fields: string[] }
@@ -356,10 +358,93 @@ function BriefingErrorBanner({ message }: { message: string | null }) {
   );
 }
 
+/**
+ * First-run discovery modal mount decision.
+ *
+ * The modal renders on the very first dashboard visit after onboarding —
+ * specifically when both of these are true:
+ *   1. house.briefing_generated_at IS NULL OR briefing is still
+ *      pending / running (the briefing hasn't yet completed once).
+ *   2. No completed habitat_findings rows exist for this house.
+ *
+ * The combination is sufficient — once either flips false, the modal is
+ * gone for good even on subsequent visits / logout-login / refresh, which
+ * is exactly the spec.
+ *
+ * sessionStorage acts as a belt-and-suspenders dismissal flag against
+ * re-mount loops within a single tab; the data conditions remain the
+ * source of truth. Returns `undefined` while we're still checking
+ * habitat_findings — the modal mounts only once we've confirmed it
+ * should — so a stale "no findings yet" race doesn't briefly flash the
+ * modal for a returning user.
+ */
+function useFirstRunDiscoveryModal(
+  house: House | null,
+): { ready: boolean; show: boolean } {
+  const [hasCompletedHabitatRows, setHasCompletedHabitatRows] = useState<
+    boolean | null
+  >(null);
+  const [dismissedInSession, setDismissedInSession] = useState(false);
+
+  // sessionStorage check has to live in an effect — it's client-only and
+  // we're SSR-safe by default.
+  useEffect(() => {
+    if (!house) return;
+    const flag = sessionStorage.getItem(`onboardingDiscoveryDismissed:${house.id}`);
+    if (flag === "1") setDismissedInSession(true);
+  }, [house]);
+
+  useEffect(() => {
+    if (!house) return;
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const { count } = await supabase
+        .from("habitat_findings")
+        .select("id", { count: "exact", head: true })
+        .eq("house_id", house.id)
+        .eq("status", "completed");
+      if (cancelled) return;
+      setHasCompletedHabitatRows((count ?? 0) > 0);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [house]);
+
+  if (!house) return { ready: false, show: false };
+  if (hasCompletedHabitatRows === null) return { ready: false, show: false };
+  if (dismissedInSession) return { ready: true, show: false };
+
+  const briefingNotFinished =
+    house.briefing_generated_at === null ||
+    house.briefing_status === "pending" ||
+    house.briefing_status === "running";
+
+  const show = briefingNotFinished && !hasCompletedHabitatRows;
+  return { ready: true, show };
+}
+
 export function DashboardLive({ houseId }: { houseId: string }) {
   const { house, loading, error, refetch } = useHouseRealtime(houseId);
   const [isPending, startTransition] = useTransition();
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [modalManuallyDismissed, setModalManuallyDismissed] = useState(false);
+  const firstRun = useFirstRunDiscoveryModal(house);
+
+  // One-shot latch for the discovery modal. The first-run detection in
+  // useFirstRunDiscoveryModal computes `show` from live data conditions —
+  // but those conditions flip false the moment the briefing workflow
+  // completes (briefing_generated_at gets set in the same write that
+  // marks status='completed'), which would unmount the modal mid-narration
+  // and never let the user see the radon line or click the button. The
+  // data conditions are the right gate for "should this open?" but once
+  // open, the button is the only thing that closes it (per spec).
+  const [hasOpenedDiscoveryModal, setHasOpenedDiscoveryModal] =
+    useState(false);
+  useEffect(() => {
+    if (firstRun.ready && firstRun.show) setHasOpenedDiscoveryModal(true);
+  }, [firstRun.ready, firstRun.show]);
   // Snapshot of the row at click time, kept until the workflow reaches a
   // terminal state so we can diff before vs after and tell the user what
   // the refresh actually changed. We also capture briefing_generated_at
@@ -508,7 +593,28 @@ export function DashboardLive({ houseId }: { houseId: string }) {
   const status = house.briefing_status;
   const heroLabel = house.nickname ?? house.address_line1;
 
+  function handleDiscoveryModalDismiss() {
+    // sessionStorage is a re-mount safety net — the data conditions stay
+    // the source of truth, but we want a freshly mounted DashboardLive
+    // (e.g. fast nav back) to not flash the modal back open between
+    // when the user clicks Start and when the habitat row reads land.
+    try {
+      sessionStorage.setItem(`onboardingDiscoveryDismissed:${houseId}`, "1");
+    } catch {
+      // sessionStorage can throw in incognito with quota disabled; the
+      // local state alone still hides the modal for the current view.
+    }
+    setModalManuallyDismissed(true);
+  }
+
+  // Mount the modal iff we've ever opened it AND the user hasn't yet
+  // clicked Start Managing my Home. Live data-condition changes do not
+  // close it — see hasOpenedDiscoveryModal above.
+  const showDiscoveryModal =
+    hasOpenedDiscoveryModal && !modalManuallyDismissed;
+
   return (
+    <>
     <section className="grid gap-4 md:grid-cols-2">
       <div className="surface overflow-hidden">
         <PlaceholderImage ratio="4 / 3" label={heroLabel} icon="home" />
@@ -574,5 +680,12 @@ export function DashboardLive({ houseId }: { houseId: string }) {
         ) : null}
       </div>
     </section>
+    {showDiscoveryModal ? (
+      <OnboardingDiscoveryModal
+        house={house}
+        onDismiss={handleDiscoveryModalDismiss}
+      />
+    ) : null}
+    </>
   );
 }
