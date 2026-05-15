@@ -330,11 +330,17 @@ Supabase Realtime only broadcasts changes for tables explicitly added to `supaba
 
 ## Habitat surface
 
-The `/habitat` route renders one tile per completed habitat finding for the user's house. It is a server component (`app/(app)/habitat/page.tsx`) that reads the user's first house, fetches `habitat_findings` rows with `status = 'completed'`, sorts them by severity (concerns first: critical → high → moderate → low → neutral → good), and renders each through `<HabitatFindingTile>`. Failed and `not_applicable` findings are intentionally not rendered in v1 — they'll get their own tile variants later. The trailing "What we know about your location" `AICard` is still a static placeholder pending live-data wiring.
+Habitat findings surface on two pages: the dedicated `/habitat` route (full detail, one tile per finding with summary + action chips) and the dashboard's Habitat preview block (compact tiles, no actions, each tile linking to `/habitat` for follow-up). Both surfaces run the same query against `hearth.habitat_findings` with `status = 'completed'`, sort by the same severity weight (concerns first: critical → high → moderate → low → neutral → good), and use `HABITAT_MODULES.find(m => m.key === row.module_key)` to look up the module label and `iconImage`. Failed and `not_applicable` findings are intentionally not rendered on either surface in v1 — they'll get their own tile variants later.
 
-### Tile component
+`/habitat` (`app/(app)/habitat/page.tsx`) is a server component that renders one `<HabitatFindingTile>` per row. With a single finding the grid collapses to one column so the tile stretches to container width; two or more findings cap at two tiles per row on md+.
 
-`components/habitat-finding-tile.tsx` is a server-component-safe tile that renders an optional ~128px square hero image on the left, then an eyebrow (module label) + severity dot, headline (h3), summary, and an optional row of action chips. Layout switches between two columns (`128px 1fr`) and a single column based on whether the module declared an `iconImage` — no empty image gutter when absent. The tile uses the existing `.surface-ai` treatment so it sits visually alongside other AI-authored content, and severity dots are colour-mapped against `--color-danger` / `--color-warning` / `--color-success` / `--color-text-tertiary`. Each action opens in a new tab via `target="_blank" rel="noopener noreferrer"`.
+The dashboard's Habitat block (`app/(app)/dashboard/page.tsx`) renders one `<HabitatFindingTileCompact>` per row inside its half-width left column. The `SectionHeader` has a trailing "See all" link to `/habitat` matching the Appliances pattern, and when there are zero completed findings the block falls back to a one-line "Looking up public records for your area…" placeholder so the dashboard layout stays stable during the first-run discovery window.
+
+### Tile components
+
+`components/habitat-finding-tile.tsx` is the full tile used on `/habitat`. Server-component-safe. Renders an optional ~128px square hero image on the left, then an eyebrow (module label) + severity dot, headline (h3), summary, and an optional row of action chips. Layout switches between two columns (`128px 1fr`) and a single column based on whether the module declared an `iconImage` — no empty image gutter when absent. Uses the `.surface-ai` treatment so it sits visually alongside other AI-authored content. Severity dots are colour-mapped against `--color-danger` / `--color-warning` / `--color-success` / `--color-text-tertiary`. Each action chip opens in a new tab via `target="_blank" rel="noopener noreferrer"`.
+
+`components/habitat-finding-tile-compact.tsx` is the dashboard-preview variant. Smaller 72px hero, line-clamped 2-line summary, no action chips. The whole tile is a single `<Link href="/habitat">` so clicking anywhere routes the user to the full detail. Kept as a separate component rather than a `variant` prop on the full tile because the full tile's action row contains `<a>` tags and the compact tile *is* an `<a>`; nesting `<a>` inside `<a>` is invalid HTML.
 
 ### `HabitatFinding.actions` and `FindingAction`
 
