@@ -1,9 +1,11 @@
 "use client";
 
+import { useState, useTransition } from "react";
 import { useHouseRealtime } from "@/lib/hooks/use-house-realtime";
 import { Icon, type IconName } from "@/components/icon";
 import { AICard, MetricCard, PlaceholderImage } from "@/components/ui";
 import type { BriefingStatus, House } from "@/types/house";
+import { refreshBriefing } from "./actions";
 
 type HouseFact = {
   eyebrow: string;
@@ -87,22 +89,76 @@ function buildFacts(house: House): HouseFact[] {
   ];
 }
 
-function HeroAddress({ house }: { house: House }) {
+function HeroAddress({
+  house,
+  onRefresh,
+  refreshing,
+}: {
+  house: House;
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
   const display = house.nickname ?? house.address_line1;
   const region = `${house.city}, ${house.state}`;
   return (
-    <div>
-      <div className="eyebrow">Your house</div>
-      <h1 className="h1" style={{ marginTop: 4 }}>
-        {display}
-      </h1>
-      <p
-        className="text-small mt-1"
-        style={{ color: "var(--color-text-secondary)" }}
-      >
-        {region}
-      </p>
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="eyebrow">Your house</div>
+        <h1 className="h1" style={{ marginTop: 4 }}>
+          {display}
+        </h1>
+        <p
+          className="text-small mt-1"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          {region}
+        </p>
+      </div>
+      <RefreshBriefingButton
+        onClick={onRefresh}
+        refreshing={refreshing}
+      />
     </div>
+  );
+}
+
+/**
+ * Re-runs the Day One Briefing on demand. Sonar's results are stochastic,
+ * so a second run usually fills in fields the first run missed. The merge
+ * step (lib/briefing/merge.ts) guarantees a null from a fresh run never
+ * clobbers an existing non-null value, so re-rolling is always safe.
+ */
+function RefreshBriefingButton({
+  onClick,
+  refreshing,
+}: {
+  onClick: () => void;
+  refreshing: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={refreshing}
+      aria-label="Refresh house facts"
+      title={refreshing ? "Refreshing house facts…" : "Refresh house facts"}
+      className="btn btn-ghost shrink-0"
+      style={{
+        opacity: refreshing ? 0.75 : 1,
+        cursor: refreshing ? "default" : "pointer",
+      }}
+    >
+      <span
+        aria-hidden
+        className={refreshing ? "animate-spin" : undefined}
+        style={{ display: "inline-flex" }}
+      >
+        <Icon name="refresh-cw" size={14} />
+      </span>
+      <span className="hidden sm:inline">
+        {refreshing ? "Refreshing…" : "Refresh"}
+      </span>
+    </button>
   );
 }
 
@@ -185,30 +241,47 @@ function BriefingErrorBanner({ message }: { message: string | null }) {
         >
           We had trouble pulling all the public data for your house.
         </div>
-        {message ? (
-          <div
-            className="text-small mt-0.5 truncate"
-            style={{ color: "var(--color-text-tertiary)" }}
-            title={message}
-          >
-            {message}
-          </div>
-        ) : null}
+        <div
+          className="text-small mt-0.5"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          Use Refresh above to try again.
+          {message ? (
+            <>
+              {" "}
+              <span title={message}>{message}</span>
+            </>
+          ) : null}
+        </div>
       </div>
-      <button
-        type="button"
-        className="btn btn-ghost"
-        disabled
-        title="Manual refresh is coming in a follow-up"
-      >
-        Try again
-      </button>
     </div>
   );
 }
 
 export function DashboardLive({ houseId }: { houseId: string }) {
   const { house, loading, error } = useHouseRealtime(houseId);
+  const [isPending, startTransition] = useTransition();
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+
+  // Refresh is "in flight" if either (a) the server action hasn't returned
+  // yet, or (b) the workflow has flipped briefing_status to running/pending
+  // and the realtime row hasn't yet flipped back to a terminal state. Both
+  // signals keep the button disabled so a second click can't double-start
+  // the workflow.
+  const briefingInFlight =
+    house?.briefing_status === "running" ||
+    house?.briefing_status === "pending";
+  const refreshing = isPending || briefingInFlight;
+
+  function handleRefresh() {
+    setRefreshError(null);
+    startTransition(async () => {
+      const result = await refreshBriefing(houseId);
+      if (!result.ok) {
+        setRefreshError(result.error);
+      }
+    });
+  }
 
   if (loading) {
     return (
@@ -254,10 +327,24 @@ export function DashboardLive({ houseId }: { houseId: string }) {
         <PlaceholderImage ratio="4 / 3" label={heroLabel} icon="home" />
       </div>
       <div className="flex flex-col gap-3">
-        <HeroAddress house={house} />
+        <HeroAddress
+          house={house}
+          onRefresh={handleRefresh}
+          refreshing={refreshing}
+        />
 
         {status === "failed" ? (
           <BriefingErrorBanner message={house.briefing_error} />
+        ) : null}
+
+        {refreshError ? (
+          <div
+            className="text-small"
+            style={{ color: "var(--color-danger)" }}
+            role="status"
+          >
+            {refreshError}
+          </div>
         ) : null}
 
         <div className="grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-3">

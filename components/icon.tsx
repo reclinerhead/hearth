@@ -51,7 +51,8 @@ export type IconName =
   | "photo"
   | "upload"
   | "edit"
-  | "arrow-right";
+  | "arrow-right"
+  | "refresh-cw";
 
 const base: SVGProps<SVGSVGElement> = {
   width: 20,
@@ -333,6 +334,14 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <path d="M5 12h14" />
       <path d="m13 6 6 6-6 6" />
+    </>
+  ),
+  "refresh-cw": (
+    <>
+      <path d="M20 11A8 8 0 0 0 6.3 6.3L3 9" />
+      <path d="M3 4v5h5" />
+      <path d="M4 13a8 8 0 0 0 13.7 4.7L21 15" />
+      <path d="M21 20v-5h-5" />
     </>
   ),
 };
