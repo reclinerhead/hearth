@@ -23,8 +23,11 @@ import type { House } from "@/types/house";
 const PHASE_INTRO_HOLD_MS = 800;
 // Minimum time a result line is visible before moving to the next phase.
 // Load-bearing — without this, the radon module (sub-ms in-memory lookup)
-// would flash by before the user could read it.
-const RESULT_DISPLAY_MIN_MS = 1200;
+// would flash by before the user could read it. Tuned for "definitely
+// long enough to read", not "as short as feels right" — the first-run
+// experience earns its airtime by surfacing concrete findings, and
+// the modal is the moment we deliberately slow down.
+const RESULT_DISPLAY_MIN_MS = 3000;
 // Brief beat between the last result and enabling the dismissal button, so
 // the "All set" line gets a moment of its own.
 const ALL_DONE_HOLD_MS = 600;
