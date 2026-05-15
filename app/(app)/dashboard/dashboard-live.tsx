@@ -1,11 +1,33 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useHouseRealtime } from "@/lib/hooks/use-house-realtime";
 import { Icon, type IconName } from "@/components/icon";
 import { AICard, MetricCard, PlaceholderImage } from "@/components/ui";
+import { diffHouseFacts } from "@/lib/briefing/diff";
+import type { MergeableHouseFacts } from "@/lib/briefing/merge";
 import type { BriefingStatus, House } from "@/types/house";
 import { refreshBriefing } from "./actions";
+
+type RefreshSummary =
+  | { kind: "updated"; fields: string[] }
+  | { kind: "nothing_new" };
+
+function snapshotFacts(house: House): MergeableHouseFacts {
+  return {
+    year_built: house.year_built,
+    living_area_sqft: house.living_area_sqft,
+    lot_size_sqft: house.lot_size_sqft,
+    lot_size_acres: house.lot_size_acres,
+    bedrooms: house.bedrooms,
+    bathrooms: house.bathrooms,
+    heating_summary: house.heating_summary,
+    cooling_summary: house.cooling_summary,
+    parcel_id: house.parcel_id,
+    description: house.description,
+    description_source: house.description_source,
+  };
+}
 
 type HouseFact = {
   eyebrow: string;
@@ -209,6 +231,73 @@ function FactMeta({
   return null;
 }
 
+/**
+ * Summarizes the result of a manual refresh. Uses the surface-ai treatment
+ * so it visually reads as an AI-driven update, matching the AICard pattern
+ * used elsewhere for assistant output.
+ */
+function RefreshSummaryBanner({
+  summary,
+  onDismiss,
+}: {
+  summary: RefreshSummary;
+  onDismiss: () => void;
+}) {
+  const isUpdated = summary.kind === "updated";
+  const title = isUpdated
+    ? `Refresh found ${summary.fields.length} new ${
+        summary.fields.length === 1 ? "fact" : "facts"
+      } about your house.`
+    : "We couldn't find anything new — your house facts are up to date.";
+
+  return (
+    <div
+      className="surface-ai flex items-start gap-3 p-3 sm:p-4"
+      style={{ borderRadius: "var(--radius-lg)" }}
+      role="status"
+    >
+      <span
+        aria-hidden
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
+        style={{
+          backgroundColor:
+            "color-mix(in oklab, var(--color-accent) 16%, transparent)",
+          color: "var(--color-accent)",
+        }}
+      >
+        <Icon name={isUpdated ? "sparkles" : "circle-check"} size={16} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            color: "var(--color-text-primary)",
+          }}
+        >
+          {title}
+        </div>
+        {isUpdated ? (
+          <div
+            className="text-small mt-0.5"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            {summary.fields.join(" · ")}
+          </div>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="btn btn-ghost btn-icon shrink-0"
+      >
+        <Icon name="x" size={14} />
+      </button>
+    </div>
+  );
+}
+
 function BriefingErrorBanner({ message }: { message: string | null }) {
   return (
     <div
@@ -262,6 +351,12 @@ export function DashboardLive({ houseId }: { houseId: string }) {
   const { house, loading, error } = useHouseRealtime(houseId);
   const [isPending, startTransition] = useTransition();
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  // Snapshot of the row at click time, kept until the workflow reaches a
+  // terminal state so we can diff before vs after and tell the user what
+  // the refresh actually changed.
+  const [pendingSnapshot, setPendingSnapshot] =
+    useState<MergeableHouseFacts | null>(null);
+  const [summary, setSummary] = useState<RefreshSummary | null>(null);
 
   // Refresh is "in flight" if either (a) the server action hasn't returned
   // yet, or (b) the workflow has flipped briefing_status to running/pending
@@ -274,14 +369,38 @@ export function DashboardLive({ houseId }: { houseId: string }) {
   const refreshing = isPending || briefingInFlight;
 
   function handleRefresh() {
+    if (!house) return;
     setRefreshError(null);
+    setSummary(null);
+    setPendingSnapshot(snapshotFacts(house));
     startTransition(async () => {
       const result = await refreshBriefing(houseId);
       if (!result.ok) {
         setRefreshError(result.error);
+        // The workflow never started, so there's nothing to diff against.
+        setPendingSnapshot(null);
       }
     });
   }
+
+  // Watch for the workflow reaching a terminal state. On 'completed', diff
+  // the snapshot we captured at click time against the current row and
+  // surface a summary. On 'failed', drop the snapshot — the failed banner
+  // already covers the error case, so a second banner would be noise.
+  useEffect(() => {
+    if (!house || !pendingSnapshot) return;
+    if (house.briefing_status === "completed") {
+      const changes = diffHouseFacts(pendingSnapshot, snapshotFacts(house));
+      setSummary(
+        changes.length > 0
+          ? { kind: "updated", fields: changes }
+          : { kind: "nothing_new" },
+      );
+      setPendingSnapshot(null);
+    } else if (house.briefing_status === "failed") {
+      setPendingSnapshot(null);
+    }
+  }, [house, pendingSnapshot]);
 
   if (loading) {
     return (
@@ -327,6 +446,13 @@ export function DashboardLive({ houseId }: { houseId: string }) {
         <PlaceholderImage ratio="4 / 3" label={heroLabel} icon="home" />
       </div>
       <div className="flex flex-col gap-3">
+        {summary ? (
+          <RefreshSummaryBanner
+            summary={summary}
+            onDismiss={() => setSummary(null)}
+          />
+        ) : null}
+
         <HeroAddress
           house={house}
           onRefresh={handleRefresh}
