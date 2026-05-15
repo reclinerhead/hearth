@@ -1,9 +1,11 @@
+import { start } from "workflow/api";
 import {
   buildBriefingSuccessUpdate,
   type MergeableHouseFacts,
 } from "@/lib/briefing/merge";
 import { lookupHouseOnZillow, type ZillowLookupResult } from "@/lib/briefing/zillow";
 import { createServiceClient } from "@/lib/supabase/service";
+import { runHabitatChecks } from "@/workflows/habitat";
 
 type HouseAddress = {
   addressLine1: string;
@@ -133,6 +135,16 @@ async function persistBriefingSuccess(
     throw new Error(
       `Could not persist briefing for ${houseId}: ${error.message}`,
     );
+  }
+
+  // Fire-and-forget the habitat checks. Mirrors the briefing kickoff in
+  // onboarding/actions.ts — the briefing's success isn't contingent on
+  // habitat completing, and a start() failure shouldn't roll back the
+  // already-persisted Zillow facts.
+  try {
+    await start(runHabitatChecks, [houseId]);
+  } catch (habitatError) {
+    console.error("habitat workflow start failed", habitatError);
   }
 }
 

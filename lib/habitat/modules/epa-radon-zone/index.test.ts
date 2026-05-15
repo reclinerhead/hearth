@@ -80,19 +80,16 @@ describe("zoneToSeverity", () => {
 });
 
 describe("EpaRadonZoneModule.isApplicable", () => {
-  it("returns true when state and county are both present", () => {
+  it("always returns true, including for houses with null state/county", () => {
+    // Radon zone data covers all US counties — applicability is
+    // unconditional. The check() step surfaces missing state/county as a
+    // 'failed' finding rather than silently skipping the module.
     expect(EpaRadonZoneModule.isApplicable(makeHouse())).toBe(true);
-  });
-
-  it("returns false when county is missing", () => {
     expect(EpaRadonZoneModule.isApplicable(makeHouse({ county: null }))).toBe(
-      false,
+      true,
     );
-  });
-
-  it("returns false when state is empty string", () => {
     expect(EpaRadonZoneModule.isApplicable(makeHouse({ state: "" }))).toBe(
-      false,
+      true,
     );
   });
 });

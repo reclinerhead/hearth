@@ -117,12 +117,13 @@ const EpaRadonZoneModule: HabitatModule = {
     "Looks up the county's EPA radon potential classification (Zone 1, 2, or 3).",
   cadence: "once",
 
-  isApplicable(house: HouseContext): boolean {
-    // The dataset covers US states and territories. We need both
-    // state and county to do a lookup. If either is missing we skip;
-    // the orchestrator records this as 'not_applicable' rather than
-    // failing.
-    return Boolean(house.state) && Boolean(house.county);
+  isApplicable(): boolean {
+    // Radon zone data covers all US counties. We always apply; check()
+    // throws on missing state/county, which the orchestrator surfaces as
+    // a 'failed' finding ("we couldn't check radon — county wasn't
+    // found") rather than silently as 'not_applicable' ("this doesn't
+    // apply to you").
+    return true;
   },
 
   async check(house: HouseContext): Promise<HabitatFinding> {
