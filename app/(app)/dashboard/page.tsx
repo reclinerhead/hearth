@@ -1,10 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import {
-  EmergencyTile,
-  EntityRow,
-  SectionHeader,
-} from "@/components/ui";
+import { EmergencyTile, EntityRow, SectionHeader } from "@/components/ui";
 import { Icon, type IconName } from "@/components/icon";
 import { DocumentTrigger, SAMPLE_DOCUMENT } from "@/components/document-modal";
 import { HabitatFindingTileCompact } from "@/components/habitat-finding-tile-compact";
@@ -110,19 +106,23 @@ export default async function DashboardPage() {
     .eq("house_id", data.id)
     .eq("status", "completed");
 
-  const habitatFindings = [...((habitatRows ?? []) as HabitatFindingPreviewRow[])].sort(
-    (a, b) => {
-      const wa = a.severity ? SEVERITY_WEIGHT[a.severity] : SEVERITY_WEIGHT.neutral;
-      const wb = b.severity ? SEVERITY_WEIGHT[b.severity] : SEVERITY_WEIGHT.neutral;
-      return wa - wb;
-    },
-  );
+  const habitatFindings = [
+    ...((habitatRows ?? []) as HabitatFindingPreviewRow[]),
+  ].sort((a, b) => {
+    const wa = a.severity
+      ? SEVERITY_WEIGHT[a.severity]
+      : SEVERITY_WEIGHT.neutral;
+    const wb = b.severity
+      ? SEVERITY_WEIGHT[b.severity]
+      : SEVERITY_WEIGHT.neutral;
+    return wa - wb;
+  });
 
   return (
     <div className="flex flex-col gap-6">
       <DashboardLive houseId={data.id} />
 
-      <section className="grid gap-4 md:grid-cols-2">
+      <section className="grid gap-6 md:grid-cols-2">
         <div className="flex flex-col gap-4">
           <div>
             <SectionHeader
@@ -172,7 +172,8 @@ export default async function DashboardPage() {
                     (m) => m.key === row.module_key,
                   );
                   if (!habitatModule) return null;
-                  if (!row.headline || !row.summary || !row.severity) return null;
+                  if (!row.headline || !row.summary || !row.severity)
+                    return null;
 
                   return (
                     <HabitatFindingTileCompact
@@ -203,7 +204,7 @@ export default async function DashboardPage() {
 
         <div>
           <SectionHeader
-            eyebrow="Things that need a little attention"
+            eyebrow="Things inside and outside your house"
             title="Appliances"
             trailing={
               <a

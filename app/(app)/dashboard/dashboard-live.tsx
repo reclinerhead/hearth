@@ -147,10 +147,7 @@ function HeroAddress({
           {region}
         </p>
       </div>
-      <RefreshBriefingButton
-        onClick={onRefresh}
-        refreshing={refreshing}
-      />
+      <RefreshBriefingButton onClick={onRefresh} refreshing={refreshing} />
     </div>
   );
 }
@@ -223,9 +220,7 @@ function FactValue({
       />
     );
   }
-  return (
-    <span style={{ color: "var(--color-text-tertiary)" }}>{EMPTY}</span>
-  );
+  return <span style={{ color: "var(--color-text-tertiary)" }}>{EMPTY}</span>;
 }
 
 function FactMeta({
@@ -378,9 +373,10 @@ function BriefingErrorBanner({ message }: { message: string | null }) {
  * should — so a stale "no findings yet" race doesn't briefly flash the
  * modal for a returning user.
  */
-function useFirstRunDiscoveryModal(
-  house: House | null,
-): { ready: boolean; show: boolean } {
+function useFirstRunDiscoveryModal(house: House | null): {
+  ready: boolean;
+  show: boolean;
+} {
   const [hasCompletedHabitatRows, setHasCompletedHabitatRows] = useState<
     boolean | null
   >(null);
@@ -390,7 +386,9 @@ function useFirstRunDiscoveryModal(
   // we're SSR-safe by default.
   useEffect(() => {
     if (!house) return;
-    const flag = sessionStorage.getItem(`onboardingDiscoveryDismissed:${house.id}`);
+    const flag = sessionStorage.getItem(
+      `onboardingDiscoveryDismissed:${house.id}`,
+    );
     if (flag === "1") setDismissedInSession(true);
   }, [house]);
 
@@ -440,8 +438,7 @@ export function DashboardLive({ houseId }: { houseId: string }) {
   // and never let the user see the radon line or click the button. The
   // data conditions are the right gate for "should this open?" but once
   // open, the button is the only thing that closes it (per spec).
-  const [hasOpenedDiscoveryModal, setHasOpenedDiscoveryModal] =
-    useState(false);
+  const [hasOpenedDiscoveryModal, setHasOpenedDiscoveryModal] = useState(false);
   useEffect(() => {
     if (firstRun.ready && firstRun.show) setHasOpenedDiscoveryModal(true);
   }, [firstRun.ready, firstRun.show]);
@@ -610,82 +607,82 @@ export function DashboardLive({ houseId }: { houseId: string }) {
   // Mount the modal iff we've ever opened it AND the user hasn't yet
   // clicked Start Managing my Home. Live data-condition changes do not
   // close it — see hasOpenedDiscoveryModal above.
-  const showDiscoveryModal =
-    hasOpenedDiscoveryModal && !modalManuallyDismissed;
+  const showDiscoveryModal = hasOpenedDiscoveryModal && !modalManuallyDismissed;
 
   return (
     <>
-    <section className="grid gap-4 md:grid-cols-2">
-      <div className="surface overflow-hidden">
-        <PlaceholderImage ratio="4 / 3" label={heroLabel} icon="home" />
-      </div>
-      <div className="flex flex-col gap-3">
-        {summary ? (
-          <RefreshSummaryBanner
-            summary={summary}
-            onDismiss={() => setSummary(null)}
-          />
-        ) : null}
-
-        <HeroAddress
-          house={house}
-          onRefresh={handleRefresh}
-          refreshing={refreshing}
-        />
-
-        {status === "failed" ? (
-          <BriefingErrorBanner message={house.briefing_error} />
-        ) : null}
-
-        {refreshError ? (
-          <div
-            className="text-small"
-            style={{ color: "var(--color-danger)" }}
-            role="status"
-          >
-            {refreshError}
-          </div>
-        ) : null}
-
-        <div className="grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-3">
-          {facts.map((f) => (
-            <MetricCard
-              key={f.eyebrow}
-              eyebrow={f.eyebrow}
-              icon={f.icon}
-              value={<FactValue value={f.value} status={status} />}
-              meta={
-                <FactMeta
-                  meta={f.meta}
-                  hasValue={f.value !== null}
-                  status={status}
-                />
-              }
-            />
-          ))}
+      <section className="grid gap-6 md:grid-cols-2">
+        <div className="surface overflow-hidden">
+          <PlaceholderImage ratio="4 / 3" label={heroLabel} icon="home" />
         </div>
+        <div className="flex flex-col gap-3">
+          {summary ? (
+            <RefreshSummaryBanner
+              summary={summary}
+              onDismiss={() => setSummary(null)}
+            />
+          ) : null}
 
-        {house.description ? (
-          <AICard eyebrow="About your house">
-            {house.description}
-          </AICard>
-        ) : status === "running" || status === "pending" ? (
-          <div
-            className="surface p-4 text-small flex items-center gap-2"
-            style={{ color: "var(--color-text-tertiary)" }}
-          >
-            <span className="inline-block h-2 w-2 animate-pulse rounded-full" style={{ backgroundColor: "var(--color-accent)" }} />
-            Discovering details about your house…
+          <HeroAddress
+            house={house}
+            onRefresh={handleRefresh}
+            refreshing={refreshing}
+          />
+
+          {status === "failed" ? (
+            <BriefingErrorBanner message={house.briefing_error} />
+          ) : null}
+
+          {refreshError ? (
+            <div
+              className="text-small"
+              style={{ color: "var(--color-danger)" }}
+              role="status"
+            >
+              {refreshError}
+            </div>
+          ) : null}
+
+          <div className="grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-3">
+            {facts.map((f) => (
+              <MetricCard
+                key={f.eyebrow}
+                eyebrow={f.eyebrow}
+                icon={f.icon}
+                value={<FactValue value={f.value} status={status} />}
+                meta={
+                  <FactMeta
+                    meta={f.meta}
+                    hasValue={f.value !== null}
+                    status={status}
+                  />
+                }
+              />
+            ))}
           </div>
-        ) : null}
-      </div>
-    </section>
-    {showDiscoveryModal ? (
-      <OnboardingDiscoveryModal
-        house={house}
-        onDismiss={handleDiscoveryModalDismiss}
-      />
-    ) : null}
+
+          {house.description ? (
+            <AICard eyebrow="About your house">{house.description}</AICard>
+          ) : status === "running" || status === "pending" ? (
+            <div
+              className="surface p-4 text-small flex items-center gap-2"
+              style={{ color: "var(--color-text-tertiary)" }}
+            >
+              <span
+                className="inline-block h-2 w-2 animate-pulse rounded-full"
+                style={{ backgroundColor: "var(--color-accent)" }}
+              />
+              Discovering details about your house…
+            </div>
+          ) : null}
+        </div>
+      </section>
+      {showDiscoveryModal ? (
+        <OnboardingDiscoveryModal
+          house={house}
+          onDismiss={handleDiscoveryModalDismiss}
+        />
+      ) : null}
     </>
   );
 }
