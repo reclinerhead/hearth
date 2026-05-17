@@ -6,6 +6,7 @@ import {
 import { lookupHouseOnZillow, type ZillowLookupResult } from "@/lib/briefing/zillow";
 import { createServiceClient } from "@/lib/supabase/service";
 import { runHabitatChecks } from "@/workflows/habitat";
+import { runHouseImage } from "@/workflows/house-image";
 
 type HouseAddress = {
   addressLine1: string;
@@ -145,6 +146,17 @@ async function persistBriefingSuccess(
     await start(runHabitatChecks, [houseId]);
   } catch (habitatError) {
     console.error("habitat workflow start failed", habitatError);
+  }
+
+  // Same fire-and-forget pattern for the generated illustration. The
+  // image step reads year_built / description from the freshly-written
+  // row, so it has to run AFTER persist; the briefing itself is already
+  // user-visible at this point so a missing illustration is the only
+  // user-facing consequence of a start() failure.
+  try {
+    await start(runHouseImage, [houseId]);
+  } catch (imageError) {
+    console.error("house-image workflow start failed", imageError);
   }
 }
 
