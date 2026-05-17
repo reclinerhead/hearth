@@ -3,36 +3,16 @@ import { redirect } from "next/navigation";
 import { EmergencyTile, EntityRow, SectionHeader } from "@/components/ui";
 import { Icon, type IconName } from "@/components/icon";
 import { DocumentTrigger, SAMPLE_DOCUMENT } from "@/components/document-modal";
-import { HabitatFindingTileCompact } from "@/components/habitat-finding-tile-compact";
-import { HABITAT_MODULES } from "@/lib/habitat/registry";
-import type { HabitatSeverity } from "@/lib/habitat/types";
+import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardLive } from "./dashboard-live";
+import { HabitatPreviewPanel } from "./habitat-preview-panel";
 
 // Sections below the hero are placeholders pending their own issues:
 // - Appliances + the latest document tile (#TBD: inventory CRUD)
 // - Emergencies (#TBD: emergency capture flow)
 // They keep their hardcoded copy for now so the dashboard isn't half-empty
 // during day-one demos; the hero + house facts above is what's live.
-
-// Concerns first, positives last. Mirrors the ordering on /habitat — same
-// rule, two surfaces. Extracting a shared helper for six lines is premature
-// at two call sites.
-const SEVERITY_WEIGHT: Record<HabitatSeverity, number> = {
-  critical: 0,
-  high: 1,
-  moderate: 2,
-  low: 3,
-  neutral: 4,
-  good: 5,
-};
-
-type HabitatFindingPreviewRow = {
-  module_key: string;
-  severity: HabitatSeverity | null;
-  headline: string | null;
-  summary: string | null;
-};
 
 const APPLIANCES: {
   icon: IconName;
@@ -100,23 +80,21 @@ export default async function DashboardPage() {
     redirect("/onboarding");
   }
 
+  // Server-side seed for the Habitat panel. The panel itself is a client
+  // component that subscribes to habitat_findings via Supabase Realtime,
+  // so this initial fetch only exists to avoid a first-paint flash before
+  // hydration. The SELECT column set must match HabitatFindingRow in the
+  // shared hook so the seed is type-compatible with realtime payloads.
+  // No status filter — the panel applies its own sticky "severity is
+  // populated" filter so tiles don't flicker out during a re-check.
   const { data: habitatRows } = await supabase
     .from("habitat_findings")
-    .select("module_key, severity, headline, summary")
-    .eq("house_id", data.id)
-    .eq("status", "completed");
+    .select(
+      "module_key, status, severity, headline, summary, findings, source_url, error",
+    )
+    .eq("house_id", data.id);
 
-  const habitatFindings = [
-    ...((habitatRows ?? []) as HabitatFindingPreviewRow[]),
-  ].sort((a, b) => {
-    const wa = a.severity
-      ? SEVERITY_WEIGHT[a.severity]
-      : SEVERITY_WEIGHT.neutral;
-    const wb = b.severity
-      ? SEVERITY_WEIGHT[b.severity]
-      : SEVERITY_WEIGHT.neutral;
-    return wa - wb;
-  });
+  const initialHabitatRows = (habitatRows ?? []) as HabitatFindingRow[];
 
   return (
     <div className="flex flex-col gap-6">
@@ -165,40 +143,10 @@ export default async function DashboardPage() {
                 </Link>
               }
             />
-            {habitatFindings.length > 0 ? (
-              <div className="flex flex-col gap-2">
-                {habitatFindings.map((row) => {
-                  const habitatModule = HABITAT_MODULES.find(
-                    (m) => m.key === row.module_key,
-                  );
-                  if (!habitatModule) return null;
-                  if (!row.headline || !row.summary || !row.severity)
-                    return null;
-
-                  return (
-                    <HabitatFindingTileCompact
-                      key={row.module_key}
-                      moduleLabel={habitatModule.name}
-                      headline={row.headline}
-                      summary={row.summary}
-                      severity={row.severity}
-                      iconImage={habitatModule.iconImage}
-                    />
-                  );
-                })}
-              </div>
-            ) : (
-              // First-run state: briefing/habitat workflows are still
-              // discovering. The onboarding discovery modal narrates the
-              // process; this placeholder keeps the dashboard layout
-              // stable underneath while it runs.
-              <div
-                className="surface p-4 text-small"
-                style={{ color: "var(--color-text-tertiary)" }}
-              >
-                Looking up public records for your area…
-              </div>
-            )}
+            <HabitatPreviewPanel
+              houseId={data.id}
+              initialRows={initialHabitatRows}
+            />
           </div>
         </div>
 

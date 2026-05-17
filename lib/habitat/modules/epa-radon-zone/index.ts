@@ -12,10 +12,10 @@
  * we re-run scripts/build-radon-data.ts and the new data ships with
  * the next deploy.
  *
- * Severity mapping:
- *   Zone 1 → 'high'     (regional avg > 4 pCi/L — exceeds EPA action level)
- *   Zone 2 → 'moderate' (regional avg 2-4 pCi/L)
- *   Zone 3 → 'good'     (regional avg < 2 pCi/L)
+ * Severity mapping (per the 6-stop scale in lib/habitat/types.ts):
+ *   Zone 1 → 'concern'   (regional avg > 4 pCi/L — exceeds EPA action level)
+ *   Zone 2 → 'caution'   (regional avg 2-4 pCi/L)
+ *   Zone 3 → 'favorable' (regional avg < 2 pCi/L)
  *
  * Note: "regional" is load-bearing. The EPA zone is a county-level
  * predicted average. An individual home in a Zone 3 county can still
@@ -28,8 +28,36 @@
  *     downgrade severity and adjust summary to mention the every-2-year
  *     post-mitigation re-test EPA recommends.
  *   - LLM-rewritten summary in Hearth's voice via a synthesis step.
+ *
+ * -------------------------------------------------------------------
+ * Activity-log narration arc (the reference example for future modules)
+ *
+ *   1. fetch    — "I pulled up the EPA's radon zone data for your county."
+ *   2. compute  — "I normalized 'COUNTY, STATE' into the dataset's lookup key."
+ *   3. rule     — "I checked what Zone N means" (states the EPA tier and
+ *                  the pCi/L threshold for that tier).
+ *   4. decide   — "Because your county is in Zone N, I'm flagging this as
+ *                  '<severity>' in Hearth's classification." (input → output
+ *                  → system behavior, on one line.)
+ *   5. finding  — "I put the finding together for your dashboard."
+ *
+ *   On failure (state or county not in the dataset), an `error` step is
+ *   emitted before re-throwing. The orchestrator's failure path doesn't
+ *   persist the log today; the in-code emission keeps the module's
+ *   intent readable and reserves the path for future partial-log persistence.
+ *
+ * Source citations
+ *
+ *   Step 1 (fetch):  EPA Map of Radon Zones — the upstream dataset.
+ *   Step 3 (rule):   EPA — Radon zones and action levels — the published
+ *                    guideline the rule derives from.
+ *   Step 4 (decide): /about/classification#radon — Hearth's own
+ *                    classification page (forward-looking URL; page is
+ *                    planned but doesn't exist yet — see HEARTH_CLASSIFICATION_SOURCE).
+ * -------------------------------------------------------------------
  */
 
+import { createActivityLogger } from "@/lib/habitat/activity-log";
 import { affiliateLink } from "@/lib/affiliate/link";
 import type {
   FindingAction,
@@ -41,6 +69,32 @@ import { RADON_ZONES_BY_STATE, type RadonZone } from "./data";
 
 const MODULE_KEY = "epa_radon_zone";
 const SOURCE_URL = "https://www.epa.gov/radon/epa-map-radon-zones-0";
+
+// Hardcoded rather than parsed from data.ts. The build script
+// (scripts/build-radon-data.ts) writes a comment with the publication
+// date; this constant is the human-curated counterpart that flows into
+// the activity log so a user reading the log sees which vintage of the
+// dataset their finding was computed against. Update both at the same
+// time when EPA republishes.
+const EPA_RADON_DATASET_PUBLISHED = "June 2024";
+
+const EPA_ZONE_SOURCE = {
+  label: `EPA Map of Radon Zones (${EPA_RADON_DATASET_PUBLISHED})`,
+  url: SOURCE_URL,
+};
+
+const EPA_ACTION_LEVEL_SOURCE = {
+  label: "EPA — Radon zones and action levels",
+  url: "https://www.epa.gov/radon/health-risk-radon",
+};
+
+// Forward-looking link — the classification page doesn't exist yet, but
+// the activity log is meant to be a frozen-in-time record, so we cite
+// the URL it will live at. The page is part of a follow-up.
+const HEARTH_CLASSIFICATION_SOURCE = {
+  label: "How Hearth classifies radon findings",
+  url: "/about/classification#radon",
+};
 
 /**
  * Full state name → 2-letter USPS code. Used by
@@ -148,19 +202,85 @@ export function normalizeForLookup(county: string): string {
 }
 
 /**
- * Map an EPA radon zone to the habitat severity scale.
+ * Map an EPA radon zone to the habitat severity scale. Aligned with the
+ * 6-stop scale in lib/habitat/types.ts and the CHECK constraint on
+ * hearth.habitat_findings.severity.
+ *
  * Exported for the test suite.
  */
-export function zoneToSeverity(zone: RadonZone): "good" | "moderate" | "high" {
-  if (zone === 1) return "high";
-  if (zone === 2) return "moderate";
-  return "good";
+export function zoneToSeverity(
+  zone: RadonZone,
+): "favorable" | "caution" | "concern" {
+  if (zone === 1) return "concern";
+  if (zone === 2) return "caution";
+  return "favorable";
 }
 
 function zoneDescription(zone: RadonZone): string {
   if (zone === 1) return "highest potential";
   if (zone === 2) return "moderate potential";
   return "low potential";
+}
+
+/**
+ * Activity-log narration for the EPA threshold rule a given zone falls
+ * under. Each branch's narration is written in first-person voice — the
+ * log reads like someone explaining what they just looked up.
+ */
+function zoneRuleNarration(zone: RadonZone): {
+  narration: string;
+  result_summary: string;
+} {
+  if (zone === 1) {
+    return {
+      narration:
+        "I checked what Zone 1 means: it's the EPA's highest tier, where the predicted indoor radon average is above 4 pCi/L — the level at which the EPA recommends taking action.",
+      result_summary: "Zone 1 — highest potential",
+    };
+  }
+  if (zone === 2) {
+    return {
+      narration:
+        "I checked what Zone 2 means: it's the EPA's middle tier, where the predicted indoor radon average sits between 2 and 4 pCi/L.",
+      result_summary: "Zone 2 — moderate potential",
+    };
+  }
+  return {
+    narration:
+      "I checked what Zone 3 means: it's the EPA's lowest tier, where the predicted indoor radon average is below 2 pCi/L.",
+    result_summary: "Zone 3 — low potential",
+  };
+}
+
+/**
+ * Activity-log narration for mapping an EPA zone to Hearth's severity
+ * scale. The result_summary echoes the severity label so a reader
+ * skimming the log can see the verdict at a glance.
+ */
+function severityDecisionNarration(zone: RadonZone): {
+  narration: string;
+  result_summary: string;
+} {
+  const severity = zoneToSeverity(zone);
+  if (zone === 1) {
+    return {
+      narration:
+        "Because your county is in Zone 1, I'm flagging this as a 'concern' in Hearth's classification so it surfaces near the top of your dashboard.",
+      result_summary: `Severity: ${severity}`,
+    };
+  }
+  if (zone === 2) {
+    return {
+      narration:
+        "Because your county is in Zone 2, I'm marking this as 'caution' in Hearth's classification — worth testing, but not urgent.",
+      result_summary: `Severity: ${severity}`,
+    };
+  }
+  return {
+    narration:
+      "Because your county is in Zone 3, I'm marking this as 'favorable' in Hearth's classification — your area is on the low end of EPA's radon predictions.",
+    result_summary: `Severity: ${severity}`,
+  };
 }
 
 function zoneSummary(zone: RadonZone, county: string, state: string): string {
@@ -271,31 +391,90 @@ const EpaRadonZoneModule: HabitatModule = {
   },
 
   async check(house: HouseContext): Promise<HabitatFinding> {
+    const log = createActivityLogger();
+
     // isApplicable guarantees these are present, but TS doesn't carry
     // that guarantee across the call so we re-narrow.
     if (!house.state || !house.county) {
+      log.step({
+        kind: "error",
+        narration:
+          "I couldn't run the radon check because your address is missing a state or county.",
+        detail: `state: ${JSON.stringify(house.state)}, county: ${JSON.stringify(house.county)}`,
+      });
       throw new Error("Radon check requires state and county");
     }
 
+    log.step({
+      kind: "fetch",
+      narration: `I started by pulling up the EPA's radon zone data for ${house.county} County, ${house.state}.`,
+      detail: `lib/habitat/modules/epa-radon-zone/data.ts (EPA dataset published ${EPA_RADON_DATASET_PUBLISHED})`,
+      source: EPA_ZONE_SOURCE,
+    });
+
     const stateKey = normalizeStateForLookup(house.state);
+    const countyKey = normalizeForLookup(house.county);
+
+    log.step({
+      kind: "compute",
+      narration: `I normalized "${house.county} County, ${house.state}" into a lookup key the dataset uses.`,
+      detail: `RADON_ZONES_BY_STATE[${stateKey}][${countyKey}]`,
+    });
+
     const stateData = RADON_ZONES_BY_STATE[stateKey];
     if (!stateData) {
+      log.step({
+        kind: "error",
+        narration: `I couldn't find ${house.state} in the EPA dataset, so I can't tell you the radon zone for your county.`,
+        detail: `Normalized state key "${stateKey}" not present in RADON_ZONES_BY_STATE.`,
+      });
       throw new Error(
         `EPA radon dataset has no entry for state "${house.state}"`,
       );
     }
 
-    const countyKey = normalizeForLookup(house.county);
     const zone = stateData[countyKey];
     if (zone === undefined) {
+      log.step({
+        kind: "error",
+        narration: `I found ${house.state} in the dataset but couldn't locate ${house.county} County inside it.`,
+        detail: `Normalized county key "${countyKey}" not present under state "${stateKey}".`,
+      });
       throw new Error(
         `EPA radon dataset has no entry for "${house.county}" in "${house.state}"`,
       );
     }
 
+    const ruleNarration = zoneRuleNarration(zone);
+    log.step({
+      kind: "rule",
+      narration: ruleNarration.narration,
+      result_summary: ruleNarration.result_summary,
+      detail: "EPA action level: 4.0 pCi/L.",
+      source: EPA_ACTION_LEVEL_SOURCE,
+    });
+
+    const severityDecision = severityDecisionNarration(zone);
+    log.step({
+      kind: "decide",
+      narration: severityDecision.narration,
+      detail: `zone(${zone}) → severity('${zoneToSeverity(zone)}')`,
+      result_summary: severityDecision.result_summary,
+      source: HEARTH_CLASSIFICATION_SOURCE,
+    });
+
+    const headline = `EPA Radon Zone ${zone} — ${zoneDescription(zone)}`;
+
+    log.step({
+      kind: "finding",
+      narration:
+        "I put the finding together for your dashboard with a short summary and the next steps you can take.",
+      result_summary: headline,
+    });
+
     return {
       severity: zoneToSeverity(zone),
-      headline: `EPA Radon Zone ${zone} — ${zoneDescription(zone)}`,
+      headline,
       summary: zoneSummary(zone, house.county, house.state),
       findings: {
         zone,
@@ -309,6 +488,7 @@ const EpaRadonZoneModule: HabitatModule = {
       },
       actions: buildActions(zone),
       sourceUrl: SOURCE_URL,
+      activityLog: log.finalize(),
     };
   },
 

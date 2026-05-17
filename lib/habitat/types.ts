@@ -1,3 +1,5 @@
+import type { ActivityLog } from "./activity-log";
+
 /**
  * Habitat module contract.
  *
@@ -49,26 +51,33 @@ export interface HouseContext {
 }
 
 /**
- * Severity scale for findings. Spans positives ('good') through
+ * Severity scale for findings. Spans positives ('beneficial') through
  * neutrals to concerns ('critical'), so a single sort key can rank
- * findings for dashboard display.
+ * findings for dashboard display. Must stay in sync with the
+ * habitat_findings_severity_check constraint in
+ * supabase/migrations/20260517171126_habitat-findings-module-changes.sql,
+ * and with the severity_weight generated column defined in that same
+ * migration.
  *
  * Suggested ordering for UI (concerns first, positives last):
- *   critical > high > moderate > low > neutral > good
+ *   critical > concern > caution > neutral > favorable > beneficial
  *
  * Modules pick the value that best describes their finding. EPA Radon
- * Zone 1 counties are 'high' because the regional average exceeds the
+ * Zone 1 counties are 'concern' because the regional average exceeds the
  * 4 pCi/L action threshold. A Walk Score above 70 might land as
- * 'good'. A typical Zone X flood designation is 'good' (no flood
- * risk). Use 'neutral' for facts that are neither concern nor
- * positive — soil composition, average winter low, etc.
+ * 'favorable'. A typical Zone X flood designation is 'favorable' (no
+ * flood risk). Use 'neutral' for facts that are neither concern nor
+ * positive — soil composition, average winter low, etc. 'beneficial' is
+ * reserved for findings that the user should take real comfort in (e.g.
+ * a public water system with consistently clean test results); 'critical'
+ * for findings that warrant immediate action.
  */
 export type HabitatSeverity =
-  | "good"
+  | "beneficial"
+  | "favorable"
   | "neutral"
-  | "low"
-  | "moderate"
-  | "high"
+  | "caution"
+  | "concern"
   | "critical";
 
 /**
@@ -146,6 +155,18 @@ export interface HabitatFinding {
    * return findings without actions while we backfill them.
    */
   actions?: FindingAction[];
+  /**
+   * Step-by-step record of what the module did during this check().
+   * Produced by calling createActivityLogger() at the top of check(),
+   * emitting steps as the check progresses, and calling finalize()
+   * before returning. The orchestrator persists this verbatim into
+   * the activity_log column.
+   *
+   * Optional during the backfill period — modules retrofitted to emit
+   * logs return one; modules not yet retrofitted leave it absent and
+   * the column stays null on the row.
+   */
+  activityLog?: ActivityLog;
 }
 
 /**
