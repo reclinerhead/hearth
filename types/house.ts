@@ -42,6 +42,15 @@ export type House = {
   briefing_generated_at: string | null;
   briefing_error: string | null;
 
+  // Generated architectural-sketch placeholder. `generated_image_url`
+  // holds the STORAGE PATH within the `house-images` bucket (the bucket
+  // is private; the dashboard derives signed URLs at render time).
+  // Null until the image step in the briefing pipeline lands the first
+  // sketch.
+  generated_image_url: string | null;
+  generated_image_prompt: string | null;
+  generated_image_created_at: string | null;
+
   created_at: string;
   updated_at: string;
 };

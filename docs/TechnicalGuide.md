@@ -49,6 +49,10 @@ lib/
   briefing/
     zillow.ts              # AI Gateway lookup + pure validation
     zillow.test.ts         # Vitest coverage of validation helper
+  house-image/
+    prompt.ts              # Pure builder for the generated-sketch prompt
+    prompt.test.ts         # Vitest coverage of era/style/stories derivation
+    signed-url.ts          # createSignedUrl helper for the house-images bucket
   hooks/
     use-house-realtime.ts  # Supabase Realtime subscription for one house row
   supabase/
@@ -58,6 +62,7 @@ lib/
     proxy.ts               # Edge-style session refresh + route guards
 workflows/
   briefing.ts              # Day One Briefing workflow (use workflow + use step)
+  house-image.ts           # Generated architectural-sketch workflow (use workflow + use step)
 proxy.ts                   # Next entry that calls lib/supabase/proxy.ts
 next.config.ts             # Wrapped with withWorkflow() to enable directives
 supabase/
@@ -89,7 +94,7 @@ public.profiles               (shared; references auth.users)
 
 Key facts about each table:
 
-- **`hearth.houses`** — one row per house. Address fields populated by Mapbox Address Autofill (`address_line1`, `city`, `state`, `postal_code`, `country`, `county`, `latitude`, `longitude`, `mapbox_id`, `mapbox_raw` jsonb). House facts (`year_built`, `living_area_sqft`, `lot_size_sqft`, `lot_size_acres`, `bedrooms`, `bathrooms`, `heating_summary`, `cooling_summary`, `parcel_id`, `purchase_date`, `purchase_price_cents`) start null and are filled in by the Day One Briefing workflow or by the user. `lot_size_sqft` and `lot_size_acres` are intentionally redundant: Zillow displays one or the other depending on lot size, and downstream queries want sqft for sorting while UI rendering prefers acres for large lots; the briefing validator derives whichever isn't returned. `heating_summary` / `cooling_summary` are short free-form strings ("Forced air, Gas", "Central") — untyped because Zillow's vocabulary isn't constrained enough to justify an enum yet. The `description` (user-visible) and `description_source` (unmodified provenance copy) hold the listing description. Briefing lifecycle columns (`briefing_status`, `briefing_started_at`, `briefing_generated_at`, `briefing_error`) drive the dashboard's loading and failure states. RLS scopes all rows to `owner_id = auth.uid()`. Unique on `(owner_id, mapbox_id)` prevents accidental duplicate creation. The row is in the `supabase_realtime` publication so the dashboard receives UPDATE events as the briefing populates.
+- **`hearth.houses`** — one row per house. Address fields populated by Mapbox Address Autofill (`address_line1`, `city`, `state`, `postal_code`, `country`, `county`, `latitude`, `longitude`, `mapbox_id`, `mapbox_raw` jsonb). House facts (`year_built`, `living_area_sqft`, `lot_size_sqft`, `lot_size_acres`, `bedrooms`, `bathrooms`, `heating_summary`, `cooling_summary`, `parcel_id`, `purchase_date`, `purchase_price_cents`) start null and are filled in by the Day One Briefing workflow or by the user. `lot_size_sqft` and `lot_size_acres` are intentionally redundant: Zillow displays one or the other depending on lot size, and downstream queries want sqft for sorting while UI rendering prefers acres for large lots; the briefing validator derives whichever isn't returned. `heating_summary` / `cooling_summary` are short free-form strings ("Forced air, Gas", "Central") — untyped because Zillow's vocabulary isn't constrained enough to justify an enum yet. The `description` (user-visible) and `description_source` (unmodified provenance copy) hold the listing description. Briefing lifecycle columns (`briefing_status`, `briefing_started_at`, `briefing_generated_at`, `briefing_error`) drive the dashboard's loading and failure states. Generated-image columns (`generated_image_url`, `generated_image_prompt`, `generated_image_created_at`) hold the storage path + prompt + timestamp for the architectural-sketch placeholder (see "Generated house illustration" below). RLS scopes all rows to `owner_id = auth.uid()`. Unique on `(owner_id, mapbox_id)` prevents accidental duplicate creation. The row is in the `supabase_realtime` publication so the dashboard receives UPDATE events as the briefing populates.
 - **`hearth.rooms`** — physical spaces inside a house. `kind` is `indoor | outdoor | utility`. The **`houses_seed_default_rooms`** trigger fires `after insert on hearth.houses` and inserts a 9-room default set (Kitchen, Living Room, Primary Bedroom, Primary Bathroom, Basement, Attic, Garage, Laundry, Exterior). The Exterior room exists so outdoor inventory has a non-null home.
 - **`hearth.inventory`** — every appliance, system, and exterior element. `type` is `appliance | system | exterior` and drives UI grouping. `room_id` is NOT NULL with `ON DELETE RESTRICT`. Identification fields (manufacturer/model/serial), install/service dates, status, and an optional hero photo path round it out.
 
@@ -329,6 +334,63 @@ Supabase Realtime only broadcasts changes for tables explicitly added to `supaba
 
 ---
 
+## Generated house illustration
+
+The dashboard's hero image is a stylized architectural sketch — a pencil-style illustration of a typical home of the same era and style as the user's house, not a depiction of the actual house. It exists as a pleasant placeholder until the user uploads their own photos (a separate flow tracked as a follow-up). The sketch is generated by a workflow appended to the Day One Briefing pipeline once the briefing has populated `year_built` and `description`, and it can be re-rolled from the dashboard via a Regenerate button.
+
+**The "not a photo of your home" framing is load-bearing.** It is wrong to imply the illustration depicts the actual property. The disclaimer beneath the image ("Stylized illustration — not a photo of your home.") and the deliberately generic prompt (era + style + stories, never literal description details) both encode this contract. Any change that makes the image look more "real" or removes the disclaimer is a regression.
+
+### Pipeline
+
+```
+workflows/briefing.ts persistBriefingSuccess
+  └─▶ start(runHabitatChecks, [houseId])
+  └─▶ start(runHouseImage, [houseId])
+                    │
+                    ├─▶ step: loadHouseForImage
+                    │     read year_built + description from hearth.houses
+                    ├─▶ step: generateSketch
+                    │     buildHouseImagePrompt({ yearBuilt, description })
+                    │     generateImage({ model: $HOUSE_IMAGE_MODEL })
+                    │       → 1024x1024 PNG bytes
+                    └─▶ step: persistHouseImage
+                          upload to `house-images/{house_id}/generated-sketch.png` (upsert)
+                          write generated_image_url / prompt / created_at on hearth.houses
+
+dashboard regenerate action
+  └─▶ start(runHouseImage, [houseId])     (same workflow; overwrites in place)
+```
+
+Errors are logged but do NOT taint a status column on `hearth.houses` — unlike the briefing, image generation is a best-effort enrichment. The dashboard's placeholder + Regenerate button cover the failure surface; a stuck status flag would only add noise.
+
+### Files
+
+- **`lib/house-image/prompt.ts`** — `buildHouseImagePrompt({ yearBuilt, description })`, the pure builder that turns the row's era/style/stories signals into the final prompt string. Era is derived from `year_built` via fixed buckets (pre-1920 → "early 20th century"; 1920–1945 → "1930s-era"; 1946–1965 → "mid-century"; 1966–1985 → "1970s-era"; 1986–2005 → "late 20th century"; 2006+ → "contemporary"). Style hint is extracted by keyword match against the description (Craftsman, Cape Cod, Colonial, Victorian, Farmhouse, Bungalow, Cottage, Tudor, Ranch, Contemporary) — multi-word styles ordered before single-word prefixes. Stories ("single-story" / "two-story" / "three-story") is extracted by pattern match. Any of the three signals can be null and the assembled prompt stays well-formed (no leaked literal details, no dangling phrases). Unit-tested in `prompt.test.ts` across era boundaries, style positive/negative matches, stories variants, and the "no literal description leak" contract.
+- **`lib/house-image/signed-url.ts`** — `createHouseImageSignedUrl(supabase, path)` wraps `.storage.from('house-images').createSignedUrl(path, 3600)`. Works with either the user's RLS-bound client (the storage policy authorizes SELECT for house owners) or the service-role client. Returns null on any error so the caller falls back to the placeholder rather than blowing up the page.
+- **`workflows/house-image.ts`** — `runHouseImage(houseId)` is the `"use workflow"` orchestrator. Three `"use step"` functions (`loadHouseForImage`, `generateSketch`, `persistHouseImage`); top-level try/catch logs and exits rather than writing a failure column. The image step uses the service-role client because the workflow runs outside a request context.
+- **`workflows/briefing.ts`** — calls `start(runHouseImage, [houseId])` in `persistBriefingSuccess` alongside the habitat kickoff. Fire-and-forget — a `start()` failure is logged but the briefing itself is already user-visible at that point.
+- **`app/(app)/dashboard/actions.ts`** — `regenerateHouseImage(houseId)` is the Regenerate-button server action. Verifies the session, confirms the house exists for the user (RLS does the load-bearing check), and calls `start(runHouseImage, [houseId])`. The dashboard observes `generated_image_created_at` advancing via Realtime and refreshes the signed URL.
+- **`app/(app)/dashboard/dashboard-live.tsx`** — `HouseImageSurface` renders the image (via signed URL), the disclaimer + stub Upload affordance, and the overlay Regenerate button. The `GeneratingIllustrationSkeleton` covers the first-time-waiting state while the briefing is active or recently finished but the image hasn't landed yet.
+
+### Storage layout
+
+Private bucket `house-images`. Path layout `{house_id}/generated-sketch.png` — one object per house, keyed by the houses.id uuid as the top-level folder. The orchestrator uploads with `upsert=true`, so a Regenerate overwrites in place; no version history kept.
+
+RLS on `storage.objects`:
+
+- **SELECT** — `authenticated` role can read a `house-images` object when the first folder segment of the path matches a `hearth.houses` row they own. The policy joins into `hearth.houses` rather than duplicating `owner_id` on `storage.objects`.
+- **INSERT / UPDATE / DELETE** — no policies for `authenticated`. The service-role client (workflow steps) bypasses RLS so the orchestrator can write; the bucket is read-only from the user's perspective. The user-uploaded photo flow will live on a separate bucket with its own policies when it ships.
+
+### Path vs URL
+
+`generated_image_url` on `hearth.houses` holds the storage **path** (e.g. `{house_id}/generated-sketch.png`), not a public URL — the bucket is private, and a permanent URL doesn't exist. The dashboard derives a fresh signed URL whenever `generated_image_url` or `generated_image_created_at` changes; the path is stable across regenerates but the timestamp moves, which is what cache-busts the browser against the old bytes.
+
+### Model selection
+
+`HOUSE_IMAGE_MODEL` env var, read at call time. Default `openai/dall-e-3`. The Vercel AI Gateway's GA OpenAI image model is `openai/gpt-image-1` — if the gateway returns "unknown model" for DALL-E 3, flip the env var without a code change. The `providerOptions.openai` settings (`quality: "standard"`, `style: "natural"`) are DALL-E 3-specific and are silently ignored by `gpt-image-1`.
+
+---
+
 ## Habitat surface
 
 Habitat findings surface on two pages: the dedicated `/habitat` route (full detail, one tile per finding with summary + action chips) and the dashboard's Habitat preview block (compact tiles, no actions, each tile linking to `/habitat` for follow-up). Both surfaces run the same query against `hearth.habitat_findings` with `status = 'completed'`, sort by the same severity weight (concerns first: critical → high → moderate → low → neutral → good), and use `HABITAT_MODULES.find(m => m.key === row.module_key)` to look up the module label and `iconImage`. Failed and `not_applicable` findings are intentionally not rendered on either surface in v1 — they'll get their own tile variants later.
@@ -393,7 +455,7 @@ Each module may declare an optional `iconImage` (a root-relative path under `/pu
 
 These appear in the schema or the dashboard mockup but are not real flows. Treat as roadmap, not as currently-working features:
 
-- **Storage buckets** for hero photos. `hero_photo_path` columns exist; the storage bucket and upload UI do not.
+- **User-uploaded photos**. The dashboard has a stub "Upload your own photo →" affordance under the generated illustration; clicking it is a no-op for now (a tooltip surfaces that on hover). The bucket, the upload UI, the path schema, and the swap-over logic from generated → user photo all land in a separate issue. `inventory.hero_photo_path` (for room/appliance heroes) is similarly schema-only.
 - **Public-records sources beyond EPA radon** — FEMA flood zone, EPA Superfund proximity, BS&A assessor data, lead-disclosure heuristics, etc. Each is a new habitat module under `lib/habitat/modules/<key>/`; the orchestrator already iterates the registry, so adding a module is a contained change. The "What we know about your location" `AICard` at the bottom of `/habitat` is still a static placeholder pending its own wiring.
 - **Description synthesis** — for v1 we show `description_source` (Zillow's raw copy) as `description`. A future LLM step will rewrite `description` in Hearth's voice while leaving `description_source` intact.
 - **Multi-house** UI. Schema supports it; onboarding gate currently locks to one house per user.
