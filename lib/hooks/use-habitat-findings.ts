@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 /**
@@ -54,6 +54,15 @@ export function useHabitatFindings(
   initialRows: HabitatFindingRow[] = [],
 ): HabitatFindingRow[] {
   const [rows, setRows] = useState<HabitatFindingRow[]>(initialRows);
+  // useId() gives every hook instance a stable, unique string for the
+  // life of the component. We append it to the channel name so two
+  // consumers of this hook on the same page (e.g. the dashboard preview
+  // panel and the onboarding discovery modal) don't collide on the same
+  // Supabase channel object — Supabase reuses channels keyed by name
+  // and rejects late `.on()` calls after a prior `.subscribe()`, which
+  // surfaces as: "cannot add postgres_changes callbacks for realtime:X
+  // after subscribe()".
+  const instanceId = useId();
 
   useEffect(() => {
     const supabase = createClient();
@@ -77,7 +86,7 @@ export function useHabitatFindings(
     }
 
     const channel = supabase
-      .channel(`habitat_findings:${houseId}`)
+      .channel(`habitat_findings:${houseId}:${instanceId}`)
       .on(
         "postgres_changes",
         {
@@ -120,9 +129,11 @@ export function useHabitatFindings(
     };
     // initialRows is intentionally omitted from the dependency array —
     // it's a one-shot hydration seed, not a reactive prop. Changing it
-    // shouldn't tear down and rebuild the subscription.
+    // shouldn't tear down and rebuild the subscription. instanceId is
+    // stable for the component lifetime so it never re-fires the effect
+    // in practice, but it's included to keep the lint rule happy.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [houseId]);
+  }, [houseId, instanceId]);
 
   return rows;
 }
