@@ -305,6 +305,121 @@ describe("EpaRadonZoneModule metadata", () => {
   });
 });
 
+describe("EpaRadonZoneModule.check activity log", () => {
+  it("emits a finalized activity log on a Zone 1 check", async () => {
+    const finding = await EpaRadonZoneModule.check(makeHouse());
+
+    expect(finding.activityLog).toBeDefined();
+    const log = finding.activityLog!;
+
+    expect(log.steps.length).toBeGreaterThanOrEqual(5);
+    const kinds = log.steps.map((s) => s.kind);
+    expect(kinds).toEqual(["fetch", "compute", "rule", "decide", "finding"]);
+
+    // Step numbers are sequential and 1-indexed.
+    expect(log.steps.map((s) => s.step)).toEqual([1, 2, 3, 4, 5]);
+
+    // started_at/completed_at are ISO timestamps and duration is non-negative.
+    expect(log.started_at).toMatch(/T\d{2}:\d{2}/);
+    expect(log.completed_at).toMatch(/T\d{2}:\d{2}/);
+    expect(log.total_duration_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("cites the EPA radon zone map on the fetch step", async () => {
+    const finding = await EpaRadonZoneModule.check(makeHouse());
+    const fetchStep = finding.activityLog!.steps.find((s) => s.kind === "fetch");
+    expect(fetchStep?.source?.url).toContain("epa.gov");
+  });
+
+  it("includes the normalized lookup key on the compute step", async () => {
+    const finding = await EpaRadonZoneModule.check(makeHouse());
+    const computeStep = finding.activityLog!.steps.find(
+      (s) => s.kind === "compute",
+    );
+    expect(computeStep?.detail).toContain("MI");
+    expect(computeStep?.detail).toContain("kalamazoo");
+  });
+
+  it("includes the zone in the rule step's result_summary on Zone 1", async () => {
+    const finding = await EpaRadonZoneModule.check(makeHouse());
+    const ruleStep = finding.activityLog!.steps.find((s) => s.kind === "rule");
+    expect(ruleStep?.result_summary).toContain("Zone 1");
+  });
+
+  it("includes the Hearth severity in the decide step's result_summary", async () => {
+    const finding = await EpaRadonZoneModule.check(makeHouse());
+    const decideStep = finding.activityLog!.steps.find(
+      (s) => s.kind === "decide",
+    );
+    expect(decideStep?.result_summary).toBe("Severity: high");
+    expect(decideStep?.source?.url).toBe("/about/classification#radon");
+  });
+
+  it("uses first-person, jargon-free voice in the narration", async () => {
+    // Spot-check: the narration on the first step should read like a
+    // person explaining what they did, not a system log line. We assert
+    // by sampling — checking for "I " somewhere in narration text and
+    // the absence of obvious technical artifacts (square brackets,
+    // ALL_CAPS identifiers, etc.) in narration specifically.
+    const finding = await EpaRadonZoneModule.check(makeHouse());
+    const narrations = finding.activityLog!.steps.map((s) => s.narration);
+    expect(narrations.some((n) => /\bI\b/.test(n))).toBe(true);
+    for (const n of narrations) {
+      expect(n).not.toMatch(/[A-Z_]{4,}/); // no ALL_CAPS identifiers in user-facing copy
+      expect(n).not.toContain("[");
+    }
+  });
+
+  it("emits a Zone 2 rule + decide pair for a Zone 2 county", async () => {
+    // Pick a documented Zone 2 county. Genesee County, MI is Zone 2 in
+    // the EPA dataset; if the dataset ever reclassifies, swap for any
+    // other documented Zone 2 county.
+    const finding = await EpaRadonZoneModule.check(
+      makeHouse({ state: "MI", county: "Genesee" }),
+    );
+    expect(finding.findings.zone).toBe(2);
+    const ruleStep = finding.activityLog!.steps.find((s) => s.kind === "rule");
+    const decideStep = finding.activityLog!.steps.find(
+      (s) => s.kind === "decide",
+    );
+    expect(ruleStep?.result_summary).toContain("Zone 2");
+    expect(decideStep?.result_summary).toBe("Severity: moderate");
+  });
+
+  it("emits a Zone 3 rule + decide pair for a Zone 3 county", async () => {
+    const finding = await EpaRadonZoneModule.check(
+      makeHouse({ state: "HI", county: "Honolulu" }),
+    );
+    expect(finding.findings.zone).toBe(3);
+    const ruleStep = finding.activityLog!.steps.find((s) => s.kind === "rule");
+    const decideStep = finding.activityLog!.steps.find(
+      (s) => s.kind === "decide",
+    );
+    expect(ruleStep?.result_summary).toContain("Zone 3");
+    expect(decideStep?.result_summary).toBe("Severity: good");
+  });
+
+  it("still throws on unknown state (existing failure path preserved)", async () => {
+    // The activity log on the failure path is emitted but not returned —
+    // by design, the orchestrator persists no log when check() throws.
+    // We assert behavior here; the error step's emission is exercised by
+    // the code path the throw runs through.
+    await expect(
+      EpaRadonZoneModule.check(
+        makeHouse({ state: "Atlantis", county: "Kalamazoo" }),
+      ),
+    ).rejects.toThrow(/Atlantis/);
+  });
+
+  it("still throws when state is present but county is not", async () => {
+    await expect(
+      EpaRadonZoneModule.check(
+        makeHouse({ state: "MI", county: "Fictional" }),
+      ),
+    ).rejects.toThrow(/Fictional/);
+  });
+});
+
 describe("buildActions", () => {
   it("returns three actions for Zone 1 in the order [product, service, link]", () => {
     const actions = buildActions(1);

@@ -1,3 +1,5 @@
+import type { ActivityLog } from "./activity-log";
+
 /**
  * Habitat module contract.
  *
@@ -146,6 +148,18 @@ export interface HabitatFinding {
    * return findings without actions while we backfill them.
    */
   actions?: FindingAction[];
+  /**
+   * Step-by-step record of what the module did during this check().
+   * Produced by calling createActivityLogger() at the top of check(),
+   * emitting steps as the check progresses, and calling finalize()
+   * before returning. The orchestrator persists this verbatim into
+   * the activity_log column.
+   *
+   * Optional during the backfill period — modules retrofitted to emit
+   * logs return one; modules not yet retrofitted leave it absent and
+   * the column stays null on the row.
+   */
+  activityLog?: ActivityLog;
 }
 
 /**
