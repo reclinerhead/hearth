@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
-import { createClient } from "@/lib/supabase/client";
+import {
+  useHabitatFindings,
+  type HabitatFindingRow,
+} from "@/lib/hooks/use-habitat-findings";
 import { HABITAT_MODULES } from "@/lib/habitat/registry";
 import type { HabitatModule, HouseContext } from "@/lib/habitat/types";
 import { getBriefingMessage } from "@/lib/briefing/getBriefingMessage";
@@ -38,17 +41,6 @@ const TERMINAL_FINDING_STATUSES = new Set([
   "not_applicable",
 ]);
 
-type HabitatFindingRow = {
-  module_key: string;
-  status: string;
-  severity: string | null;
-  headline: string | null;
-  summary: string | null;
-  findings: Record<string, unknown> | null;
-  source_url: string | null;
-  error: string | null;
-};
-
 type Phase =
   | { kind: "intro" }
   | { kind: "briefing-checking" }
@@ -69,77 +61,6 @@ function houseContextFromRow(house: House): HouseContext {
     longitude: house.longitude,
     parcelId: house.parcel_id,
   };
-}
-
-/**
- * Subscribe to every habitat_findings row for a given house. Mirrors the
- * shape of useHouseRealtime but for an array — fetches once, then merges
- * INSERT / UPDATE events into local state by module_key. Inlined here
- * because the modal is the only consumer today; promote to a shared hook
- * when a second one appears.
- */
-function useHabitatFindings(houseId: string): HabitatFindingRow[] {
-  const [rows, setRows] = useState<HabitatFindingRow[]>([]);
-
-  useEffect(() => {
-    const supabase = createClient();
-    let cancelled = false;
-
-    async function loadInitial() {
-      const { data } = await supabase
-        .from("habitat_findings")
-        .select(
-          "module_key, status, severity, headline, summary, findings, source_url, error",
-        )
-        .eq("house_id", houseId);
-      if (cancelled || !data) return;
-      setRows(data as HabitatFindingRow[]);
-    }
-
-    loadInitial();
-
-    const channel = supabase
-      .channel(`habitat_findings:${houseId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "hearth",
-          table: "habitat_findings",
-          filter: `house_id=eq.${houseId}`,
-        },
-        (payload: { new: Partial<HabitatFindingRow> & { module_key?: string } }) => {
-          if (cancelled) return;
-          const incoming = payload.new;
-          if (!incoming?.module_key) return;
-          setRows((prev) => {
-            const next = prev.filter(
-              (r) => r.module_key !== incoming.module_key,
-            );
-            next.push(incoming as HabitatFindingRow);
-            return next;
-          });
-        },
-      )
-      .subscribe();
-
-    // Belt-and-suspenders polling for environments where Realtime is
-    // blocked (browser extensions, tracking-prevention). The modal's whole
-    // value proposition is that it advances as data lands, so a stuck
-    // websocket would freeze the user on "Checking ..." forever otherwise.
-    const pollTimer = setInterval(() => {
-      if (cancelled) return;
-      loadInitial();
-    }, 2500);
-
-    return () => {
-      cancelled = true;
-      clearInterval(pollTimer);
-      supabase.removeChannel(channel);
-    };
-  }, [houseId]);
-
-  return rows;
 }
 
 /**
