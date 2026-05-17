@@ -1,0 +1,42 @@
+-- Add an activity log column to habitat_findings to capture the
+-- step-by-step reasoning a module performs during check(). The log
+-- is module-emitted: each module calls into a small helper as it
+-- runs (fetches data, applies rules, computes severity, decides
+-- inclusion) and the final array of steps is persisted here when
+-- check() returns.
+--
+-- Purpose is twofold:
+--   1. Transparency. Every finding should expose why it was
+--      classified the way it was. The activity log is the
+--      most complete possible form of this — a user can read
+--      exactly what the module did, which sources it consulted,
+--      and which thresholds it applied.
+--   2. Debuggability. With the log persisted, diagnosing an
+--      unexpected finding doesn't require re-running the module
+--      locally — the trace is on the row.
+--
+-- Shape (TypeScript: ActivityLog from lib/habitat/activity-log.ts):
+--   {
+--     steps: Array<{
+--       step: number,
+--       kind: 'fetch' | 'rule' | 'compute' | 'decide' | 'finding' | 'error',
+--       narration: string,         // user-facing, in Hearth's voice
+--       detail?: string,           // technical detail (URL, query, raw value)
+--       result_summary?: string,   // short outcome of this step
+--       source?: { label, url },   // citation when a rule was applied
+--       at_ms: number              // ms since started_at
+--     }>,
+--     started_at: string,          // ISO timestamp
+--     completed_at: string,        // ISO timestamp
+--     total_duration_ms: number
+--   }
+--
+-- Nullable so existing rows remain valid. Modules backfill on
+-- their next check() run.
+alter table hearth.habitat_findings
+  add column activity_log jsonb;
+
+-- No index, no constraint, no realtime change. The column is
+-- read alongside the rest of the finding via existing select
+-- patterns. Future indexing (e.g. on activity_log->>'total_duration_ms'
+-- for perf observability) can come if/when a query pattern justifies it.
