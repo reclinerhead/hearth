@@ -50,7 +50,7 @@ const STYLE_KEYWORDS: { keyword: RegExp; label: string }[] = [
   { keyword: /\bbungalow\b/i, label: "Bungalow" },
   { keyword: /\bcottage\b/i, label: "Cottage" },
   { keyword: /\btudor\b/i, label: "Tudor" },
-  { keyword: /\branch\b/i, label: "Ranch" },
+  { keyword: /\branch(?:er)?\b/i, label: "Ranch" },
   { keyword: /\bcontemporary\b/i, label: "Contemporary" },
 ];
 
@@ -85,11 +85,21 @@ export function deriveStories(description: string | null): string | null {
 }
 
 export function derivePromptParts(input: BuildPromptInput): PromptParts {
-  return {
-    eraDescriptor: deriveEraDescriptor(input.yearBuilt),
-    styleHint: deriveStyleHint(input.description),
-    stories: deriveStories(input.description),
-  };
+  const eraDescriptor = deriveEraDescriptor(input.yearBuilt);
+  const styleHint = deriveStyleHint(input.description);
+  let stories = deriveStories(input.description);
+
+  // Style-implies-stories fallback. "Ranch" is single-story by
+  // definition — split-level variants exist but the prompt asks for a
+  // "typical" home of the style, and a description that names the
+  // style without an explicit stories phrase ("south Portage brick
+  // rancher") should still get the right silhouette. An explicit
+  // stories phrase always wins over the implication.
+  if (styleHint === "Ranch" && stories === null) {
+    stories = "single-story";
+  }
+
+  return { eraDescriptor, styleHint, stories };
 }
 
 // Assemble the final prompt. Omitted hints don't leave dangling phrases

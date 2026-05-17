@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildHouseImagePrompt,
   deriveEraDescriptor,
+  derivePromptParts,
   deriveStories,
   deriveStyleHint,
 } from "./prompt";
@@ -54,6 +55,7 @@ describe("deriveStyleHint", () => {
     ["A cozy cottage tucked behind mature trees.", "Cottage"],
     ["Storybook Tudor with leaded glass.", "Tudor"],
     ["Single-story ranch in established neighborhood.", "Ranch"],
+    ["South Portage brick rancher with open floorplan.", "Ranch"],
     ["Contemporary build with clean lines.", "Contemporary"],
   ];
   it.each(styleCases)("matches style in %j", (description, expected) => {
@@ -70,9 +72,44 @@ describe("deriveStyleHint", () => {
     expect(deriveStyleHint("a beautiful COLONIAL home")).toBe("Colonial");
   });
 
-  it("does not match partial words", () => {
-    // 'Ranch' should not match inside 'Branch' or 'Rancher's'.
+  it("does not match Ranch inside unrelated words", () => {
+    // "Branch" must not match; "rancher" intentionally DOES match
+    // (covered above) because it's a colloquial form of the style.
     expect(deriveStyleHint("Located near Branch Avenue.")).toBeNull();
+  });
+});
+
+describe("derivePromptParts (cross-signal rules)", () => {
+  it("defaults stories to single-story when style is Ranch and description has no stories phrase", () => {
+    const parts = derivePromptParts({
+      yearBuilt: 1955,
+      description: "Charming brick rancher on a corner lot.",
+    });
+    expect(parts.styleHint).toBe("Ranch");
+    expect(parts.stories).toBe("single-story");
+  });
+
+  it("respects an explicit stories phrase over the Ranch implication", () => {
+    // Split-level ranches do exist; if the description says
+    // "two-story", we trust it over the style default.
+    const parts = derivePromptParts({
+      yearBuilt: 1965,
+      description: "Two-story split-level ranch with finished basement.",
+    });
+    expect(parts.styleHint).toBe("Ranch");
+    expect(parts.stories).toBe("two-story");
+  });
+
+  it("does not invent stories for non-Ranch styles without a phrase", () => {
+    // Only Ranch carries the single-story implication today. A
+    // Craftsman without a stories phrase stays null so we don't
+    // hardcode an assumption that varies by region.
+    const parts = derivePromptParts({
+      yearBuilt: 1920,
+      description: "Craftsman with original built-ins.",
+    });
+    expect(parts.styleHint).toBe("Craftsman");
+    expect(parts.stories).toBeNull();
   });
 });
 
@@ -164,6 +201,20 @@ describe("buildHouseImagePrompt", () => {
     // The general signals still come through.
     expect(prompt).toContain("typical late 20th century Colonial home");
     expect(prompt).toContain("two-story");
+  });
+
+  it("renders the 9944 Mozart case as Ranch + single-story", () => {
+    // Reproduces the bug surfaced in PR #28 review: the original
+    // build of this house came back as a generic 1930s-era home
+    // because "rancher" missed the style regex AND no stories phrase
+    // was present. After the fix the prompt should name both signals.
+    const prompt = buildHouseImagePrompt({
+      yearBuilt: 1944,
+      description:
+        "This beautiful, very well maintained south Portage brick rancher is nestled at the end of a quiet cul-de-sac.",
+    });
+    expect(prompt).toContain("typical 1930s-era Ranch home");
+    expect(prompt).toContain("single-story");
   });
 
   it("is deterministic for the same input", () => {
