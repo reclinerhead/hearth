@@ -12,10 +12,10 @@
  * we re-run scripts/build-radon-data.ts and the new data ships with
  * the next deploy.
  *
- * Severity mapping:
- *   Zone 1 → 'high'     (regional avg > 4 pCi/L — exceeds EPA action level)
- *   Zone 2 → 'moderate' (regional avg 2-4 pCi/L)
- *   Zone 3 → 'good'     (regional avg < 2 pCi/L)
+ * Severity mapping (per the 6-stop scale in lib/habitat/types.ts):
+ *   Zone 1 → 'concern'   (regional avg > 4 pCi/L — exceeds EPA action level)
+ *   Zone 2 → 'caution'   (regional avg 2-4 pCi/L)
+ *   Zone 3 → 'favorable' (regional avg < 2 pCi/L)
  *
  * Note: "regional" is load-bearing. The EPA zone is a county-level
  * predicted average. An individual home in a Zone 3 county can still
@@ -167,13 +167,18 @@ export function normalizeForLookup(county: string): string {
 }
 
 /**
- * Map an EPA radon zone to the habitat severity scale.
+ * Map an EPA radon zone to the habitat severity scale. Aligned with the
+ * 6-stop scale in lib/habitat/types.ts and the CHECK constraint on
+ * hearth.habitat_findings.severity.
+ *
  * Exported for the test suite.
  */
-export function zoneToSeverity(zone: RadonZone): "good" | "moderate" | "high" {
-  if (zone === 1) return "high";
-  if (zone === 2) return "moderate";
-  return "good";
+export function zoneToSeverity(
+  zone: RadonZone,
+): "favorable" | "caution" | "concern" {
+  if (zone === 1) return "concern";
+  if (zone === 2) return "caution";
+  return "favorable";
 }
 
 function zoneDescription(zone: RadonZone): string {
@@ -225,20 +230,20 @@ function severityDecisionNarration(zone: RadonZone): {
   if (zone === 1) {
     return {
       narration:
-        "Because your county is in Zone 1, I'm flagging this as a 'high' concern in Hearth's classification so it surfaces near the top of your dashboard.",
+        "Because your county is in Zone 1, I'm flagging this as a 'concern' in Hearth's classification so it surfaces near the top of your dashboard.",
       result_summary: `Severity: ${severity}`,
     };
   }
   if (zone === 2) {
     return {
       narration:
-        "Because your county is in Zone 2, I'm marking this as 'moderate' in Hearth's classification — worth testing, but not urgent.",
+        "Because your county is in Zone 2, I'm marking this as 'caution' in Hearth's classification — worth testing, but not urgent.",
       result_summary: `Severity: ${severity}`,
     };
   }
   return {
     narration:
-      "Because your county is in Zone 3, I'm marking this as 'good' in Hearth's classification — your area is on the low end of EPA's radon predictions.",
+      "Because your county is in Zone 3, I'm marking this as 'favorable' in Hearth's classification — your area is on the low end of EPA's radon predictions.",
     result_summary: `Severity: ${severity}`,
   };
 }

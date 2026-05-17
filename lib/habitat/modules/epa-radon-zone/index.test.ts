@@ -105,16 +105,16 @@ describe("normalizeStateForLookup", () => {
 });
 
 describe("zoneToSeverity", () => {
-  it("maps Zone 1 to high severity", () => {
-    expect(zoneToSeverity(1)).toBe("high");
+  it("maps Zone 1 to 'concern'", () => {
+    expect(zoneToSeverity(1)).toBe("concern");
   });
 
-  it("maps Zone 2 to moderate severity", () => {
-    expect(zoneToSeverity(2)).toBe("moderate");
+  it("maps Zone 2 to 'caution'", () => {
+    expect(zoneToSeverity(2)).toBe("caution");
   });
 
-  it("maps Zone 3 to good severity", () => {
-    expect(zoneToSeverity(3)).toBe("good");
+  it("maps Zone 3 to 'favorable'", () => {
+    expect(zoneToSeverity(3)).toBe("favorable");
   });
 });
 
@@ -134,9 +134,9 @@ describe("EpaRadonZoneModule.isApplicable", () => {
 });
 
 describe("EpaRadonZoneModule.check", () => {
-  it("returns Zone 1 / high severity for Kalamazoo, MI", async () => {
+  it("returns Zone 1 / 'concern' severity for Kalamazoo, MI", async () => {
     const finding = await EpaRadonZoneModule.check(makeHouse());
-    expect(finding.severity).toBe("high");
+    expect(finding.severity).toBe("concern");
     expect(finding.headline).toBe("EPA Radon Zone 1 — highest potential");
     expect(finding.findings.zone).toBe(1);
     expect(finding.findings.county).toBe("Kalamazoo");
@@ -239,7 +239,7 @@ function makeFinding(
   county: string | null = "Kalamazoo",
 ): HabitatFinding {
   return {
-    severity: zone === 1 ? "high" : zone === 2 ? "moderate" : "good",
+    severity: zone === 1 ? "concern" : zone === 2 ? "caution" : "favorable",
     headline: `EPA Radon Zone ${zone}`,
     summary: "",
     findings: {
@@ -351,7 +351,7 @@ describe("EpaRadonZoneModule.check activity log", () => {
     const decideStep = finding.activityLog!.steps.find(
       (s) => s.kind === "decide",
     );
-    expect(decideStep?.result_summary).toBe("Severity: high");
+    expect(decideStep?.result_summary).toBe("Severity: concern");
     expect(decideStep?.source?.url).toBe("/about/classification#radon");
   });
 
@@ -383,7 +383,7 @@ describe("EpaRadonZoneModule.check activity log", () => {
       (s) => s.kind === "decide",
     );
     expect(ruleStep?.result_summary).toContain("Zone 2");
-    expect(decideStep?.result_summary).toBe("Severity: moderate");
+    expect(decideStep?.result_summary).toBe("Severity: caution");
   });
 
   it("emits a Zone 3 rule + decide pair for a Zone 3 county", async () => {
@@ -396,7 +396,7 @@ describe("EpaRadonZoneModule.check activity log", () => {
       (s) => s.kind === "decide",
     );
     expect(ruleStep?.result_summary).toContain("Zone 3");
-    expect(decideStep?.result_summary).toBe("Severity: good");
+    expect(decideStep?.result_summary).toBe("Severity: favorable");
   });
 
   it("still throws on unknown state (existing failure path preserved)", async () => {

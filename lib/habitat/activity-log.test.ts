@@ -132,8 +132,8 @@ describe("createActivityLogger", () => {
     });
     log.step({
       kind: "decide",
-      narration: "Zone 1 maps to severity 'high' in Hearth's classification.",
-      result_summary: "Severity: high",
+      narration: "Zone 1 maps to severity 'concern' in Hearth's classification.",
+      result_summary: "Severity: concern",
     });
     log.step({
       kind: "finding",

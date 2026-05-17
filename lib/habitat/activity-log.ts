@@ -52,7 +52,7 @@ export type ActivityStep = {
   narration: string;
   /** Technical/implementation detail — URLs, raw values, query shapes. */
   detail?: string;
-  /** Short outcome — "Found 3 sites", "Zone 1", "Severity: high". */
+  /** Short outcome — "Found 3 sites", "Zone 1", "Severity: concern". */
   result_summary?: string;
   /** Citation for the rule or dataset this step applied. */
   source?: ActivitySource;

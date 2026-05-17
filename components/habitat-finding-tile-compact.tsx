@@ -20,11 +20,11 @@ const HERO_PX = 72;
 
 const SEVERITY_COLOR: Record<HabitatSeverity, string> = {
   critical: "var(--color-danger)",
-  high: "var(--color-danger)",
-  moderate: "var(--color-warning)",
-  low: "var(--color-text-tertiary)",
+  concern: "var(--color-danger)",
+  caution: "var(--color-warning)",
   neutral: "var(--color-text-tertiary)",
-  good: "var(--color-success)",
+  favorable: "var(--color-success)",
+  beneficial: "var(--color-success)",
 };
 
 export function HabitatFindingTileCompact({

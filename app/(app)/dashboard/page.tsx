@@ -20,11 +20,11 @@ import { DashboardLive } from "./dashboard-live";
 // at two call sites.
 const SEVERITY_WEIGHT: Record<HabitatSeverity, number> = {
   critical: 0,
-  high: 1,
-  moderate: 2,
-  low: 3,
-  neutral: 4,
-  good: 5,
+  concern: 1,
+  caution: 2,
+  neutral: 3,
+  favorable: 4,
+  beneficial: 5,
 };
 
 type HabitatFindingPreviewRow = {

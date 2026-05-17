@@ -8,14 +8,17 @@ import type {
 import { createClient } from "@/lib/supabase/server";
 
 // Concerns first, positives last — matches the suggested ordering noted
-// in lib/habitat/types.ts and the create_habitat_findings_table migration.
+// in lib/habitat/types.ts. The DB has a generated severity_weight column
+// (in habitat-findings-module-changes.sql) that runs the opposite
+// direction (critical=5, beneficial=0) for use with ORDER BY ... DESC;
+// this client-side weight is ascending so the array sort reads naturally.
 const SEVERITY_WEIGHT: Record<HabitatSeverity, number> = {
   critical: 0,
-  high: 1,
-  moderate: 2,
-  low: 3,
-  neutral: 4,
-  good: 5,
+  concern: 1,
+  caution: 2,
+  neutral: 3,
+  favorable: 4,
+  beneficial: 5,
 };
 
 type HabitatFindingRow = {
