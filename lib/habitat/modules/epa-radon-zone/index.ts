@@ -28,6 +28,33 @@
  *     downgrade severity and adjust summary to mention the every-2-year
  *     post-mitigation re-test EPA recommends.
  *   - LLM-rewritten summary in Hearth's voice via a synthesis step.
+ *
+ * -------------------------------------------------------------------
+ * Activity-log narration arc (the reference example for future modules)
+ *
+ *   1. fetch    — "I pulled up the EPA's radon zone data for your county."
+ *   2. compute  — "I normalized 'COUNTY, STATE' into the dataset's lookup key."
+ *   3. rule     — "I checked what Zone N means" (states the EPA tier and
+ *                  the pCi/L threshold for that tier).
+ *   4. decide   — "Because your county is in Zone N, I'm flagging this as
+ *                  '<severity>' in Hearth's classification." (input → output
+ *                  → system behavior, on one line.)
+ *   5. finding  — "I put the finding together for your dashboard."
+ *
+ *   On failure (state or county not in the dataset), an `error` step is
+ *   emitted before re-throwing. The orchestrator's failure path doesn't
+ *   persist the log today; the in-code emission keeps the module's
+ *   intent readable and reserves the path for future partial-log persistence.
+ *
+ * Source citations
+ *
+ *   Step 1 (fetch):  EPA Map of Radon Zones — the upstream dataset.
+ *   Step 3 (rule):   EPA — Radon zones and action levels — the published
+ *                    guideline the rule derives from.
+ *   Step 4 (decide): /about/classification#radon — Hearth's own
+ *                    classification page (forward-looking URL; page is
+ *                    planned but doesn't exist yet — see HEARTH_CLASSIFICATION_SOURCE).
+ * -------------------------------------------------------------------
  */
 
 import { createActivityLogger } from "@/lib/habitat/activity-log";
@@ -43,8 +70,16 @@ import { RADON_ZONES_BY_STATE, type RadonZone } from "./data";
 const MODULE_KEY = "epa_radon_zone";
 const SOURCE_URL = "https://www.epa.gov/radon/epa-map-radon-zones-0";
 
+// Hardcoded rather than parsed from data.ts. The build script
+// (scripts/build-radon-data.ts) writes a comment with the publication
+// date; this constant is the human-curated counterpart that flows into
+// the activity log so a user reading the log sees which vintage of the
+// dataset their finding was computed against. Update both at the same
+// time when EPA republishes.
+const EPA_RADON_DATASET_PUBLISHED = "June 2024";
+
 const EPA_ZONE_SOURCE = {
-  label: "EPA Map of Radon Zones (June 2024)",
+  label: `EPA Map of Radon Zones (${EPA_RADON_DATASET_PUBLISHED})`,
   url: SOURCE_URL,
 };
 
@@ -373,8 +408,7 @@ const EpaRadonZoneModule: HabitatModule = {
     log.step({
       kind: "fetch",
       narration: `I started by pulling up the EPA's radon zone data for ${house.county} County, ${house.state}.`,
-      detail:
-        "Local lookup against the EPA Map of Radon Zones dataset, bundled with the app.",
+      detail: `lib/habitat/modules/epa-radon-zone/data.ts (EPA dataset published ${EPA_RADON_DATASET_PUBLISHED})`,
       source: EPA_ZONE_SOURCE,
     });
 
@@ -424,6 +458,7 @@ const EpaRadonZoneModule: HabitatModule = {
     log.step({
       kind: "decide",
       narration: severityDecision.narration,
+      detail: `zone(${zone}) → severity('${zoneToSeverity(zone)}')`,
       result_summary: severityDecision.result_summary,
       source: HEARTH_CLASSIFICATION_SOURCE,
     });

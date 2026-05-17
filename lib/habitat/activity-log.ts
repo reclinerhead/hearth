@@ -83,16 +83,24 @@ export type ActivityLogger = {
   finalize(): ActivityLog;
 };
 
-function nowMs(): number {
-  if (typeof performance !== "undefined" && typeof performance.now === "function") {
-    return performance.now();
-  }
-  return Date.now();
+/**
+ * Round to 1 decimal place. performance.now() returns sub-millisecond
+ * resolution as a float, and persisting raw values like 1.4000000000123
+ * to JSONB would just be noise. One decimal is enough to distinguish
+ * fast in-memory steps (radon resolves in ~1-2 ms total) without
+ * polluting the column.
+ */
+function round1(ms: number): number {
+  return Math.round(ms * 10) / 10;
 }
 
 export function createActivityLogger(): ActivityLogger {
   const started_at = new Date().toISOString();
-  const start_ms = nowMs();
+  // performance.now() is available in Node 18+ and every browser we
+  // target. Use it directly rather than fall back to Date.now() — that
+  // fallback caused all five radon steps to report at_ms: 0 because the
+  // whole check() ran inside one millisecond tick.
+  const start_ms = performance.now();
   const steps: ActivityStep[] = [];
   let closed = false;
 
@@ -106,18 +114,18 @@ export function createActivityLogger(): ActivityLogger {
       }
       steps.push({
         step: steps.length + 1,
-        at_ms: Math.round(nowMs() - start_ms),
+        at_ms: round1(performance.now() - start_ms),
         ...input,
       });
     },
     finalize() {
       closed = true;
-      const completed_ms = nowMs();
+      const completed_ms = performance.now();
       return {
         steps,
         started_at,
         completed_at: new Date().toISOString(),
-        total_duration_ms: Math.round(completed_ms - start_ms),
+        total_duration_ms: round1(completed_ms - start_ms),
       };
     },
   };

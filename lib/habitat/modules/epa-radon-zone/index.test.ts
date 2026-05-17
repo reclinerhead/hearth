@@ -331,6 +331,21 @@ describe("EpaRadonZoneModule.check activity log", () => {
     expect(fetchStep?.source?.url).toContain("epa.gov");
   });
 
+  it("puts the data file path and dataset publication date in the fetch step's detail", async () => {
+    const finding = await EpaRadonZoneModule.check(makeHouse());
+    const fetchStep = finding.activityLog!.steps.find((s) => s.kind === "fetch");
+    expect(fetchStep?.detail).toContain("lib/habitat/modules/epa-radon-zone/data.ts");
+    expect(fetchStep?.detail).toContain("June 2024");
+  });
+
+  it("includes the rule transformation in the decide step's detail", async () => {
+    const finding = await EpaRadonZoneModule.check(makeHouse());
+    const decideStep = finding.activityLog!.steps.find(
+      (s) => s.kind === "decide",
+    );
+    expect(decideStep?.detail).toBe("zone(1) → severity('concern')");
+  });
+
   it("includes the normalized lookup key on the compute step", async () => {
     const finding = await EpaRadonZoneModule.check(makeHouse());
     const computeStep = finding.activityLog!.steps.find(
