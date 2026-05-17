@@ -77,7 +77,7 @@ type SketchResult = {
   imageBytes: Uint8Array;
 };
 
-const DEFAULT_MODEL = "openai/dall-e-3";
+const DEFAULT_MODEL = "recraft/recraft-v2";
 
 async function generateSketch(input: HouseImageInput): Promise<SketchResult> {
   "use step";
@@ -87,24 +87,21 @@ async function generateSketch(input: HouseImageInput): Promise<SketchResult> {
     description: input.description,
   });
 
-  // HOUSE_IMAGE_MODEL overrides the default without a code change. The
-  // gateway's GA OpenAI image model is `openai/gpt-image-1`; the spec
-  // calls for `openai/dall-e-3` and the gateway will accept it as a
-  // fallthrough string. Flip the env var if the gateway returns an
-  // unknown-model error. The providerOptions below are DALL-E 3-specific
-  // and are silently ignored by `gpt-image-1`.
+  // HOUSE_IMAGE_MODEL overrides the default without a code change. We
+  // intentionally don't pass providerOptions — each image model has its
+  // own vocabulary (DALL-E 3 had `style: "natural" | "vivid"` and
+  // `quality: "standard" | "hd"`; gpt-image-1 dropped `style` entirely
+  // and uses `quality: "low" | "medium" | "high" | "auto"`; Recraft and
+  // Flux take different params again). Keeping the call model-agnostic
+  // means we can swap via env var without coordinated code changes.
+  // If we later commit to one model, the right place to tune
+  // quality/cost is here.
   const model = process.env.HOUSE_IMAGE_MODEL || DEFAULT_MODEL;
 
   const { image } = await generateImage({
     model,
     prompt,
     size: "1024x1024",
-    providerOptions: {
-      openai: {
-        quality: "standard",
-        style: "natural",
-      },
-    },
   });
 
   return {

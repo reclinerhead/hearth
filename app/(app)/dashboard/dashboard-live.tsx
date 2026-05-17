@@ -711,6 +711,70 @@ export function DashboardLive({ houseId }: { houseId: string }) {
     });
   }
 
+  // Drive the image swap even when Realtime is dead. The hook's status-
+  // based polling fallback only activates while briefing_status is non-
+  // terminal — regenerate doesn't touch briefing_status, so nothing
+  // would otherwise pick up the new generated_image_created_at on a
+  // browser blocking the realtime websocket. Mirrors the briefing-
+  // refresh polling loop. Bounded so a stuck workflow doesn't pin the
+  // spinner forever.
+  useEffect(() => {
+    if (regenerateSnapshot === null) return;
+
+    const startTime = Date.now();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function tick() {
+      if (cancelled) return;
+      if (Date.now() - startTime > REFRESH_POLL_TIMEOUT_MS) {
+        setRegenerateError(
+          "Regeneration is taking longer than expected. You can try again.",
+        );
+        setRegenerateSnapshot(null);
+        return;
+      }
+      await refetch();
+      if (cancelled) return;
+      timer = setTimeout(tick, REFRESH_POLL_INTERVAL_MS);
+    }
+
+    timer = setTimeout(tick, 800);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [regenerateSnapshot, refetch]);
+
+  // Same polling-fallback story for the first-time generation. Once the
+  // briefing flips to 'completed', the hook's status-based polling shuts
+  // off — but the image step is still running for another 10-30s, and a
+  // browser with a blocked Realtime socket would otherwise not pick up
+  // the row's eventual generated_image_url stamp. Polls while we're in
+  // the post-briefing grace window AND no image has landed yet; the
+  // briefingJustFinished timer naturally stops this when the window
+  // expires, and the image landing flips the condition false the moment
+  // a refetch() returns the populated row.
+  const isAwaitingFirstImage =
+    briefingJustFinished && generatedImagePath === null;
+  useEffect(() => {
+    if (!isAwaitingFirstImage) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function tick() {
+      if (cancelled) return;
+      await refetch();
+      if (cancelled) return;
+      timer = setTimeout(tick, REFRESH_POLL_INTERVAL_MS);
+    }
+    timer = setTimeout(tick, 800);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [isAwaitingFirstImage, refetch]);
+
   // One-shot latch for the discovery modal. The first-run detection in
   // useFirstRunDiscoveryModal computes `show` from live data conditions —
   // but those conditions flip false the moment the briefing workflow
