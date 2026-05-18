@@ -1,5 +1,6 @@
 import type { HabitatModule } from "./types";
 import EpaRadonZone from "./modules/epa-radon-zone";
+import EpaSuperfundProximity from "./modules/epa-superfund-proximity";
 
 /**
  * Every habitat module in the system.
@@ -17,6 +18,6 @@ import EpaRadonZone from "./modules/epa-radon-zone";
  */
 export const HABITAT_MODULES: readonly HabitatModule[] = [
   EpaRadonZone,
+  EpaSuperfundProximity,
   // FemaFloodZone,
-  // EpaSuperfundProximity,
 ] as const;
