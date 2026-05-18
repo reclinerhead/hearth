@@ -171,6 +171,43 @@ describe("HabitatFindingModal", () => {
     expect(document.body.textContent).toContain("EPA Radon Zone");
   });
 
+  it("renders the module thumbnail in the header when iconImage is set", () => {
+    const moduleWithIcon: HabitatModule = {
+      ...RADON_MODULE,
+      iconImage: "/habitat_module_images/radon.jpg",
+    };
+    render(
+      <HabitatFindingModal
+        open
+        onClose={() => {}}
+        row={makeRow()}
+        habitatModule={moduleWithIcon}
+      />,
+    );
+    const header = container.querySelector("header");
+    const img = header?.querySelector("img");
+    expect(img).not.toBeNull();
+    // next/image with `fill` rewrites the src through /_next/image with
+    // the original path URL-encoded as the `url` query param. Match the
+    // encoded form so the assertion survives the optimizer.
+    expect(img?.getAttribute("src") ?? "").toContain(
+      "habitat_module_images%2Fradon.jpg",
+    );
+  });
+
+  it("does not render a thumbnail when the module has no iconImage", () => {
+    render(
+      <HabitatFindingModal
+        open
+        onClose={() => {}}
+        row={makeRow()}
+        habitatModule={RADON_MODULE}
+      />,
+    );
+    const header = container.querySelector("header");
+    expect(header?.querySelector("img")).toBeNull();
+  });
+
   it("renders all activity log steps in order with their narration", () => {
     render(
       <HabitatFindingModal
