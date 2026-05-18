@@ -319,6 +319,53 @@ export function roundMiles(miles: number): number {
 }
 
 /**
+ * Three-letter month + four-digit year ("Jan 2024") for an EPA-supplied
+ * archive date. EPA returns ISO-ish strings ("2024-01-15") or null;
+ * timezone-aware Date parsing would shift the day before/after for users
+ * in non-UTC locales, but we only render month+year so a string-prefix
+ * parse is both safer and shorter. Returns null when the input is null
+ * or doesn't start with a recognizable YYYY-MM prefix.
+ */
+const SHORT_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+export function formatArchivedDate(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const match = /^(\d{4})-(\d{2})/.exec(raw.trim());
+  if (!match) return null;
+  const month = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(month) || month < 1 || month > 12) return null;
+  return `${SHORT_MONTHS[month - 1]} ${match[1]}`;
+}
+
+/**
+ * "Region N" label for EPA's zero-padded region code ("01" → "Region 1",
+ * "05" → "Region 5"). Returns null when the code is null, empty, or
+ * doesn't parse as a positive integer — the caller omits the row when
+ * this is null.
+ */
+export function formatEpaRegion(code: string | null | undefined): string | null {
+  if (!code) return null;
+  const trimmed = code.trim();
+  if (!trimmed) return null;
+  const n = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return `Region ${n}`;
+}
+
+/**
  * Long-form direction word for a 16-point compass bearing, used in
  * narration / summary copy. ("N" → "north", "NNE" → "north-northeast".)
  */

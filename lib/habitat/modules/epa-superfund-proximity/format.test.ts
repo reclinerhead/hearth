@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   bearingWord,
+  formatArchivedDate,
   formatContaminantName,
   formatContaminants,
+  formatEpaRegion,
   roundMiles,
   titleCase,
 } from "./format";
@@ -230,5 +232,50 @@ describe("bearingWord", () => {
   it("maps 16-point bearings to hyphenated words", () => {
     expect(bearingWord("NNE")).toBe("north-northeast");
     expect(bearingWord("WSW")).toBe("west-southwest");
+  });
+});
+
+describe("formatArchivedDate", () => {
+  it("renders an ISO date as short-month + year", () => {
+    expect(formatArchivedDate("2024-01-15")).toBe("Jan 2024");
+    expect(formatArchivedDate("1995-12-01")).toBe("Dec 1995");
+  });
+
+  it("accepts a full ISO timestamp (parses by YYYY-MM prefix)", () => {
+    expect(formatArchivedDate("2024-07-15T00:00:00Z")).toBe("Jul 2024");
+  });
+
+  it("returns null for null, empty, or unparseable input", () => {
+    expect(formatArchivedDate(null)).toBeNull();
+    expect(formatArchivedDate(undefined)).toBeNull();
+    expect(formatArchivedDate("")).toBeNull();
+    expect(formatArchivedDate("   ")).toBeNull();
+    expect(formatArchivedDate("not a date")).toBeNull();
+  });
+
+  it("returns null for an out-of-range month", () => {
+    expect(formatArchivedDate("2024-00-01")).toBeNull();
+    expect(formatArchivedDate("2024-13-01")).toBeNull();
+  });
+});
+
+describe("formatEpaRegion", () => {
+  it("strips the zero-padding from a region code", () => {
+    expect(formatEpaRegion("01")).toBe("Region 1");
+    expect(formatEpaRegion("05")).toBe("Region 5");
+    expect(formatEpaRegion("10")).toBe("Region 10");
+  });
+
+  it("returns null for null, empty, or unparseable input", () => {
+    expect(formatEpaRegion(null)).toBeNull();
+    expect(formatEpaRegion(undefined)).toBeNull();
+    expect(formatEpaRegion("")).toBeNull();
+    expect(formatEpaRegion("  ")).toBeNull();
+    expect(formatEpaRegion("abc")).toBeNull();
+  });
+
+  it("returns null for zero or negative codes (defensive against bad data)", () => {
+    expect(formatEpaRegion("00")).toBeNull();
+    expect(formatEpaRegion("-1")).toBeNull();
   });
 });

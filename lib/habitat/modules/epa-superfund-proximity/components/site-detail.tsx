@@ -25,6 +25,7 @@ import type {
   Contaminant,
 } from "@/lib/habitat/contaminants/data";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
+import { formatArchivedDate, formatEpaRegion } from "../format";
 import type { SiteEntry, SuperfundFindings } from "../types";
 
 /**
@@ -153,46 +154,121 @@ function SiteHeader({ entry }: { entry: SiteEntry }) {
   );
 }
 
+/**
+ * One label/value row inside the quick-facts column. Label uses the
+ * `eyebrow` class (uppercase, tracked, tertiary text); value is body-small
+ * so it sits visually next to the address text in the left column.
+ */
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="eyebrow">{label}</div>
+      <div
+        className="text-small"
+        style={{ color: "var(--color-text-secondary)", marginTop: 2 }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Build the quick-facts list for the right column of the address card.
+ * Returns one entry per fact actually worth showing — see the issue
+ * spec for the conditional rules:
+ *   - NPL listing: always present (npl_status is required on the row)
+ *   - Site status: always present; date appended when archived AND a
+ *     valid archive date is on the row
+ *   - EPA Region: omitted when the code is missing or unparseable
+ *   - Federal facility: omitted unless `federal_facility === true`
+ *
+ * Exported for the test suite — pure given the input.
+ */
+export function buildQuickFacts(site: SiteEntry["site"]): Array<{
+  label: string;
+  value: string;
+}> {
+  const facts: Array<{ label: string; value: string }> = [];
+
+  facts.push({
+    label: "NPL listing",
+    value: site.npl_status.label,
+  });
+
+  if (site.archived) {
+    const formattedDate = formatArchivedDate(site.archived_date ?? null);
+    facts.push({
+      label: "Site status",
+      value: formattedDate ? `Archived ${formattedDate}` : "Archived",
+    });
+  } else {
+    facts.push({
+      label: "Site status",
+      value: "Active in EPA system",
+    });
+  }
+
+  const region = formatEpaRegion(site.epa_region_code ?? null);
+  if (region) {
+    facts.push({ label: "EPA Region", value: region });
+  }
+
+  if (site.federal_facility) {
+    facts.push({ label: "Federal facility", value: "Yes" });
+  }
+
+  return facts;
+}
+
 function AddressCard({ entry }: { entry: SiteEntry }) {
   const { site } = entry;
   const { address } = site;
   const cityState = [address.city, address.state].filter(Boolean).join(", ");
   const cityStateZip = [cityState, address.zip].filter(Boolean).join(" ");
+  const facts = buildQuickFacts(site);
   return (
     <div
-      className="rounded-md"
+      className="rounded-md grid grid-cols-1 sm:grid-cols-2 gap-3"
       style={{
         border: "1px solid var(--color-border-subtle)",
         padding: "var(--space-3)",
       }}
     >
-      {address.street ? (
-        <div style={{ color: "var(--color-text-primary)" }}>{address.street}</div>
-      ) : null}
-      {cityStateZip ? (
-        <div className="text-small" style={{ color: "var(--color-text-secondary)" }}>
-          {cityStateZip}
-        </div>
-      ) : null}
-      {address.county ? (
-        <div className="text-small" style={{ color: "var(--color-text-tertiary)" }}>
-          {address.county} County
-        </div>
-      ) : null}
-      {site.profile_url ? (
-        <div className="text-small mt-2">
-          <a
-            href={site.profile_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            <span>View on EPA&rsquo;s site</span>
-            <Icon name="external-link" size={14} />
-          </a>
-        </div>
-      ) : null}
+      <div>
+        {address.street ? (
+          <div style={{ color: "var(--color-text-primary)" }}>{address.street}</div>
+        ) : null}
+        {cityStateZip ? (
+          <div className="text-small" style={{ color: "var(--color-text-secondary)" }}>
+            {cityStateZip}
+          </div>
+        ) : null}
+        {address.county ? (
+          <div className="text-small" style={{ color: "var(--color-text-tertiary)" }}>
+            {address.county} County
+          </div>
+        ) : null}
+        {site.profile_url ? (
+          <div className="text-small mt-2">
+            <a
+              href={site.profile_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              <span>View on EPA&rsquo;s site</span>
+              <Icon name="external-link" size={14} />
+            </a>
+          </div>
+        ) : null}
+      </div>
+      <div className="flex flex-col gap-3 sm:pl-4 sm:border-l sm:border-(--color-border-subtle)">
+        {facts.map((f) => (
+          <Fact key={f.label} label={f.label} value={f.value} />
+        ))}
+      </div>
     </div>
   );
 }
