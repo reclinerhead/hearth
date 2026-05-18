@@ -319,11 +319,38 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
     );
   });
 
-  it("populates summary copy that names the closest site, distance, and direction", async () => {
+  it("summary copy names every qualifying site when there are multiple", async () => {
+    // The 2-site fixture above produces both Allied Paper and Auto Ion.
+    // Earlier copy named only the closest site, which read as
+    // misleading once the modal surfaced every site as a drillable
+    // card. The summary now leads with the total count and lists all
+    // sites by name; per-site distance / direction / status live on
+    // each card and inside the detail pane.
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    expect(finding.summary).toMatch(/We detected 2 EPA Superfund sites/);
     expect(finding.summary).toContain("Allied Paper");
+    expect(finding.summary).toContain("Auto Ion Chemicals");
+    expect(finding.summary).toMatch(/Allied Paper.*\band\s+Auto Ion Chemicals/);
+  });
+
+  it("summary copy keeps the narrative closest-site phrasing when there's only one qualifying site", async () => {
+    // Override the beforeEach 2-site stub with a single qualifying site.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "MID000ONE",
+        epa_id: "MID000ONE",
+        name: "LONE PINE LANDFILL",
+        primary_latitude_decimal_val: "42.2854",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "TCE",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    expect(finding.summary).toContain("Lone Pine Landfill");
     expect(finding.summary).toContain("mile");
     expect(finding.summary).toContain("north");
+    expect(finding.summary).not.toMatch(/We detected/);
   });
 
   it("does not ship a per-site EPA profile pill in the module action shelf", async () => {

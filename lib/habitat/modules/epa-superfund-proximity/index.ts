@@ -230,23 +230,58 @@ function buildHitHeadline(entries: SiteEntry[]): string {
 }
 
 /**
- * One- or two-sentence summary naming the nearest site, distance,
- * direction, and current cleanup status.
+ * Render a list of names as a comma-separated phrase with an
+ * Oxford-comma "and" before the last entry.
+ *
+ *   ["A"]            → "A"
+ *   ["A", "B"]       → "A and B"
+ *   ["A", "B", "C"]  → "A, B, and C"
+ *
+ * Returns "" for an empty input. Pure given the input.
+ */
+function joinNames(names: string[]): string {
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  const lead = names.slice(0, -1).join(", ");
+  return `${lead}, and ${names[names.length - 1]}`;
+}
+
+/**
+ * Summary copy for a finding with one or more qualifying sites.
+ *
+ * One site: a one-or-two-sentence narrative naming the site, distance,
+ * direction, and current cleanup status — the original v1 copy that
+ * still reads well when there's nothing else to list.
+ *
+ * Two or more sites: a single sentence that names every qualifying
+ * site by `name_display`, ordered the same way `findings.sites` is
+ * (severity-desc then distance-asc, so the most concerning sites lead
+ * the list). Earlier copy named only the closest site, which read as
+ * misleading once the modal surfaced every site as a drillable card —
+ * the summary was reporting one of five rather than the full picture.
+ * Per-site distance / direction / cleanup status live on each card and
+ * inside the detail pane.
  */
 function buildHitSummary(entries: SiteEntry[]): string {
-  const e = entries[0];
-  const dir = bearingWord(e.context.bearing);
-  const dist = e.context.distance_miles.toFixed(1);
-  const miles = `${dist} mile${dist === "1.0" ? "" : "s"}`;
-  const status =
-    e.site.npl_status.code === "F"
-      ? "Active cleanup is in progress under EPA oversight."
-      : e.site.npl_status.code === "P"
-        ? "EPA has proposed adding this site to the National Priorities List."
-        : e.site.npl_status.code === "A"
-          ? "This is part of a larger NPL site listed elsewhere."
-          : "Cleanup is complete and the site has been removed from the National Priorities List.";
-  return `The ${e.site.name_display} site sits about ${miles} ${dir} of your home. ${status}`;
+  if (entries.length === 1) {
+    const e = entries[0];
+    const dir = bearingWord(e.context.bearing);
+    const dist = e.context.distance_miles.toFixed(1);
+    const miles = `${dist} mile${dist === "1.0" ? "" : "s"}`;
+    const status =
+      e.site.npl_status.code === "F"
+        ? "Active cleanup is in progress under EPA oversight."
+        : e.site.npl_status.code === "P"
+          ? "EPA has proposed adding this site to the National Priorities List."
+          : e.site.npl_status.code === "A"
+            ? "This is part of a larger NPL site listed elsewhere."
+            : "Cleanup is complete and the site has been removed from the National Priorities List.";
+    return `The ${e.site.name_display} site sits about ${miles} ${dir} of your home. ${status}`;
+  }
+
+  const names = entries.map((e) => e.site.name_display);
+  return `We detected ${entries.length} EPA Superfund sites near your home, including ${joinNames(names)}.`;
 }
 
 /**
