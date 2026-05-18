@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "./icon";
+import { dispatchHouseUpdated } from "@/lib/hooks/use-house-realtime";
 import { createClient } from "@/lib/supabase/client";
 
 /**
@@ -177,9 +178,15 @@ export function EditHomeDetailsModal({
         );
         return;
       }
-      // router.refresh() re-runs server components (the (app) layout and
-      // dashboard page in particular), so the top-nav address and any
-      // dashboard tiles that read from the house row reflect the new
+      // dispatchHouseUpdated triggers an imperative refetch in
+      // useHouseRealtime (which DashboardLive owns), updating the
+      // dashboard hero's client-side state immediately. Required
+      // because router.refresh() below only re-runs server components
+      // and Realtime is documented as unreliable in some browsers (see
+      // docs/TechnicalGuide.md "Realtime and the browser").
+      dispatchHouseUpdated(house.id);
+      // router.refresh() re-runs server components (the (app) layout
+      // in particular), so the top-nav address reflects the new
       // values without a full page reload.
       router.refresh();
       onClose();
