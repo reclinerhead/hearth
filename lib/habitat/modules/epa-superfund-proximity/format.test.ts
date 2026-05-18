@@ -68,6 +68,34 @@ describe("titleCase", () => {
   it("handles roman-numeral plant designations", () => {
     expect(titleCase("REFINERY UNIT III")).toBe("Refinery Unit III");
   });
+
+  it("renders an already-joined hyphenated company name without spaces", () => {
+    expect(titleCase("GEORGIA-PACIFIC CORPORATION")).toBe(
+      "Georgia-Pacific Corporation",
+    );
+  });
+
+  it("collapses ' - ' to '-' in EPA's spaced-hyphen form", () => {
+    // EPA's source data for Georgia-Pacific actually has " - " with
+    // surrounding spaces. The fix normalizes that to a bare hyphen so
+    // the rendered output matches the way a person would write the name.
+    expect(titleCase("GEORGIA - PACIFIC CORPORATION")).toBe(
+      "Georgia-Pacific Corporation",
+    );
+  });
+
+  it("renders Coca-Cola without dropping the hyphen", () => {
+    expect(titleCase("COCA-COLA BOTTLING CO.")).toBe(
+      "Coca-Cola Bottling Co.",
+    );
+  });
+
+  it("does not collapse a multi-space dash, leaving the source untouched", () => {
+    // Triple-spaced or em-dashed phrases are not part of EPA's
+    // typographic conventions; we only normalize the specific " - "
+    // and " – " patterns observed in SEMS data.
+    expect(titleCase("PHASE I  -  PHASE II")).toBe("Phase I  -  Phase II");
+  });
 });
 
 describe("formatContaminants", () => {

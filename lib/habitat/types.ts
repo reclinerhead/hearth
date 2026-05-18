@@ -187,6 +187,21 @@ export interface HabitatModule {
   /** One-sentence "what this checks." Used in "what we're watching" UI. */
   description: string;
 
+  /**
+   * Dashboard-grouping category. Persisted into
+   * hearth.habitat_findings.category on every upsert by the
+   * orchestrator. Backfilled by
+   * supabase/migrations/20260517171126_habitat-findings-module-changes.sql
+   * for the modules that existed at the time; every new module
+   * declares its own category here.
+   *
+   * Today there's only one category in use. The type is left as a
+   * string-literal union so future categories ("structural", "civic"
+   * for crime data, etc.) get added explicitly rather than slipping
+   * in by typo.
+   */
+  category: "environmental";
+
   /** Declared re-check cadence. */
   cadence: HabitatCadence;
 

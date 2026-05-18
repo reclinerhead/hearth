@@ -25,17 +25,25 @@ export const EPA_ENVIROFACTS_SOURCE: ActivitySource = {
   url: "https://www.epa.gov/enviro/sems-search-user-guide",
 };
 
-export const EPA_SUPERFUND_RINGS_SOURCE: ActivitySource = {
-  label: "EPA — Superfund community-impact rings",
-  url: "https://www.epa.gov/superfund",
-};
-
 // Forward-looking link — the classification page doesn't exist yet, but
 // the activity log is meant to be a frozen-in-time record, so we cite
 // the URL the page will live at. Same pattern as the radon module's
 // /about/classification#radon anchor.
 export const HEARTH_CLASSIFICATION_SOURCE: ActivitySource = {
   label: "How Hearth classifies Superfund findings",
+  url: "/about/classification#superfund",
+};
+
+// The tier model is Hearth's, not EPA's. EPA uses 1- and 3-mile rings
+// in its community-involvement work near Superfund sites; our 0.5 /
+// 2 / 5 bands are a Hearth synthesis informed by that practice. The
+// rule step's citation points at our own classification page, which
+// is where we'll document the relationship to EPA's published
+// guidance — not at /superfund, which would imply EPA publishes a
+// "community-impact rings" standard that doesn't exist.
+export const HEARTH_TIER_RULE_SOURCE: ActivitySource = {
+  label:
+    "How Hearth classifies Superfund findings (based on EPA community-involvement practice)",
   url: "/about/classification#superfund",
 };
 
@@ -94,7 +102,7 @@ export function tierFilterNarration(
 ): { narration: string; detail: string; result_summary: string } {
   return {
     narration:
-      "I applied Hearth's three-tier proximity model, based on EPA's standard 1- and 3-mile community-impact rings.",
+      "I applied Hearth's three-tier proximity model. Hearth uses 0.5 mi, 2 mi, and 5 mi rings, informed by the 1- and 3-mile distances EPA uses in its community involvement work near Superfund sites.",
     detail:
       "Tier 1 ≤ 0.5 mi (any NPL status); Tier 2 0.5–2 mi (Final or Proposed); Tier 3 2–5 mi (Final only).",
     result_summary:
@@ -154,6 +162,42 @@ export function noSitesDecideNarration(input: {
       input.totalSites === 1 ? "" : "s"
     } in ${input.state}; 0 within 5 mi of your home.`,
     result_summary: "Severity: favorable",
+  };
+}
+
+/**
+ * Per-site precision caveat copy. Set on a SiteEntry's context when
+ * the site has a multi-location structure (currently inferred from a
+ * `/` in `name_original` — Allied Paper, Inc./Portage Creek/Kalamazoo
+ * River is the canonical example: a single record covers 80 miles of
+ * river and several landfills). The string lives here so the same copy
+ * is used by both the per-site context field and the conditional
+ * activity-log step. The dashboard finding-detail page can render it
+ * verbatim next to the displayed distance.
+ */
+export const PRECISION_CAVEAT_TEXT =
+  "EPA publishes a single point for this multi-location site. " +
+  "Parts of the site may be meaningfully closer to or farther from " +
+  "your home than the reported distance.";
+
+/**
+ * Narration for the conditional compute step inserted between the
+ * distance computation and the tier-filter rule when at least one
+ * qualifying site carries a precision caveat. Lists the flagged sites
+ * (display name only) in the detail line so a reader can see which
+ * distances are approximate.
+ */
+export function precisionCaveatNarration(
+  flaggedSiteNames: ReadonlyArray<string>,
+): { narration: string; detail: string } {
+  const count = flaggedSiteNames.length;
+  const namesList = flaggedSiteNames.join(", ");
+  return {
+    narration:
+      "A few of the sites are large or span multiple locations — EPA reports a single point for each, even when the actual site footprint stretches across miles. The distance to those sites is approximate.",
+    detail: `${count} site${
+      count === 1 ? "" : "s"
+    } flagged with multi-location precision caveat: ${namesList}`,
   };
 }
 

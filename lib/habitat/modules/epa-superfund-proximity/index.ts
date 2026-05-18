@@ -33,22 +33,30 @@
  * -------------------------------------------------------------------
  * Activity-log narration arc
  *
- *   1. fetch    — "I asked EPA's Superfund database what sites are in <state>."
- *   2. compute  — "I filtered out sites EPA doesn't have coordinates for."
- *   3. compute  — "I measured the distance from your home to each remaining site."
- *   4. rule     — "I applied Hearth's three-tier proximity model."
- *   5. decide   — "The closest site is <name>, <distance> mi <direction>. That makes
- *                  this a '<severity>' in Hearth's classification."
- *                 (or, for zero hits, "Nothing within 5 miles. Marking as
- *                  'favorable'.")
- *   6. finding  — "I put the finding together for your dashboard."
+ *   1. fetch              — "I asked EPA's Superfund database what sites are in <state>."
+ *   2. compute            — "I filtered out sites EPA doesn't have coordinates for."
+ *   3. compute            — "I measured the distance from your home to each remaining site."
+ *   3a. compute (caveat)  — "A few sites are large or span multiple locations — EPA
+ *                            reports a single point even when the actual footprint
+ *                            stretches across miles." Emitted only when at least one
+ *                            qualifying site has multi-location structure (a `/` in
+ *                            its EPA name). For a homeowner with only single-point
+ *                            sites this step is omitted and the log stays at 6 steps.
+ *   4. rule               — "I applied Hearth's three-tier proximity model."
+ *   5. decide             — "The closest site is <name>, <distance> mi <direction>. That
+ *                            makes this a '<severity>' in Hearth's classification."
+ *                           (or, for zero hits, "Nothing within 5 miles. Marking as
+ *                            'favorable'.")
+ *   6. finding            — "I put the finding together for your dashboard."
  *
  * Source citations
  *
  *   Step 1 (fetch):   EPA Envirofacts SEMS — Superfund site data.
- *   Step 4 (rule):    EPA — Superfund community-impact rings.
- *   Step 5 (decide):  /about/classification#superfund — Hearth's own
- *                     classification page (forward-looking URL).
+ *   Step 4 (rule):    /about/classification#superfund — Hearth's own
+ *                     classification page. The tier model is Hearth's;
+ *                     we cite our own page rather than imply EPA
+ *                     publishes a "community-impact rings" standard.
+ *   Step 5 (decide):  /about/classification#superfund — same page.
  * -------------------------------------------------------------------
  */
 
@@ -75,14 +83,16 @@ import {
 import { compassBearing, haversineMiles } from "./geo";
 import {
   EPA_ENVIROFACTS_SOURCE,
-  EPA_SUPERFUND_RINGS_SOURCE,
   HEARTH_CLASSIFICATION_SOURCE,
+  HEARTH_TIER_RULE_SOURCE,
+  PRECISION_CAVEAT_TEXT,
   coordCleanupNarration,
   decideStepNarration,
   distanceStepNarration,
   fetchStepNarration,
   findingStepNarration,
   noSitesDecideNarration,
+  precisionCaveatNarration,
   tierFilterNarration,
 } from "./narration";
 import {
@@ -147,8 +157,30 @@ type SiteEntry = {
     bearing: string;
     tier: Tier;
     severity: "concern" | "caution" | "neutral";
+    /**
+     * Caveat attached when EPA's single representative point is known
+     * to be a poor proxy for the actual site footprint. Set today
+     * when `name_original` contains a `/` separator — Allied Paper,
+     * Inc./Portage Creek/Kalamazoo River is the canonical example of
+     * a single SEMS record spanning miles of river plus multiple
+     * landfills. Omitted (rather than set to null) when the site is
+     * single-location, so the dashboard's detail view can branch on
+     * presence without dealing with nullable copy.
+     */
+    precision_note?: string;
   };
 };
+
+/**
+ * Whether a SEMS site name suggests multiple physical locations rolled
+ * into one EPA record. Today: any name containing a `/` separator.
+ * Future refinement could lean on EPA's operable-unit (OU) data, but
+ * the slash heuristic catches the most visually-misleading cases
+ * (Allied Paper / Portage Creek / Kalamazoo River) without over-flagging.
+ */
+function hasMultiLocationStructure(nameOriginal: string): boolean {
+  return nameOriginal.includes("/");
+}
 
 function buildSiteEntry(
   raw: NplSite,
@@ -158,6 +190,20 @@ function buildSiteEntry(
   tier: Tier,
 ): SiteEntry {
   const severity = tierAndStatusToSeverity(tier, nplCode);
+  const context: SiteEntry["context"] = {
+    distance_miles: roundMiles(distance),
+    bearing,
+    tier,
+    severity:
+      severity === "concern" ||
+      severity === "caution" ||
+      severity === "neutral"
+        ? severity
+        : "neutral",
+  };
+  if (hasMultiLocationStructure(raw.name)) {
+    context.precision_note = PRECISION_CAVEAT_TEXT;
+  }
   return {
     site: {
       epa_id: raw.epa_id,
@@ -180,17 +226,7 @@ function buildSiteEntry(
       archived: raw.archived_ind === "Y",
       profile_url: siteProfileUrl(raw.site_id),
     },
-    context: {
-      distance_miles: roundMiles(distance),
-      bearing,
-      tier,
-      severity:
-        severity === "concern" ||
-        severity === "caution" ||
-        severity === "neutral"
-          ? severity
-          : "neutral",
-    },
+    context,
   };
 }
 
@@ -324,7 +360,9 @@ const EpaSuperfundProximityModule: HabitatModule = {
   name: "EPA Superfund proximity",
   description:
     "Looks up EPA Superfund sites within 5 miles of the house and ranks them by a three-tier proximity model.",
+  category: "environmental",
   cadence: "yearly",
+  iconImage: "/habitat_module_images/epa_superfund.jpg",
 
   isApplicable(house: HouseContext): boolean {
     // Need lat/lng to compute distance, and the 2-letter state to
@@ -422,13 +460,30 @@ const EpaSuperfundProximityModule: HabitatModule = {
     }
     qualifying.sort(compareEntries);
 
+    // Conditional compute step: when at least one qualifying site carries
+    // the multi-location precision caveat, surface it in the activity log
+    // before applying the tier rule so the reader sees the caveat in the
+    // same beat as the distance computation it applies to. For a
+    // homeowner with only single-point sites the log stays at 6 steps.
+    const flaggedSites = qualifying.filter((s) => s.context.precision_note);
+    if (flaggedSites.length > 0) {
+      const precisionStep = precisionCaveatNarration(
+        flaggedSites.map((s) => s.site.name_display),
+      );
+      log.step({
+        kind: "compute",
+        narration: precisionStep.narration,
+        detail: precisionStep.detail,
+      });
+    }
+
     const tierStep = tierFilterNarration(qualifying.length, tierCounts);
     log.step({
       kind: "rule",
       narration: tierStep.narration,
       detail: tierStep.detail,
       result_summary: tierStep.result_summary,
-      source: EPA_SUPERFUND_RINGS_SOURCE,
+      source: HEARTH_TIER_RULE_SOURCE,
     });
 
     if (qualifying.length === 0) {

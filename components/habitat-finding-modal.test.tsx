@@ -31,6 +31,7 @@ const RADON_MODULE: HabitatModule = {
   key: "epa_radon_zone",
   name: "EPA Radon Zone",
   description: "Looks up county-level EPA radon potential.",
+  category: "environmental",
   cadence: "once",
   isApplicable: () => true,
   async check() {

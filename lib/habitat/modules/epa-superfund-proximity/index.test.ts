@@ -90,6 +90,16 @@ describe("EpaSuperfundProximityModule metadata", () => {
   it("has a non-empty description", () => {
     expect(EpaSuperfundProximityModule.description.length).toBeGreaterThan(0);
   });
+
+  it("declares category as 'environmental'", () => {
+    expect(EpaSuperfundProximityModule.category).toBe("environmental");
+  });
+
+  it("declares the iconImage path", () => {
+    expect(EpaSuperfundProximityModule.iconImage).toBe(
+      "/habitat_module_images/epa_superfund.jpg",
+    );
+  });
 });
 
 describe("EpaSuperfundProximityModule.isApplicable", () => {
@@ -139,7 +149,7 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
         primary_latitude_decimal_val: "42.2795",
         primary_longitude_decimal_val: "-85.589",
         npl_status_code: "F",
-        contaminant_name: "POLYCHLORINATED BIPHENYLS",
+        preferred_contaminant_name: "POLYCHLORINATED BIPHENYLS",
       }),
       // Allied Paper has multiple contaminants; the join produces a second
       // row to test mergeContaminants.
@@ -151,7 +161,7 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
         primary_latitude_decimal_val: "42.2795",
         primary_longitude_decimal_val: "-85.589",
         npl_status_code: "F",
-        contaminant_name: "LEAD",
+        preferred_contaminant_name: "LEAD",
       }),
       makeRow({
         site_id: "MID075021883",
@@ -160,7 +170,7 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
         primary_latitude_decimal_val: "42.2854",
         primary_longitude_decimal_val: "-85.589",
         npl_status_code: "F",
-        contaminant_name: "TCE",
+        preferred_contaminant_name: "TCE",
       }),
       makeRow({
         site_id: "MID000FAR",
@@ -168,7 +178,7 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
         primary_latitude_decimal_val: "42.45",
         primary_longitude_decimal_val: "-85.589",
         npl_status_code: "F",
-        contaminant_name: null,
+        preferred_contaminant_name: null,
       }),
       makeRow({
         site_id: "MID000NULL",
@@ -237,18 +247,48 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
     expect(closest.context.severity).toBe("caution");
   });
 
-  it("emits a six-step activity log on the hit path", async () => {
+  it("emits a 7-step activity log when at least one qualifying site has multi-location structure", async () => {
+    // Allied Paper's name contains "/" — Allied Paper, Inc./Portage
+    // Creek/Kalamazoo River. That trips the precision-caveat compute
+    // step inserted between distance and tier-filter.
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const log = finding.activityLog!;
-    expect(log.steps.length).toBe(6);
+    expect(log.steps.length).toBe(7);
     expect(log.steps.map((s) => s.kind)).toEqual([
       "fetch",
+      "compute",
       "compute",
       "compute",
       "rule",
       "decide",
       "finding",
     ]);
+  });
+
+  it("annotates qualifying multi-location sites with a precision_note", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const sites = (
+      finding.findings as {
+        sites: Array<{
+          site: { sems_site_id: string };
+          context: { precision_note?: string };
+        }>;
+      }
+    ).sites;
+    const allied = sites.find((s) => s.site.sems_site_id === "MID980794473");
+    const autoIon = sites.find((s) => s.site.sems_site_id === "MID075021883");
+    expect(allied?.context.precision_note).toMatch(/multi-location/i);
+    expect(autoIon?.context.precision_note).toBeUndefined();
+  });
+
+  it("names the flagged sites in the precision-caveat step's detail", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const log = finding.activityLog!;
+    // The caveat step is the fourth step (index 3) when emitted.
+    const caveatStep = log.steps[3];
+    expect(caveatStep.kind).toBe("compute");
+    expect(caveatStep.detail).toContain("Allied Paper");
+    expect(caveatStep.detail).toContain("multi-location precision caveat");
   });
 
   it("cites EPA Envirofacts on the fetch step", async () => {
@@ -264,6 +304,19 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
     const decideStep = finding.activityLog!.steps.find((s) => s.kind === "decide");
     expect(decideStep?.source?.url).toBe("/about/classification#superfund");
     expect(decideStep?.detail).toContain("severity('caution')");
+  });
+
+  it("cites the Hearth classification page on the rule step (not /superfund)", async () => {
+    // The tier model is Hearth's, not EPA's — the rule step should cite
+    // our own classification page, not EPA's Superfund landing page,
+    // which would imply EPA publishes a "community-impact rings"
+    // standard that doesn't exist.
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const ruleStep = finding.activityLog!.steps.find((s) => s.kind === "rule");
+    expect(ruleStep?.source?.url).toBe("/about/classification#superfund");
+    expect(ruleStep?.source?.label).toMatch(
+      /community-involvement practice/i,
+    );
   });
 
   it("populates summary copy that names the closest site, distance, and direction", async () => {
@@ -327,6 +380,36 @@ describe("EpaSuperfundProximityModule.check — no qualifying sites", () => {
     const actions = finding.actions ?? [];
     expect(actions.length).toBe(1);
     expect(actions[0].label).toBe("Learn about Superfund");
+  });
+});
+
+describe("EpaSuperfundProximityModule.check — precision caveat", () => {
+  it("omits the precision-caveat step when no qualifying site has multi-location structure", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "SINGLE_LOC",
+        name: "SINGLE LOCATION SITE",
+        primary_latitude_decimal_val: "42.2795",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const log = finding.activityLog!;
+    expect(log.steps.length).toBe(6);
+    expect(log.steps.map((s) => s.kind)).toEqual([
+      "fetch",
+      "compute",
+      "compute",
+      "rule",
+      "decide",
+      "finding",
+    ]);
+    const sites = (
+      finding.findings as { sites: Array<{ context: { precision_note?: string } }> }
+    ).sites;
+    expect(sites[0].context.precision_note).toBeUndefined();
   });
 });
 

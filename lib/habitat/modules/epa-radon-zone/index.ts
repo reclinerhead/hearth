@@ -378,6 +378,7 @@ const EpaRadonZoneModule: HabitatModule = {
   name: "EPA Radon Zone",
   description:
     "Looks up the county's EPA radon potential classification (Zone 1, 2, or 3).",
+  category: "environmental",
   cadence: "once",
   iconImage: "/habitat_module_images/radon.jpg",
 

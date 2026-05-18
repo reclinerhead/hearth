@@ -139,12 +139,23 @@ export function titleCase(input: string | null | undefined): string {
   const trimmed = input.trim();
   if (!trimmed) return "";
 
+  // Normalize ALL-CAPS EPA naming quirks before splitting: collapse
+  // " - " (single space, hyphen, single space) and " – " (en-dash) to
+  // a bare hyphen so "GEORGIA - PACIFIC CORPORATION" renders as
+  // "Georgia-Pacific Corporation" rather than "Georgia - Pacific
+  // Corporation". EPA's source data uses the spaced form
+  // inconsistently. The pattern requires a non-whitespace char on
+  // each side so wider whitespace ("PHASE I  -  PHASE II") is left
+  // alone — those patterns aren't part of EPA's company-name
+  // conventions and shouldn't be collapsed.
+  const normalized = trimmed.replace(/(\S) [-–] (\S)/g, "$1-$2");
+
   // Split into a sequence of (word, separator) chunks. A "word" is a
   // maximal run of [A-Za-z0-9]; everything else is a separator. We
   // track word position so the first word and post-separator words can
   // be capitalized appropriately, while internal minor words drop to
   // lowercase.
-  const tokens: string[] = trimmed.split(/([^A-Za-z0-9]+)/);
+  const tokens: string[] = normalized.split(/([^A-Za-z0-9]+)/);
 
   let position = 0;
   const out: string[] = [];

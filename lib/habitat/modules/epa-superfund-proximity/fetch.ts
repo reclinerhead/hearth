@@ -147,13 +147,15 @@ export async function fetchNplSitesInState(
  * Collapse a left-joined EPA response into one entry per site_id with
  * contaminants merged into a single array. Exported for the test suite.
  *
- * A "contaminant" is whichever field the EPA join surfaces from
- * sems.envirofacts_contaminants. EPA's column naming is not always
- * stable across schema revisions; we read whichever of
- * `contaminant_name`, `name`, or `chemical_name` is present, in that
- * order. If none is present (a site with no contaminants in the
- * joined table) the row still produces an entry with an empty
- * contaminants array.
+ * The contaminant column produced by the join is
+ * `preferred_contaminant_name` (verified against the live API for
+ * site_id 0502325 / Allied Paper). `contaminant_name` is checked as a
+ * fallback in case EPA renames the column in a future schema
+ * revision. `name` is *never* read here — the join also brings the
+ * site's `name` along on each row, and an earlier version of this
+ * function fell back to that field and reported the site's own name
+ * as its contaminant. Sites with no rows in the joined table still
+ * produce an entry with an empty contaminants array.
  */
 export function mergeContaminants(
   rows: Record<string, unknown>[],
@@ -178,7 +180,11 @@ export function mergeContaminants(
 }
 
 function pickContaminantName(row: Record<string, unknown>): string | null {
-  const candidates = ["contaminant_name", "name", "chemical_name"];
+  // `preferred_contaminant_name` is the column EPA actually returns on
+  // the join. `contaminant_name` is a defensive fallback if EPA
+  // renames the column. The site's own `name` is deliberately NOT
+  // checked here — see the comment on mergeContaminants() for why.
+  const candidates = ["preferred_contaminant_name", "contaminant_name"];
   for (const key of candidates) {
     const v = row[key];
     if (typeof v === "string") {

@@ -91,6 +91,7 @@ async function runOneModule(
       {
         house_id: context.houseId,
         module_key: module.key,
+        category: module.category,
         status: "running",
         checked_at: new Date().toISOString(),
         error: null,
@@ -118,6 +119,7 @@ async function runOneModule(
         {
           house_id: context.houseId,
           module_key: module.key,
+          category: module.category,
           status: "failed",
           checked_at: new Date().toISOString(),
           error: trimmed,
@@ -135,6 +137,7 @@ async function runOneModule(
       {
         house_id: context.houseId,
         module_key: module.key,
+        category: module.category,
         status: "completed",
         severity: finding.severity,
         headline: finding.headline,
