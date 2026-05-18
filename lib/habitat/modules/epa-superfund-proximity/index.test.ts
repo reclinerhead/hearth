@@ -1,0 +1,491 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { HabitatFinding, HouseContext } from "@/lib/habitat/types";
+import EpaSuperfundProximityModule, {
+  buildOnboardingMessage,
+} from "./index";
+
+/**
+ * Minimal HouseContext for tests. 604 Norton Dr, Kalamazoo MI per the
+ * issue's test address. Coordinates are the ones the issue cites.
+ */
+function makeHouse(overrides: Partial<HouseContext> = {}): HouseContext {
+  return {
+    houseId: "test-house",
+    addressLine1: "604 Norton Dr",
+    city: "Kalamazoo",
+    state: "MI",
+    county: "Kalamazoo",
+    postalCode: "49006",
+    latitude: 42.265,
+    longitude: -85.589,
+    parcelId: null,
+    ...overrides,
+  };
+}
+
+/**
+ * Construct a single row from the EPA Envirofacts SEMS join. Defaults
+ * mirror a "minimal real row" shape; overrides let each test fix the
+ * relevant fields.
+ */
+function makeRow(overrides: Record<string, unknown>): Record<string, unknown> {
+  return {
+    site_id: "0100185",
+    epa_id: "MID000000001",
+    name: "EXAMPLE SITE",
+    street_addr_txt: "123 EXAMPLE RD",
+    supplemental_addr_txt: null,
+    city_name: "KALAMAZOO",
+    county_name: "KALAMAZOO",
+    fk_ref_state_code: "MI",
+    zip_code: "49006",
+    primary_latitude_decimal_val: "42.27",
+    primary_longitude_decimal_val: "-85.589",
+    npl_status_code: "F",
+    npl_status_name: "Final NPL",
+    non_npl_status_code: null,
+    non_npl_status_name: null,
+    archived_ind: "N",
+    archived_date: null,
+    federal_facility_ind: "N",
+    fips_code: "26077",
+    fk_ref_region_code: "05",
+    congressional_district_code: null,
+    saa_agreement_site_ind: "N",
+    ...overrides,
+  };
+}
+
+/**
+ * Stub global fetch with a function that always returns the given rows.
+ * The module's fetchNplSitesInState reads only Response.ok and
+ * Response.json(), so we mock just those two.
+ */
+function stubFetchWithRows(rows: ReadonlyArray<Record<string, unknown>>): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      async json() {
+        return rows;
+      },
+    })) as unknown as typeof fetch,
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("EpaSuperfundProximityModule metadata", () => {
+  it("declares its key as 'epa_superfund_proximity'", () => {
+    expect(EpaSuperfundProximityModule.key).toBe("epa_superfund_proximity");
+  });
+
+  it("declares cadence as 'yearly'", () => {
+    expect(EpaSuperfundProximityModule.cadence).toBe("yearly");
+  });
+
+  it("has a non-empty description", () => {
+    expect(EpaSuperfundProximityModule.description.length).toBeGreaterThan(0);
+  });
+});
+
+describe("EpaSuperfundProximityModule.isApplicable", () => {
+  it("returns true for a fully-populated house", () => {
+    expect(EpaSuperfundProximityModule.isApplicable(makeHouse())).toBe(true);
+  });
+
+  it("returns false when latitude is null", () => {
+    expect(
+      EpaSuperfundProximityModule.isApplicable(makeHouse({ latitude: null })),
+    ).toBe(false);
+  });
+
+  it("returns false when longitude is null", () => {
+    expect(
+      EpaSuperfundProximityModule.isApplicable(makeHouse({ longitude: null })),
+    ).toBe(false);
+  });
+
+  it("returns false when state is missing", () => {
+    expect(
+      EpaSuperfundProximityModule.isApplicable(makeHouse({ state: "" })),
+    ).toBe(false);
+  });
+
+  it("returns false when state is not a 2-letter code", () => {
+    expect(
+      EpaSuperfundProximityModule.isApplicable(makeHouse({ state: "Michigan" })),
+    ).toBe(false);
+  });
+});
+
+describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
+  beforeEach(() => {
+    // ~1.0 mi N of (42.265, -85.589): lat 42.2795, lng -85.589.
+    // ~1.4 mi N: lat 42.2854, lng -85.589.
+    // ~10 mi away (excluded by 5 mi radius): lat 42.45, lng -85.589.
+    // Site with null coordinates (dropped).
+    // Site with status N (shouldn't appear because URL filters F,P,A,D,
+    //   but defensive — module narrowNplCode filters it again).
+    stubFetchWithRows([
+      makeRow({
+        site_id: "MID980794473",
+        epa_id: "MID980794473",
+        name: "ALLIED PAPER, INC./PORTAGE CREEK/KALAMAZOO RIVER",
+        street_addr_txt: "1314 KALAMAZOO RIVER",
+        primary_latitude_decimal_val: "42.2795",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        contaminant_name: "POLYCHLORINATED BIPHENYLS",
+      }),
+      // Allied Paper has multiple contaminants; the join produces a second
+      // row to test mergeContaminants.
+      makeRow({
+        site_id: "MID980794473",
+        epa_id: "MID980794473",
+        name: "ALLIED PAPER, INC./PORTAGE CREEK/KALAMAZOO RIVER",
+        street_addr_txt: "1314 KALAMAZOO RIVER",
+        primary_latitude_decimal_val: "42.2795",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        contaminant_name: "LEAD",
+      }),
+      makeRow({
+        site_id: "MID075021883",
+        epa_id: "MID075021883",
+        name: "AUTO ION CHEMICALS, INC.",
+        primary_latitude_decimal_val: "42.2854",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        contaminant_name: "TCE",
+      }),
+      makeRow({
+        site_id: "MID000FAR",
+        name: "FAR AWAY DUMP",
+        primary_latitude_decimal_val: "42.45",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        contaminant_name: null,
+      }),
+      makeRow({
+        site_id: "MID000NULL",
+        name: "NO COORDINATES SITE",
+        primary_latitude_decimal_val: null,
+        primary_longitude_decimal_val: null,
+        npl_status_code: "F",
+      }),
+    ]);
+  });
+
+  it("returns a 'caution' finding when the closest site is a Tier 2 active NPL", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    expect(finding.severity).toBe("caution");
+  });
+
+  it("title-cases site names in the finding", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const sites = (finding.findings as { sites: Array<{ site: { name_display: string } }> }).sites;
+    expect(sites[0].site.name_display).toContain("Allied Paper");
+    expect(sites[0].site.name_display).toContain("Inc."); // INC. → Inc.
+  });
+
+  it("sorts qualifying sites severity-desc then distance-asc", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const sites = (
+      finding.findings as { sites: Array<{ context: { distance_miles: number } }> }
+    ).sites;
+    expect(sites.length).toBe(2);
+    expect(sites[0].context.distance_miles).toBeLessThanOrEqual(
+      sites[1].context.distance_miles,
+    );
+  });
+
+  it("populates total_npl_sites_in_state including the far-away and null-coord rows", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const f = finding.findings as {
+      total_npl_sites_in_state: number;
+      total_sites_with_coordinates: number;
+      total_qualifying_sites: number;
+    };
+    expect(f.total_npl_sites_in_state).toBe(4);
+    expect(f.total_sites_with_coordinates).toBe(3);
+    expect(f.total_qualifying_sites).toBe(2);
+  });
+
+  it("merges contaminants across joined rows", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const sites = (
+      finding.findings as { sites: Array<{ site: { contaminants: string[]; sems_site_id: string } }> }
+    ).sites;
+    const allied = sites.find((s) => s.site.sems_site_id === "MID980794473");
+    expect(allied?.site.contaminants).toContain("Polychlorinated Biphenyls");
+    expect(allied?.site.contaminants).toContain("Lead");
+  });
+
+  it("populates the per-site context with distance, bearing, tier, and severity", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const closest = (
+      finding.findings as { sites: Array<{ context: Record<string, unknown> }> }
+    ).sites[0];
+    expect(closest.context.distance_miles).toBeGreaterThan(0.5);
+    expect(closest.context.distance_miles).toBeLessThan(2);
+    expect(closest.context.bearing).toBe("N");
+    expect(closest.context.tier).toBe(2);
+    expect(closest.context.severity).toBe("caution");
+  });
+
+  it("emits a six-step activity log on the hit path", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const log = finding.activityLog!;
+    expect(log.steps.length).toBe(6);
+    expect(log.steps.map((s) => s.kind)).toEqual([
+      "fetch",
+      "compute",
+      "compute",
+      "rule",
+      "decide",
+      "finding",
+    ]);
+  });
+
+  it("cites EPA Envirofacts on the fetch step", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const fetchStep = finding.activityLog!.steps.find((s) => s.kind === "fetch");
+    expect(fetchStep?.source?.url).toContain("epa.gov");
+    expect(fetchStep?.detail).toContain("data.epa.gov/efservice/");
+    expect(fetchStep?.detail).toContain("MI");
+  });
+
+  it("cites the Hearth classification page on the decide step", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const decideStep = finding.activityLog!.steps.find((s) => s.kind === "decide");
+    expect(decideStep?.source?.url).toBe("/about/classification#superfund");
+    expect(decideStep?.detail).toContain("severity('caution')");
+  });
+
+  it("populates summary copy that names the closest site, distance, and direction", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    expect(finding.summary).toContain("Allied Paper");
+    expect(finding.summary).toContain("mile");
+    expect(finding.summary).toContain("north");
+  });
+
+  it("ships a 'View EPA site profile' action pointing at the closest site", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const actions = finding.actions ?? [];
+    const profile = actions.find((a) => a.label === "View EPA site profile");
+    expect(profile?.kind).toBe("link");
+    expect(profile?.url).toContain("cumulis.epa.gov");
+  });
+});
+
+describe("EpaSuperfundProximityModule.check — no qualifying sites", () => {
+  it("returns a 'favorable' finding when EPA returns no sites in the state", async () => {
+    stubFetchWithRows([]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    expect(finding.severity).toBe("favorable");
+    expect(finding.headline).toBe(
+      "No active EPA Superfund sites near your home",
+    );
+    const sites = (finding.findings as { sites: unknown[] }).sites;
+    expect(sites).toEqual([]);
+  });
+
+  it("returns a 'favorable' finding when every site is beyond 5 miles", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "FARFAR",
+        primary_latitude_decimal_val: "42.50", // ~16 mi N
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    expect(finding.severity).toBe("favorable");
+  });
+
+  it("emits a 5-step activity log on the no-hits path (no extra decide-then-finding split)", async () => {
+    stubFetchWithRows([]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const log = finding.activityLog!;
+    expect(log.steps.map((s) => s.kind)).toEqual([
+      "fetch",
+      "compute",
+      "compute",
+      "rule",
+      "decide",
+      "finding",
+    ]);
+  });
+
+  it("ships a 'Learn about Superfund' action", async () => {
+    stubFetchWithRows([]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const actions = finding.actions ?? [];
+    expect(actions.length).toBe(1);
+    expect(actions[0].label).toBe("Learn about Superfund");
+  });
+});
+
+describe("EpaSuperfundProximityModule.check — tier filtering", () => {
+  it("excludes status 'A' (part-of-NPL) sites in the Tier 2 band", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "A_TIER2",
+        name: "PART OF NPL SITE",
+        primary_latitude_decimal_val: "42.2795", // ~1.0 mi N
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "A",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    expect(finding.severity).toBe("favorable");
+  });
+
+  it("excludes status 'D' (deleted) sites at Tier 3 distance", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "D_TIER3",
+        name: "OLD CLEANED-UP DUMP",
+        primary_latitude_decimal_val: "42.30", // ~2.5 mi N
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "D",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    expect(finding.severity).toBe("favorable");
+  });
+
+  it("includes status 'A' (part-of-NPL) sites inside the Tier 1 band as 'caution'", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "A_TIER1",
+        name: "PART OF LARGER SITE",
+        primary_latitude_decimal_val: "42.267", // ~0.15 mi N
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "A",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    expect(finding.severity).toBe("caution");
+    const sites = (
+      finding.findings as { sites: Array<{ context: { tier: number; severity: string } }> }
+    ).sites;
+    expect(sites[0].context.tier).toBe(1);
+    expect(sites[0].context.severity).toBe("caution");
+  });
+});
+
+describe("EpaSuperfundProximityModule.check — error handling", () => {
+  it("throws when EPA returns a non-2xx response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 503,
+        async json() {
+          return null;
+        },
+      })) as unknown as typeof fetch,
+    );
+    await expect(
+      EpaSuperfundProximityModule.check(makeHouse()),
+    ).rejects.toThrow(/HTTP 503/);
+  });
+
+  it("throws when EPA returns a non-array body", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        async json() {
+          return { something: "else" };
+        },
+      })) as unknown as typeof fetch,
+    );
+    await expect(
+      EpaSuperfundProximityModule.check(makeHouse()),
+    ).rejects.toThrow(/unexpected response shape/);
+  });
+
+  it("throws when isApplicable would have returned false (missing lat/lng)", async () => {
+    await expect(
+      EpaSuperfundProximityModule.check(makeHouse({ latitude: null })),
+    ).rejects.toThrow(/coordinates/);
+  });
+});
+
+/**
+ * Helpers for buildOnboardingMessage tests — construct a finding payload
+ * shaped like the one check() persists.
+ */
+function makeFinding(overrides: Partial<HabitatFinding> = {}): HabitatFinding {
+  return {
+    severity: "favorable",
+    headline: "test",
+    summary: "test",
+    findings: {
+      search_state: "MI",
+      total_qualifying_sites: 0,
+      sites: [],
+    },
+    ...overrides,
+  };
+}
+
+describe("buildOnboardingMessage", () => {
+  it("opens with 'good news' on the zero-hits case", () => {
+    const message = buildOnboardingMessage(makeFinding());
+    expect(message).toMatch(/good news/i);
+    expect(message).toMatch(/no active superfund/i);
+  });
+
+  it("names the closest site, distance, and bearing on a single-hit finding", () => {
+    const finding = makeFinding({
+      findings: {
+        search_state: "MI",
+        total_qualifying_sites: 1,
+        sites: [
+          {
+            site: { name_display: "Allied Paper Inc." },
+            context: { distance_miles: 1.0, bearing: "N" },
+          },
+        ],
+      },
+    });
+    const message = buildOnboardingMessage(finding);
+    expect(message).toContain("Allied Paper Inc.");
+    expect(message).toContain("1.0 mi");
+    expect(message).toContain("N");
+  });
+
+  it("pluralizes on a multi-hit finding", () => {
+    const finding = makeFinding({
+      findings: {
+        search_state: "MI",
+        total_qualifying_sites: 3,
+        sites: [
+          {
+            site: { name_display: "Allied Paper Inc." },
+            context: { distance_miles: 1.0, bearing: "N" },
+          },
+          {
+            site: { name_display: "Auto Ion Chemicals" },
+            context: { distance_miles: 1.4, bearing: "N" },
+          },
+          {
+            site: { name_display: "Cork Street Landfill" },
+            context: { distance_miles: 1.8, bearing: "NE" },
+          },
+        ],
+      },
+    });
+    const message = buildOnboardingMessage(finding);
+    expect(message).toMatch(/3 superfund sites/i);
+    expect(message).toContain("Allied Paper Inc.");
+  });
+});

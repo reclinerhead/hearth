@@ -489,6 +489,20 @@ The radon module (`lib/habitat/modules/epa-radon-zone/index.ts`) is the referenc
 
 Each module may declare an optional `iconImage` (a root-relative path under `/public`). When present, the dashboard's compact tile renders it as a 72px square hero on the left of the tile. Module definitions stay serializable — we use string paths, not imported asset modules. Module hero images live under `public/habitat_module_images/` (e.g. `radon.jpg`).
 
+### EPA Superfund Proximity module
+
+The second shipping habitat module (`lib/habitat/modules/epa-superfund-proximity/`). It hits EPA Envirofacts SEMS at [`https://data.epa.gov/efservice/sems.envirofacts_site/...`](https://www.epa.gov/enviro/envirofacts-data-service-api) to pull every NPL-relevant Superfund site in the house's state (left-joined to `sems.envirofacts_contaminants`), measures haversine distance from the home to each site's EPA-provided point, and applies a three-tier proximity model based on EPA's standard 1- and 3-mile community-impact rings:
+
+- **Tier 1** (≤ 0.5 mi) includes any NPL status — Final (F), Proposed (P), Part of NPL site (A), or Deleted (D).
+- **Tier 2** (0.5–2 mi) includes only F and P.
+- **Tier 3** (2–5 mi) includes only F.
+
+Severity maps from tier + NPL status: Tier 1 + F/P → `concern`; Tier 1 + A/D → `caution`; Tier 2 + F/P → `caution`; Tier 3 + F → `neutral`; zero qualifying sites within 5 mi → `favorable`. The top-level finding severity is the worst across qualifying sites; `findings.sites` is sorted severity-desc then distance-asc.
+
+Cadence is `yearly` — the NPL list and statuses do change but slowly. There is intentionally no caching layer in MVP: the module fetches EPA every time `check()` runs. At single-digit beta volume the per-onboard latency cost is acceptable, and the `habitat_sites` cache table has been deliberately tabled past MVP. The finding payload uses a `{ site, context }` per-entry shape (place-in-the-world facts vs per-house relationship) so a future cache migration is mechanical.
+
+Two EPA quirks the module handles explicitly: many sites arrive with `null` coordinates and are filtered out before any distance math (with the dropped count surfaced in the activity log); and every text field arrives ALL CAPS, so site names, addresses, and contaminants are flowed through a `titleCase()` helper that preserves initialisms like `LLC`, `DOT`, `USN`, `PCB` while rendering business suffixes like `INC` as `Inc.`. Polygon-edge distance (EPA distributes single points only) and cleanup-milestone enrichment from `sems.envirofacts_site_milestone` are deliberate v2 deferrals.
+
 ---
 
 ## What isn't built yet
@@ -496,7 +510,7 @@ Each module may declare an optional `iconImage` (a root-relative path under `/pu
 These appear in the schema or the dashboard mockup but are not real flows. Treat as roadmap, not as currently-working features:
 
 - **Inventory hero photos**. `inventory.hero_photo_path` exists in the schema for per-appliance / per-room hero images but no upload UI or storage policy ships with it yet. The dashboard's user-photo upload covers the house-level surface only.
-- **Public-records sources beyond EPA radon** — FEMA flood zone, EPA Superfund proximity, BS&A assessor data, lead-disclosure heuristics, etc. Each is a new habitat module under `lib/habitat/modules/<key>/`; the orchestrator already iterates the registry, so adding a module is a contained change. The finding detail modal renders these out of the box from the generic `HabitatFinding` shape; richer per-module structured content (Superfund map, flood-history timeline, etc.) is deferred until a module forces a slotted-shell contract.
+- **Public-records sources beyond EPA radon and EPA Superfund proximity** — FEMA flood zone, BS&A assessor data, lead-disclosure heuristics, etc. Each is a new habitat module under `lib/habitat/modules/<key>/`; the orchestrator already iterates the registry, so adding a module is a contained change. The finding detail modal renders these out of the box from the generic `HabitatFinding` shape; richer per-module structured content (Superfund map, flood-history timeline, etc.) is deferred until a module forces a slotted-shell contract.
 - **Description synthesis** — for v1 we show `description_source` (Zillow's raw copy) as `description`. A future LLM step will rewrite `description` in Hearth's voice while leaving `description_source` intact.
 - **Multi-house** UI. Schema supports it; onboarding gate currently locks to one house per user.
 - **Inventory CRUD**. Schema exists; the `/appliances`, `/entities/[id]`, and `/documents/[id]` routes are placeholder shells.
