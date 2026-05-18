@@ -53,10 +53,10 @@
  *
  *   Step 1 (fetch):  FEMA National Flood Hazard Layer — upstream dataset.
  *   Step 3 (rule):   FEMA flood zone definitions — external authority.
- *   Step 4 (decide): /about/classification#flood-zones — Hearth's own
- *                    classification page (forward-looking URL; page is
- *                    planned but doesn't exist yet, same pattern as the
- *                    radon and Superfund modules).
+ *   Step 4 (decide): /how-it-works#flood-zones — Hearth's own
+ *                    methodology page. (Old findings persisted with the
+ *                    prior /about/classification#flood-zones URL still
+ *                    resolve via a permanent redirect in next.config.ts.)
  * -------------------------------------------------------------------
  */
 

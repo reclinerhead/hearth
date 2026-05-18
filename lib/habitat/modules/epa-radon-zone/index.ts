@@ -51,9 +51,10 @@
  *   Step 1 (fetch):  EPA Map of Radon Zones — the upstream dataset.
  *   Step 3 (rule):   EPA — Radon zones and action levels — the published
  *                    guideline the rule derives from.
- *   Step 4 (decide): /about/classification#radon — Hearth's own
- *                    classification page (forward-looking URL; page is
- *                    planned but doesn't exist yet — see HEARTH_CLASSIFICATION_SOURCE).
+ *   Step 4 (decide): /how-it-works#radon — Hearth's own methodology
+ *                    page. (Old findings persisted with the prior
+ *                    /about/classification#radon URL still resolve via
+ *                    a permanent redirect in next.config.ts.)
  * -------------------------------------------------------------------
  */
 
@@ -88,12 +89,13 @@ const EPA_ACTION_LEVEL_SOURCE = {
   url: "https://www.epa.gov/radon/health-risk-radon",
 };
 
-// Forward-looking link — the classification page doesn't exist yet, but
-// the activity log is meant to be a frozen-in-time record, so we cite
-// the URL it will live at. The page is part of a follow-up.
+// Cites Hearth's public methodology page. The /about/classification
+// URL this used to point at is preserved as a permanent redirect in
+// next.config.ts, so old findings persisted with the prior URL still
+// resolve correctly when clicked.
 const HEARTH_CLASSIFICATION_SOURCE = {
   label: "How Hearth classifies radon findings",
-  url: "/about/classification#radon",
+  url: "/how-it-works#radon",
 };
 
 /**

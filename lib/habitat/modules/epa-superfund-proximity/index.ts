@@ -52,11 +52,14 @@
  * Source citations
  *
  *   Step 1 (fetch):   EPA Envirofacts SEMS — Superfund site data.
- *   Step 4 (rule):    /about/classification#superfund — Hearth's own
- *                     classification page. The tier model is Hearth's;
- *                     we cite our own page rather than imply EPA
- *                     publishes a "community-impact rings" standard.
- *   Step 5 (decide):  /about/classification#superfund — same page.
+ *   Step 4 (rule):    /how-it-works#superfund — Hearth's own methodology
+ *                     page. The tier model is Hearth's; we cite our own
+ *                     page rather than imply EPA publishes a
+ *                     "community-impact rings" standard. (Old findings
+ *                     persisted with the prior /about/classification URL
+ *                     still resolve via a permanent redirect in
+ *                     next.config.ts.)
+ *   Step 5 (decide):  /how-it-works#superfund — same page.
  * -------------------------------------------------------------------
  */
 

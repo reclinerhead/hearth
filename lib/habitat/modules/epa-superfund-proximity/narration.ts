@@ -25,26 +25,26 @@ export const EPA_ENVIROFACTS_SOURCE: ActivitySource = {
   url: "https://www.epa.gov/enviro/sems-search-user-guide",
 };
 
-// Forward-looking link — the classification page doesn't exist yet, but
-// the activity log is meant to be a frozen-in-time record, so we cite
-// the URL the page will live at. Same pattern as the radon module's
-// /about/classification#radon anchor.
+// Cites Hearth's public methodology page. The /about/classification
+// URL this used to point at is preserved as a permanent redirect in
+// next.config.ts, so old findings persisted with the prior URL still
+// resolve correctly when clicked.
 export const HEARTH_CLASSIFICATION_SOURCE: ActivitySource = {
   label: "How Hearth classifies Superfund findings",
-  url: "/about/classification#superfund",
+  url: "/how-it-works#superfund",
 };
 
 // The tier model is Hearth's, not EPA's. EPA uses 1- and 3-mile rings
 // in its community-involvement work near Superfund sites; our 0.5 /
 // 2 / 5 bands are a Hearth synthesis informed by that practice. The
-// rule step's citation points at our own classification page, which
-// is where we'll document the relationship to EPA's published
-// guidance — not at /superfund, which would imply EPA publishes a
+// rule step's citation points at our own methodology page, which is
+// where the relationship to EPA's published guidance is documented —
+// not at /superfund, which would imply EPA publishes a
 // "community-impact rings" standard that doesn't exist.
 export const HEARTH_TIER_RULE_SOURCE: ActivitySource = {
   label:
     "How Hearth classifies Superfund findings (based on EPA community-involvement practice)",
-  url: "/about/classification#superfund",
+  url: "/how-it-works#superfund",
 };
 
 /**
