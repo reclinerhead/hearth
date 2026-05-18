@@ -524,6 +524,30 @@ The persisted per-site shape (`findings.sites[].site`) carries two SEMS fields t
 
 `lib/habitat/contaminants/data.ts` is the single source of truth for how Hearth talks about chemical contaminants — canonical spelling, observed EPA aliases, three-stop concern level (`high` / `moderate` / `low`), one short Hearth-voice description, and an authoritative EPA / ATSDR link per entry. `lib/habitat/contaminants/lookup.ts` exposes `findContaminantByAlias(raw)`, the case-insensitive whitespace-trimmed resolver against the aliases lists. The Superfund detail pane consumes the table to render enriched contaminant rows: high-concern entries bold, moderate normal weight, low muted, each with description and "Learn more" link. Unknown EPA strings fall through to a grouped "Other contaminants detected" section that renders the raw (chemistry-aware-formatted) string with no enrichment. A site with an empty `contaminants` array — Georgia-Pacific's Cumulis record is the canonical example — gets explanatory copy noting that EPA hasn't published an inventory for that site rather than an empty section. Future modules (water-system violations, soil testing) consume the same table; the source of truth never gets duplicated into individual modules.
 
+### FEMA Flood Zones module
+
+The third shipping habitat module (`lib/habitat/modules/fema-flood-zones/`). It queries FEMA's National Flood Hazard Layer (NFHL) at the user's home coordinates via the public ArcGIS REST endpoint at [`https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query`](https://www.fema.gov/flood-maps/national-flood-hazard-layer) (MapServer layer 28 is "Flood Hazard Zones") and returns the FEMA flood zone designation for the property. One HTTP call, one polygon (typically), one classification — the simplest live-API habitat module by every measure. No state-wide fetch, no proximity math, no slotted-shell drill-down; single finding, generic modal.
+
+The query is a point-in-polygon test: `geometry={lon},{lat}` (longitude first — the Esri convention) in WGS84, with `spatialRel=esriSpatialRelIntersects` and `returnGeometry=false`. FEMA returns a `features[]` array, one entry per polygon containing the point — usually exactly one, occasionally more at polygon boundaries, and zero when the address is outside NFHL digital coverage (roughly 10% of US addresses, mostly rural/remote).
+
+Classification reads both `FLD_ZONE` and `ZONE_SUBTY` together. The subtype is load-bearing — Zone X with the "0.2 PCT" subtype (the 500-year/shaded-X floodplain) is a meaningfully different finding from Zone X with the "minimal hazard" subtype, even though the bare zone code is identical. The full table lives in [`classify.ts`](../lib/habitat/modules/fema-flood-zones/classify.ts):
+
+| FLD_ZONE | ZONE_SUBTY | Severity |
+|---|---|---|
+| `X` | minimal / null | favorable |
+| `X` | `0.2 PCT ANNUAL CHANCE FLOOD HAZARD` | neutral |
+| `D` | any | caution |
+| `A`/`AE`/`AH`/`AO`/`AR` | any except `FLOODWAY` | concern |
+| `A`/`AE` | `FLOODWAY` | critical |
+| `V`/`VE` | any | critical |
+| no features | — | neutral (no-coverage path) |
+
+Cadence is `once` — FEMA updates the NFHL roughly monthly but a homeowner's mapped flood zone basically never changes within their ownership. The rare LOMA/LOMR cases (NFHL layer 34 carries individual property determinations that supersede the base FIRM) are tracked as a v1.1 idea rather than a recurring check.
+
+Three FEMA quirks the module handles explicitly. (1) `-9999` is FEMA's null sentinel for the numeric fields `STATIC_BFE`, `DEPTH`, `VELOCITY`, `BFE_REVERT`, and `DEP_REVERT`; [`fetch.ts`](../lib/habitat/modules/fema-flood-zones/fetch.ts) coerces those to `null` in `normalizeFloodZone` before the data flows anywhere else — surfacing "-9999 feet" in the UI would be a memorable bug. (2) Multiple overlapping polygons can come back at boundaries; `pickMostSevere` in [`classify.ts`](../lib/habitat/modules/fema-flood-zones/classify.ts) selects the higher-severity zone and the activity log's compute step calls out the selection so the user sees the choice. (3) Empty `features[]` means the address sits outside NFHL digital coverage — the module severity is `neutral` (not `favorable`; we don't claim "all clear" when FEMA doesn't have data), the action shelf drops the FEMA Map Service Center deep-link (FEMA has nothing to render for that area) and keeps just the learn-more link, and the activity log shrinks to 4 steps (rule omitted because there's no zone to apply a rule to).
+
+The module uses the generic finding modal — no `getOverviewCards` or `renderDetail`. Single finding, single zone, no per-item drill-down. The action shelf carries two link chips on the happy path: a deep link to FEMA's Map Service Center pre-populated to the user's address via `?AddressQuery=...` (gives the user a way to see the actual polygon edge for their area), plus a link to FEMA's flood-zone definitions page.
+
 ### `HabitatModule.category`
 
 `HabitatModule.category` is a required field (currently the union `"environmental"`, expandable as new module families ship). The orchestrator writes `category: module.category` into the `running`, `failed`, and `completed` upserts on `hearth.habitat_findings`. The column was added by `supabase/migrations/20260517171126_habitat-findings-module-changes.sql` for dashboard grouping; the migration backfilled existing rows but did not wire the orchestrator, so the field stayed null for new rows until the orchestrator started persisting it.
@@ -535,7 +559,7 @@ The persisted per-site shape (`findings.sites[].site`) carries two SEMS fields t
 These appear in the schema or the dashboard mockup but are not real flows. Treat as roadmap, not as currently-working features:
 
 - **Inventory hero photos**. `inventory.hero_photo_path` exists in the schema for per-appliance / per-room hero images but no upload UI or storage policy ships with it yet. The dashboard's user-photo upload covers the house-level surface only.
-- **Public-records sources beyond EPA radon and EPA Superfund proximity** — FEMA flood zone, BS&A assessor data, lead-disclosure heuristics, etc. Each is a new habitat module under `lib/habitat/modules/<key>/`; the orchestrator already iterates the registry, so adding a module is a contained change. The finding detail modal renders these out of the box from the generic `HabitatFinding` shape; richer per-module structured content (Superfund map, flood-history timeline, etc.) is deferred until a module forces a slotted-shell contract.
+- **Public-records sources beyond EPA radon, EPA Superfund proximity, and FEMA flood zones** — BS&A assessor data, lead-disclosure heuristics, water-system violations, etc. Each is a new habitat module under `lib/habitat/modules/<key>/`; the orchestrator already iterates the registry, so adding a module is a contained change. The finding detail modal renders these out of the box from the generic `HabitatFinding` shape; richer per-module structured content (flood-history timeline, soil testing panels, etc.) is deferred until a module forces a slotted-shell contract.
 - **Description synthesis** — for v1 we show `description_source` (Zillow's raw copy) as `description`. A future LLM step will rewrite `description` in Hearth's voice while leaving `description_source` intact.
 - **Multi-house** UI. Schema supports it; onboarding gate currently locks to one house per user.
 - **Inventory CRUD**. Schema exists; the `/appliances`, `/entities/[id]`, and `/documents/[id]` routes are placeholder shells.

@@ -1,12 +1,18 @@
 import type { HabitatModule } from "./types";
 import EpaRadonZone from "./modules/epa-radon-zone";
 import EpaSuperfundProximity from "./modules/epa-superfund-proximity";
+import FemaFloodZones from "./modules/fema-flood-zones";
 
 /**
  * Every habitat module in the system.
  *
- * Order does not matter — the orchestrator (workflows/habitat.ts) runs
- * applicable modules in parallel.
+ * Registry order drives the onboarding discovery modal's reveal
+ * sequence (`app/(app)/dashboard/onboarding-discovery-modal.tsx`).
+ * The current order ramps from fastest to slowest — radon resolves
+ * sub-millisecond, FEMA flood zones is one HTTP call (~500 ms), and
+ * Superfund pulls a whole state of NPL sites (~3 s). The orchestrator
+ * itself runs applicable modules in parallel; order does not affect
+ * the persisted findings.
  *
  * Adding a new module:
  *   1. Implement the HabitatModule contract under
@@ -18,6 +24,6 @@ import EpaSuperfundProximity from "./modules/epa-superfund-proximity";
  */
 export const HABITAT_MODULES: readonly HabitatModule[] = [
   EpaRadonZone,
+  FemaFloodZones,
   EpaSuperfundProximity,
-  // FemaFloodZone,
 ] as const;
