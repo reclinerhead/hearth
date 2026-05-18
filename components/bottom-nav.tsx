@@ -10,7 +10,6 @@ const TABS: Tab[] = [
   { href: "/dashboard", label: "Dashboard", icon: "layout-dashboard" },
   { href: "/home-details", label: "Home", icon: "home" },
   { href: "/appliances", label: "Appliances", icon: "device-tv-old" },
-  { href: "/habitat", label: "Habitat", icon: "leaf" },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -34,12 +33,21 @@ export function BottomNav() {
         backdropFilter: "blur(12px)",
       }}
     >
+      {/*
+        4-column layout after removing the Habitat tab: Dashboard on the
+        left, then the center Add button, then Home and Appliances on the
+        right. Picked over "one tab on each side of Add" because keeping
+        the destructive symmetry (two-on-the-right vs one-on-each-side)
+        avoids the visual hole that a sparse, evenly-spaced bottom nav
+        creates — the Add button stays anchored to the visual center of
+        the bar while the labelled tabs cluster naturally.
+      */}
       <ul
         className="grid h-[var(--nav-bottom-h)] items-stretch"
-        style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr" }}
+        style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}
       >
-        {/* Left two tabs */}
-        {TABS.slice(0, 2).map((t) => (
+        {/* Left tab */}
+        {TABS.slice(0, 1).map((t) => (
           <TabLink key={t.href} tab={t} active={isActive(pathname, t.href)} />
         ))}
 
@@ -61,7 +69,7 @@ export function BottomNav() {
         </li>
 
         {/* Right two tabs */}
-        {TABS.slice(2).map((t) => (
+        {TABS.slice(1).map((t) => (
           <TabLink key={t.href} tab={t} active={isActive(pathname, t.href)} />
         ))}
       </ul>

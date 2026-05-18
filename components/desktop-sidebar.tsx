@@ -10,7 +10,6 @@ const ITEMS: Item[] = [
   { href: "/dashboard", label: "Dashboard", icon: "layout-dashboard" },
   { href: "/home-details", label: "Home details", icon: "home" },
   { href: "/appliances", label: "Home inventory", icon: "device-tv-old" },
-  { href: "/habitat", label: "Habitat", icon: "leaf" },
 ];
 
 function isActive(pathname: string, href: string) {

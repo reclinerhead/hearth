@@ -32,7 +32,6 @@ app/                       # Next.js App Router
     dashboard/             # Live house facts + placeholder lower sections
     onboarding/            # First-run address capture
     appliances/            # Inventory list
-    habitat/               # Public-records surface (placeholder)
     home-details/          # House facts edit surface (placeholder)
     documents/[id]/        # Document detail view
     entities/[id]/         # Inventory item detail view
@@ -413,21 +412,33 @@ Two values are tuned together here: a 7-day signed-URL TTL so the cached URL sta
 
 ## Habitat surface
 
-Habitat findings surface on two pages: the dedicated `/habitat` route (full detail, one tile per finding with summary + action chips) and the dashboard's Habitat preview block (compact tiles, no actions, each tile linking to `/habitat` for follow-up). Both surfaces run the same query against `hearth.habitat_findings` with `status = 'completed'`, sort by the same severity weight (concerns first: critical → high → moderate → low → neutral → good), and use `HABITAT_MODULES.find(m => m.key === row.module_key)` to look up the module label and `iconImage`. Failed and `not_applicable` findings are intentionally not rendered on either surface in v1 — they'll get their own tile variants later.
+Habitat findings live in exactly one place: the dashboard's Habitat preview block. There is no dedicated `/habitat` route — every finding the user has is already on the dashboard, and clicking a tile opens a modal with the full detail (action chips, source link, and the activity log narrating how the finding was computed).
 
-`/habitat` (`app/(app)/habitat/page.tsx`) is a server component that renders one `<HabitatFindingTile>` per row. With a single finding the grid collapses to one column so the tile stretches to container width; two or more findings cap at two tiles per row on md+.
-
-The dashboard's Habitat block (`app/(app)/dashboard/page.tsx`) renders a `<HabitatPreviewPanel>` (client component) inside its half-width left column. The `SectionHeader` has a trailing "See all" link to `/habitat` matching the Appliances pattern, and when no finding has produced a populated row yet the panel falls back to a one-line "Looking up public records for your area…" placeholder so the dashboard layout stays stable during the first-run discovery window.
+The dashboard's Habitat block (`app/(app)/dashboard/page.tsx`) renders a `<HabitatPreviewPanel>` (client component) inside its half-width left column. When no finding has produced a populated row yet the panel falls back to a one-line "Looking up public records for your area…" placeholder so the dashboard layout stays stable during the first-run discovery window. The `SectionHeader` carries only the eyebrow and title — no trailing affordance, because the modal is the follow-up.
 
 `HabitatPreviewPanel` is a client component because the panel must stay live across the onboarding workflow's completion and across manual refreshes. The server component fetches an initial set of rows (passed as `initialRows`) so first paint is fully hydrated; the panel then subscribes to `hearth.habitat_findings` via `useHabitatFindings` (`lib/hooks/use-habitat-findings.ts`) and overlays realtime INSERT / UPDATE events as the orchestrator writes new findings. A 2.5s polling fallback runs alongside the websocket so the panel still updates when a browser blocks realtime transports.
 
-The panel filters rows by "severity is populated" rather than `status='completed'`. The orchestrator's `running`-status upsert only writes `status` / `checked_at` / `error` and leaves the prior `severity` / `headline` / `summary` intact, so this filter keeps the previously-completed tile visible through a re-check (manual refresh, cadence-driven re-run) instead of flickering it out and back in when the new completed row arrives.
+The panel filters rows by "severity is populated" rather than `status='completed'`. The orchestrator's `running`-status upsert only writes `status` / `checked_at` / `error` and leaves the prior `severity` / `headline` / `summary` intact, so this filter keeps the previously-completed tile visible through a re-check (manual refresh, cadence-driven re-run) instead of flickering it out and back in when the new completed row arrives. Sort order is concerns first: critical → concern → caution → neutral → favorable → beneficial.
 
-### Tile components
+### Tile + trigger + modal
 
-`components/habitat-finding-tile.tsx` is the full tile used on `/habitat`. Server-component-safe. Renders an optional ~128px square hero image on the left, then an eyebrow (module label) + severity dot, headline (h3), summary, and an optional row of action chips. Layout switches between two columns (`128px 1fr`) and a single column based on whether the module declared an `iconImage` — no empty image gutter when absent. Uses the `.surface-ai` treatment so it sits visually alongside other AI-authored content. Severity dots are colour-mapped against `--color-danger` / `--color-warning` / `--color-success` / `--color-text-tertiary`. Each action chip opens in a new tab via `target="_blank" rel="noopener noreferrer"`.
+The preview is a three-piece composition:
 
-`components/habitat-finding-tile-compact.tsx` is the dashboard-preview variant. Smaller 72px hero, line-clamped 2-line summary, no action chips. The whole tile is a single `<Link href="/habitat">` so clicking anywhere routes the user to the full detail. Kept as a separate component rather than a `variant` prop on the full tile because the full tile's action row contains `<a>` tags and the compact tile *is* an `<a>`; nesting `<a>` inside `<a>` is invalid HTML.
+- **`components/habitat-finding-tile-compact.tsx`** — presentational tile content. 72px hero, eyebrow + severity dot + module label, headline, line-clamped 2-line summary. No wrapping interactive element — the trigger owns the click.
+- **`components/habitat-finding-trigger.tsx`** — client component that wraps the tile in a real `<button>` and opens the modal on click. Owns the open state and the return-focus ref so the modal's focus trap returns focus to the originating tile when it closes. `aria-haspopup="dialog"` so AT users know what the button does.
+- **`components/habitat-finding-modal.tsx`** — client component that renders the finding detail. Sticky header (severity dot + module label + severity word + headline + summary + close button), scrollable body with the optional action shelf and the activity log timeline ("How we got here"), sticky footer with "Last checked", a "View source" link, and the `Esc` keyboard hint.
+
+The modal is **generic by design** — it renders from the `HabitatFinding` shape only (`severity`, `headline`, `summary`, `actions`, `source_url`, `activity_log`). No per-module branches. Per-module structured content (a Superfund map, a flood-history timeline) is a deferred concern that will be designed when a richer module forces the slotted-shell contract that v1 explicitly avoids.
+
+The modal's mechanics (scroll-lock via the `.scroll-locked` class, focus trap, ESC handler, backdrop-click close, return focus on unmount) are lifted from `components/document-modal.tsx`. We did not extract a shared base modal in this PR — two callers is the threshold for extraction and the codebase has exactly two now. The next modal that lands should pull a shared primitive out of those two in one step.
+
+### Severity tokens
+
+`components/habitat-severity.tsx` exports `SEVERITY_COLOR` (CSS-variable map keyed by the 6-stop severity scale), `SEVERITY_WORD` (sentence-case labels), and a small `SeverityDot` component the compact tile and the modal both render. Two severities share a color (`concern` + `critical` → danger, `favorable` + `beneficial` → success); the textual severity word carries the finer distinction.
+
+### Action chip
+
+`components/habitat-action-chip.tsx` is the shared chip that renders a single `FindingAction`. Product chips use the accent treatment; link and service chips stay subtler. Every chip opens in a new tab via `target="_blank" rel="noopener noreferrer"`. The chip is rendered in two places today: the modal's action shelf, and (potentially) any future surface that wants to surface module actions.
 
 ### `HabitatFinding.actions` and `FindingAction`
 
@@ -449,7 +460,7 @@ Every habitat module's `check()` emits a structured **activity log** — a step-
 
 The log is **module-emitted, not framework-derived** — the orchestrator does not observe the module and try to infer what it did. The module explicitly emits each step it considers meaningful. This keeps the log honest: it describes what the module *thinks* it did, not what the framework guessed it might have done. Step kinds (`fetch` / `rule` / `compute` / `decide` / `finding` / `error`) loosely categorize the step so a future detail view can render them differently if useful.
 
-The log is a **frozen-in-time artifact of one specific run**, not module documentation. If a module's logic changes later, old findings on rows that aren't re-checked still have logs describing the old behavior. That's correct — the log records what happened the last time the user's house was checked. The finding detail page (out of scope today) will surface the log to the user; for now the column is populated but unread.
+The log is a **frozen-in-time artifact of one specific run**, not module documentation. If a module's logic changes later, old findings on rows that aren't re-checked still have logs describing the old behavior. That's correct — the log records what happened the last time the user's house was checked. The finding detail modal renders the log as a vertical narrative timeline ("How we got here"); each step's `narration` is the primary line, `result_summary` an inline pill, `detail` a small mono block, and `source` a link to the upstream citation.
 
 **Narration voice:** `narration` strings are written in first-person voice ("I checked…", "I looked up…", "I'm flagging this as…") so the log reads like a person doing the lookup for the user. Jargon, URLs, and raw lookup keys go in the optional `detail` field, not in `narration`. Citations for rules and datasets go in `source` so the user can verify what was applied. Failure paths emit an `error` step before re-throwing; that step is not persisted (no log is returned on throw, by design — partial-log persistence on failure is a deferred concern), but the in-code emission keeps the module's intent readable.
 
@@ -467,7 +478,7 @@ The radon module (`lib/habitat/modules/epa-radon-zone/index.ts`) is the referenc
 
 ### `HabitatModule.iconImage`
 
-Each module may declare an optional `iconImage` (a root-relative path under `/public`). When present, the tile renders it as a 128px square hero on the left. Module definitions stay serializable — we use string paths, not imported asset modules. Module hero images live under `public/habitat_module_images/` (e.g. `radon.jpg`).
+Each module may declare an optional `iconImage` (a root-relative path under `/public`). When present, the dashboard's compact tile renders it as a 72px square hero on the left of the tile. Module definitions stay serializable — we use string paths, not imported asset modules. Module hero images live under `public/habitat_module_images/` (e.g. `radon.jpg`).
 
 ---
 
@@ -476,7 +487,7 @@ Each module may declare an optional `iconImage` (a root-relative path under `/pu
 These appear in the schema or the dashboard mockup but are not real flows. Treat as roadmap, not as currently-working features:
 
 - **Inventory hero photos**. `inventory.hero_photo_path` exists in the schema for per-appliance / per-room hero images but no upload UI or storage policy ships with it yet. The dashboard's user-photo upload covers the house-level surface only.
-- **Public-records sources beyond EPA radon** — FEMA flood zone, EPA Superfund proximity, BS&A assessor data, lead-disclosure heuristics, etc. Each is a new habitat module under `lib/habitat/modules/<key>/`; the orchestrator already iterates the registry, so adding a module is a contained change. The "What we know about your location" `AICard` at the bottom of `/habitat` is still a static placeholder pending its own wiring.
+- **Public-records sources beyond EPA radon** — FEMA flood zone, EPA Superfund proximity, BS&A assessor data, lead-disclosure heuristics, etc. Each is a new habitat module under `lib/habitat/modules/<key>/`; the orchestrator already iterates the registry, so adding a module is a contained change. The finding detail modal renders these out of the box from the generic `HabitatFinding` shape; richer per-module structured content (Superfund map, flood-history timeline, etc.) is deferred until a module forces a slotted-shell contract.
 - **Description synthesis** — for v1 we show `description_source` (Zillow's raw copy) as `description`. A future LLM step will rewrite `description` in Hearth's voice while leaving `description_source` intact.
 - **Multi-house** UI. Schema supports it; onboarding gate currently locks to one house per user.
 - **Inventory CRUD**. Schema exists; the `/appliances`, `/entities/[id]`, and `/documents/[id]` routes are placeholder shells.

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { EmergencyTile, EntityRow, SectionHeader } from "@/components/ui";
 import { Icon, type IconName } from "@/components/icon";
@@ -90,7 +89,7 @@ export default async function DashboardPage() {
   const { data: habitatRows } = await supabase
     .from("habitat_findings")
     .select(
-      "module_key, status, severity, headline, summary, findings, source_url, error",
+      "module_key, status, severity, headline, summary, findings, source_url, error, actions, activity_log, checked_at",
     )
     .eq("house_id", data.id);
 
@@ -132,16 +131,6 @@ export default async function DashboardPage() {
             <SectionHeader
               eyebrow="The world around your house"
               title="Habitat"
-              trailing={
-                <Link
-                  href="/habitat"
-                  className="text-small inline-flex items-center gap-1"
-                  style={{ color: "var(--color-text-secondary)" }}
-                >
-                  See all
-                  <Icon name="chevron-right" size={14} />
-                </Link>
-              }
             />
             <HabitatPreviewPanel
               houseId={data.id}

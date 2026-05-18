@@ -1,6 +1,7 @@
 "use client";
 
 import { HabitatFindingTileCompact } from "@/components/habitat-finding-tile-compact";
+import { HabitatFindingTrigger } from "@/components/habitat-finding-trigger";
 import { HABITAT_MODULES } from "@/lib/habitat/registry";
 import type { HabitatSeverity } from "@/lib/habitat/types";
 import {
@@ -19,9 +20,9 @@ import {
  * with those rows and overlays realtime events as they arrive.
  */
 
-// Concerns first, positives last. Mirrors the ordering on /habitat and
-// /dashboard's previous server-side sort — same rule, now applied in
-// the client because the rows change over the page's lifetime.
+// Concerns first, positives last. Same severity ordering used everywhere
+// the dashboard surfaces findings — applied in the client because the
+// rows change over the page's lifetime.
 const SEVERITY_WEIGHT: Record<HabitatSeverity, number> = {
   critical: 0,
   concern: 1,
@@ -86,14 +87,20 @@ export function HabitatPreviewPanel({
         // is read-only.
         if (!habitatModule) return null;
         return (
-          <HabitatFindingTileCompact
+          <HabitatFindingTrigger
             key={row.module_key}
-            moduleLabel={habitatModule.name}
-            headline={row.headline}
-            summary={row.summary}
-            severity={row.severity}
-            iconImage={habitatModule.iconImage}
-          />
+            row={row}
+            habitatModule={habitatModule}
+            className="surface-ai block w-full p-3 sm:p-4 transition-colors hover:border-(--color-border-emphasis) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+          >
+            <HabitatFindingTileCompact
+              moduleLabel={habitatModule.name}
+              headline={row.headline}
+              summary={row.summary}
+              severity={row.severity}
+              iconImage={habitatModule.iconImage}
+            />
+          </HabitatFindingTrigger>
         );
       })}
     </div>
