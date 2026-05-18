@@ -1,16 +1,29 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useHouseRealtime } from "@/lib/hooks/use-house-realtime";
 import { Icon, type IconName } from "@/components/icon";
 import { AICard, MetricCard, PlaceholderImage } from "@/components/ui";
 import { diffHouseFacts } from "@/lib/briefing/diff";
 import type { MergeableHouseFacts } from "@/lib/briefing/merge";
-import { createHouseImageSignedUrl } from "@/lib/house-image/signed-url";
+import {
+  createCachedSignedUrl,
+  HOUSE_IMAGE_CACHE_CONTROL,
+  type HouseImageBucket,
+} from "@/lib/house-image/signed-url";
 import { createClient } from "@/lib/supabase/client";
 import type { BriefingStatus, House } from "@/types/house";
 import { refreshBriefing, regenerateHouseImage } from "./actions";
 import { OnboardingDiscoveryModal } from "./onboarding-discovery-modal";
+
+// 15 MB. Modern phone photos can hit 8-12 MB, so this gives headroom
+// without inviting multi-megapixel desktop uploads. The figure-of-merit
+// is what the browser can ferry over a mobile connection in under a few
+// seconds — anything past this should be downscaled before upload, but
+// client-side downscaling is a follow-up.
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+const MAX_UPLOAD_MB = 15;
+const USER_PHOTO_PATH = "photo";
 
 // While the briefing is finishing up, the image step is kicked off but
 // hasn't written generated_image_url yet. Keep the skeleton visible for
@@ -357,6 +370,7 @@ function GeneratingIllustrationSkeleton() {
 
 /**
  * The hero image surface. Renders, in priority order:
+ *  - the user-uploaded photo (when one exists for this house)
  *  - the generated illustration (when a signed URL is in hand)
  *  - the "Generating illustration…" skeleton (while we're still waiting
  *    on the first sketch to land, or a regenerate is in flight with no
@@ -364,26 +378,38 @@ function GeneratingIllustrationSkeleton() {
  *  - the original placeholder (terminal state with no image — failure
  *    or pre-briefing; surfaces the regenerate button as the way out)
  *
- * The image disclaimer is part of this surface — same .surface card,
- * separated by a hairline border — because the framing ("this is NOT a
- * photo of your home") has to read alongside the image, not somewhere
- * else on the page. Detaching it would be a regression.
+ * The figcaption disclaimer + action row swaps based on which image is
+ * showing:
+ *   - generated → "Stylized illustration — not a photo of your home."
+ *     plus an "Upload your own photo" affordance.
+ *   - user photo → "Your photo." plus "Replace" / "Remove" affordances.
+ *
+ * The "not a photo of your home" framing is load-bearing whenever the
+ * generated illustration is on screen — see TechnicalGuide.md
+ * ("Generated house illustration"). The disclaimer is intentionally
+ * dropped only when a real user photo replaces the sketch.
  *
  * The regenerate affordance is a floating icon button overlaid on the
- * image bottom-right. Hidden during the first-time skeleton (there's
- * nothing to regenerate over), shown otherwise; spins while a
- * regenerate is in flight.
+ * image bottom-right. Shown only when displaying the generated image;
+ * regenerating a user photo doesn't make sense, so the button hides
+ * once a user photo is in place.
  */
 function HouseImageSurface({
   house,
   imageUrl,
+  isUserPhoto,
   briefingJustFinished,
   regenerating,
   regenerateDisabled,
   onRegenerate,
+  onSelectFile,
+  onRemoveUserPhoto,
+  uploading,
+  removing,
 }: {
   house: House;
   imageUrl: string | null;
+  isUserPhoto: boolean;
   // Whether the briefing finished recently enough that we're still
   // expecting the image step to land — derived in DashboardLive via a
   // setTimeout-driven effect so the value updates without depending on
@@ -392,32 +418,60 @@ function HouseImageSurface({
   regenerating: boolean;
   regenerateDisabled: boolean;
   onRegenerate: () => void;
+  onSelectFile: (file: File) => void;
+  onRemoveUserPhoto: () => void;
+  uploading: boolean;
+  removing: boolean;
 }) {
   const altLabel = house.nickname ?? house.address_line1;
   const hasImage = imageUrl !== null;
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const briefingActive =
     house.briefing_status === "pending" || house.briefing_status === "running";
 
-  // Skeleton is for "first-time waiting" — once an image exists, we
-  // keep it visible across regenerates and just spin the button. The
-  // exception is when no image exists AND a regenerate is in flight
-  // (rare — only reachable if regenerate is offered alongside the
-  // placeholder fallback, which is by design).
+  // "Generating illustration…" skeleton is specific to the generated
+  // illustration flow — user-photo uploads have their own overlay and
+  // the briefing's image step has no bearing on them. Suppress the
+  // skeleton during the (brief) user-photo signed-URL fetch so the
+  // copy doesn't lie about what's happening.
   const showSkeleton =
-    !hasImage && (regenerating || briefingActive || briefingJustFinished);
+    !isUserPhoto &&
+    !hasImage &&
+    (regenerating || briefingActive || briefingJustFinished);
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    // Reset the input value so re-selecting the same file fires onChange.
+    e.target.value = "";
+    if (file) onSelectFile(file);
+  }
+
+  function openFilePicker() {
+    fileInputRef.current?.click();
+  }
+
+  const altText = isUserPhoto
+    ? `Photo of ${altLabel}`
+    : `Stylized architectural illustration for ${altLabel}`;
+
+  // The regenerate overlay is only meaningful while we're showing the
+  // generated illustration — replacing a user photo happens via the
+  // file picker, not via re-running the image workflow.
+  const showRegenerateOverlay = !isUserPhoto && !(showSkeleton && !hasImage);
 
   return (
     <figure className="surface overflow-hidden flex flex-col">
       <div className="relative" style={{ aspectRatio: "4 / 3" }}>
         {hasImage ? (
-          // next/image is overkill for a 1024x1024 PNG behind a signed
-          // URL (the URL changes per regenerate, which would defeat the
-          // next/image optimization cache anyway).
+          // next/image would gain us little here — the URL is per-signed
+          // (it changes when the path/stamp changes) and the bytes are
+          // already cache-friendly via the bucket's immutable
+          // Cache-Control header + sessionStorage URL stability.
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imageUrl ?? ""}
-            alt={`Stylized architectural illustration for ${altLabel}`}
+            alt={altText}
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : showSkeleton ? (
@@ -426,7 +480,36 @@ function HouseImageSurface({
           <PlaceholderImage ratio="4 / 3" label={altLabel} icon="home" />
         )}
 
-        {showSkeleton && !hasImage ? null : (
+        {uploading || removing ? (
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            style={{
+              backgroundColor:
+                "color-mix(in oklab, var(--color-bg-base) 60%, transparent)",
+              backdropFilter: "blur(2px)",
+              WebkitBackdropFilter: "blur(2px)",
+            }}
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex items-center gap-2">
+              <span
+                aria-hidden
+                className="animate-spin inline-flex"
+              >
+                <Icon name="refresh-cw" size={16} />
+              </span>
+              <span
+                className="text-small"
+                style={{ color: "var(--color-text-primary)" }}
+              >
+                {uploading ? "Uploading photo…" : "Removing photo…"}
+              </span>
+            </div>
+          </div>
+        ) : null}
+
+        {showRegenerateOverlay ? (
           <button
             type="button"
             onClick={onRegenerate}
@@ -454,37 +537,90 @@ function HouseImageSurface({
               <Icon name="refresh-cw" size={14} />
             </span>
           </button>
-        )}
+        ) : null}
       </div>
       <figcaption
-        className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-4 sm:py-2.5"
+        className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 sm:px-4 sm:py-2.5"
         style={{
           borderTop: "1px solid var(--color-border-subtle)",
           backgroundColor: "var(--color-bg-surface)",
         }}
       >
-        <p
-          className="text-small"
-          style={{ color: "var(--color-text-tertiary)" }}
-        >
-          Stylized illustration — not a photo of your home.{" "}
-          <button
-            type="button"
-            onClick={() => {
-              // Stub: the dedicated upload flow ships in a follow-up
-              // issue. Tooltip surfaces that on hover; clicking is a
-              // no-op for now rather than a broken link.
-            }}
-            title="Photo upload coming soon"
-            className="underline underline-offset-2"
-            style={{
-              color: "var(--color-text-secondary)",
-              cursor: "not-allowed",
-            }}
-          >
-            Upload your own photo →
-          </button>
-        </p>
+        {/*
+          accept="image/*" gives mobile browsers a native picker that
+          offers both Camera and Photo Library — no `capture` attribute
+          is set, so the user can choose either path. Re-used by both
+          "Upload" and "Replace" affordances via a ref-driven click.
+        */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          className="sr-only"
+          aria-hidden
+          tabIndex={-1}
+        />
+        {isUserPhoto ? (
+          <>
+            <p
+              className="text-small"
+              style={{ color: "var(--color-text-tertiary)" }}
+            >
+              Your photo.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={openFilePicker}
+                disabled={uploading || removing}
+                className="text-small inline-flex items-center gap-1 underline underline-offset-2"
+                style={{
+                  color: "var(--color-text-secondary)",
+                  opacity: uploading || removing ? 0.6 : 1,
+                }}
+              >
+                <Icon name="upload" size={12} />
+                Replace
+              </button>
+              <button
+                type="button"
+                onClick={onRemoveUserPhoto}
+                disabled={uploading || removing}
+                className="text-small inline-flex items-center gap-1 underline underline-offset-2"
+                style={{
+                  color: "var(--color-text-secondary)",
+                  opacity: uploading || removing ? 0.6 : 1,
+                }}
+              >
+                <Icon name="x" size={12} />
+                Remove
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p
+              className="text-small"
+              style={{ color: "var(--color-text-tertiary)" }}
+            >
+              Stylized illustration — not a photo of your home.
+            </p>
+            <button
+              type="button"
+              onClick={openFilePicker}
+              disabled={uploading || removing}
+              className="text-small inline-flex items-center gap-1 underline underline-offset-2"
+              style={{
+                color: "var(--color-text-secondary)",
+                opacity: uploading || removing ? 0.6 : 1,
+              }}
+            >
+              <Icon name="upload" size={12} />
+              Upload your own photo
+            </button>
+          </>
+        )}
       </figcaption>
     </figure>
   );
@@ -616,40 +752,62 @@ export function DashboardLive({ houseId }: { houseId: string }) {
   const [modalManuallyDismissed, setModalManuallyDismissed] = useState(false);
   const firstRun = useFirstRunDiscoveryModal(house);
 
-  // Signed URL for the generated illustration. Stored as a
-  // (path, stamp, url) tuple keyed by what produced it, so a stale URL
-  // (path/stamp don't match the current row) never renders. A
-  // regenerate keeps the path stable but advances generated_image_created_at,
-  // which forces a refetch and cache-busts the browser via the new
-  // signed-URL token.
+  // The image surface shows the user's uploaded photo when one exists,
+  // and falls back to the generated illustration. Either way the
+  // dashboard fetches a signed URL for the active bucket+path, keyed by
+  // a stamp (uploaded_at or generated_at) so a replace / regenerate
+  // forces a refetch.
+  const userImagePath = house?.user_image_url ?? null;
+  const userImageStamp = house?.user_image_uploaded_at ?? null;
+  const generatedImagePath = house?.generated_image_url ?? null;
+  const generatedImageStamp = house?.generated_image_created_at ?? null;
+  const isUserPhoto = userImagePath !== null;
+  const activeBucket: HouseImageBucket = isUserPhoto
+    ? "house-photos"
+    : "house-images";
+  const activePath = isUserPhoto ? userImagePath : generatedImagePath;
+  const activeStamp = isUserPhoto ? userImageStamp : generatedImageStamp;
+
+  // Signed URL for whichever image is active. Stored as a
+  // (bucket, path, stamp, url) tuple so a stale URL (any field doesn't
+  // match the current row) never renders. The createCachedSignedUrl
+  // helper itself caches per (bucket, path, stamp) in sessionStorage,
+  // so nav-away-and-back reuses the same URL and the browser HTTP
+  // cache actually hits.
   const [imageUrlEntry, setImageUrlEntry] = useState<{
+    bucket: HouseImageBucket;
     path: string;
     stamp: string | null;
     url: string;
   } | null>(null);
-  const generatedImagePath = house?.generated_image_url ?? null;
-  const generatedImageStamp = house?.generated_image_created_at ?? null;
   useEffect(() => {
-    if (!generatedImagePath) return;
+    if (!activePath) return;
     let cancelled = false;
     (async () => {
       const supabase = createClient();
-      const url = await createHouseImageSignedUrl(supabase, generatedImagePath);
+      const url = await createCachedSignedUrl(
+        supabase,
+        activeBucket,
+        activePath,
+        activeStamp,
+      );
       if (cancelled || !url) return;
       setImageUrlEntry({
-        path: generatedImagePath,
-        stamp: generatedImageStamp,
+        bucket: activeBucket,
+        path: activePath,
+        stamp: activeStamp,
         url,
       });
     })();
     return () => {
       cancelled = true;
     };
-  }, [generatedImagePath, generatedImageStamp]);
+  }, [activeBucket, activePath, activeStamp]);
   const imageUrl =
     imageUrlEntry &&
-    imageUrlEntry.path === generatedImagePath &&
-    imageUrlEntry.stamp === generatedImageStamp
+    imageUrlEntry.bucket === activeBucket &&
+    imageUrlEntry.path === activePath &&
+    imageUrlEntry.stamp === activeStamp
       ? imageUrlEntry.url
       : null;
 
@@ -746,6 +904,98 @@ export function DashboardLive({ houseId }: { houseId: string }) {
       if (timer) clearTimeout(timer);
     };
   }, [regenerateSnapshot, refetch]);
+
+  // User-photo upload + remove state. We do the storage upload from the
+  // browser via the RLS-bound client and follow with the
+  // hearth.houses UPDATE in the same handler. RLS on storage.objects
+  // and hearth.houses is the load-bearing ownership check; nothing
+  // here trusts the browser to identify the user.
+  const [imageActionState, setImageActionState] = useState<
+    "idle" | "uploading" | "removing"
+  >("idle");
+  const [imageError, setImageError] = useState<string | null>(null);
+
+  async function handleUploadFile(file: File) {
+    setImageError(null);
+    if (!file.type.startsWith("image/")) {
+      setImageError("Please choose an image file.");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setImageError(
+        `Photo is too large — please choose one under ${MAX_UPLOAD_MB} MB.`,
+      );
+      return;
+    }
+    setImageActionState("uploading");
+    try {
+      const supabase = createClient();
+      const path = `${houseId}/${USER_PHOTO_PATH}`;
+      const { error: uploadError } = await supabase.storage
+        .from("house-photos")
+        .upload(path, file, {
+          contentType: file.type,
+          upsert: true,
+          cacheControl: HOUSE_IMAGE_CACHE_CONTROL,
+        });
+      if (uploadError) {
+        setImageError(
+          uploadError.message ||
+            "We couldn't upload that photo. Please try again.",
+        );
+        return;
+      }
+      const uploadedAt = new Date().toISOString();
+      const { error: updateError } = await supabase
+        .from("houses")
+        .update({
+          user_image_url: path,
+          user_image_uploaded_at: uploadedAt,
+        })
+        .eq("id", houseId);
+      if (updateError) {
+        setImageError(
+          "Your photo uploaded but we couldn't save it on your house. Try again.",
+        );
+        return;
+      }
+      await refetch();
+    } catch (err) {
+      console.error("user photo upload failed", err);
+      setImageError("Something went wrong uploading your photo. Try again.");
+    } finally {
+      setImageActionState("idle");
+    }
+  }
+
+  async function handleRemoveUserPhoto() {
+    if (!house?.user_image_url) return;
+    setImageError(null);
+    setImageActionState("removing");
+    try {
+      const supabase = createClient();
+      // Storage delete is best-effort — the hearth.houses UPDATE is
+      // the authoritative "stop pointing at this photo" signal. If
+      // delete fails we still clear the row so the UI reverts.
+      await supabase.storage
+        .from("house-photos")
+        .remove([house.user_image_url]);
+      const { error: updateError } = await supabase
+        .from("houses")
+        .update({ user_image_url: null, user_image_uploaded_at: null })
+        .eq("id", houseId);
+      if (updateError) {
+        setImageError("We couldn't remove your photo. Try again.");
+        return;
+      }
+      await refetch();
+    } catch (err) {
+      console.error("user photo remove failed", err);
+      setImageError("Something went wrong removing your photo. Try again.");
+    } finally {
+      setImageActionState("idle");
+    }
+  }
 
   // Same polling-fallback story for the first-time generation. Once the
   // briefing flips to 'completed', the hook's status-based polling shuts
@@ -956,14 +1206,32 @@ export function DashboardLive({ houseId }: { houseId: string }) {
   return (
     <>
       <section className="grid gap-6 md:grid-cols-2">
-        <HouseImageSurface
-          house={house}
-          imageUrl={imageUrl}
-          briefingJustFinished={briefingJustFinished}
-          regenerating={regenerating}
-          regenerateDisabled={regenerating || isPending}
-          onRegenerate={handleRegenerate}
-        />
+        <div className="flex flex-col gap-2">
+          <HouseImageSurface
+            house={house}
+            imageUrl={imageUrl}
+            isUserPhoto={isUserPhoto}
+            briefingJustFinished={briefingJustFinished}
+            regenerating={regenerating}
+            regenerateDisabled={
+              regenerating || isPending || imageActionState !== "idle"
+            }
+            onRegenerate={handleRegenerate}
+            onSelectFile={handleUploadFile}
+            onRemoveUserPhoto={handleRemoveUserPhoto}
+            uploading={imageActionState === "uploading"}
+            removing={imageActionState === "removing"}
+          />
+          {imageError ? (
+            <div
+              className="text-small"
+              style={{ color: "var(--color-danger)" }}
+              role="status"
+            >
+              {imageError}
+            </div>
+          ) : null}
+        </div>
         <div className="flex flex-col gap-3">
           {summary ? (
             <RefreshSummaryBanner
