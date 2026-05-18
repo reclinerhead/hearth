@@ -413,7 +413,7 @@ function ContaminantsList({ list }: { list: string[] }) {
         <div>
           <div
             className="text-small mb-1"
-            style={{ color: "var(--color-text-tertiary)", fontWeight: 600 }}
+            style={{ color: "var(--color-text-tertiary)", fontWeight: 500 }}
           >
             Other contaminants detected
           </div>
@@ -449,7 +449,7 @@ function ContaminantItem({ row }: { row: ContaminantRow }) {
       <div className="flex items-baseline gap-2">
         <span
           style={{
-            fontWeight: isHigh ? 600 : 400,
+            fontWeight: isHigh ? 500 : 400,
             color: isLow
               ? "var(--color-text-tertiary)"
               : "var(--color-text-primary)",
@@ -509,8 +509,7 @@ function WhyThisSeverity({ entry }: { entry: SiteEntry }) {
         className="text-small"
         style={{
           color: "var(--color-text-secondary)",
-          fontWeight: 600,
-          cursor: "pointer",
+          fontWeight: 500,
           listStyle: "none",
         }}
       >

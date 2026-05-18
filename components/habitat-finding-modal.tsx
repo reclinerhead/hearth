@@ -324,7 +324,7 @@ export function HabitatFindingModal({
                   className="text-small"
                   style={{
                     color: "var(--color-text-secondary)",
-                    fontWeight: 600,
+                    fontWeight: 500,
                     margin: 0,
                   }}
                 >
