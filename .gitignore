@@ -43,3 +43,6 @@ next-env.d.ts
 
 .vercel
 .env*.local
+
+# claude code agent worktrees (created when an agent runs with worktree isolation)
+.claude/worktrees/
