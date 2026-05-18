@@ -110,10 +110,10 @@ async function persistBriefingSuccess(
   const { data: current, error: readError } = await supabase
     .from("houses")
     .select(
-      "year_built, living_area_sqft, lot_size_sqft, lot_size_acres, bedrooms, bathrooms, heating_summary, cooling_summary, parcel_id, description, description_source",
+      "year_built, living_area_sqft, lot_size_sqft, lot_size_acres, bedrooms, bathrooms, heating_summary, cooling_summary, parcel_id, description, description_source, user_image_url",
     )
     .eq("id", houseId)
-    .single<MergeableHouseFacts>();
+    .single<MergeableHouseFacts & { user_image_url: string | null }>();
 
   if (readError || !current) {
     throw new Error(
@@ -153,10 +153,20 @@ async function persistBriefingSuccess(
   // row, so it has to run AFTER persist; the briefing itself is already
   // user-visible at this point so a missing illustration is the only
   // user-facing consequence of a start() failure.
-  try {
-    await start(runHouseImage, [houseId]);
-  } catch (imageError) {
-    console.error("house-image workflow start failed", imageError);
+  //
+  // Skip when the user has already uploaded their own photo — the
+  // generated sketch lives in a separate column / bucket and isn't
+  // displayed while user_image_url is set, so regenerating it on every
+  // Refresh would burn image-model credits with no visible benefit.
+  // The explicit "Regenerate" button on the dashboard still calls
+  // runHouseImage directly, so a user who wants a fresh sketch under
+  // their uploaded photo can still get one.
+  if (current.user_image_url == null) {
+    try {
+      await start(runHouseImage, [houseId]);
+    } catch (imageError) {
+      console.error("house-image workflow start failed", imageError);
+    }
   }
 }
 
