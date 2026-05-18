@@ -7,10 +7,13 @@ import { Icon, type IconName } from "./icon";
 type Tab = { href: string; label: string; icon: IconName };
 
 // Home details is edited from the top-nav account menu (modal), not a
-// bottom-nav destination. Keeping the bar at Dashboard | Add | Appliances.
+// bottom-nav destination. Three equal tabs: Dashboard | Inventory |
+// How it Works. The earlier floating "+" Add button was a non-functional
+// placeholder and was removed when the bar gained a third real destination.
 const TABS: Tab[] = [
   { href: "/dashboard", label: "Dashboard", icon: "layout-dashboard" },
-  { href: "/appliances", label: "Appliances", icon: "device-tv-old" },
+  { href: "/appliances", label: "Inventory", icon: "device-tv-old" },
+  { href: "/how-it-works", label: "How it Works", icon: "info" },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -34,43 +37,11 @@ export function BottomNav() {
         backdropFilter: "blur(12px)",
       }}
     >
-      {/*
-        Symmetric 3-column layout — one tab on each side of the center
-        Add button (Dashboard | Add | Appliances). When the bar had
-        Home + Appliances on the right we packed tabs to one side to
-        avoid a sparse, evenly-spaced look; with only two destinations
-        left after the home-details modal absorbed the Home tab, the
-        symmetric layout reads naturally and the Add button still sits
-        on the visual center.
-      */}
       <ul
         className="grid h-[var(--nav-bottom-h)] items-stretch"
         style={{ gridTemplateColumns: "1fr 1fr 1fr" }}
       >
-        {/* Left tab */}
-        {TABS.slice(0, 1).map((t) => (
-          <TabLink key={t.href} tab={t} active={isActive(pathname, t.href)} />
-        ))}
-
-        {/* Center Add button */}
-        <li className="relative flex items-center justify-center">
-          <button
-            type="button"
-            aria-label="Add"
-            className="absolute -top-5 flex h-14 w-14 items-center justify-center rounded-full"
-            style={{
-              backgroundColor: "var(--color-accent)",
-              color: "var(--color-bg-base)",
-              boxShadow:
-                "0 8px 24px -8px color-mix(in oklab, var(--color-accent) 60%, transparent)",
-            }}
-          >
-            <Icon name="plus" size={22} />
-          </button>
-        </li>
-
-        {/* Right tab */}
-        {TABS.slice(1).map((t) => (
+        {TABS.map((t) => (
           <TabLink key={t.href} tab={t} active={isActive(pathname, t.href)} />
         ))}
       </ul>
