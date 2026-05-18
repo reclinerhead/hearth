@@ -376,7 +376,7 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
   it("cites the Hearth classification page on the decide step", async () => {
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const decideStep = finding.activityLog!.steps.find((s) => s.kind === "decide");
-    expect(decideStep?.source?.url).toBe("/about/classification#superfund");
+    expect(decideStep?.source?.url).toBe("/how-it-works#superfund");
     expect(decideStep?.detail).toContain("severity('caution')");
   });
 
@@ -387,7 +387,7 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
     // standard that doesn't exist.
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const ruleStep = finding.activityLog!.steps.find((s) => s.kind === "rule");
-    expect(ruleStep?.source?.url).toBe("/about/classification#superfund");
+    expect(ruleStep?.source?.url).toBe("/how-it-works#superfund");
     expect(ruleStep?.source?.label).toMatch(
       /community-involvement practice/i,
     );

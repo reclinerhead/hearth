@@ -523,7 +523,7 @@ function WhyThisSeverity({ entry }: { entry: SiteEntry }) {
         </p>
         <p style={{ margin: 0, marginTop: 8 }}>
           <a
-            href="/about/classification#superfund"
+            href="/how-it-works#superfund"
             style={{ color: "var(--color-text-secondary)" }}
           >
             More about Hearth&rsquo;s classification

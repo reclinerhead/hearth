@@ -367,7 +367,7 @@ describe("EpaRadonZoneModule.check activity log", () => {
       (s) => s.kind === "decide",
     );
     expect(decideStep?.result_summary).toBe("Severity: concern");
-    expect(decideStep?.source?.url).toBe("/about/classification#radon");
+    expect(decideStep?.source?.url).toBe("/how-it-works#radon");
   });
 
   it("uses first-person, jargon-free voice in the narration", async () => {

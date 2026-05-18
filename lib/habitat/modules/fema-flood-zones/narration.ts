@@ -30,13 +30,13 @@ export const FEMA_ZONE_DEFINITIONS_SOURCE: ActivitySource = {
   url: "https://www.fema.gov/glossary/flood-zones",
 };
 
-// Forward-looking link — the classification page doesn't exist yet, but
-// the activity log is meant to be a frozen-in-time record, so we cite
-// the URL the page will live at. Same pattern as the radon module's
-// /about/classification#radon anchor.
+// Cites Hearth's public methodology page. The /about/classification
+// URL this used to point at is preserved as a permanent redirect in
+// next.config.ts, so old findings persisted with the prior URL still
+// resolve correctly when clicked.
 export const HEARTH_CLASSIFICATION_SOURCE: ActivitySource = {
   label: "How Hearth classifies FEMA flood zone findings",
-  url: "/about/classification#flood-zones",
+  url: "/how-it-works#flood-zones",
 };
 
 /**
