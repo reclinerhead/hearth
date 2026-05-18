@@ -19,11 +19,13 @@ export function HabitatFindingTrigger({
   habitatModule,
   children,
   className,
+  title,
 }: {
   row: HabitatFindingRow;
   habitatModule: HabitatModule;
   children: ReactNode;
   className?: string;
+  title?: string;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -39,6 +41,7 @@ export function HabitatFindingTrigger({
         onClick={() => setOpen(true)}
         className={className}
         aria-haspopup="dialog"
+        title={title}
       >
         {children}
       </button>

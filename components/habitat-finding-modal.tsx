@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Icon } from "./icon";
 import { HabitatActionChip } from "./habitat-action-chip";
 import {
@@ -69,6 +69,7 @@ export function HabitatFindingModal({
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [logOpen, setLogOpen] = useState(true);
 
   useEffect(() => {
     if (!open) return;
@@ -205,19 +206,44 @@ export function HabitatFindingModal({
           ) : null}
 
           <section aria-labelledby={`${titleId}-log`}>
-            <h3 id={`${titleId}-log`} className="h3 mb-3">
-              How we got here
-            </h3>
-            {hasSteps ? (
-              <ActivityLogTimeline steps={steps} />
-            ) : (
-              <p
+            <button
+              type="button"
+              onClick={() => setLogOpen((v) => !v)}
+              aria-expanded={logOpen}
+              aria-controls={`${titleId}-log-body`}
+              className="flex items-center gap-1.5 mb-2 -ml-1 px-1 py-0.5 rounded transition-colors hover:bg-(--color-bg-surface-raised) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+            >
+              <Icon
+                name="chevron-down"
+                size={14}
+                className={`transition-transform ${logOpen ? "" : "-rotate-90"}`}
+              />
+              <h3
+                id={`${titleId}-log`}
                 className="text-small"
-                style={{ color: "var(--color-text-tertiary)" }}
+                style={{
+                  color: "var(--color-text-secondary)",
+                  fontWeight: 600,
+                  margin: 0,
+                }}
               >
-                {ACTIVITY_LOG_FALLBACK_COPY}
-              </p>
-            )}
+                How we got here
+              </h3>
+            </button>
+            {logOpen ? (
+              <div id={`${titleId}-log-body`}>
+                {hasSteps ? (
+                  <ActivityLogTimeline steps={steps} />
+                ) : (
+                  <p
+                    className="text-small"
+                    style={{ color: "var(--color-text-tertiary)" }}
+                  >
+                    {ACTIVITY_LOG_FALLBACK_COPY}
+                  </p>
+                )}
+              </div>
+            ) : null}
           </section>
         </div>
 

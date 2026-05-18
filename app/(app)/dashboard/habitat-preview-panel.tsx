@@ -91,7 +91,8 @@ export function HabitatPreviewPanel({
             key={row.module_key}
             row={row}
             habitatModule={habitatModule}
-            className="surface-ai block w-full p-3 sm:p-4 transition-colors hover:border-(--color-border-emphasis) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+            title="Click to see how Hearth determined this finding"
+            className="surface-ai block w-full p-3 sm:p-4 cursor-pointer transition-colors hover:border-(--color-border-emphasis) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
           >
             <HabitatFindingTileCompact
               moduleLabel={habitatModule.name}
@@ -103,6 +104,12 @@ export function HabitatPreviewPanel({
           </HabitatFindingTrigger>
         );
       })}
+      <p
+        className="text-small mt-1"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        Click any tile to see how Hearth determined the finding.
+      </p>
     </div>
   );
 }
