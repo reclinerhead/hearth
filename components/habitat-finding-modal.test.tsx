@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { HabitatFindingModal } from "./habitat-finding-modal";
 import { HabitatFindingTrigger } from "./habitat-finding-trigger";
 import type { ActivityLog } from "@/lib/habitat/activity-log";
-import type { HabitatModule } from "@/lib/habitat/types";
+import type { HabitatModule, OverviewCard } from "@/lib/habitat/types";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 
 // React 19's act() helper warns when it doesn't see this flag; the flag
@@ -315,5 +315,209 @@ describe("HabitatFindingModal", () => {
     dispatchKey("Escape");
     expect(document.activeElement).toBe(trigger);
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  describe("slotted shell", () => {
+    // Two-card module to validate the count-aware back label, sorting,
+    // and that the detail pane only renders when a module opts in.
+    const TWO_CARD_DETAIL_TEXT = "Detail body for card-a";
+
+    function makeSlottedModule(overrides: Partial<HabitatModule> = {}): HabitatModule {
+      return {
+        key: "test_slotted",
+        name: "Test slotted module",
+        description: "Test module for slotted-shell tests.",
+        category: "environmental",
+        cadence: "yearly",
+        isApplicable: () => true,
+        async check() {
+          throw new Error("not used");
+        },
+        overviewCardsHeader: "Sites near your home",
+        getOverviewCards(): OverviewCard[] {
+          return [
+            {
+              id: "card-b",
+              eyebrow: "Tier 2 · 1.0 mi NE",
+              headline: "Beta site",
+              subtitle: "200 Second St · Final NPL",
+              severity: "caution",
+              sourceUrl: "https://example.com/sites/b",
+            },
+            {
+              id: "card-a",
+              eyebrow: "Tier 1 · 0.4 mi ENE",
+              headline: "Alpha site",
+              subtitle: "100 First St · Final NPL",
+              severity: "concern",
+              sourceUrl: "https://example.com/sites/a",
+            },
+          ];
+        },
+        renderDetail(_row, cardId) {
+          return <div>{`Detail body for ${cardId}`}</div>;
+        },
+        ...overrides,
+      };
+    }
+
+    it("renders the overview-cards section under the module's header", () => {
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={makeSlottedModule()}
+        />,
+      );
+      expect(document.body.textContent).toContain("Sites near your home");
+      expect(document.body.textContent).toContain("Alpha site");
+      expect(document.body.textContent).toContain("Beta site");
+    });
+
+    it("sorts cards by severity descending (concern before caution)", () => {
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={makeSlottedModule()}
+        />,
+      );
+      const text = document.body.textContent ?? "";
+      const alphaIdx = text.indexOf("Alpha site");
+      const betaIdx = text.indexOf("Beta site");
+      expect(alphaIdx).toBeGreaterThan(-1);
+      expect(betaIdx).toBeGreaterThan(-1);
+      expect(alphaIdx).toBeLessThan(betaIdx);
+    });
+
+    it("does not render the overview-cards section when getOverviewCards returns empty", () => {
+      const mod = makeSlottedModule({ getOverviewCards: () => [] });
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={mod}
+        />,
+      );
+      expect(document.body.textContent).not.toContain("Sites near your home");
+    });
+
+    it("falls back to the modal's pre-slotted layout when the module omits the slots", () => {
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={RADON_MODULE}
+        />,
+      );
+      // No overview-cards section header should appear when the module
+      // doesn't supply getOverviewCards.
+      expect(document.body.textContent).not.toContain("Sites near your home");
+      expect(document.body.textContent).not.toContain("Back to all");
+    });
+
+    it("clicking a card swaps the body to the detail pane and shows the count-aware back label", () => {
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={makeSlottedModule()}
+        />,
+      );
+      clickByText("Alpha site");
+      expect(document.body.textContent).toContain(TWO_CARD_DETAIL_TEXT);
+      expect(document.body.textContent).toContain("Back to all 2 findings");
+      // Activity-log section belongs to the overview pane only.
+      expect(document.body.textContent).not.toContain("How we got here");
+    });
+
+    it("uses the singular back label when there is only one card", () => {
+      const mod = makeSlottedModule({
+        getOverviewCards: () => [
+          {
+            id: "card-solo",
+            eyebrow: "Tier 1 · 0.4 mi E",
+            headline: "Solo site",
+            subtitle: "1 Solo Way · Final NPL",
+            severity: "concern",
+          },
+        ],
+      });
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={mod}
+        />,
+      );
+      clickByText("Solo site");
+      expect(document.body.textContent).toContain("Back to all findings");
+      expect(document.body.textContent).not.toContain("Back to all 1 findings");
+    });
+
+    it("the back affordance returns to the overview pane", () => {
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={makeSlottedModule()}
+        />,
+      );
+      clickByText("Alpha site");
+      expect(document.body.textContent).toContain(TWO_CARD_DETAIL_TEXT);
+      clickByText("Back to all 2 findings");
+      expect(document.body.textContent).not.toContain(TWO_CARD_DETAIL_TEXT);
+      // Activity-log section is back, confirming we're in overview.
+      expect(document.body.textContent).toContain("How we got here");
+    });
+
+    it("footer source link points to the card's sourceUrl in the detail pane and to the row's source_url in overview", () => {
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow({ source_url: "https://example.com/row-source" })}
+          habitatModule={makeSlottedModule()}
+        />,
+      );
+      const overviewLink = Array.from(
+        document.querySelectorAll<HTMLAnchorElement>("a"),
+      ).find((a) => a.textContent?.includes("View source"));
+      expect(overviewLink?.getAttribute("href")).toBe(
+        "https://example.com/row-source",
+      );
+
+      clickByText("Alpha site");
+      const detailLink = Array.from(
+        document.querySelectorAll<HTMLAnchorElement>("a"),
+      ).find((a) => a.textContent?.includes("View source"));
+      expect(detailLink?.getAttribute("href")).toBe(
+        "https://example.com/sites/a",
+      );
+    });
+
+    it("ESC closes the modal from the detail pane", () => {
+      let closes = 0;
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {
+            closes += 1;
+          }}
+          row={makeRow()}
+          habitatModule={makeSlottedModule()}
+        />,
+      );
+      clickByText("Alpha site");
+      dispatchKey("Escape");
+      expect(closes).toBe(1);
+    });
   });
 });

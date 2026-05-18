@@ -60,13 +60,16 @@
  * -------------------------------------------------------------------
  */
 
+import { createElement } from "react";
 import { createActivityLogger } from "@/lib/habitat/activity-log";
 import type {
   FindingAction,
   HabitatFinding,
   HabitatModule,
   HouseContext,
+  OverviewCard,
 } from "@/lib/habitat/types";
+import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import {
   buildNplSitesUrl,
   fetchNplSitesInState,
@@ -104,6 +107,8 @@ import {
   type NplCode,
   type Tier,
 } from "./severity";
+import { SiteDetail } from "./components/site-detail";
+import type { SiteEntry, SuperfundFindings } from "./types";
 
 const MODULE_KEY = "epa_superfund_proximity";
 const SEARCH_RADIUS_MILES = 5;
@@ -127,49 +132,11 @@ function narrowNplCode(value: string | null | undefined): NplCode | null {
 }
 
 /**
- * Build a SiteEntry — the per-site payload that lands inside
- * findings.sites. Pure given a site and its computed context.
+ * Per-site payload shapes live in `./types.ts` so the per-site detail
+ * component in `./components/site-detail.tsx` can consume them without
+ * cycling through this file's runtime imports. The build helper below
+ * is what populates the shape.
  */
-type SiteEntry = {
-  site: {
-    epa_id: string;
-    sems_site_id: string;
-    name_display: string;
-    name_original: string;
-    address: {
-      street: string;
-      city: string;
-      county: string;
-      state: string;
-      zip: string;
-    };
-    npl_status: {
-      code: NplCode;
-      label: string;
-    };
-    contaminants: string[];
-    federal_facility: boolean;
-    archived: boolean;
-    profile_url: string;
-  };
-  context: {
-    distance_miles: number;
-    bearing: string;
-    tier: Tier;
-    severity: "concern" | "caution" | "neutral";
-    /**
-     * Caveat attached when EPA's single representative point is known
-     * to be a poor proxy for the actual site footprint. Set today
-     * when `name_original` contains a `/` separator — Allied Paper,
-     * Inc./Portage Creek/Kalamazoo River is the canonical example of
-     * a single SEMS record spanning miles of river plus multiple
-     * landfills. Omitted (rather than set to null) when the site is
-     * single-location, so the dashboard's detail view can branch on
-     * presence without dealing with nullable copy.
-     */
-    precision_note?: string;
-  };
-};
 
 /**
  * Whether a SEMS site name suggests multiple physical locations rolled
@@ -586,6 +553,47 @@ const EpaSuperfundProximityModule: HabitatModule = {
 
   getOnboardingMessage(finding): string {
     return buildOnboardingMessage(finding);
+  },
+
+  overviewCardsHeader: "Sites near your home",
+
+  /**
+   * Surface one card per qualifying Superfund site so the modal's
+   * slotted shell can render the per-site list in the overview pane.
+   * Returns [] when the row hasn't populated `findings.sites` yet
+   * (still computing) or when the no-hits payload was written — the
+   * modal then falls back to the action shelf + activity log alone.
+   */
+  getOverviewCards(row: HabitatFindingRow): OverviewCard[] {
+    const findings = (row.findings ?? null) as SuperfundFindings | null;
+    const sites: SiteEntry[] = Array.isArray(findings?.sites)
+      ? findings!.sites
+      : [];
+    return sites.map((s) => {
+      const subtitleParts = [s.site.address.street, s.site.npl_status.label]
+        .filter((p): p is string => typeof p === "string" && p.length > 0);
+      return {
+        id: s.site.epa_id,
+        eyebrow: `Tier ${s.context.tier} · ${s.context.distance_miles} mi ${s.context.bearing}`,
+        headline: s.site.name_display,
+        subtitle: subtitleParts.join(" · "),
+        severity: s.context.severity,
+        sourceUrl: s.site.profile_url,
+      };
+    });
+  },
+
+  /**
+   * Render the per-site profile inside the modal's detail pane. The
+   * shell provides the back affordance and the scroll container; this
+   * function returns the site-detail body content only.
+   *
+   * Uses createElement rather than JSX so this file (index.ts) stays
+   * pure TypeScript — keeps the orchestrator-facing module entry free
+   * of JSX-runtime imports the server side never needs.
+   */
+  renderDetail(row: HabitatFindingRow, cardId: string) {
+    return createElement(SiteDetail, { row, cardId });
   },
 };
 

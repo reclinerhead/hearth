@@ -1,25 +1,40 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Icon } from "./icon";
 import { HabitatActionChip } from "./habitat-action-chip";
-import { SEVERITY_COLOR, SEVERITY_WORD, SeverityDot } from "./habitat-severity";
+import {
+  SEVERITY_COLOR,
+  SEVERITY_WORD,
+  SeverityDot,
+  severityWeight,
+} from "./habitat-severity";
 import type { ActivityStep } from "@/lib/habitat/activity-log";
 import type {
   FindingAction,
   HabitatModule,
   HabitatSeverity,
+  OverviewCard,
 } from "@/lib/habitat/types";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 
 /**
  * Finding detail modal for a single hearth.habitat_findings row.
  *
- * Generic by design — renders from the HabitatFinding shape only
- * (headline, summary, actions, source_url, activity_log). No per-module
- * branches; structured per-module content (Superfund map, timeline)
- * gets designed when a richer module forces the slotted-shell contract
- * that's deferred today.
+ * Generic shell that renders directly from the HabitatFinding shape
+ * (headline, summary, actions, source_url, activity_log) and opts into
+ * richer per-module content through two optional slots on
+ * HabitatModule:
+ *
+ *   - getOverviewCards(row) returns one card per drillable item.
+ *     Cards land between the action shelf and the activity log on
+ *     the overview pane. Clicking one swaps the body to the detail pane.
+ *   - renderDetail(row, cardId) returns the body content for the
+ *     detail pane. The shell wraps it with a prominent back affordance
+ *     and reuses the same header / footer the overview pane uses.
+ *
+ * Modules that implement neither get exactly the modal they had before
+ * the slotted shell landed.
  *
  * Modal mechanics (scroll-lock, focus trap, ESC, backdrop close, return
  * focus) are lifted from DocumentModal rather than extracted into a
@@ -49,6 +64,15 @@ function isInternalUrl(url: string): boolean {
   return url.startsWith("/");
 }
 
+/**
+ * Sort overview cards severity-desc, subtitle-asc. Stable, pure.
+ */
+function compareOverviewCards(a: OverviewCard, b: OverviewCard): number {
+  const w = severityWeight(b.severity) - severityWeight(a.severity);
+  if (w !== 0) return w;
+  return a.subtitle.localeCompare(b.subtitle);
+}
+
 export function HabitatFindingModal({
   open,
   onClose,
@@ -65,7 +89,24 @@ export function HabitatFindingModal({
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const backButtonRef = useRef<HTMLButtonElement | null>(null);
+  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const prevActiveCardIdRef = useRef<string | null>(null);
   const [logOpen, setLogOpen] = useState(true);
+  const [activeCardId, setActiveCardId] = useState<string | null>(null);
+
+  // Wrap onClose so closing the modal (from the close button, ESC, or
+  // backdrop click) synchronously clears the pane state. Done here
+  // rather than from a `useEffect(() => { if (!open) reset() })` so
+  // the reset isn't a setState-in-effect (cascading render); the
+  // setActiveCardId(null) call batches with whatever onClose triggers
+  // in the parent. The next open lands on the overview pane without
+  // flashing detail-pane content.
+  const handleClose = useCallback(() => {
+    setActiveCardId(null);
+    prevActiveCardIdRef.current = null;
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -79,7 +120,7 @@ export function HabitatFindingModal({
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        handleClose();
         return;
       }
       if (e.key === "Tab" && dialogRef.current) {
@@ -109,7 +150,24 @@ export function HabitatFindingModal({
       body.classList.remove("scroll-locked");
       getReturnFocusElement?.()?.focus();
     };
-  }, [open, onClose, getReturnFocusElement]);
+  }, [open, handleClose, getReturnFocusElement]);
+
+  // Pane-transition focus management. Entering detail focuses the back
+  // affordance so screen readers announce the pane change and keyboard
+  // users can return immediately; leaving detail returns focus to the
+  // originating card. Uses a previous-value ref so the very first
+  // commit (no transition yet) is a no-op.
+  useEffect(() => {
+    if (!open) return;
+    const prev = prevActiveCardIdRef.current;
+    prevActiveCardIdRef.current = activeCardId;
+    if (prev === null && activeCardId !== null) {
+      requestAnimationFrame(() => backButtonRef.current?.focus());
+    } else if (prev !== null && activeCardId === null) {
+      const target = cardRefs.current.get(prev);
+      requestAnimationFrame(() => target?.focus());
+    }
+  }, [activeCardId, open]);
 
   if (!open) return null;
 
@@ -127,6 +185,23 @@ export function HabitatFindingModal({
     activityLog && Array.isArray(activityLog.steps) ? activityLog.steps : null;
   const hasSteps = steps !== null && steps.length > 0;
 
+  const rawCards = habitatModule.getOverviewCards?.(row) ?? [];
+  const cards = [...rawCards].sort(compareOverviewCards);
+  const hasCards = cards.length > 0;
+  const overviewCardsHeader = habitatModule.overviewCardsHeader ?? "Details";
+
+  const activeCard =
+    activeCardId !== null
+      ? (cards.find((c) => c.id === activeCardId) ?? null)
+      : null;
+  const detailContent =
+    activeCard && habitatModule.renderDetail
+      ? habitatModule.renderDetail(row, activeCard.id)
+      : null;
+  const showDetailPane = activeCard !== null && detailContent !== null;
+
+  const footerSourceUrl = activeCard?.sourceUrl ?? row.source_url ?? null;
+
   return (
     <div
       aria-hidden={false}
@@ -137,7 +212,7 @@ export function HabitatFindingModal({
         backdropFilter: "blur(6px)",
       }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) handleClose();
       }}
     >
       <div
@@ -175,7 +250,7 @@ export function HabitatFindingModal({
           <button
             ref={closeButtonRef}
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="btn btn-ghost btn-icon"
             aria-label="Close finding detail"
           >
@@ -183,64 +258,96 @@ export function HabitatFindingModal({
           </button>
         </header>
 
-        <div className="overflow-y-auto p-4 sm:p-5 space-y-5">
-          {hasActions ? (
-            <section aria-labelledby={`${titleId}-actions`}>
-              <div id={`${titleId}-actions`} className="eyebrow mb-2">
-                What to do next
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {actions.map((action, i) => (
-                  <HabitatActionChip
-                    key={`${action.kind}:${action.url}:${i}`}
-                    action={action}
-                  />
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          <section aria-labelledby={`${titleId}-log`}>
-            <button
-              type="button"
-              onClick={() => setLogOpen((v) => !v)}
-              aria-expanded={logOpen}
-              aria-controls={`${titleId}-log-body`}
-              className="flex items-center gap-1.5 mb-2 -ml-1 px-1 py-0.5 rounded transition-colors hover:bg-(--color-bg-surface-raised) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
-            >
-              <Icon
-                name="chevron-down"
-                size={14}
-                className={`transition-transform ${logOpen ? "" : "-rotate-90"}`}
-              />
-              <h3
-                id={`${titleId}-log`}
-                className="text-small"
-                style={{
-                  color: "var(--color-text-secondary)",
-                  fontWeight: 600,
-                  margin: 0,
-                }}
-              >
-                How we got here
-              </h3>
-            </button>
-            {logOpen ? (
-              <div id={`${titleId}-log-body`}>
-                {hasSteps ? (
-                  <ActivityLogTimeline steps={steps} />
-                ) : (
-                  <p
-                    className="text-small"
-                    style={{ color: "var(--color-text-tertiary)" }}
-                  >
-                    {ACTIVITY_LOG_FALLBACK_COPY}
-                  </p>
-                )}
-              </div>
+        {showDetailPane ? (
+          <DetailPane
+            backButtonRef={backButtonRef}
+            onBack={() => setActiveCardId(null)}
+            totalCards={cards.length}
+          >
+            {detailContent}
+          </DetailPane>
+        ) : (
+          <div className="overflow-y-auto p-4 sm:p-5 space-y-5">
+            {hasActions ? (
+              <section aria-labelledby={`${titleId}-actions`}>
+                <div id={`${titleId}-actions`} className="eyebrow mb-2">
+                  What to do next
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {actions.map((action, i) => (
+                    <HabitatActionChip
+                      key={`${action.kind}:${action.url}:${i}`}
+                      action={action}
+                    />
+                  ))}
+                </div>
+              </section>
             ) : null}
-          </section>
-        </div>
+
+            {hasCards ? (
+              <section aria-labelledby={`${titleId}-cards`}>
+                <div id={`${titleId}-cards`} className="eyebrow mb-2">
+                  {overviewCardsHeader}
+                </div>
+                <ul className="flex flex-col gap-2">
+                  {cards.map((card) => (
+                    <li key={card.id}>
+                      <OverviewCardButton
+                        card={card}
+                        onClick={() => setActiveCardId(card.id)}
+                        registerRef={(el) => {
+                          if (el) cardRefs.current.set(card.id, el);
+                          else cardRefs.current.delete(card.id);
+                        }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
+            <section aria-labelledby={`${titleId}-log`}>
+              <button
+                type="button"
+                onClick={() => setLogOpen((v) => !v)}
+                aria-expanded={logOpen}
+                aria-controls={`${titleId}-log-body`}
+                className="flex items-center gap-1.5 mb-2 -ml-1 px-1 py-0.5 rounded transition-colors hover:bg-(--color-bg-surface-raised) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+              >
+                <Icon
+                  name="chevron-down"
+                  size={14}
+                  className={`transition-transform ${logOpen ? "" : "-rotate-90"}`}
+                />
+                <h3
+                  id={`${titleId}-log`}
+                  className="text-small"
+                  style={{
+                    color: "var(--color-text-secondary)",
+                    fontWeight: 600,
+                    margin: 0,
+                  }}
+                >
+                  How we got here
+                </h3>
+              </button>
+              {logOpen ? (
+                <div id={`${titleId}-log-body`}>
+                  {hasSteps ? (
+                    <ActivityLogTimeline steps={steps} />
+                  ) : (
+                    <p
+                      className="text-small"
+                      style={{ color: "var(--color-text-tertiary)" }}
+                    >
+                      {ACTIVITY_LOG_FALLBACK_COPY}
+                    </p>
+                  )}
+                </div>
+              ) : null}
+            </section>
+          </div>
+        )}
 
         <footer
           className="flex items-center justify-between gap-3 p-3 sm:p-4 text-small"
@@ -253,9 +360,9 @@ export function HabitatFindingModal({
             {checkedAtFormatted ? `Last checked ${checkedAtFormatted}` : ""}
           </span>
           <span className="flex items-center gap-3">
-            {row.source_url ? (
+            {footerSourceUrl ? (
               <a
-                href={row.source_url}
+                href={footerSourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1"
@@ -272,6 +379,118 @@ export function HabitatFindingModal({
         </footer>
       </div>
     </div>
+  );
+}
+
+/**
+ * The detail-pane shell. The shell owns the back affordance and the
+ * scroll container; the module's renderDetail() supplies the body
+ * content with no inner chrome.
+ *
+ * Back-affordance contract (UX-load-bearing, see issue): subtle but
+ * unmistakable, full-width sticky row at the top of the scroll area,
+ * 44px minimum height for fat-finger taps. Label includes the total
+ * card count when there's more than one card so the user is anchored
+ * on what they're coming back to.
+ */
+function DetailPane({
+  backButtonRef,
+  onBack,
+  totalCards,
+  children,
+}: {
+  backButtonRef: React.RefObject<HTMLButtonElement | null>;
+  onBack: () => void;
+  totalCards: number;
+  children: React.ReactNode;
+}) {
+  const label =
+    totalCards > 1
+      ? `Back to all ${totalCards} findings`
+      : "Back to all findings";
+  return (
+    <div className="overflow-y-auto">
+      <div
+        className="sticky top-0 z-10"
+        style={{
+          backgroundColor: "var(--color-bg-surface-raised)",
+          borderBottom: "1px solid var(--color-border-subtle)",
+        }}
+      >
+        <button
+          ref={backButtonRef}
+          type="button"
+          onClick={onBack}
+          aria-label="Return to finding overview"
+          className="w-full flex items-center gap-2 px-4 sm:px-5 text-left transition-colors hover:bg-(--color-bg-surface) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+          style={{
+            minHeight: 44,
+            color: "var(--color-text-primary)",
+            fontWeight: 500,
+          }}
+        >
+          <Icon name="chevron-left" size={18} />
+          <span>{label}</span>
+        </button>
+      </div>
+      <div className="p-4 sm:p-5">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * One overview card. Visual treatment scales down HabitatFindingTileCompact
+ * for the inside-modal context: same severity dot + eyebrow + headline +
+ * subtitle stack, no 72px hero image, full-width clickable surface.
+ */
+function OverviewCardButton({
+  card,
+  onClick,
+  registerRef,
+}: {
+  card: OverviewCard;
+  onClick: () => void;
+  registerRef: (el: HTMLButtonElement | null) => void;
+}) {
+  return (
+    <button
+      ref={registerRef}
+      type="button"
+      onClick={onClick}
+      className="w-full text-left rounded-md transition-colors hover:bg-(--color-bg-surface-raised) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+      style={{
+        border: "1px solid var(--color-border-subtle)",
+        padding: "var(--space-3)",
+        backgroundColor: "transparent",
+      }}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <SeverityDot severity={card.severity} />
+        <span className="eyebrow">{card.eyebrow}</span>
+      </div>
+      <div
+        className="text-small"
+        style={{
+          fontWeight: 600,
+          color: "var(--color-text-primary)",
+          marginBottom: 2,
+        }}
+      >
+        {card.headline}
+      </div>
+      <div
+        className="text-small"
+        style={{
+          color: "var(--color-text-secondary)",
+          display: "-webkit-box",
+          WebkitLineClamp: 1,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+        }}
+      >
+        {card.subtitle}
+      </div>
+    </button>
   );
 }
 
