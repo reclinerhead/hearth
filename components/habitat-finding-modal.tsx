@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Icon } from "./icon";
 import { HabitatActionChip } from "./habitat-action-chip";
@@ -45,6 +46,12 @@ import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 
 const FOCUSABLE_SELECTOR =
   'a[href], area[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), iframe, [tabindex]:not([tabindex="-1"])';
+
+// Module thumbnail size in the modal header. Matches HERO_PX in
+// HabitatFindingTileCompact so the same image renders at the same
+// dimensions in both surfaces — the tile the user clicked and the
+// header of the modal that opened.
+const HEADER_THUMB_PX = 72;
 
 const ACTIVITY_LOG_FALLBACK_COPY =
   "This finding was recorded before we started capturing how it was computed. The next time we check, you'll see the full reasoning here.";
@@ -226,6 +233,26 @@ export function HabitatFindingModal({
           className="flex items-start gap-3 p-4 sm:p-5"
           style={{ borderBottom: "1px solid var(--color-border-subtle)" }}
         >
+          {habitatModule.iconImage ? (
+            <div
+              className="relative overflow-hidden shrink-0"
+              style={{
+                width: HEADER_THUMB_PX,
+                height: HEADER_THUMB_PX,
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--color-border-subtle)",
+                backgroundColor: "var(--color-bg-surface-raised)",
+              }}
+            >
+              <Image
+                src={habitatModule.iconImage}
+                alt=""
+                fill
+                sizes="72px"
+                style={{ objectFit: "cover" }}
+              />
+            </div>
+          ) : null}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1">
               <SeverityDot severity={severity} />
