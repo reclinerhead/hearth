@@ -1,4 +1,6 @@
+import type { ReactNode } from "react";
 import type { ActivityLog } from "./activity-log";
+import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 
 /**
  * Habitat module contract.
@@ -170,6 +172,41 @@ export interface HabitatFinding {
 }
 
 /**
+ * One drillable item rendered as a card in the finding modal's overview
+ * pane. Visual treatment matches the dashboard's compact finding tile —
+ * severity dot, eyebrow, headline, short subtitle.
+ *
+ * Modules that produce multi-item findings (Superfund returns a list of
+ * sites; a future flood-history module might return per-event panels)
+ * surface those items as OverviewCards via `HabitatModule.getOverviewCards`.
+ * Modules with a single coherent finding leave the field unset and the
+ * modal stays purely generic.
+ */
+export type OverviewCard = {
+  /**
+   * Stable identifier within this finding. The modal hands this back to
+   * `renderDetail()` so the module can locate the right item in the
+   * row's findings JSON. For Superfund this is the EPA site ID; for
+   * future modules whatever stable key fits.
+   */
+  id: string;
+  /** Short, muted line above the headline (e.g. "Tier 1 · 0.4 mi ENE"). */
+  eyebrow: string;
+  /** Primary line (e.g. the site name). */
+  headline: string;
+  /** Supporting line, one line tall (e.g. "2426 King Hwy · Part of NPL site"). */
+  subtitle: string;
+  /** Severity weighting for sort and the severity dot. */
+  severity: HabitatSeverity;
+  /**
+   * Optional per-card source URL. When set, the modal's footer "View
+   * source" link points here while the user is in the detail pane for
+   * this card; otherwise it falls back to the row's `source_url`.
+   */
+  sourceUrl?: string;
+};
+
+/**
  * The contract every habitat module implements. Each module exports a
  * single default HabitatModule object from lib/habitat/modules/<key>/.
  *
@@ -249,4 +286,43 @@ export interface HabitatModule {
    * fallback in the modal.
    */
   getOnboardingMessage?: (finding: HabitatFinding) => string;
+
+  /**
+   * Optional. Section header rendered above the list of overview cards
+   * in the finding modal. Defaults to "Details" when omitted. Set this
+   * to phrasing that fits the module's items — Superfund uses "Sites
+   * near your home".
+   */
+  overviewCardsHeader?: string;
+
+  /**
+   * Optional. If the module produces structured items the user can drill
+   * into (multiple Superfund sites, multiple flood-zone panels, multiple
+   * historical assessments, etc.), this function returns one card
+   * descriptor per item from a finding's row.
+   *
+   * Cards appear in the modal's overview pane below the action shelf
+   * and above the activity log. Clicking a card swaps the modal body
+   * to the detail pane and invokes `renderDetail` with the card's id.
+   *
+   * Return [] or omit the function entirely when no drill-down is
+   * needed — the modal then falls back to its pre-slotted behavior.
+   *
+   * Imports `HabitatFindingRow` from `lib/hooks/use-habitat-findings`
+   * as a type-only import — the runtime side of that module is
+   * `"use client"` and lives downstream of types.ts, but `import type`
+   * is erased at compile time so it never pulls the client runtime
+   * into a server bundle.
+   */
+  getOverviewCards?: (row: HabitatFindingRow) => OverviewCard[];
+
+  /**
+   * Optional. Renders the detail pane for a single overview card.
+   * Called only after the user clicks a card in the overview.
+   *
+   * Module authors are responsible for the contents of the returned
+   * element, but it should NOT include its own back affordance — the
+   * shell provides one above whatever this renders.
+   */
+  renderDetail?: (row: HabitatFindingRow, cardId: string) => ReactNode;
 }

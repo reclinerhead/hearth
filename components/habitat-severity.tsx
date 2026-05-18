@@ -29,6 +29,30 @@ export const SEVERITY_WORD: Record<HabitatSeverity, string> = {
   beneficial: "Beneficial",
 };
 
+/**
+ * Sort weight for the 6-stop severity scale. Higher = surface first.
+ * Matches the UI ordering called out in `lib/habitat/types.ts`
+ * (critical → concern → caution → neutral → favorable → beneficial).
+ *
+ * Kept here alongside the colour and word maps because every consumer
+ * that needs a weight also needs the colour or word; one import covers
+ * all three. The Superfund module declares its own private weight map
+ * inside its severity helpers — that's deliberate, it stays self-
+ * contained — and matches the values here.
+ */
+const SEVERITY_WEIGHT: Record<HabitatSeverity, number> = {
+  critical: 6,
+  concern: 5,
+  caution: 4,
+  neutral: 3,
+  favorable: 2,
+  beneficial: 1,
+};
+
+export function severityWeight(severity: HabitatSeverity): number {
+  return SEVERITY_WEIGHT[severity];
+}
+
 export function SeverityDot({
   severity,
   size = 8,

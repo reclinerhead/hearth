@@ -60,13 +60,16 @@
  * -------------------------------------------------------------------
  */
 
+import { createElement } from "react";
 import { createActivityLogger } from "@/lib/habitat/activity-log";
 import type {
   FindingAction,
   HabitatFinding,
   HabitatModule,
   HouseContext,
+  OverviewCard,
 } from "@/lib/habitat/types";
+import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import {
   buildNplSitesUrl,
   fetchNplSitesInState,
@@ -104,6 +107,8 @@ import {
   type NplCode,
   type Tier,
 } from "./severity";
+import { SiteDetail } from "./components/site-detail";
+import type { SiteEntry, SuperfundFindings } from "./types";
 
 const MODULE_KEY = "epa_superfund_proximity";
 const SEARCH_RADIUS_MILES = 5;
@@ -127,49 +132,11 @@ function narrowNplCode(value: string | null | undefined): NplCode | null {
 }
 
 /**
- * Build a SiteEntry — the per-site payload that lands inside
- * findings.sites. Pure given a site and its computed context.
+ * Per-site payload shapes live in `./types.ts` so the per-site detail
+ * component in `./components/site-detail.tsx` can consume them without
+ * cycling through this file's runtime imports. The build helper below
+ * is what populates the shape.
  */
-type SiteEntry = {
-  site: {
-    epa_id: string;
-    sems_site_id: string;
-    name_display: string;
-    name_original: string;
-    address: {
-      street: string;
-      city: string;
-      county: string;
-      state: string;
-      zip: string;
-    };
-    npl_status: {
-      code: NplCode;
-      label: string;
-    };
-    contaminants: string[];
-    federal_facility: boolean;
-    archived: boolean;
-    profile_url: string;
-  };
-  context: {
-    distance_miles: number;
-    bearing: string;
-    tier: Tier;
-    severity: "concern" | "caution" | "neutral";
-    /**
-     * Caveat attached when EPA's single representative point is known
-     * to be a poor proxy for the actual site footprint. Set today
-     * when `name_original` contains a `/` separator — Allied Paper,
-     * Inc./Portage Creek/Kalamazoo River is the canonical example of
-     * a single SEMS record spanning miles of river plus multiple
-     * landfills. Omitted (rather than set to null) when the site is
-     * single-location, so the dashboard's detail view can branch on
-     * presence without dealing with nullable copy.
-     */
-    precision_note?: string;
-  };
-};
 
 /**
  * Whether a SEMS site name suggests multiple physical locations rolled
@@ -263,37 +230,71 @@ function buildHitHeadline(entries: SiteEntry[]): string {
 }
 
 /**
- * One- or two-sentence summary naming the nearest site, distance,
- * direction, and current cleanup status.
+ * Render a list of names as a comma-separated phrase with an
+ * Oxford-comma "and" before the last entry.
+ *
+ *   ["A"]            → "A"
+ *   ["A", "B"]       → "A and B"
+ *   ["A", "B", "C"]  → "A, B, and C"
+ *
+ * Returns "" for an empty input. Pure given the input.
  */
-function buildHitSummary(entries: SiteEntry[]): string {
-  const e = entries[0];
-  const dir = bearingWord(e.context.bearing);
-  const dist = e.context.distance_miles.toFixed(1);
-  const miles = `${dist} mile${dist === "1.0" ? "" : "s"}`;
-  const status =
-    e.site.npl_status.code === "F"
-      ? "Active cleanup is in progress under EPA oversight."
-      : e.site.npl_status.code === "P"
-        ? "EPA has proposed adding this site to the National Priorities List."
-        : e.site.npl_status.code === "A"
-          ? "This is part of a larger NPL site listed elsewhere."
-          : "Cleanup is complete and the site has been removed from the National Priorities List.";
-  return `The ${e.site.name_display} site sits about ${miles} ${dir} of your home. ${status}`;
+function joinNames(names: string[]): string {
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  const lead = names.slice(0, -1).join(", ");
+  return `${lead}, and ${names[names.length - 1]}`;
 }
 
 /**
- * Per-finding next-step actions. The hit case surfaces the EPA profile
- * for the closest site plus the general Superfund overview; the
- * no-hits case just surfaces the overview.
+ * Summary copy for a finding with one or more qualifying sites.
+ *
+ * One site: a one-or-two-sentence narrative naming the site, distance,
+ * direction, and current cleanup status — the original v1 copy that
+ * still reads well when there's nothing else to list.
+ *
+ * Two or more sites: a single sentence that names every qualifying
+ * site by `name_display`, ordered the same way `findings.sites` is
+ * (severity-desc then distance-asc, so the most concerning sites lead
+ * the list). Earlier copy named only the closest site, which read as
+ * misleading once the modal surfaced every site as a drillable card —
+ * the summary was reporting one of five rather than the full picture.
+ * Per-site distance / direction / cleanup status live on each card and
+ * inside the detail pane.
  */
-function buildHitActions(closestSite: SiteEntry): FindingAction[] {
+function buildHitSummary(entries: SiteEntry[]): string {
+  if (entries.length === 1) {
+    const e = entries[0];
+    const dir = bearingWord(e.context.bearing);
+    const dist = e.context.distance_miles.toFixed(1);
+    const miles = `${dist} mile${dist === "1.0" ? "" : "s"}`;
+    const status =
+      e.site.npl_status.code === "F"
+        ? "Active cleanup is in progress under EPA oversight."
+        : e.site.npl_status.code === "P"
+          ? "EPA has proposed adding this site to the National Priorities List."
+          : e.site.npl_status.code === "A"
+            ? "This is part of a larger NPL site listed elsewhere."
+            : "Cleanup is complete and the site has been removed from the National Priorities List.";
+    return `The ${e.site.name_display} site sits about ${miles} ${dir} of your home. ${status}`;
+  }
+
+  const names = entries.map((e) => e.site.name_display);
+  return `We detected ${entries.length} EPA Superfund sites near your home, including ${joinNames(names)}.`;
+}
+
+/**
+ * Per-finding next-step actions. Per-site EPA profile links are
+ * surfaced inside the modal's per-site detail pane (see
+ * `components/site-detail.tsx`) rather than in the module-level action
+ * shelf — the shelf was carrying a "View EPA site profile" pill that
+ * pointed at only the closest site, which read as misleading once
+ * multiple sites were rendered as drillable cards. The shelf now keeps
+ * only the module-level overview link.
+ */
+function buildHitActions(): FindingAction[] {
   return [
-    {
-      kind: "link",
-      label: "View EPA site profile",
-      url: closestSite.site.profile_url,
-    },
     {
       kind: "link",
       label: "EPA Superfund overview",
@@ -578,7 +579,7 @@ const EpaSuperfundProximityModule: HabitatModule = {
         total_qualifying_sites: qualifying.length,
         sites: qualifying,
       },
-      actions: buildHitActions(closest),
+      actions: buildHitActions(),
       sourceUrl: closest.site.profile_url,
       activityLog: log.finalize(),
     };
@@ -586,6 +587,47 @@ const EpaSuperfundProximityModule: HabitatModule = {
 
   getOnboardingMessage(finding): string {
     return buildOnboardingMessage(finding);
+  },
+
+  overviewCardsHeader: "Sites near your home",
+
+  /**
+   * Surface one card per qualifying Superfund site so the modal's
+   * slotted shell can render the per-site list in the overview pane.
+   * Returns [] when the row hasn't populated `findings.sites` yet
+   * (still computing) or when the no-hits payload was written — the
+   * modal then falls back to the action shelf + activity log alone.
+   */
+  getOverviewCards(row: HabitatFindingRow): OverviewCard[] {
+    const findings = (row.findings ?? null) as SuperfundFindings | null;
+    const sites: SiteEntry[] = Array.isArray(findings?.sites)
+      ? findings!.sites
+      : [];
+    return sites.map((s) => {
+      const subtitleParts = [s.site.address.street, s.site.npl_status.label]
+        .filter((p): p is string => typeof p === "string" && p.length > 0);
+      return {
+        id: s.site.epa_id,
+        eyebrow: `Tier ${s.context.tier} · ${s.context.distance_miles} mi ${s.context.bearing}`,
+        headline: s.site.name_display,
+        subtitle: subtitleParts.join(" · "),
+        severity: s.context.severity,
+        sourceUrl: s.site.profile_url,
+      };
+    });
+  },
+
+  /**
+   * Render the per-site profile inside the modal's detail pane. The
+   * shell provides the back affordance and the scroll container; this
+   * function returns the site-detail body content only.
+   *
+   * Uses createElement rather than JSX so this file (index.ts) stays
+   * pure TypeScript — keeps the orchestrator-facing module entry free
+   * of JSX-runtime imports the server side never needs.
+   */
+  renderDetail(row: HabitatFindingRow, cardId: string) {
+    return createElement(SiteDetail, { row, cardId });
   },
 };
 
