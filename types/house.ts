@@ -51,6 +51,13 @@ export type House = {
   generated_image_prompt: string | null;
   generated_image_created_at: string | null;
 
+  // User-uploaded house photo. Takes priority over the generated sketch
+  // when present. Path within the private `house-photos` bucket; the
+  // dashboard derives signed URLs the same way as the generated image.
+  // Null when the user hasn't uploaded a photo (or has removed it).
+  user_image_url: string | null;
+  user_image_uploaded_at: string | null;
+
   created_at: string;
   updated_at: string;
 };

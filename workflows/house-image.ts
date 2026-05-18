@@ -1,5 +1,6 @@
 import { generateImage } from "ai";
 import { buildHouseImagePrompt } from "@/lib/house-image/prompt";
+import { HOUSE_IMAGE_CACHE_CONTROL } from "@/lib/house-image/signed-url";
 import { createServiceClient } from "@/lib/supabase/service";
 
 /**
@@ -127,6 +128,10 @@ async function persistHouseImage(
     .upload(path, result.imageBytes, {
       contentType: "image/png",
       upsert: true,
+      // The storage path is stable per asset; the dashboard cache-busts
+      // via `generated_image_created_at`. Immutable lets the browser
+      // hold the bytes across reloads and navigations once it has them.
+      cacheControl: HOUSE_IMAGE_CACHE_CONTROL,
     });
 
   if (uploadError) {
