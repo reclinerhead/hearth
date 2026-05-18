@@ -17,6 +17,7 @@
 
 import { Icon } from "@/components/icon";
 import { SEVERITY_COLOR, SEVERITY_WORD } from "@/components/habitat-severity";
+import { Tooltip } from "@/components/tooltip";
 import {
   findContaminantByAlias,
 } from "@/lib/habitat/contaminants/lookup";
@@ -26,7 +27,9 @@ import type {
 } from "@/lib/habitat/contaminants/data";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import { formatArchivedDate, formatEpaRegion } from "../format";
+import type { NplCode, Tier } from "../severity";
 import type { SiteEntry, SuperfundFindings } from "../types";
+import type { HabitatSeverity } from "@/lib/habitat/types";
 
 /**
  * Lift findings off the loosely-typed row. Returns null for any shape
@@ -134,6 +137,62 @@ function Pill({
   );
 }
 
+/**
+ * Plain-English explanation of an EPA NPL status code, surfaced as the
+ * tooltip text on the NPL listing pill. Kept here (not in severity.ts)
+ * because this is display copy, not severity logic.
+ */
+function nplStatusExplanation(code: NplCode): string {
+  switch (code) {
+    case "F":
+      return "Final NPL — EPA has formally listed this site on the National Priorities List for federally funded long-term cleanup.";
+    case "P":
+      return "Proposed NPL — EPA has proposed adding this site to the National Priorities List; it is not yet a final listing.";
+    case "A":
+      return "Part of NPL site — this location is rolled up under a larger NPL listing nearby; it is not separately listed.";
+    case "D":
+      return "Deleted from NPL — cleanup is complete and EPA has removed this site from the National Priorities List.";
+  }
+}
+
+/**
+ * Plain-English explanation of Hearth's three-tier proximity model,
+ * surfaced as the tooltip text on the Tier pill.
+ */
+function tierExplanation(tier: Tier): string {
+  switch (tier) {
+    case 1:
+      return "Tier 1 — within 0.5 miles of your home (Hearth's closest community-impact ring). All NPL statuses qualify.";
+    case 2:
+      return "Tier 2 — between 0.5 and 2 miles of your home. Only active (Final) or Proposed NPL sites qualify at this distance.";
+    case 3:
+      return "Tier 3 — between 2 and 5 miles of your home. Only Final NPL sites qualify at this distance.";
+  }
+}
+
+/**
+ * Plain-English explanation of Hearth's severity classification for the
+ * three severities the Superfund module can land on. The "favorable" /
+ * "beneficial" / "critical" stops don't apply to per-site pills — those
+ * are the module-level top-line severities, never per-site.
+ */
+function severityExplanation(severity: HabitatSeverity): string {
+  switch (severity) {
+    case "concern":
+      return "Concern — Hearth surfaces this finding near the top of your dashboard; it represents an active environmental issue close to your home.";
+    case "caution":
+      return "Caution — Hearth flags this finding for attention without surfacing it at the top of your dashboard.";
+    case "neutral":
+      return "Neutral — Hearth notes this finding on the record but does not surface it as a concern.";
+    case "favorable":
+      return "Favorable — Hearth surfaces this finding as a positive signal: no qualifying issues nearby.";
+    case "beneficial":
+      return "Beneficial — Hearth surfaces this finding as an active positive for the area.";
+    case "critical":
+      return "Critical — Hearth's top severity; immediate awareness recommended.";
+  }
+}
+
 function SiteHeader({ entry }: { entry: SiteEntry }) {
   const { site, context } = entry;
   const distance = `${context.distance_miles} mi ${context.bearing}`;
@@ -143,12 +202,18 @@ function SiteHeader({ entry }: { entry: SiteEntry }) {
         {site.name_display}
       </h2>
       <div className="flex flex-wrap items-center gap-1.5">
-        <Pill>{site.npl_status.label}</Pill>
+        <Tooltip content={nplStatusExplanation(site.npl_status.code)} side="bottom">
+          <Pill>{site.npl_status.label}</Pill>
+        </Tooltip>
         <Pill>{distance}</Pill>
-        <Pill>Tier {context.tier}</Pill>
-        <Pill emphasizeColor={SEVERITY_COLOR[context.severity]}>
-          {SEVERITY_WORD[context.severity]}
-        </Pill>
+        <Tooltip content={tierExplanation(context.tier)} side="bottom">
+          <Pill>Tier {context.tier}</Pill>
+        </Tooltip>
+        <Tooltip content={severityExplanation(context.severity)} side="bottom">
+          <Pill emphasizeColor={SEVERITY_COLOR[context.severity]}>
+            {SEVERITY_WORD[context.severity]}
+          </Pill>
+        </Tooltip>
       </div>
     </div>
   );

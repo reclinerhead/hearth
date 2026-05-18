@@ -121,6 +121,18 @@ body {
   min-height: 100dvh;
 }
 
+/*
+ * Tailwind v4's preflight resets buttons to `cursor: default`. Project
+ * convention is that anything clickable shows a pointer — buttons,
+ * elements with `role="button"`, and native disclosure summaries.
+ * Disabled buttons keep the default cursor to signal non-interactivity.
+ */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+summary {
+  cursor: pointer;
+}
+
 /* Typography primitives */
 
 .h1,
