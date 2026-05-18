@@ -3,11 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Icon } from "./icon";
 import { HabitatActionChip } from "./habitat-action-chip";
-import {
-  SEVERITY_COLOR,
-  SEVERITY_WORD,
-  SeverityDot,
-} from "./habitat-severity";
+import { SEVERITY_COLOR, SEVERITY_WORD, SeverityDot } from "./habitat-severity";
 import type { ActivityStep } from "@/lib/habitat/activity-log";
 import type {
   FindingAction,
@@ -87,9 +83,8 @@ export function HabitatFindingModal({
         return;
       }
       if (e.key === "Tab" && dialogRef.current) {
-        const focusables = dialogRef.current.querySelectorAll<HTMLElement>(
-          FOCUSABLE_SELECTOR,
-        );
+        const focusables =
+          dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
         if (focusables.length === 0) return;
         const first = focusables[0];
         const last = focusables[focusables.length - 1];
@@ -318,6 +313,7 @@ function ActivityLogStep({ step }: { step: ActivityStep }) {
         style={{
           left: "calc(-1 * var(--space-6) + var(--space-3) - 10px)",
           top: 2,
+
           width: 20,
           height: 20,
           borderRadius: 999,
@@ -331,12 +327,14 @@ function ActivityLogStep({ step }: { step: ActivityStep }) {
         {step.step}
       </span>
       <div className="min-w-0">
-        <p style={{ color: "var(--color-text-primary)" }}>{step.narration}</p>
+        <p style={{ fontSize: 13, color: "var(--color-text-primary)" }}>
+          {step.narration}
+        </p>
         {step.result_summary ? (
           <span
             className="mono inline-block mt-1.5 rounded-full px-2 py-0.5"
             style={{
-              fontSize: 12,
+              fontSize: 11,
               backgroundColor: "var(--color-bg-surface-raised)",
               color: "var(--color-text-secondary)",
             }}
@@ -348,7 +346,7 @@ function ActivityLogStep({ step }: { step: ActivityStep }) {
           <div
             className="mono mt-1.5"
             style={{
-              fontSize: 12,
+              fontSize: 11,
               color: "var(--color-text-tertiary)",
               paddingLeft: "var(--space-2)",
             }}
