@@ -326,12 +326,25 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
     expect(finding.summary).toContain("north");
   });
 
-  it("ships a 'View EPA site profile' action pointing at the closest site", async () => {
+  it("does not ship a per-site EPA profile pill in the module action shelf", async () => {
+    // Per-site EPA profile links are surfaced inside the modal's
+    // per-site detail pane (lib/habitat/modules/epa-superfund-proximity/
+    // components/site-detail.tsx). Having one in the module-level
+    // action shelf read as misleading once multiple sites were rendered
+    // as drillable cards — the pill pointed at only the closest one.
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const actions = finding.actions ?? [];
-    const profile = actions.find((a) => a.label === "View EPA site profile");
-    expect(profile?.kind).toBe("link");
-    expect(profile?.url).toContain("cumulis.epa.gov");
+    expect(
+      actions.find((a) => a.label === "View EPA site profile"),
+    ).toBeUndefined();
+  });
+
+  it("ships the module-level Superfund overview link in the action shelf", async () => {
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const actions = finding.actions ?? [];
+    const overview = actions.find((a) => a.label === "EPA Superfund overview");
+    expect(overview?.kind).toBe("link");
+    expect(overview?.url).toBe("https://www.epa.gov/superfund");
   });
 });
 

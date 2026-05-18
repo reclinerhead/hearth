@@ -92,7 +92,7 @@ export function HabitatFindingModal({
   const backButtonRef = useRef<HTMLButtonElement | null>(null);
   const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const prevActiveCardIdRef = useRef<string | null>(null);
-  const [logOpen, setLogOpen] = useState(true);
+  const [logOpen, setLogOpen] = useState(false);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
 
   // Wrap onClose so closing the modal (from the close button, ESC, or
@@ -268,22 +268,6 @@ export function HabitatFindingModal({
           </DetailPane>
         ) : (
           <div className="overflow-y-auto p-4 sm:p-5 space-y-5">
-            {hasActions ? (
-              <section aria-labelledby={`${titleId}-actions`}>
-                <div id={`${titleId}-actions`} className="eyebrow mb-2">
-                  What to do next
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {actions.map((action, i) => (
-                    <HabitatActionChip
-                      key={`${action.kind}:${action.url}:${i}`}
-                      action={action}
-                    />
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
             {hasCards ? (
               <section aria-labelledby={`${titleId}-cards`}>
                 <div id={`${titleId}-cards`} className="eyebrow mb-2">
@@ -303,6 +287,22 @@ export function HabitatFindingModal({
                     </li>
                   ))}
                 </ul>
+              </section>
+            ) : null}
+
+            {hasActions ? (
+              <section aria-labelledby={`${titleId}-actions`}>
+                <div id={`${titleId}-actions`} className="eyebrow mb-2">
+                  What to do next
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {actions.map((action, i) => (
+                    <HabitatActionChip
+                      key={`${action.kind}:${action.url}:${i}`}
+                      action={action}
+                    />
+                  ))}
+                </div>
               </section>
             ) : null}
 
@@ -457,39 +457,41 @@ function OverviewCardButton({
       ref={registerRef}
       type="button"
       onClick={onClick}
-      className="w-full text-left rounded-md transition-colors hover:bg-(--color-bg-surface-raised) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+      className="group w-full text-left rounded-md flex items-center gap-3 transition-colors hover:bg-(--color-bg-surface-raised) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
       style={{
         border: "1px solid var(--color-border-subtle)",
         padding: "var(--space-3)",
         backgroundColor: "transparent",
       }}
     >
-      <div className="flex items-center gap-2 mb-1">
-        <SeverityDot severity={card.severity} />
-        <span className="eyebrow">{card.eyebrow}</span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 mb-1">
+          <SeverityDot severity={card.severity} />
+          <span className="eyebrow">{card.eyebrow}</span>
+        </div>
+        <div className="h3" style={{ marginBottom: 2 }}>
+          {card.headline}
+        </div>
+        <div
+          className="text-small"
+          style={{
+            color: "var(--color-text-secondary)",
+            display: "-webkit-box",
+            WebkitLineClamp: 1,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          {card.subtitle}
+        </div>
       </div>
-      <div
-        className="text-small"
-        style={{
-          fontWeight: 600,
-          color: "var(--color-text-primary)",
-          marginBottom: 2,
-        }}
+      <span
+        aria-hidden
+        className="shrink-0 transition-transform group-hover:translate-x-0.5"
+        style={{ color: "var(--color-text-tertiary)", lineHeight: 0 }}
       >
-        {card.headline}
-      </div>
-      <div
-        className="text-small"
-        style={{
-          color: "var(--color-text-secondary)",
-          display: "-webkit-box",
-          WebkitLineClamp: 1,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-        }}
-      >
-        {card.subtitle}
-      </div>
+        <Icon name="chevron-right" size={18} />
+      </span>
     </button>
   );
 }

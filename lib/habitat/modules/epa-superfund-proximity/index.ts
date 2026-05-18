@@ -250,17 +250,16 @@ function buildHitSummary(entries: SiteEntry[]): string {
 }
 
 /**
- * Per-finding next-step actions. The hit case surfaces the EPA profile
- * for the closest site plus the general Superfund overview; the
- * no-hits case just surfaces the overview.
+ * Per-finding next-step actions. Per-site EPA profile links are
+ * surfaced inside the modal's per-site detail pane (see
+ * `components/site-detail.tsx`) rather than in the module-level action
+ * shelf — the shelf was carrying a "View EPA site profile" pill that
+ * pointed at only the closest site, which read as misleading once
+ * multiple sites were rendered as drillable cards. The shelf now keeps
+ * only the module-level overview link.
  */
-function buildHitActions(closestSite: SiteEntry): FindingAction[] {
+function buildHitActions(): FindingAction[] {
   return [
-    {
-      kind: "link",
-      label: "View EPA site profile",
-      url: closestSite.site.profile_url,
-    },
     {
       kind: "link",
       label: "EPA Superfund overview",
@@ -545,7 +544,7 @@ const EpaSuperfundProximityModule: HabitatModule = {
         total_qualifying_sites: qualifying.length,
         sites: qualifying,
       },
-      actions: buildHitActions(closest),
+      actions: buildHitActions(),
       sourceUrl: closest.site.profile_url,
       activityLog: log.finalize(),
     };

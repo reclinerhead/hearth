@@ -180,6 +180,8 @@ describe("HabitatFindingModal", () => {
         habitatModule={RADON_MODULE}
       />,
     );
+    // Activity log is collapsed by default — expand it first.
+    clickByText("How we got here");
     const items = Array.from(document.querySelectorAll("ol > li"));
     expect(items.length).toBe(RADON_ACTIVITY_LOG.steps.length);
     RADON_ACTIVITY_LOG.steps.forEach((step, i) => {
@@ -196,6 +198,7 @@ describe("HabitatFindingModal", () => {
         habitatModule={RADON_MODULE}
       />,
     );
+    clickByText("How we got here");
     const links = Array.from(
       document.querySelectorAll<HTMLAnchorElement>("ol a"),
     );
@@ -223,6 +226,7 @@ describe("HabitatFindingModal", () => {
         habitatModule={RADON_MODULE}
       />,
     );
+    clickByText("How we got here");
     expect(document.body.textContent).toContain(
       "This finding was recorded before we started capturing how it was computed.",
     );
@@ -240,8 +244,27 @@ describe("HabitatFindingModal", () => {
         habitatModule={RADON_MODULE}
       />,
     );
+    clickByText("How we got here");
     expect(document.body.textContent).toContain(
       "This finding was recorded before we started capturing how it was computed.",
+    );
+  });
+
+  it("the activity log is collapsed by default", () => {
+    render(
+      <HabitatFindingModal
+        open
+        onClose={() => {}}
+        row={makeRow()}
+        habitatModule={RADON_MODULE}
+      />,
+    );
+    // The disclosure button is rendered, but no step list / placeholder
+    // text is in the DOM until the user expands it.
+    expect(document.body.textContent).toContain("How we got here");
+    expect(document.querySelector("ol")).toBeNull();
+    expect(document.body.textContent).not.toContain(
+      RADON_ACTIVITY_LOG.steps[0].narration,
     );
   });
 
