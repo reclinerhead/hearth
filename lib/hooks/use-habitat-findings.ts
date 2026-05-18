@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
+import type { ActivityLog } from "@/lib/habitat/activity-log";
+import type { FindingAction } from "@/lib/habitat/types";
 import { createClient } from "@/lib/supabase/client";
 
 /**
  * Row shape returned by the hook. Matches the column set the dashboard
- * preview panel and the first-run discovery modal both rely on — kept
- * broad enough that both consumers can read directly from it without a
- * second query. Add a column here if a future consumer needs one; the
- * SELECT below is the single source of truth.
+ * preview panel, the finding detail modal, and the first-run discovery
+ * modal all rely on — kept broad enough that every consumer can read
+ * directly from it without a second query. Add a column here if a
+ * future consumer needs one; the SELECT below is the single source of
+ * truth.
  */
 export type HabitatFindingRow = {
   module_key: string;
@@ -19,10 +22,13 @@ export type HabitatFindingRow = {
   findings: Record<string, unknown> | null;
   source_url: string | null;
   error: string | null;
+  actions: FindingAction[] | null;
+  activity_log: ActivityLog | null;
+  checked_at: string | null;
 };
 
 const SELECT_COLUMNS =
-  "module_key, status, severity, headline, summary, findings, source_url, error";
+  "module_key, status, severity, headline, summary, findings, source_url, error, actions, activity_log, checked_at";
 
 // Belt-and-suspenders polling cadence for environments where Realtime is
 // blocked (browser extensions, tracking-prevention). Matches the cadence

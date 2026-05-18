@@ -52,7 +52,8 @@ export type IconName =
   | "upload"
   | "edit"
   | "arrow-right"
-  | "refresh-cw";
+  | "refresh-cw"
+  | "external-link";
 
 const base: SVGProps<SVGSVGElement> = {
   width: 20,
@@ -342,6 +343,13 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M3 4v5h5" />
       <path d="M4 13a8 8 0 0 0 13.7 4.7L21 15" />
       <path d="M21 20v-5h-5" />
+    </>
+  ),
+  "external-link": (
+    <>
+      <path d="M11 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-5" />
+      <path d="M14 4h6v6" />
+      <path d="m10 14 10-10" />
     </>
   ),
 };
