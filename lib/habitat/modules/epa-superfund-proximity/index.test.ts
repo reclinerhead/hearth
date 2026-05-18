@@ -247,6 +247,80 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
     expect(closest.context.severity).toBe("caution");
   });
 
+  it("passes archived_date and epa_region_code through from the EPA row onto the persisted site shape", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "MID000A",
+        epa_id: "MID000A",
+        name: "ACTIVE WITH REGION",
+        primary_latitude_decimal_val: "42.2795",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        archived_ind: "N",
+        archived_date: null,
+        fk_ref_region_code: "05",
+      }),
+      makeRow({
+        site_id: "MID000B",
+        epa_id: "MID000B",
+        name: "ARCHIVED WITH REGION",
+        primary_latitude_decimal_val: "42.2796",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        archived_ind: "Y",
+        archived_date: "2024-01-15",
+        fk_ref_region_code: "01",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const sites = (
+      finding.findings as {
+        sites: Array<{
+          site: {
+            sems_site_id: string;
+            archived: boolean;
+            archived_date: string | null;
+            epa_region_code: string | null;
+          };
+        }>;
+      }
+    ).sites;
+    const active = sites.find((s) => s.site.sems_site_id === "MID000A");
+    const archived = sites.find((s) => s.site.sems_site_id === "MID000B");
+    expect(active?.site.archived).toBe(false);
+    expect(active?.site.archived_date).toBeNull();
+    expect(active?.site.epa_region_code).toBe("05");
+    expect(archived?.site.archived).toBe(true);
+    expect(archived?.site.archived_date).toBe("2024-01-15");
+    expect(archived?.site.epa_region_code).toBe("01");
+  });
+
+  it("writes null passthrough when EPA omits archived_date or fk_ref_region_code", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "MID000C",
+        epa_id: "MID000C",
+        name: "MISSING FIELDS",
+        primary_latitude_decimal_val: "42.2795",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        archived_ind: "N",
+        archived_date: null,
+        fk_ref_region_code: null,
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const site = (
+      finding.findings as {
+        sites: Array<{
+          site: { archived_date: string | null; epa_region_code: string | null };
+        }>;
+      }
+    ).sites[0].site;
+    expect(site.archived_date).toBeNull();
+    expect(site.epa_region_code).toBeNull();
+  });
+
   it("emits a 7-step activity log when at least one qualifying site has multi-location structure", async () => {
     // Allied Paper's name contains "/" — Allied Paper, Inc./Portage
     // Creek/Kalamazoo River. That trips the precision-caveat compute

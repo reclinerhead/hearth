@@ -191,6 +191,8 @@ function buildSiteEntry(
       contaminants: formatContaminants(raw.contaminants ?? []),
       federal_facility: raw.federal_facility_ind === "Y",
       archived: raw.archived_ind === "Y",
+      archived_date: raw.archived_date ?? null,
+      epa_region_code: raw.fk_ref_region_code ?? null,
       profile_url: siteProfileUrl(raw.site_id),
     },
     context,

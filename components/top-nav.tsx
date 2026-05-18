@@ -48,7 +48,8 @@ export function TopNav({ house }: { house: TopNavHouse | null }) {
         className="sticky top-0 z-30 backdrop-blur-md"
         style={{
           height: "var(--nav-top-h)",
-          backgroundColor: "color-mix(in oklab, var(--color-bg-base) 80%, transparent)",
+          backgroundColor:
+            "color-mix(in oklab, var(--color-bg-base) 80%, transparent)",
           borderBottom: "1px solid var(--color-border-subtle)",
         }}
       >
@@ -71,7 +72,7 @@ export function TopNav({ house }: { house: TopNavHouse | null }) {
                 letterSpacing: "-0.005em",
               }}
             >
-              Hearth
+              Hearth - Home Awareness
             </span>
           </Link>
 

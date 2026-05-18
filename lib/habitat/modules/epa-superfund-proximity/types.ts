@@ -45,6 +45,19 @@ export type SiteEntry = {
     contaminants: string[];
     federal_facility: boolean;
     archived: boolean;
+    /**
+     * Date EPA archived the site, when `archived` is true. EPA returns
+     * an ISO-ish string ("2024-01-15") or null. Passed through verbatim
+     * — the display layer formats it. Nullable, and absent on rows
+     * persisted before this field landed.
+     */
+    archived_date: string | null;
+    /**
+     * EPA Region code, zero-padded ("01", "05", "09"). Passed through
+     * verbatim from `fk_ref_region_code` in the EPA response. Nullable,
+     * and absent on rows persisted before this field landed.
+     */
+    epa_region_code: string | null;
     /** Direct link to the site's EPA Cumulis profile. */
     profile_url: string;
   };
