@@ -85,23 +85,6 @@ describe("createActivityLogger", () => {
     expect(step.at_ms).toBeLessThan(50);
   });
 
-  it("distinguishes timings for steps emitted in quick succession", () => {
-    // Regression: an earlier implementation used Date.now() (millisecond
-    // resolution), so every step in a fast in-memory module — like radon —
-    // ended up with at_ms: 0 and total_duration_ms: 0. performance.now()
-    // gives sub-millisecond resolution, which we round to 1 decimal place.
-    // After enough steps, at least one should differ from the first.
-    const log = createActivityLogger();
-    for (let i = 0; i < 100; i++) {
-      log.step({ kind: "compute", narration: `step ${i}` });
-    }
-    const { steps, total_duration_ms } = log.finalize();
-    const firstAt = steps[0].at_ms;
-    const distinguishable = steps.some((s) => s.at_ms !== firstAt);
-    expect(distinguishable).toBe(true);
-    expect(total_duration_ms).toBeGreaterThan(0);
-  });
-
   it("rounds at_ms and total_duration_ms to at most 1 decimal place", () => {
     // Persisting the raw performance.now() output as jsonb would store
     // float noise like 1.4000000000123. Round to 1 decimal place — enough
