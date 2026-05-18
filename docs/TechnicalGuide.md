@@ -32,7 +32,6 @@ app/                       # Next.js App Router
     dashboard/             # Live house facts + placeholder lower sections
     onboarding/            # First-run address capture
     appliances/            # Inventory list
-    home-details/          # House facts edit surface (placeholder)
     documents/[id]/        # Document detail view
     entities/[id]/         # Inventory item detail view
   auth/                    # Supabase auth route handlers
@@ -205,9 +204,11 @@ All tokens are defined in `app/globals.css` and projected through Tailwind v4's 
 
 `components/icon.tsx` ships a small Tabler-style outline icon set (`<Icon name="..." />`) as inline SVG — no runtime icon-library dependency. Stroke 1.75, round joins, 24×24 viewBox. Add icons by extending the `IconName` union and the `paths` map.
 
-`components/app-shell.tsx` composes `TopNav`, `BottomNav`, and `DesktopSidebar` into the authenticated app frame, capped at `--content-max` (1200px) with safe-area-aware bottom padding for mobile nav.
+`components/app-shell.tsx` composes `TopNav`, `BottomNav`, and `DesktopSidebar` into the authenticated app frame, capped at `--content-max` (1200px) with safe-area-aware bottom padding for mobile nav. The `(app)` layout fetches the user's first house row once and passes it through `AppShell` to `TopNav` — both the address chip and the home-details edit modal read from that same snapshot, so opening the modal does not re-query.
 
 `components/document-modal.tsx` provides the document-viewer modal and a `DocumentTrigger` to launch it. Body scroll-lock is handled via the `.scroll-locked` class in globals.css.
+
+`components/edit-home-details-modal.tsx` is the only edit surface for the user's house facts. It is triggered from the top-nav account menu (no sidebar or bottom-nav entry) and writes directly to `hearth.houses` via the RLS-bound browser client, then calls `router.refresh()` so the dashboard and top-nav address pick up the new values without a full page load. Address fields are read-only (sourced from public records during onboarding); editable fields are `year_built`, `living_area_sqft`, `lot_size_sqft`, `bedrooms`, `bathrooms`, and `purchase_date`. Modal mechanics (scroll-lock, focus trap, ESC, backdrop close, return focus) match `HabitatFindingModal`.
 
 ### Discipline
 

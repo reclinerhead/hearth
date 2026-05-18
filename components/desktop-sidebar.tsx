@@ -6,9 +6,10 @@ import { Icon, type IconName } from "./icon";
 
 type Item = { href: string; label: string; icon: IconName };
 
+// Home details is edited via the top-nav account menu modal, not a
+// sidebar destination — there is no /home-details page to link to.
 const ITEMS: Item[] = [
   { href: "/dashboard", label: "Dashboard", icon: "layout-dashboard" },
-  { href: "/home-details", label: "Home details", icon: "home" },
   { href: "/appliances", label: "Home inventory", icon: "device-tv-old" },
 ];
 
