@@ -6,6 +6,7 @@ import { Icon, type IconName } from "@/components/icon";
 import { AICard, MetricCard, PlaceholderImage } from "@/components/ui";
 import { diffHouseFacts } from "@/lib/briefing/diff";
 import type { MergeableHouseFacts } from "@/lib/briefing/merge";
+import { downscaleImage } from "@/lib/house-image/downscale";
 import {
   createCachedSignedUrl,
   HOUSE_IMAGE_CACHE_CONTROL,
@@ -17,10 +18,9 @@ import { refreshBriefing, regenerateHouseImage } from "./actions";
 import { OnboardingDiscoveryModal } from "./onboarding-discovery-modal";
 
 // 15 MB. Modern phone photos can hit 8-12 MB, so this gives headroom
-// without inviting multi-megapixel desktop uploads. The figure-of-merit
-// is what the browser can ferry over a mobile connection in under a few
-// seconds — anything past this should be downscaled before upload, but
-// client-side downscaling is a follow-up.
+// for the original file. We downscale to ~1200 px wide and re-encode
+// as JPEG before uploading (see lib/house-image/downscale), so the
+// bytes that actually leave the browser are typically a few hundred KB.
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 const MAX_UPLOAD_MB = 15;
 const USER_PHOTO_PATH = "photo";
@@ -931,10 +931,11 @@ export function DashboardLive({ houseId }: { houseId: string }) {
     try {
       const supabase = createClient();
       const path = `${houseId}/${USER_PHOTO_PATH}`;
+      const { blob, contentType } = await downscaleImage(file);
       const { error: uploadError } = await supabase.storage
         .from("house-photos")
-        .upload(path, file, {
-          contentType: file.type,
+        .upload(path, blob, {
+          contentType,
           upsert: true,
           cacheControl: HOUSE_IMAGE_CACHE_CONTROL,
         });
