@@ -8,7 +8,7 @@ export function AppShell({
   house,
 }: {
   children: ReactNode;
-  house: TopNavHouse;
+  house: TopNavHouse | null;
 }) {
   return (
     <div className="flex flex-col min-h-dvh">

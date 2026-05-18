@@ -6,9 +6,10 @@ import { Icon, type IconName } from "./icon";
 
 type Tab = { href: string; label: string; icon: IconName };
 
+// Home details is edited from the top-nav account menu (modal), not a
+// bottom-nav destination. Keeping the bar at Dashboard | Add | Appliances.
 const TABS: Tab[] = [
   { href: "/dashboard", label: "Dashboard", icon: "layout-dashboard" },
-  { href: "/home-details", label: "Home", icon: "home" },
   { href: "/appliances", label: "Appliances", icon: "device-tv-old" },
 ];
 
@@ -34,17 +35,17 @@ export function BottomNav() {
       }}
     >
       {/*
-        4-column layout after removing the Habitat tab: Dashboard on the
-        left, then the center Add button, then Home and Appliances on the
-        right. Picked over "one tab on each side of Add" because keeping
-        the destructive symmetry (two-on-the-right vs one-on-each-side)
-        avoids the visual hole that a sparse, evenly-spaced bottom nav
-        creates — the Add button stays anchored to the visual center of
-        the bar while the labelled tabs cluster naturally.
+        Symmetric 3-column layout — one tab on each side of the center
+        Add button (Dashboard | Add | Appliances). When the bar had
+        Home + Appliances on the right we packed tabs to one side to
+        avoid a sparse, evenly-spaced look; with only two destinations
+        left after the home-details modal absorbed the Home tab, the
+        symmetric layout reads naturally and the Add button still sits
+        on the visual center.
       */}
       <ul
         className="grid h-[var(--nav-bottom-h)] items-stretch"
-        style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}
+        style={{ gridTemplateColumns: "1fr 1fr 1fr" }}
       >
         {/* Left tab */}
         {TABS.slice(0, 1).map((t) => (
@@ -68,7 +69,7 @@ export function BottomNav() {
           </button>
         </li>
 
-        {/* Right two tabs */}
+        {/* Right tab */}
         {TABS.slice(1).map((t) => (
           <TabLink key={t.href} tab={t} active={isActive(pathname, t.href)} />
         ))}
