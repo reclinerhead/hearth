@@ -28,6 +28,34 @@ const POLL_INTERVAL_MS = 2500;
 const TERMINAL_STATUSES = new Set(["completed", "failed"]);
 
 /**
+ * Same-tab refresh signal for hearth.houses writes that happen outside
+ * the DashboardLive subtree (e.g. the home-details edit modal mounted
+ * inside TopNav). Components that subscribe via useHouseRealtime listen
+ * for this event and call refetch() when the houseId matches.
+ *
+ * Belt-and-suspenders alongside Supabase Realtime — Realtime is the
+ * primary path but is documented as unreliable in some browsers (see
+ * docs/TechnicalGuide.md "Realtime and the browser"). Dispatching the
+ * event guarantees an immediate refetch even when the websocket is
+ * dead, without forcing the caller to plumb refetch through context.
+ *
+ * Write paths already inside DashboardLive (photo upload/remove,
+ * regenerate-image, refresh-briefing) keep calling refetch() inline —
+ * they don't need the event because the hook is already in scope.
+ */
+export const HOUSE_UPDATED_EVENT = "hearth:house-updated";
+export type HouseUpdatedEventDetail = { houseId: string };
+
+export function dispatchHouseUpdated(houseId: string): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<HouseUpdatedEventDetail>(HOUSE_UPDATED_EVENT, {
+      detail: { houseId },
+    }),
+  );
+}
+
+/**
  * Subscribe to a single hearth.houses row over Supabase Realtime, with a
  * polling fallback that activates whenever briefing_status is non-terminal.
  * Fetches the row once on mount, re-renders on every UPDATE event, and
@@ -124,6 +152,23 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
       supabase.removeChannel(channel);
     };
   }, [houseId]);
+
+  // Listen for same-tab house-updated events dispatched from write paths
+  // outside this subtree (the home-details edit modal in TopNav). See
+  // HOUSE_UPDATED_EVENT for the full rationale. We always refetch on
+  // match — refetch is idempotent against the Realtime broadcast that
+  // may or may not also fire, so worst case we update twice with the
+  // same row.
+  useEffect(() => {
+    function onUpdated(e: Event) {
+      const detail = (e as CustomEvent<HouseUpdatedEventDetail>).detail;
+      if (detail?.houseId === houseId) {
+        void refetch();
+      }
+    }
+    window.addEventListener(HOUSE_UPDATED_EVENT, onUpdated);
+    return () => window.removeEventListener(HOUSE_UPDATED_EVENT, onUpdated);
+  }, [houseId, refetch]);
 
   // Polling fallback. Active only while briefing_status is non-terminal,
   // and re-triggered each time status transitions back into a non-terminal

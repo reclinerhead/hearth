@@ -208,7 +208,15 @@ All tokens are defined in `app/globals.css` and projected through Tailwind v4's 
 
 `components/document-modal.tsx` provides the document-viewer modal and a `DocumentTrigger` to launch it. Body scroll-lock is handled via the `.scroll-locked` class in globals.css.
 
-`components/edit-home-details-modal.tsx` is the only edit surface for the user's house facts. It is triggered from the top-nav account menu (no sidebar or bottom-nav entry) and writes directly to `hearth.houses` via the RLS-bound browser client, then calls `router.refresh()` so the dashboard and top-nav address pick up the new values without a full page load. Address fields are read-only (sourced from public records during onboarding); editable fields are `year_built`, `living_area_sqft`, `lot_size_sqft`, `bedrooms`, `bathrooms`, and `purchase_date`. Modal mechanics (scroll-lock, focus trap, ESC, backdrop close, return focus) match `HabitatFindingModal`.
+`components/edit-home-details-modal.tsx` is the only edit surface for the user's house facts. It is triggered from the top-nav account menu (no sidebar or bottom-nav entry) and writes directly to `hearth.houses` via the RLS-bound browser client. After a successful save it dispatches `hearth:house-updated` (see "Cross-tree refresh signal" below) so the dashboard hero refetches immediately, and also calls `router.refresh()` so the top-nav address — which is server-rendered — picks up the new value. Address fields are read-only (sourced from public records during onboarding); editable fields are `year_built`, `living_area_sqft`, `lot_size_sqft`, `bedrooms`, `bathrooms`, and `purchase_date`. Modal mechanics (scroll-lock, focus trap, ESC, backdrop close, return focus) match `HabitatFindingModal`.
+
+### Cross-tree refresh signal
+
+`useHouseRealtime` is the dashboard's live data source for a single house row. Realtime UPDATE broadcasts are the primary path, with a polling fallback that's only active while `briefing_status` is non-terminal. When realtime is blocked at the browser layer (extensions, tracking-prevention — see "Realtime and the browser" below) and briefing has already completed, the hook would otherwise go silent for any subsequent write.
+
+To stay robust against that, write paths inside `DashboardLive`'s subtree (photo upload/remove, regenerate-image, refresh-briefing) call `refetch()` directly after they finish — the hook is in scope. Write paths *outside* the subtree (today: the home-details edit modal mounted under `TopNav`) instead dispatch the `HOUSE_UPDATED_EVENT` (`hearth:house-updated`) custom event via the `dispatchHouseUpdated(houseId)` helper exported from `lib/hooks/use-house-realtime.ts`. The hook listens for that event and calls `refetch()` when the `houseId` matches. The event is idempotent against Realtime — if both fire, the second update is a no-op.
+
+Any future house-mutating UI that's not a descendant of `DashboardLive` should dispatch this event after its write completes, instead of trying to plumb the hook's `refetch` through a context.
 
 ### Discipline
 
