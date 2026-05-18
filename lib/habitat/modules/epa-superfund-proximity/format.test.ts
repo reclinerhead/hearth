@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bearingWord,
+  formatContaminantName,
   formatContaminants,
   roundMiles,
   titleCase,
@@ -98,11 +99,94 @@ describe("titleCase", () => {
   });
 });
 
+describe("formatContaminantName", () => {
+  it("formats benzo(b)fluoranthene with the lowercase IUPAC letter intact", () => {
+    expect(formatContaminantName("BENZO(B)FLUORANTHENE")).toBe(
+      "Benzo(b)fluoranthene",
+    );
+  });
+
+  it("preserves TCDD and TEQ acronyms inside a longer name", () => {
+    expect(
+      formatContaminantName(
+        "2,3,7,8-TETRACHLORODIBENZO-P-DIOXIN (TCDD) TOXICITY EQUIVALENTS (TEQ)",
+      ),
+    ).toBe(
+      "2,3,7,8-tetrachlorodibenzo-p-dioxin (TCDD) toxicity equivalents (TEQ)",
+    );
+  });
+
+  it("preserves PCBs and PAHs with the lowercase plural s", () => {
+    expect(formatContaminantName("POLYCHLORINATED BIPHENYLS (PCBS)")).toBe(
+      "Polychlorinated biphenyls (PCBs)",
+    );
+    expect(formatContaminantName("POLYCYCLIC AROMATIC HYDROCARBONS (PAHS)")).toBe(
+      "Polycyclic aromatic hydrocarbons (PAHs)",
+    );
+  });
+
+  it("preserves Roman numerals for oxidation states", () => {
+    expect(formatContaminantName("CHROMIUM(VI)")).toBe("Chromium(VI)");
+    expect(formatContaminantName("CHROMIUM(III) CHLORIDE")).toBe(
+      "Chromium(III) chloride",
+    );
+  });
+
+  it("uppercases a letter directly following a leading digit (9H-fluorene)", () => {
+    expect(formatContaminantName("9H-FLUORENE")).toBe("9H-fluorene");
+    expect(formatContaminantName("1H-INDOLE")).toBe("1H-indole");
+  });
+
+  it("keeps lowercase IUPAC letters inside parenthesized locant pairs", () => {
+    expect(formatContaminantName("INDENO(1,2,3-CD)PYRENE")).toBe(
+      "Indeno(1,2,3-cd)pyrene",
+    );
+  });
+
+  it("lowercases parenthesized alkyl groups (bis(2-ethylhexyl) prefix)", () => {
+    expect(formatContaminantName("BIS(2-ETHYLHEXYL)PHTHALATE")).toBe(
+      "Bis(2-ethylhexyl)phthalate",
+    );
+  });
+
+  it("handles simple metal names", () => {
+    expect(formatContaminantName("MERCURY")).toBe("Mercury");
+    expect(formatContaminantName("LEAD")).toBe("Lead");
+  });
+
+  it("handles an already-correct-looking input idempotently", () => {
+    expect(formatContaminantName("Mercury")).toBe("Mercury");
+    expect(formatContaminantName("Benzo(b)fluoranthene")).toBe(
+      "Benzo(b)fluoranthene",
+    );
+  });
+
+  it("does NOT capitalize the first alpha after a locant prefix", () => {
+    // The 't' in 2,3,7,8-tetra... stays lowercase. The previous title-case
+    // path would have given "2,3,7,8-Tetrachlorodibenzo-P-Dioxin", which
+    // is wrong chemistry.
+    expect(formatContaminantName("2,3,7,8-TETRACHLORODIBENZENE")).toBe(
+      "2,3,7,8-tetrachlorodibenzene",
+    );
+  });
+
+  it("returns empty string for null/undefined/empty input", () => {
+    expect(formatContaminantName(null)).toBe("");
+    expect(formatContaminantName(undefined)).toBe("");
+    expect(formatContaminantName("")).toBe("");
+    expect(formatContaminantName("   ")).toBe("");
+  });
+
+  it("does not match acronyms inside larger words (no \"vi\" in \"vinyl\")", () => {
+    expect(formatContaminantName("VINYL CHLORIDE")).toBe("Vinyl chloride");
+  });
+});
+
 describe("formatContaminants", () => {
-  it("title-cases each contaminant name", () => {
+  it("normalizes each contaminant name through the chemistry formatter", () => {
     expect(formatContaminants(["LEAD", "POLYCHLORINATED BIPHENYLS"])).toEqual([
       "Lead",
-      "Polychlorinated Biphenyls",
+      "Polychlorinated biphenyls",
     ]);
   });
 

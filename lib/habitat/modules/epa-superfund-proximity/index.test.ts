@@ -231,7 +231,7 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
       finding.findings as { sites: Array<{ site: { contaminants: string[]; sems_site_id: string } }> }
     ).sites;
     const allied = sites.find((s) => s.site.sems_site_id === "MID980794473");
-    expect(allied?.site.contaminants).toContain("Polychlorinated Biphenyls");
+    expect(allied?.site.contaminants).toContain("Polychlorinated biphenyls");
     expect(allied?.site.contaminants).toContain("Lead");
   });
 

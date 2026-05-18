@@ -178,9 +178,118 @@ export function titleCase(input: string | null | undefined): string {
 }
 
 /**
- * Title-case a list of contaminant names returned by SEMS. Each entry
- * is title-cased; empty/null entries are filtered out; duplicates
- * (after normalization) are dropped while preserving first-seen order.
+ * Chemistry acronyms whose canonical case must be preserved when a
+ * contaminant string is normalized. Match is case-insensitive against
+ * the lowercased input and replaced with the form listed here, so
+ * "pcbs" → "PCBs" (lowercase plural s is canonical), "tcdd" → "TCDD",
+ * "vi" → "VI" (Roman numeral oxidation state in metal compounds).
+ *
+ * Acronyms are matched as whole tokens via \b boundaries so we don't
+ * rewrite substrings inside larger words. Sorted longest-first at
+ * apply time so multi-character forms ("PCBs") don't get partially
+ * matched by their prefixes ("PCB").
+ */
+const CHEMISTRY_ACRONYMS = [
+  // Common contaminant-class abbreviations (plural and singular)
+  "PCBs",
+  "PAHs",
+  "VOCs",
+  "PCB",
+  "PAH",
+  "VOC",
+  // Toxicity / equivalency identifiers
+  "TCDD",
+  "TEQ",
+  // PFAS family
+  "PFAS",
+  "PFOA",
+  "PFOS",
+  // Chlorinated pesticides
+  "DDT",
+  "DDE",
+  "DDD",
+  // Common fuel-component abbreviations
+  "BTEX",
+  "MTBE",
+  // Roman-numeral oxidation states (II-VIII covers anything realistic)
+  "VIII",
+  "VII",
+  "VI",
+  "IV",
+  "III",
+  "II",
+] as const;
+
+const ACRONYMS_BY_LENGTH = [...CHEMISTRY_ACRONYMS].sort(
+  (a, b) => b.length - a.length,
+);
+
+/**
+ * Format a contaminant name from EPA's all-caps source format into a
+ * display-friendly string.
+ *
+ * Contaminant names are chemical nomenclature, not English prose. They
+ * have their own capitalization rules — lowercase IUPAC letters in
+ * parentheses ("benzo(b)fluoranthene"), lowercase locant prefixes
+ * ("p-dioxin"), acronyms with specific casing ("PCBs", "TCDD"), and
+ * Roman numerals for metal oxidation states ("Chromium(VI)"). Passing
+ * them through title-case (which is right for site names and
+ * addresses) garbles all of that.
+ *
+ * The transformation is deliberately limited:
+ *   1. Lowercase the entire string.
+ *   2. Uppercase any letter immediately following a digit, so
+ *      "9h-fluorene" becomes "9H-fluorene" and "1h-indole" becomes
+ *      "1H-indole". EPA's nomenclature uses this consistently.
+ *   3. Capitalize the very first character if it is alphabetic. We do
+ *      NOT hunt for the first alphabetic character — that would mangle
+ *      locant prefixes like "2,3,7,8-tetrachloro..." by uppercasing
+ *      the 't'.
+ *   4. Restore canonical case for the chemistry acronyms above
+ *      (case-insensitive, whole-word match).
+ *
+ * Examples:
+ *   "BENZO(B)FLUORANTHENE"          → "Benzo(b)fluoranthene"
+ *   "POLYCHLORINATED BIPHENYLS (PCBS)" → "Polychlorinated biphenyls (PCBs)"
+ *   "9H-FLUORENE"                   → "9H-fluorene"
+ *   "BIS(2-ETHYLHEXYL)PHTHALATE"    → "Bis(2-ethylhexyl)phthalate"
+ *   "CHROMIUM(VI)"                  → "Chromium(VI)"
+ *   "INDENO(1,2,3-CD)PYRENE"        → "Indeno(1,2,3-cd)pyrene"
+ *   "MERCURY"                       → "Mercury"
+ */
+export function formatContaminantName(
+  raw: string | null | undefined,
+): string {
+  if (raw == null) return "";
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+
+  let result = trimmed.toLowerCase();
+
+  result = result.replace(/(\d)([a-z])/g, (_, digit: string, letter: string) =>
+    `${digit}${letter.toUpperCase()}`,
+  );
+
+  if (/^[a-z]/.test(result)) {
+    result = result.charAt(0).toUpperCase() + result.slice(1);
+  }
+
+  for (const acronym of ACRONYMS_BY_LENGTH) {
+    const pattern = new RegExp(`\\b${acronym}\\b`, "gi");
+    result = result.replace(pattern, acronym);
+  }
+
+  return result;
+}
+
+/**
+ * Format a list of contaminant names returned by SEMS. Each entry is
+ * passed through `formatContaminantName`; empty/null entries are
+ * filtered out; duplicates (after normalization) are dropped while
+ * preserving first-seen order.
+ *
+ * Site names, addresses, and city/county names continue to use
+ * `titleCase` — only contaminants get the chemistry-aware treatment.
  */
 export function formatContaminants(
   names: ReadonlyArray<string | null | undefined>,
@@ -189,7 +298,7 @@ export function formatContaminants(
   const out: string[] = [];
   for (const raw of names) {
     if (!raw) continue;
-    const cased = titleCase(raw);
+    const cased = formatContaminantName(raw);
     if (!cased) continue;
     const key = cased.toLowerCase();
     if (seen.has(key)) continue;
