@@ -25,6 +25,7 @@ import {
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
 import { useCachedSignedUrl } from "@/lib/house-image/use-cached-signed-url";
+import { PhotoLightbox } from "./photo-lightbox";
 import {
   Breadcrumb,
   MetricCard,
@@ -105,13 +106,24 @@ export function InventoryDetailView({
   const [editOpen, setEditOpen] = useState(false);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
 
-  // Sign the hero path client-side so the URL string is cached in
-  // sessionStorage across navigations. A cache-warm reload swaps from
-  // placeholder to image in one effect tick and the browser's HTTP
-  // cache hits the immutable `hearth-documents` bytes — see
-  // TechnicalGuide → "Signed URL caching". Stamp is null because the
-  // path itself (which contains `{document_id}`) is the version key.
-  const heroUrl = useCachedSignedUrl("hearth-documents", item.heroPath, null);
+  // The hero slot is 260px wide; the 600px thumbnail is plenty (2x+
+  // DPR) and is the same asset already cached by dashboard tiles, so
+  // navigating from dashboard to detail typically resolves from
+  // sessionStorage and the bytes from the browser's HTTP cache. The
+  // 1920px storage_path is reserved for the lightbox.
+  const heroPhoto = item.photos[0] ?? null;
+  const heroUrl = useCachedSignedUrl(
+    "hearth-documents",
+    heroPhoto?.thumbnailPath ?? null,
+    null,
+  );
+
+  // Lightbox open state. `index` is which slide the lightbox opens to;
+  // future surfaces (e.g. a thumbnail strip) could pass non-zero. The
+  // hero only ever opens at index 0.
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const photoCount = item.photos.length;
+  const hasPhotos = photoCount > 0;
 
   const editableItem: EditableInventoryRow = {
     id: item.id,
@@ -140,17 +152,53 @@ export function InventoryDetailView({
       <section className="grid gap-5 md:grid-cols-[260px_1fr]">
         <div>
           {heroUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={heroUrl}
-              alt={item.name}
-              className="w-full rounded-lg object-cover"
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(true)}
+              aria-label={
+                photoCount > 1
+                  ? `View ${photoCount} photos of ${item.name}`
+                  : `View photo of ${item.name}`
+              }
+              className="hero-photo-trigger block w-full rounded-lg overflow-hidden relative"
               style={{
                 aspectRatio: "1 / 1",
                 border: "1px solid var(--color-border-subtle)",
+                cursor: "zoom-in",
+                padding: 0,
+                background: "transparent",
               }}
-            />
-          ) : item.heroPath ? (
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={heroUrl}
+                alt={item.name}
+                className="block w-full h-full object-cover"
+              />
+              {photoCount > 1 ? (
+                <span
+                  aria-hidden
+                  className="absolute"
+                  style={{
+                    bottom: 8,
+                    right: 8,
+                    padding: "3px 8px",
+                    borderRadius: "999px",
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color: "var(--color-text-primary)",
+                    backgroundColor:
+                      "color-mix(in oklab, var(--color-bg-surface) 80%, transparent)",
+                    backdropFilter: "blur(6px)",
+                    border: "1px solid var(--color-border-subtle)",
+                  }}
+                >
+                  <Icon name="photo" size={11} />
+                  <span style={{ marginLeft: 4 }}>{photoCount}</span>
+                </span>
+              ) : null}
+            </button>
+          ) : heroPhoto ? (
             // Photo exists but the signed URL hasn't resolved yet. A
             // neutral skeleton avoids briefly flashing the "Add photo"
             // call-to-action for an item that already has one. Warm
@@ -168,6 +216,15 @@ export function InventoryDetailView({
           ) : (
             <PlaceholderImage ratio="1 / 1" label="Add photo" icon="camera" />
           )}
+          {hasPhotos ? (
+            <PhotoLightbox
+              open={lightboxOpen}
+              index={0}
+              photos={item.photos}
+              altPrefix={item.name}
+              onClose={() => setLightboxOpen(false)}
+            />
+          ) : null}
           <Tooltip
             content="Adding more photos from the detail page is coming soon."
             side="bottom"

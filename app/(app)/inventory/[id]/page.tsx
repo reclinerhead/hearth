@@ -35,6 +35,11 @@ export type InventoryInsights = {
   model_used: string | null;
 };
 
+export type InventoryPhoto = {
+  storagePath: string;
+  thumbnailPath: string;
+};
+
 export type InventoryDetailItem = {
   id: string;
   house_id: string;
@@ -49,7 +54,10 @@ export type InventoryDetailItem = {
   next_service_due_on: string | null;
   notes: string | null;
   roomName: string;
-  heroPath: string | null;
+  // Every attached photo for this item, most-recent first. Empty for
+  // items with no photos yet. The hero uses photos[0]'s thumbnail; the
+  // lightbox steps through all of them at full resolution.
+  photos: InventoryPhoto[];
   ai_pills: { label: string; value: string }[] | null;
   ai_insights: InventoryInsights | null;
 };
@@ -120,9 +128,10 @@ export default async function InventoryDetailPage({
   //   - rooms list powers the "Room" select in the edit modal
   //   - document count drives the delete-confirm "Also delete N linked
   //     documents" copy (actual deletion still walks the rows server-side)
-  //   - most-recent attached document is the hero photo; matches the
-  //     dashboard's inventory-preview pattern (attached, ordered by
-  //     analyzed_at desc with created_at as the tiebreaker, top one)
+  //   - every attached photo for the item (`kind` filtered to actual
+  //     photos so receipts / manuals stay out), ordered by analyzed_at
+  //     desc with created_at as the tiebreaker. photos[0] is the hero;
+  //     the full set feeds the click-to-expand lightbox.
   const [roomsResult, docCountResult, heroDocsResult] = await Promise.all([
     supabase
       .from("rooms")
@@ -138,9 +147,9 @@ export default async function InventoryDetailPage({
       .select("storage_path, thumbnail_path")
       .eq("inventory_id", row.id)
       .eq("status", "attached")
+      .in("kind", ["nameplate", "photo"])
       .order("analyzed_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false })
-      .limit(1),
+      .order("created_at", { ascending: false }),
   ]);
 
   const roomOptions: RoomOption[] = (roomsResult.data ?? []).map((r) => ({
@@ -150,15 +159,22 @@ export default async function InventoryDetailPage({
 
   const linkedDocumentCount = docCountResult.count ?? 0;
 
-  const heroDoc = heroDocsResult.data?.[0] ?? null;
-  // The detail page's hero is larger than the dashboard's 48px tile, so
-  // prefer the optimized 1920px version when available and fall back to
-  // the thumbnail if not. Signing happens client-side in the detail
-  // view so the URL string is cached in sessionStorage across
-  // navigations — see "Signed URL caching" in the Technical Guide.
-  const heroPath = heroDoc
-    ? heroDoc.storage_path ?? heroDoc.thumbnail_path ?? null
-    : null;
+  // Every attached photo for the item, most-recent first. The detail
+  // view's hero uses photos[0].thumbnailPath (600px is plenty for the
+  // 260px slot, well above 2x DPR); the lightbox steps through all
+  // photos at storagePath (1920px) on user click. Both URL sources
+  // are signed client-side via the shared sessionStorage-cached
+  // helper — see "Signed URL caching" in the Technical Guide.
+  const photos: InventoryPhoto[] = (heroDocsResult.data ?? [])
+    .filter(
+      (d): d is { storage_path: string; thumbnail_path: string } =>
+        typeof d.storage_path === "string" &&
+        typeof d.thumbnail_path === "string",
+    )
+    .map((d) => ({
+      storagePath: d.storage_path,
+      thumbnailPath: d.thumbnail_path,
+    }));
 
   const detail: InventoryDetailItem = {
     id: row.id,
@@ -174,7 +190,7 @@ export default async function InventoryDetailPage({
     next_service_due_on: row.next_service_due_on,
     notes: row.notes,
     roomName,
-    heroPath,
+    photos,
     ai_pills: row.ai_pills,
     ai_insights: row.ai_insights,
   };
