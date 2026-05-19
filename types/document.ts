@@ -67,6 +67,11 @@ export type AiExtraction =
 
 export type EquipmentType = "appliance" | "system" | "exterior";
 
+export type NameplateExtractionPill = {
+  label: string;
+  value: string;
+};
+
 export type NameplateExtraction = {
   mode: "classification";
   photo_kind: "nameplate";
@@ -81,6 +86,7 @@ export type NameplateExtraction = {
     serial_number: string | null;
     installed_on: string | null;
     notes: string | null;
+    pills: NameplateExtractionPill[];
   };
   room_suggestion: string | null;
 };

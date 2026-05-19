@@ -1,0 +1,163 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildResearchSystemPrompt,
+  buildResearchUserMessage,
+  type ResearchInventoryInput,
+} from "./prompt";
+
+const baseInput: ResearchInventoryInput = {
+  manufacturer: "Maytag",
+  model_number: "MDB4949SHZ0",
+  inventory_name: "Maytag dishwasher",
+  inventory_type: "appliance",
+  ai_pills: null,
+  notes: null,
+};
+
+describe("buildResearchSystemPrompt", () => {
+  it("returns a non-empty string", () => {
+    expect(buildResearchSystemPrompt().length).toBeGreaterThan(0);
+  });
+
+  it("is deterministic across calls (no per-input state leaks in)", () => {
+    expect(buildResearchSystemPrompt()).toBe(buildResearchSystemPrompt());
+  });
+
+  it("names all three section fields the model must populate", () => {
+    const prompt = buildResearchSystemPrompt();
+    expect(prompt).toContain("overview");
+    expect(prompt).toContain("service_life");
+    expect(prompt).toContain("maintenance");
+  });
+
+  it("names the headline and source_urls fields", () => {
+    const prompt = buildResearchSystemPrompt();
+    expect(prompt).toContain("headline");
+    expect(prompt).toContain("source_urls");
+  });
+
+  it("names the found_specific_model boolean", () => {
+    expect(buildResearchSystemPrompt()).toContain("found_specific_model");
+  });
+
+  it("includes search-strategy guidance encouraging multiple searches", () => {
+    const prompt = buildResearchSystemPrompt();
+    expect(prompt).toMatch(/Use web search multiple times/i);
+    expect(prompt).toMatch(/at least three times/i);
+  });
+
+  it("includes the honesty rule allowing null per section", () => {
+    const prompt = buildResearchSystemPrompt();
+    expect(prompt).toMatch(/return null for that section/i);
+    expect(prompt).toMatch(/Do not invent details/i);
+  });
+
+  it("specifies the per-section character ceiling", () => {
+    expect(buildResearchSystemPrompt()).toMatch(/1200 characters/);
+  });
+
+  it("warns away from speculation and marketing language", () => {
+    const prompt = buildResearchSystemPrompt();
+    expect(prompt).toMatch(/Avoid marketing language/i);
+    expect(prompt).toMatch(/Avoid speculation/i);
+  });
+});
+
+describe("buildResearchUserMessage", () => {
+  it("returns a non-empty string", () => {
+    expect(buildResearchUserMessage(baseInput).length).toBeGreaterThan(0);
+  });
+
+  it("includes the manufacturer, model_number, and name", () => {
+    const message = buildResearchUserMessage(baseInput);
+    expect(message).toContain("Maytag");
+    expect(message).toContain("MDB4949SHZ0");
+    expect(message).toContain("Maytag dishwasher");
+  });
+
+  it("includes the inventory type", () => {
+    expect(buildResearchUserMessage(baseInput)).toMatch(/Type: appliance/);
+  });
+
+  it("displays '(unknown)' when manufacturer is null", () => {
+    const message = buildResearchUserMessage({
+      ...baseInput,
+      manufacturer: null,
+    });
+    expect(message).toMatch(/Manufacturer: \(unknown\)/);
+  });
+
+  it("displays '(unknown)' when model_number is null", () => {
+    const message = buildResearchUserMessage({
+      ...baseInput,
+      model_number: null,
+    });
+    expect(message).toMatch(/Model number: \(unknown\)/);
+  });
+
+  describe("three explicit asks", () => {
+    it("includes the numbered ask for overview", () => {
+      const message = buildResearchUserMessage(baseInput);
+      expect(message).toMatch(/1\.[\s\S]*?Populate the `overview` field/);
+    });
+
+    it("includes the numbered ask for service_life", () => {
+      const message = buildResearchUserMessage(baseInput);
+      expect(message).toMatch(/2\.[\s\S]*?Populate the `service_life` field/);
+    });
+
+    it("includes the numbered ask for maintenance", () => {
+      const message = buildResearchUserMessage(baseInput);
+      expect(message).toMatch(/3\.[\s\S]*?Populate the `maintenance` field/);
+    });
+
+    it("reinforces the 'null is the correct answer' rule", () => {
+      const message = buildResearchUserMessage(baseInput);
+      expect(message).toMatch(/Returning null is the correct answer/i);
+    });
+  });
+
+  describe("pills block", () => {
+    it("includes the pills block when pills are present", () => {
+      const message = buildResearchUserMessage({
+        ...baseInput,
+        ai_pills: [
+          { label: "Capacity", value: "40 gallons" },
+          { label: "BTU Input", value: "40,000" },
+        ],
+      });
+      expect(message).toMatch(/Details from the nameplate/i);
+      expect(message).toContain("Capacity: 40 gallons");
+      expect(message).toContain("BTU Input: 40,000");
+    });
+
+    it("omits the pills block when ai_pills is null", () => {
+      const message = buildResearchUserMessage({
+        ...baseInput,
+        ai_pills: null,
+      });
+      expect(message).not.toMatch(/Details from the nameplate/i);
+    });
+
+    it("omits the pills block when ai_pills is an empty array", () => {
+      const message = buildResearchUserMessage({ ...baseInput, ai_pills: [] });
+      expect(message).not.toMatch(/Details from the nameplate/i);
+    });
+  });
+
+  describe("notes block", () => {
+    it("includes the notes block when notes are present", () => {
+      const message = buildResearchUserMessage({
+        ...baseInput,
+        notes: "Replaced control board in 2023",
+      });
+      expect(message).toMatch(/Additional notes/i);
+      expect(message).toContain("Replaced control board in 2023");
+    });
+
+    it("omits the notes block when notes are null", () => {
+      const message = buildResearchUserMessage({ ...baseInput, notes: null });
+      expect(message).not.toMatch(/Additional notes/i);
+    });
+  });
+});

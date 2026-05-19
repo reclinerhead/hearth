@@ -16,6 +16,11 @@ describe("classificationSchema", () => {
         serial_number: "0419A12345",
         installed_on: "2018-04-12",
         notes: "Gas, 70k BTU",
+        pills: [
+          { label: "BTU Input", value: "70,000" },
+          { label: "Fuel", value: "Natural gas" },
+          { label: "Voltage", value: "120V" },
+        ],
       },
       room_suggestion: "Basement",
     };
@@ -26,6 +31,11 @@ describe("classificationSchema", () => {
       if (parsed.photo_kind === "nameplate") {
         expect(parsed.classification.name).toBe("Furnace");
         expect(parsed.extracted.manufacturer).toBe("Carrier");
+        expect(parsed.extracted.pills).toHaveLength(3);
+        expect(parsed.extracted.pills[0]).toEqual({
+          label: "BTU Input",
+          value: "70,000",
+        });
       }
     });
 
@@ -38,9 +48,100 @@ describe("classificationSchema", () => {
           serial_number: null,
           installed_on: null,
           notes: null,
+          pills: [],
         },
       };
       expect(() => classificationSchema.parse(partial)).not.toThrow();
+    });
+
+    describe("pills field", () => {
+      it("accepts an empty pills array", () => {
+        const payload = {
+          ...validNameplate,
+          extracted: { ...validNameplate.extracted, pills: [] },
+        };
+        expect(() => classificationSchema.parse(payload)).not.toThrow();
+      });
+
+      it("rejects a pill with an empty label", () => {
+        const payload = {
+          ...validNameplate,
+          extracted: {
+            ...validNameplate.extracted,
+            pills: [{ label: "", value: "40 gallons" }],
+          },
+        };
+        expect(() => classificationSchema.parse(payload)).toThrow();
+      });
+
+      it("rejects a pill with a label longer than 40 characters", () => {
+        const payload = {
+          ...validNameplate,
+          extracted: {
+            ...validNameplate.extracted,
+            pills: [{ label: "x".repeat(41), value: "40 gallons" }],
+          },
+        };
+        expect(() => classificationSchema.parse(payload)).toThrow();
+      });
+
+      it("rejects a pill with a value longer than 120 characters", () => {
+        const payload = {
+          ...validNameplate,
+          extracted: {
+            ...validNameplate.extracted,
+            pills: [{ label: "Capacity", value: "x".repeat(121) }],
+          },
+        };
+        expect(() => classificationSchema.parse(payload)).toThrow();
+      });
+
+      it("rejects a pill missing the value field", () => {
+        const payload = {
+          ...validNameplate,
+          extracted: {
+            ...validNameplate.extracted,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            pills: [{ label: "Capacity" } as any],
+          },
+        };
+        expect(() => classificationSchema.parse(payload)).toThrow();
+      });
+
+      it("rejects a pill missing the label field", () => {
+        const payload = {
+          ...validNameplate,
+          extracted: {
+            ...validNameplate.extracted,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            pills: [{ value: "40 gallons" } as any],
+          },
+        };
+        expect(() => classificationSchema.parse(payload)).toThrow();
+      });
+
+      it("rejects pills as a non-array", () => {
+        const payload = {
+          ...validNameplate,
+          extracted: {
+            ...validNameplate.extracted,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            pills: "not-an-array" as any,
+          },
+        };
+        expect(() => classificationSchema.parse(payload)).toThrow();
+      });
+
+      it("rejects missing pills field entirely", () => {
+        const { pills: _omit, ...extractedWithoutPills } =
+          validNameplate.extracted;
+        void _omit;
+        const payload = {
+          ...validNameplate,
+          extracted: extractedWithoutPills,
+        };
+        expect(() => classificationSchema.parse(payload)).toThrow();
+      });
     });
 
     it("accepts null room_suggestion", () => {
