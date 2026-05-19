@@ -10,11 +10,8 @@
 // work — the same ownership chain the dashboard uses.
 
 import { notFound } from "next/navigation";
-import { HEARTH_DOCUMENTS_BUCKET } from "@/lib/documents/paths";
 import { createClient } from "@/lib/supabase/server";
 import { InventoryDetailView } from "./inventory-detail-view";
-
-const HERO_SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 type InventoryType = "appliance" | "system" | "exterior";
 
@@ -52,7 +49,7 @@ export type InventoryDetailItem = {
   next_service_due_on: string | null;
   notes: string | null;
   roomName: string;
-  heroSignedUrl: string | null;
+  heroPath: string | null;
   ai_pills: { label: string; value: string }[] | null;
   ai_insights: InventoryInsights | null;
 };
@@ -153,22 +150,15 @@ export default async function InventoryDetailPage({
 
   const linkedDocumentCount = docCountResult.count ?? 0;
 
-  const heroDocs = heroDocsResult.data;
-
-  const heroDoc = heroDocs?.[0] ?? null;
-  let heroSignedUrl: string | null = null;
-  if (heroDoc) {
-    // The detail page's hero is larger than the dashboard's 48px tile,
-    // so prefer the optimized 1920px version when available and fall
-    // back to the thumbnail if not.
-    const path = heroDoc.storage_path ?? heroDoc.thumbnail_path;
-    if (path) {
-      const { data: signed } = await supabase.storage
-        .from(HEARTH_DOCUMENTS_BUCKET)
-        .createSignedUrl(path, HERO_SIGNED_URL_TTL_SECONDS);
-      heroSignedUrl = signed?.signedUrl ?? null;
-    }
-  }
+  const heroDoc = heroDocsResult.data?.[0] ?? null;
+  // The detail page's hero is larger than the dashboard's 48px tile, so
+  // prefer the optimized 1920px version when available and fall back to
+  // the thumbnail if not. Signing happens client-side in the detail
+  // view so the URL string is cached in sessionStorage across
+  // navigations — see "Signed URL caching" in the Technical Guide.
+  const heroPath = heroDoc
+    ? heroDoc.storage_path ?? heroDoc.thumbnail_path ?? null
+    : null;
 
   const detail: InventoryDetailItem = {
     id: row.id,
@@ -184,7 +174,7 @@ export default async function InventoryDetailPage({
     next_service_due_on: row.next_service_due_on,
     notes: row.notes,
     roomName,
-    heroSignedUrl,
+    heroPath,
     ai_pills: row.ai_pills,
     ai_insights: row.ai_insights,
   };

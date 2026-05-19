@@ -1,13 +1,18 @@
 import Link from "next/link";
 import { Icon, type IconName } from "@/components/icon";
-import { HEARTH_DOCUMENTS_BUCKET } from "@/lib/documents/paths";
 import { createClient } from "@/lib/supabase/server";
+import { InventoryThumbnail } from "./inventory-thumbnail";
 
 /**
  * Dashboard inventory preview — server component. Renders the
  * authenticated user's most recently created inventory items as
- * tile rows, each with a hero photo derived from the most-recent
- * attached document's thumbnail.
+ * tile rows. Hero thumbnails resolve on the client: this component
+ * loads each item's most-recent attached document's thumbnail path
+ * and hands it to `<InventoryThumbnail>`, which signs the URL via
+ * `createCachedSignedUrl`. Caching the resulting URL string in
+ * `sessionStorage` is what lets the browser's HTTP cache hit the
+ * immutable `hearth-documents` bytes on reload and across navigations
+ * — see "Signed URL caching" in the Technical Guide.
  *
  * Replaces the dashboard's earlier hardcoded mock APPLIANCES array.
  * The layout (vertical rows in a half-width column) is unchanged; only
@@ -19,7 +24,6 @@ import { createClient } from "@/lib/supabase/server";
  */
 
 const PREVIEW_LIMIT = 6;
-const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour — dashboard sessions are short
 
 type InventoryType = "appliance" | "system" | "exterior";
 
@@ -31,7 +35,7 @@ type InventoryPreviewItem = {
   manufacturer: string | null;
   modelNumber: string | null;
   installedOn: string | null;
-  thumbnailUrl: string | null;
+  thumbnailPath: string | null;
 };
 
 const TYPE_FALLBACK_ICON: Record<InventoryType, IconName> = {
@@ -84,16 +88,10 @@ function InventoryRow({ item }: { item: InventoryPreviewItem }) {
           color: "var(--color-text-secondary)",
         }}
       >
-        {item.thumbnailUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={item.thumbnailUrl}
-            alt=""
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <Icon name={fallbackIcon} size={20} />
-        )}
+        <InventoryThumbnail
+          thumbnailPath={item.thumbnailPath}
+          fallbackIcon={fallbackIcon}
+        />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
@@ -224,30 +222,13 @@ async function loadPreviewItems(
     }
   }
 
-  // Sign all the thumbnail paths in one call. createSignedUrls accepts
-  // an array and returns paired results. Bucket is private; the
-  // signed URLs let an <img> render without re-authenticating.
-  const thumbPaths = Array.from(heroByInventory.values());
-  let signedByPath = new Map<string, string>();
-  if (thumbPaths.length > 0) {
-    const { data: signed } = await supabase.storage
-      .from(HEARTH_DOCUMENTS_BUCKET)
-      .createSignedUrls(thumbPaths, SIGNED_URL_TTL_SECONDS);
-    signedByPath = new Map(
-      (signed ?? [])
-        .filter(
-          (r): r is { path: string; signedUrl: string; error: null } =>
-            !!r.signedUrl && !!r.path,
-        )
-        .map((r) => [r.path, r.signedUrl]),
-    );
-  }
-
+  // Signing happens client-side in <InventoryThumbnail> so the URL
+  // string can be cached in sessionStorage across navigations. The
+  // server's only job here is to surface the storage path for each
+  // inventory row; the client component takes it from there.
   return rowList.map((r) => {
     const roomEntry = Array.isArray(r.room) ? r.room[0] : r.room;
     const roomName = roomEntry?.name ?? "Unknown";
-    const thumbPath = heroByInventory.get(r.id);
-    const thumbnailUrl = thumbPath ? signedByPath.get(thumbPath) ?? null : null;
     return {
       id: r.id,
       name: r.name,
@@ -256,7 +237,7 @@ async function loadPreviewItems(
       manufacturer: r.manufacturer,
       modelNumber: r.model_number,
       installedOn: r.installed_on,
-      thumbnailUrl,
+      thumbnailPath: heroByInventory.get(r.id) ?? null,
     };
   });
 }
