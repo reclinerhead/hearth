@@ -258,9 +258,61 @@ These appear in the page layout but are intentionally **not wired to real data**
 - The **Documents** panel — wiring it to `hearth.documents` (per-inventory attachments) is its own focused work.
 - The **Notes & photos** panel — depends on a notes data model that doesn't exist yet.
 - The **Maintenance & history** panel — depends on a maintenance-log table that doesn't exist yet. The single timeline row showing `installed_on` is the only real data point on the panel today.
-- **Editing inventory fields from the detail page** — view-only in v1. Edit-from-detail-page is its own follow-up.
 - **The "Add another photo / re-analyze" flow** — the disabled Add photo button is the placeholder for the future Smart Uploader entry point keyed to a known inventory id.
-- **A `/inventory` list page** — still deferred. Tiles on the dashboard remain the primary surface.
+- **A `/inventory` list page** — still deferred. Tiles on the dashboard remain the primary surface; deleting an item redirects to `/dashboard` rather than to a list view.
+
+---
+
+## Inventory edit and delete
+
+The **EDIT DETAILS** button on `/inventory/[id]` (sitting next to the title) opens a modal that exposes every editable column on `hearth.inventory` and houses the destructive **Delete this item** flow. The modal is the only edit surface today — there is no inline-edit on the detail page itself.
+
+### Component layout
+
+```
+components/
+  edit-inventory-item-modal.tsx          # main edit modal (this section)
+  delete-inventory-item-confirm-modal.tsx # nested confirmation modal
+app/actions/inventory/
+  update-item.ts                         # updateInventoryItemAction
+  delete-item.ts                         # deleteInventoryItemAction
+lib/inventory/
+  research-significant-fields.ts         # pure helper for stale-insights detection
+  research-significant-fields.test.ts    # Vitest coverage
+```
+
+### Modal mechanics
+
+`EditInventoryItemModal` reuses the conventions of [`EditHomeDetailsModal`](../components/edit-home-details-modal.tsx) — scroll-lock, focus-trap, ESC, return-focus, the `surface-ai` shell, and the `FieldText` / `FieldDate` / `FieldSelect` helpers. The parent (`inventory-detail-view.tsx`) mounts the modal **conditionally on `editOpen`** rather than mounting it permanently and gating with the `open` prop. This is the deliberate alternative to a reset-in-effect: every reopen is a fresh React mount, so `useState(initial)` re-initializes from the latest `item` snapshot without tripping `react-hooks/set-state-in-effect`. The same conditional-mount discipline applies to the nested delete-confirm modal — it mounts only while `deleteOpen` is true, so the "Also delete linked documents" checkbox is freshly defaulted to checked on every open.
+
+The form is sectioned into Identity, Classification, Service tracking, and Notes, with a **Danger zone** at the bottom — a red-tinted bordered region styled after the GitHub pattern so a destructive action can't be fat-fingered while editing fields. The danger-zone button opens the nested confirm modal rather than firing the delete itself.
+
+### Server actions
+
+- **`updateInventoryItemAction`** — single `UPDATE` against `hearth.inventory`. Loads the existing row first so it can detect when manufacturer / model_number / type changed and clear the now-stale `ai_insights` in the same write. RLS scopes both the read and the write through `hearth.houses.owner_id`. Returns `{ researchInvalidated: boolean }` so the client knows whether to re-run the Research panel. `revalidatePath`s `/inventory/[id]` and `/dashboard` so the detail view re-renders with the new values and the dashboard's inventory tile picks them up.
+- **`deleteInventoryItemAction`** — accepts `{ inventoryId, cascadeDocuments }`. Two modes:
+  - `cascadeDocuments: true` (the modal's default) — fetches every `hearth.documents` row with `inventory_id` matching, deletes the rows (authoritative), best-effort `storage.remove()`s the optimized + thumbnail object paths for each (same trade-off as `cleanupDocumentAction` — orphaned bytes land in a future periodic sweep rather than blocking the delete), then deletes the inventory row.
+  - `cascadeDocuments: false` — deletes only the inventory row. The FK constraint on `hearth.documents.inventory_id` is `ON DELETE SET NULL`, so linked documents survive as unattached items in the user's house — useful for keeping a receipt for tax records after replacing the appliance it was tied to.
+
+  Ordering matters in the cascade path: docs are deleted before the inventory row so a transient docs-failure doesn't leave the user with a vanished appliance and lingering attachments. Storage cleanup runs between the doc-row delete and the inventory-row delete; a failed storage call leaves orphaned bytes for a future periodic sweep rather than blocking the operation.
+
+### Research re-run on key-field edits
+
+When the user edits manufacturer, model_number, or type, the previously-generated `ai_insights` is grounded on the *old* values and is stale (issue #57). The flow has three coordinated parts:
+
+1. **Pure detector** — `researchSignificantFieldsChanged(before, after)` in `lib/inventory/research-significant-fields.ts` compares the three research-grounding fields. Trim/case-insensitive (so " Whirlpool" → "whirlpool" is not treated as a change worthy of burning a Sonar call). Lives outside the server-action file specifically so it can be Vitest-covered without pulling in `"use server"` + Supabase imports.
+2. **Server-side invalidation** — `updateInventoryItemAction` runs the detector inside the same query path, writes `ai_insights: null` in the same `UPDATE` when invalidation fires, and returns `researchInvalidated: true`.
+3. **Client-side re-trigger** — `inventory-detail-view.tsx` lifts the Research lookup out of `ResearchPanel` so it can be triggered both by the panel's button and by the edit modal's `onSaved` callback. The callback sets a ref flag that a `useEffect` consumes on the next render (after `router.refresh()` has pulled the cleared insights into view), then fires `researchInventoryModelAction`. The existing loading overlay covers the panel while Sonar runs.
+
+The split between "did key fields change?" (pure helper, server-side check) and "kick off the new lookup" (client-side, runs in a `useTransition`) keeps the user-visible save fast — the user isn't waiting on Sonar's 5–15s round-trip to dismiss the modal. The Research panel simply lights up its existing loading state a moment later.
+
+### What the page-level server component fetches for the modal
+
+In addition to the inventory row, [`/inventory/[id]/page.tsx`](../app/(app)/inventory/[id]/page.tsx) fetches the house's rooms (`id, name`, ordered by `sort_order`) for the Room select and a `count: 'exact', head: true` query on `hearth.documents` filtered by `inventory_id` for the cascade-checkbox copy ("Also delete N linked documents"). Both queries are cheap and inline with the existing single-item load — no client-side fetching shim added.
+
+### Post-delete navigation
+
+The delete-confirm modal's `onConfirm` closes both modals on success and the parent's `onDeleted` callback fires `router.replace("/dashboard")`. There is no `/inventory` list page yet, so the dashboard's inventory tiles are the de facto landing for "where did my appliances go?".
 
 ---
 
