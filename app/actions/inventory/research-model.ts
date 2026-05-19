@@ -82,7 +82,9 @@ export async function researchInventoryModelAction(
     .update({
       ai_insights: {
         headline: insights.headline,
-        body: insights.body,
+        overview: insights.overview,
+        service_life: insights.service_life,
+        maintenance: insights.maintenance,
         source_urls: insights.source_urls,
         found_specific_model: insights.found_specific_model,
         generated_at,

@@ -18,9 +18,20 @@ const HERO_SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 type InventoryType = "appliance" | "system" | "exterior";
 
+// Hand-typed mirror of lib/inventory-insights/research.ts insightsSchema,
+// plus the persistence fields the server action adds (generated_at,
+// model_used). Each section is independently nullable so the model can
+// be honest about a section it couldn't ground.
+//
+// Old rows written before the three-section shape landed still carry a
+// `body` string. The detail page reads only the new fields, so the
+// legacy shape renders as if no sections are populated — the user
+// clicks "Research again" to regenerate.
 export type InventoryInsights = {
   headline: string;
-  body: string;
+  overview: string | null;
+  service_life: string | null;
+  maintenance: string | null;
   source_urls: string[];
   found_specific_model: boolean;
   generated_at: string;

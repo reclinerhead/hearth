@@ -275,11 +275,10 @@ function ResearchPanel({ item }: { item: InventoryDetailItem }) {
 
   const itemTypeLabel = TYPE_EYEBROW_LABEL[item.type].toLowerCase();
 
-  const heading =
-    insights?.found_specific_model && insights.headline
-      ? insights.headline
-      : `What we know about ${itemTypeLabel}s like yours`;
-
+  // Always show the model's headline when insights are present, even
+  // when found_specific_model is false — the headline is the model's
+  // best one-line description of the category, and pairing it with the
+  // category-level disclaimer below is more useful than burying it.
   const eyebrow = `What we know about ${itemTypeLabel}s like yours`;
 
   return (
@@ -292,9 +291,9 @@ function ResearchPanel({ item }: { item: InventoryDetailItem }) {
             </span>
             <span className="eyebrow">{eyebrow}</span>
           </div>
-          {insights ? (
+          {insights?.headline ? (
             <div className="h3" style={{ marginTop: 2 }}>
-              {heading}
+              {insights.headline}
             </div>
           ) : null}
         </div>
@@ -319,10 +318,11 @@ function ResearchPanel({ item }: { item: InventoryDetailItem }) {
           </p>
         ) : null}
 
-        {insights && !insights.found_specific_model ? (
-          <FallbackInsights insights={insights} itemTypeLabel={itemTypeLabel} />
-        ) : insights ? (
-          <InsightsBody insights={insights} />
+        {insights ? (
+          <InsightsBody
+            insights={insights}
+            itemTypeLabel={itemTypeLabel}
+          />
         ) : null}
 
         {isPending ? (
@@ -353,39 +353,90 @@ function ResearchPanel({ item }: { item: InventoryDetailItem }) {
   );
 }
 
-function InsightsBody({ insights }: { insights: InventoryInsights }) {
-  return (
-    <div
-      className="text-small"
-      style={{ color: "var(--color-text-secondary)" }}
-    >
-      {insights.body.split(/\n\n+/).map((para, i) => (
-        <p key={i} className={i === 0 ? "" : "mt-2"}>
-          {para}
-        </p>
-      ))}
-    </div>
-  );
-}
-
-function FallbackInsights({
+function InsightsBody({
   insights,
   itemTypeLabel,
 }: {
   insights: InventoryInsights;
   itemTypeLabel: string;
 }) {
-  const body = insights.body?.trim();
+  // Three independently-nullable sections. A section only renders if
+  // its text is present — there's no empty header for a section the
+  // model returned null for. If all three are null (the model could
+  // only produce a headline), the all-null caption explains why.
+  const sections: { eyebrow: string; body: string }[] = [];
+  if (insights.overview) {
+    sections.push({ eyebrow: "Overview", body: insights.overview });
+  }
+  if (insights.service_life) {
+    sections.push({ eyebrow: "Service life", body: insights.service_life });
+  }
+  if (insights.maintenance) {
+    sections.push({ eyebrow: "Maintenance", body: insights.maintenance });
+  }
+
+  const allNull = sections.length === 0;
+
   return (
-    <div
-      className="text-small"
-      style={{ color: "var(--color-text-secondary)" }}
-    >
-      <p>
-        We couldn&apos;t find detailed information about this specific{" "}
-        {itemTypeLabel}.
-      </p>
-      {body ? <p className="mt-2">{body}</p> : null}
+    <div className="flex flex-col gap-4">
+      {!insights.found_specific_model ? (
+        <p
+          className="text-small"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          We couldn&apos;t find information about this specific{" "}
+          {itemTypeLabel}. What follows is category-level — useful as a
+          starting point but not specific to your unit.
+        </p>
+      ) : null}
+
+      {allNull ? (
+        <p
+          className="text-small"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          We couldn&apos;t find detailed information about this specific{" "}
+          {itemTypeLabel}. Try adjusting the manufacturer or model number
+          and click Research again.
+        </p>
+      ) : (
+        sections.map((s) => (
+          <InsightsSection
+            key={s.eyebrow}
+            eyebrow={s.eyebrow}
+            body={s.body}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+function InsightsSection({
+  eyebrow,
+  body,
+}: {
+  eyebrow: string;
+  body: string;
+}) {
+  return (
+    <div>
+      <div
+        className="eyebrow mb-1"
+        style={{ letterSpacing: "1.2px", fontSize: 10 }}
+      >
+        {eyebrow}
+      </div>
+      <div
+        className="text-small"
+        style={{ color: "var(--color-text-secondary)" }}
+      >
+        {body.split(/\n\n+/).map((para, i) => (
+          <p key={i} className={i === 0 ? "" : "mt-2"}>
+            {para}
+          </p>
+        ))}
+      </div>
     </div>
   );
 }

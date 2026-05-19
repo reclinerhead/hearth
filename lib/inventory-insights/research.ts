@@ -14,11 +14,23 @@
 
 import { generateObject } from "ai";
 import { z } from "zod";
-import { buildResearchPrompt, type ResearchInventoryInput } from "./prompt";
+import {
+  buildResearchSystemPrompt,
+  buildResearchUserMessage,
+  type ResearchInventoryInput,
+} from "./prompt";
 
+// Three independently-nullable sections. The model is explicitly told
+// it's allowed (and expected) to return null for any section it can't
+// ground in real sources, which gives partial responses a structured
+// home instead of forcing an all-or-nothing body field. `.min(1)` on
+// each section means an empty string is invalid — the only way to skip
+// is null, which forces a binary "I have something grounded" decision.
 export const insightsSchema = z.object({
   headline: z.string().min(1).max(120),
-  body: z.string().min(1).max(2400),
+  overview: z.string().min(1).max(1200).nullable(),
+  service_life: z.string().min(1).max(1200).nullable(),
+  maintenance: z.string().min(1).max(1200).nullable(),
   source_urls: z.array(z.string().url()),
   found_specific_model: z.boolean(),
 });
@@ -48,12 +60,11 @@ export async function researchInventoryModel(
   const result = await generateObject({
     model,
     schema: insightsSchema,
-    system: buildResearchPrompt(input),
+    system: buildResearchSystemPrompt(),
     messages: [
       {
         role: "user",
-        content:
-          "Research this model and tell me what a homeowner should know about it.",
+        content: buildResearchUserMessage(input),
       },
     ],
   });

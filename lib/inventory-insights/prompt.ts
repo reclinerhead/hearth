@@ -1,8 +1,15 @@
-// System prompt for the "Research this model" feature on the inventory
-// detail page. Mirrors lib/briefing/zillow.ts in shape — Perplexity Sonar
-// is the default model because the task is structurally identical to the
-// Zillow lookup: live web search plus structured output. Separated from
-// research.ts so the prompt is easy to iterate on and unit-test.
+// Prompt builders for the "Research this model" feature. Split into a
+// system prompt (general framing, search strategy, output structure,
+// honesty rules — applies to every research call) and a user message
+// (the specific item we're researching plus the explicit numbered
+// asks). Separated from research.ts so the prompt surface is easy to
+// iterate on and easy to unit-test against without invoking the model.
+//
+// The split exists because earlier responses came back thin: the model
+// would populate the first ask in a single `body` field and skip the
+// rest. Three numbered asks in the user message — one per output
+// section — give the model an explicit cadence to follow and explicit
+// permission to return null for any section it can't ground.
 
 export type ResearchInventoryInput = {
   manufacturer: string | null;
@@ -13,7 +20,41 @@ export type ResearchInventoryInput = {
   notes: string | null;
 };
 
-export function buildResearchPrompt(input: ResearchInventoryInput): string {
+export function buildResearchSystemPrompt(): string {
+  return `You are a researcher helping homeowners understand the equipment in their homes. Your job is to look up specific appliances and systems on the web and produce a brief, honest, useful summary.
+
+How to research:
+- Use web search multiple times when a single search isn't enough. Plan to search at least three times for a typical request: once for what the model line is and how it's positioned, once for expected service life and known failure points, once for recommended maintenance and homeowner care. If your first search returns thin results, try different query phrasings.
+- Prioritize manufacturer documentation, technical service literature, professional trade publications, and reputable HVAC/appliance industry sources. Avoid forum speculation and SEO content farms.
+- If you cannot find grounded information for a section, return null for that section. Do not invent details. Do not generalize from "things like this" — only return information you can actually ground in sources.
+
+How to write:
+- Write for a homeowner, not a technician. Avoid jargon when plain language works.
+- Avoid marketing language. Avoid speculation. Avoid generic platitudes.
+- Be specific. "Compressors in this generation typically last 12-15 years" is useful. "It is built to last" is not.
+- Each section is at most around 1200 characters. Stop when you've said what's worth saying; don't pad.
+
+Output structure:
+
+- headline: A one-line category description for the item. Examples:
+   - "Built-in residential dishwashers, mid-2010s Maytag"
+   - "40-gallon natural gas water heaters, Rheem ProValue line"
+   - "Central air condensers, 14 SEER, Carrier Comfort series"
+
+- overview: What is distinctive about this model line — design choices, market positioning, where it sits in the manufacturer's range, how it compares to alternatives in its class. Or null if you can't ground it.
+
+- service_life: Expected lifespan facts. Lifespan for major components (compressor, heat exchanger, pump, control board, heating element, etc.). Common failure points and at what age they typically show up. Or null if you can't ground it.
+
+- maintenance: Recommended homeowner-doable maintenance tasks and their cadence (monthly / annually / every few years). What happens if those tasks are skipped. What requires a professional vs. what the homeowner can do. Or null if you can't ground it.
+
+- source_urls: The URLs you grounded against.
+
+- found_specific_model: true if you found information specific to this exact model or model line; false if you could only find category-level information. When false, you may still populate the sections, but mark them as category-level rather than model-specific in the text itself.`;
+}
+
+export function buildResearchUserMessage(
+  input: ResearchInventoryInput,
+): string {
   const pillsBlock = input.ai_pills?.length
     ? `\n\nDetails from the nameplate:\n${input.ai_pills
         .map((p) => `- ${p.label}: ${p.value}`)
@@ -24,29 +65,22 @@ export function buildResearchPrompt(input: ResearchInventoryInput): string {
     ? `\n\nAdditional notes:\n${input.notes}`
     : "";
 
-  return `You are an expert at researching home appliances, systems, and equipment. The user owns a home and is documenting their inventory. They want a brief, useful summary about a specific model in their home.
-
-Use web search to look up the specific model. Be honest: if you can't find good information about this exact model or model line, set found_specific_model to false and provide only category-level information (or set the body to a brief honest statement that you couldn't find good info).
-
-Return your response with these fields:
-
-- headline: A one-line category description for the item. Examples: "Built-in residential dishwashers, mid-2010s Maytag", "40-gallon natural gas water heaters, Rheem ProValue line", "Central air condensers, 14 SEER, Carrier Comfort series". Maximum 120 characters.
-
-- body: 2-3 short paragraphs covering:
-  1. What's distinctive about this model line — design choices, market positioning, how it compares to alternatives in its class
-  2. Expected service life facts for major components — pumps, compressors, control boards, heating elements, etc. — and common failure points
-  3. Recommended maintenance tasks at the right cadence (monthly / annually / every few years)
-
-  Keep it practical and homeowner-focused. Avoid marketing language. Avoid speculation — if you don't know something, leave it out. Maximum 2400 characters total.
-
-- source_urls: The URLs you grounded against. These will be stored for our records; the user may eventually see them as "Sources" links.
-
-- found_specific_model: true if you found specific information about this exact model or model line; false if you could only speak to the broader category.
+  return `Research this specific item in a homeowner's home and produce the structured summary defined in your instructions.
 
 Here is what we know about the item:
 
 Type: ${input.inventory_type}
 Name: ${input.inventory_name}
 Manufacturer: ${input.manufacturer ?? "(unknown)"}
-Model number: ${input.model_number ?? "(unknown)"}${pillsBlock}${notesBlock}`;
+Model number: ${input.model_number ?? "(unknown)"}${pillsBlock}${notesBlock}
+
+Three explicit asks, in order:
+
+1. First, tell me about this model line: what is it, where does it sit in the manufacturer's range, what's distinctive about it. Populate the \`overview\` field.
+
+2. Second, tell me about expected service life: how long do the major components last, what are the common failure points, at what age do problems typically appear. Populate the \`service_life\` field.
+
+3. Third, tell me about maintenance: what tasks should the homeowner do and at what cadence, what happens if those tasks are skipped, and what requires a professional. Populate the \`maintenance\` field.
+
+For each of the three sections: only populate it with content you can ground in real sources. If you cannot ground a section, return null for that section. Returning null is the correct answer when grounded info isn't available — do not generalize or speculate.`;
 }
