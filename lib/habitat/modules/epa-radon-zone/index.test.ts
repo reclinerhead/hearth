@@ -436,9 +436,14 @@ describe("EpaRadonZoneModule.check activity log", () => {
 });
 
 describe("buildActions", () => {
-  it("returns three actions for Zone 1 in the order [product, service, link]", () => {
+  it("returns four actions for Zone 1 in the order [product, product, service, link]", () => {
     const actions = buildActions(1);
-    expect(actions.map((a) => a.kind)).toEqual(["product", "service", "link"]);
+    expect(actions.map((a) => a.kind)).toEqual([
+      "product",
+      "product",
+      "service",
+      "link",
+    ]);
   });
 
   it("returns two actions for Zone 2 (no mitigator)", () => {
