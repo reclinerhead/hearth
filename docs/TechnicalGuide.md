@@ -87,7 +87,9 @@ auth.users                    (Supabase-managed)
 public.profiles               (shared; references auth.users)
   └─ hearth.houses            (1 user → many houses; one for now)
        ├─ hearth.rooms        (default 9 seeded by trigger on house insert)
-       └─ hearth.inventory    (room_id NOT NULL; Exterior holds outdoor items)
+       ├─ hearth.inventory    (room_id NOT NULL; Exterior holds outdoor items)
+       │    └─ hearth.documents  (inventory_id nullable; many-to-one)
+       └─ hearth.documents    (house_id required; can exist unattached)
 ```
 
 Key facts about each table:
@@ -95,8 +97,9 @@ Key facts about each table:
 - **`hearth.houses`** — one row per house. Address fields populated by Mapbox Address Autofill (`address_line1`, `city`, `state`, `postal_code`, `country`, `county`, `latitude`, `longitude`, `mapbox_id`, `mapbox_raw` jsonb). House facts (`year_built`, `living_area_sqft`, `lot_size_sqft`, `lot_size_acres`, `bedrooms`, `bathrooms`, `heating_summary`, `cooling_summary`, `parcel_id`, `purchase_date`, `purchase_price_cents`) start null and are filled in by the Day One Briefing workflow or by the user. `lot_size_sqft` and `lot_size_acres` are intentionally redundant: Zillow displays one or the other depending on lot size, and downstream queries want sqft for sorting while UI rendering prefers acres for large lots; the briefing validator derives whichever isn't returned. `heating_summary` / `cooling_summary` are short free-form strings ("Forced air, Gas", "Central") — untyped because Zillow's vocabulary isn't constrained enough to justify an enum yet. The `description` (user-visible) and `description_source` (unmodified provenance copy) hold the listing description. Briefing lifecycle columns (`briefing_status`, `briefing_started_at`, `briefing_generated_at`, `briefing_error`) drive the dashboard's loading and failure states. Generated-image columns (`generated_image_url`, `generated_image_prompt`, `generated_image_created_at`) hold the storage path + prompt + timestamp for the architectural-sketch placeholder (see "Generated house illustration" below). RLS scopes all rows to `owner_id = auth.uid()`. Unique on `(owner_id, mapbox_id)` prevents accidental duplicate creation. The row is in the `supabase_realtime` publication so the dashboard receives UPDATE events as the briefing populates.
 - **`hearth.rooms`** — physical spaces inside a house. `kind` is `indoor | outdoor | utility`. The **`houses_seed_default_rooms`** trigger fires `after insert on hearth.houses` and inserts a 9-room default set (Kitchen, Living Room, Primary Bedroom, Primary Bathroom, Basement, Attic, Garage, Laundry, Exterior). The Exterior room exists so outdoor inventory has a non-null home.
 - **`hearth.inventory`** — every appliance, system, and exterior element. `type` is `appliance | system | exterior` and drives UI grouping. `room_id` is NOT NULL with `ON DELETE RESTRICT`. Identification fields (manufacturer/model/serial), install/service dates, status, and an optional hero photo path round it out.
+- **`hearth.documents`** — every user-captured asset attached to a house: photos today, PDFs and compressed videos in later phases. `kind` is the discriminator that drives extraction routing and UI treatment (`nameplate`, `photo`, `receipt`, `manual`, `permit`, `warranty`, `invoice`, `inspection`, `emergency_procedure_video`, `other`); phase 1 writes only `nameplate` and `photo`, and the other values are reserved so future phases don't need a schema change. `status` is the lifecycle column — `analyzing → analyzed → attached`, with `failed` as the terminal-error state — driven by the Smart Uploader's early-INSERT pattern (the row exists from the moment storage uploads succeed). `storage_path` holds the 1920px display version and `thumbnail_path` holds the 600px thumb; **the original uncompressed file is intentionally not stored** — only the resized versions land in the bucket. `content_hash` is the SHA-256 of the pre-resize bytes for per-house dedup (partial unique index on `(house_id, content_hash)`), but the bytes themselves are discarded after the Canvas reads them. `house_id` is `NOT NULL` with `ON DELETE CASCADE` — deleting a house removes its documents. `inventory_id` is nullable with `ON DELETE SET NULL` — documents exist before the user attaches them in the review stage, and deleting an inventory item later reverts its documents to unattached rather than destroying them. `uploaded_by` references `auth.users` with `ON DELETE SET NULL` so documents survive user deletion. AI provenance lives in `ai_extraction` (jsonb, kind-specific schema in app code), `ai_model`, `ai_confidence` (0..1), and `analyzed_at`. RLS scopes through house ownership identical to `hearth.inventory` — four policies (SELECT/INSERT/UPDATE/DELETE) all delegating to `hearth.houses.owner_id = auth.uid()`.
 
-All three tables use a shared `hearth.set_updated_at()` trigger function defined in the houses migration.
+All four tables use a shared `hearth.set_updated_at()` trigger function defined in the houses migration.
 
 ### Schema-qualification rules (load-bearing)
 
@@ -114,6 +117,37 @@ All three tables use a shared `hearth.set_updated_at()` trigger function defined
 ### Local-only stub
 
 The hearth schema migration also creates `public.profiles` with `create table if not exists` as a local-dev stub. On the remote project that table is owned by the other app; the `if not exists` is a no-op there.
+
+---
+
+## Documents and the `hearth-documents` bucket
+
+`hearth.documents` is the table-of-record for every user-captured asset attached to a house. The `hearth-documents` bucket is its storage counterpart. Together they back the Smart Uploader (photos today; PDFs and compressed videos in later phases) and any future Documents UI.
+
+The bucket is **private** — `public = false` on `storage.buckets`. There is no permanent URL for an object; the Smart Uploader and future Documents UI derive a signed URL at render time, same pattern as `house-images` and `house-photos`.
+
+### Storage path layout
+
+Objects within the bucket follow:
+
+```
+{house_id}/{document_id}/optimized.jpg     -- 1920px JPEG for photos
+{house_id}/{document_id}/thumb.jpg         -- 600px thumbnail
+```
+
+The `{document_id}` directory makes cleanup-on-retake trivial — one `.remove()` against the directory wipes both files for the doc. The first path segment is the `{house_id}` uuid, which is what storage RLS keys on.
+
+Future video documents will store the compressed MP4 at `optimized` and a poster-frame JPEG at `thumb`. Future PDF documents will store the PDF at `optimized` and a page-1 raster at `thumb`. The two-path shape stays constant across kinds.
+
+### Storage RLS
+
+Four policies on `storage.objects` scoped to `bucket_id = 'hearth-documents'` — `SELECT`, `INSERT`, `UPDATE` (covers `upsert: true`), and `DELETE`. All four check that the first path segment cast to uuid matches a `hearth.houses` row the user owns, via the same `storage.foldername(name)[1]` → `houses.id::text` → `houses.owner_id = auth.uid()` join used by the `house-photos` policies. This is the **same ownership chain as the row-level RLS on `hearth.documents`** — a user can never write a storage object whose path their `hearth.documents` row could not also legally reference.
+
+### No originals — deliberate trade-off
+
+The bucket holds the 1920px display version and the 600px thumb. The user's original uncompressed bytes are read by the browser's Canvas (to produce the resized versions and to compute a SHA-256 `content_hash` for dedup) and then discarded. They are not uploaded and not retained anywhere.
+
+The trade-off this implies is precise: **byte-identical re-uploads of the same source still collide** (the hash is computed on the same bytes, the dedup index still fires), but **re-compressed copies of the same photo via different transport apps do not** — iMessage's re-encoder, WhatsApp's re-encoder, and a direct camera-roll selection all produce different bytes for the same scene, so all three would land as distinct documents. Perceptual hashing (which would catch all three) is intentionally out of scope: it adds non-trivial code, runs slower, and we'd rather keep the dedup story simple than chase the long tail. If a future product surface (e.g. "you've already photographed this nameplate from another angle") wants visual similarity, that becomes its own focused project.
 
 ---
 
