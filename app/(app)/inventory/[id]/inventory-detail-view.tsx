@@ -179,48 +179,40 @@ export function InventoryDetailView({ item }: { item: InventoryDetailItem }) {
 }
 
 function StatTiles({ item }: { item: InventoryDetailItem }) {
-  const tiles: { eyebrow: string; isoDate: string; icon: IconName }[] = [];
-  if (item.installed_on) {
-    tiles.push({
-      eyebrow: "Installed",
-      isoDate: item.installed_on,
-      icon: "calendar",
-    });
-  }
-  if (item.last_serviced_on) {
-    tiles.push({
+  // Always render all three tiles. Empty slots show "Unknown" so the
+  // user can see the field exists and edit it later (edit-from-detail
+  // is a future phase). Showing the placeholder is more useful than
+  // hiding the tile entirely — the layout stays stable across items.
+  const tiles: {
+    eyebrow: string;
+    isoDate: string | null;
+    icon: IconName;
+  }[] = [
+    { eyebrow: "Installed", isoDate: item.installed_on, icon: "calendar" },
+    {
       eyebrow: "Last serviced",
       isoDate: item.last_serviced_on,
       icon: "tool",
-    });
-  }
-  if (item.next_service_due_on) {
-    tiles.push({
-      eyebrow: "Next due",
-      isoDate: item.next_service_due_on,
-      icon: "clock",
-    });
-  }
-
-  if (tiles.length === 0) return null;
-
-  // Stretch the grid to fit however many tiles we have so a single tile
-  // doesn't render at one-third width when it's by itself.
-  const cols =
-    tiles.length === 1
-      ? "grid-cols-1"
-      : tiles.length === 2
-        ? "grid-cols-2"
-        : "grid-cols-3";
+    },
+    { eyebrow: "Next due", isoDate: item.next_service_due_on, icon: "clock" },
+  ];
 
   return (
-    <div className={`grid gap-2 sm:gap-3 ${cols}`}>
+    <div className="grid grid-cols-3 gap-2 sm:gap-3">
       {tiles.map((t) => (
         <MetricCard
           key={t.eyebrow}
           eyebrow={t.eyebrow}
-          value={formatYearMonth(t.isoDate)}
-          meta={formatRelativeYears(t.isoDate)}
+          value={
+            t.isoDate ? (
+              formatYearMonth(t.isoDate)
+            ) : (
+              <span style={{ color: "var(--color-text-tertiary)" }}>
+                Unknown
+              </span>
+            )
+          }
+          meta={t.isoDate ? formatRelativeYears(t.isoDate) : null}
           icon={t.icon}
         />
       ))}
@@ -232,13 +224,20 @@ function PillCluster({ item }: { item: InventoryDetailItem }) {
   const aiPills = item.ai_pills ?? [];
   if (!item.serial_number && aiPills.length === 0) return null;
 
+  // Visual hierarchy: the serial number is the load-bearing identifier
+  // (uniquely identifies this physical unit), so it gets the brighter
+  // accent treatment. The AI-extracted spec pills are reference facts
+  // and use the muted base chip so they don't compete with the SN for
+  // attention.
   return (
     <div className="flex flex-wrap gap-2 pt-1">
       {item.serial_number ? (
-        <span className="chip chip-mono">SN {item.serial_number}</span>
+        <span className="chip chip-ai chip-mono">
+          SN {item.serial_number}
+        </span>
       ) : null}
       {aiPills.map((pill, i) => (
-        <span key={`${pill.label}-${i}`} className="chip chip-ai">
+        <span key={`${pill.label}-${i}`} className="chip">
           <span style={{ color: "var(--color-text-tertiary)" }}>
             {pill.label}
           </span>
