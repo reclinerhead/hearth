@@ -49,7 +49,11 @@ Output structure:
 
 - source_urls: The URLs you grounded against.
 
-- found_specific_model: true if you found information specific to this exact model or model line; false if you could only find category-level information. When false, you may still populate the sections, but mark them as category-level rather than model-specific in the text itself.`;
+- found_specific_model: a boolean signaling whether your research actually surfaced this model or model line by name. Set this to true when both of the following are true:
+   1. The headline can name the specific model or model line (e.g., "Rheem Professional Classic Plus, 40-gallon natural gas", "Maytag MDB49 series dishwashers"), AND
+   2. At least one of the three sections includes information you found by searching for the model line by name — manufacturer documentation, spec sheets, service bulletins, professional reviews of the line, etc.
+
+   Set it to false only when your searches returned no results for this model line and you had to fall back entirely to generic equipment-class information. If you can name the line and ground anything to it, that counts as "found" — even if some details in the sections are class-level rather than unit-specific.`;
 }
 
 export function buildResearchUserMessage(
