@@ -30,7 +30,8 @@
       "mcp__plugin_vercel_vercel__get_deployment",
       "Bash(pnpm --version)",
       "Skill(frontend-design:frontend-design)",
-      "Skill(frontend-design:frontend-design:*)"
+      "Skill(frontend-design:frontend-design:*)",
+      "Bash(xxd)"
     ],
     "additionalDirectories": [
       "C:\\Users\\toddw\\AppData\\Local\\Temp",

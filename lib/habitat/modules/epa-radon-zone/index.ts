@@ -332,8 +332,14 @@ export function buildActions(zone: RadonZone): FindingAction[] {
   const testKit: FindingAction = {
     kind: "product",
     label: "Short-term radon test kit",
-    url: affiliateLink("https://www.amazon.com/s?k=radon+test+kit"),
-    priceHint: "~$15",
+    url: affiliateLink("https://amzn.to/3RjLYfZ"),
+    priceHint: "~$19",
+  };
+  const testKitDevice: FindingAction = {
+    kind: "product",
+    label: "Long-term radon test device",
+    url: affiliateLink("https://amzn.to/3PoPftZ"),
+    priceHint: "~$60",
   };
   const epaLearnMore: FindingAction = {
     kind: "link",
@@ -346,7 +352,7 @@ export function buildActions(zone: RadonZone): FindingAction[] {
     url: "https://www.nrpp.info/proSearch.shtml",
   };
 
-  if (zone === 1) return [testKit, findMitigator, epaLearnMore];
+  if (zone === 1) return [testKit, testKitDevice, findMitigator, epaLearnMore];
   return [testKit, epaLearnMore];
 }
 
