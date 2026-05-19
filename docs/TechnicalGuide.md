@@ -108,12 +108,11 @@ All three tables use a shared `hearth.set_updated_at()` trigger function defined
 
 - Migrations flow **Hearth → remote only**. Never run `supabase db pull` — it would dump the other app's schema into Hearth's migration history.
 - `supabase migration list` will show the other app's migrations in the Remote column with empty Local. This is expected visual noise.
-- Local iteration loop: `supabase migration new <name>` → edit SQL → `supabase db reset` (wipes local DB and replays all migrations) → `supabase gen types typescript --local` to regenerate types.
-- Push to remote (`supabase db push`) only when a feature is shipping, and only with explicit approval.
+- Authoring loop: `supabase migration new <name>` → edit SQL → commit on a feature branch → PR review. Verification before push is by **SQL inspection in PR review** — there is no local stack to apply migrations against, and we do not use a staging branch DB. Once the PR is approved, `supabase db push` applies the new files to the remote project. Because that remote is what `next dev`, preview, and production all read, every push is effectively production; treat irreversible operations (drops, rewrites, data backfills) with extra care, and prefer additive forward-only changes.
 
-### Local-only stub
+### `public.profiles` defensive guard
 
-The hearth schema migration also creates `public.profiles` with `create table if not exists` as a local-dev stub. On the remote project that table is owned by the other app; the `if not exists` is a no-op there.
+The hearth schema migration includes `create table if not exists public.profiles`. On the shared remote project that table is owned by the other app, so the `if not exists` is always a no-op — the clause exists defensively rather than as a real bootstrap. Don't rely on this migration to create `profiles`; assume the table is already there.
 
 ---
 
@@ -230,12 +229,12 @@ Any future house-mutating UI that's not a descendant of `DashboardLive` should d
 
 ### Local development
 
-- `supabase start` runs a full local Postgres + GoTrue + Storage stack on the developer's machine.
-- `.env.development.local` holds local Supabase URL + anon key + service-role key + Mapbox token. Next.js loads this *over* `.env.local` for `next dev`, so the local stack is the default during development.
-- `.env.local` is populated by `vercel env pull` and holds production secrets; it is only consulted when `.env.development.local` is absent.
-- Fast iteration loop: `supabase migration new <name>` → edit SQL → `supabase db reset` (wipes + replays).
+- `next dev` runs locally on the developer's machine. It connects to the **same remote Supabase project** as preview and production — there is no local Postgres / GoTrue / Storage stack. We tried a local stack earlier; the operational drag of keeping the two in sync outweighed the isolation benefit, so we dropped it. `supabase/config.toml` is kept around because the CLI commands we still use (`supabase migration new`, `supabase db push`) read from it.
+- `.env.local` is the only env file. It is populated by `vercel env pull` and holds the remote Supabase URL, anon key, service-role key, and the Mapbox token. There is no `.env.development.local` override.
+- Migration loop is described under "Migration discipline" above — edit SQL on a feature branch, get review, then `supabase db push` against remote.
+- **Because local dev and production share a database, treat dev writes as production writes.** Schema changes from a `supabase db push` are visible to everyone immediately; data you insert or delete during local exploration affects production rows. The cost of a careless action is real.
 
-**Realtime and the browser.** Realtime works end-to-end through the local Supabase stack — the Kong gateway, request-transformer plugin, and Realtime container all proxy websocket upgrades cleanly. If the dashboard fails to receive UPDATE events and the browser console shows `WebSocket connection to ws://localhost:54321/… failed` with close code `1006`, it is almost certainly a **browser-side block**, not the stack: an extension intercepting websockets, a tracking-prevention setting, or a content-blocker rule. Quickest diagnostic is an InPrivate / Incognito window — if it works there, the issue is in the regular profile's extensions or settings. The 2.5s polling fallback in `useHouseRealtime` keeps the dashboard usable even when the websocket is blocked, but the right fix is to identify and unblock the offending extension/setting per-developer.
+**Realtime and the browser.** Realtime works end-to-end through the remote Supabase project — the websocket terminates at the project's `wss://<project-ref>.supabase.co/realtime/v1/websocket` endpoint. If the dashboard fails to receive UPDATE events and the browser console shows a `WebSocket connection failed` with close code `1006`, it is almost certainly a **browser-side block**: an extension intercepting websockets, a tracking-prevention setting, or a content-blocker rule. Quickest diagnostic is an InPrivate / Incognito window — if it works there, the issue is in the regular profile's extensions or settings. The 2.5s polling fallback in `useHouseRealtime` keeps the dashboard usable even when the websocket is blocked, but the right fix is to identify and unblock the offending extension/setting per-developer.
 
 ### Vercel
 
@@ -574,4 +573,4 @@ These appear in the schema or the dashboard mockup but are not real flows. Treat
 - **Multi-house** UI. Schema supports it; onboarding gate currently locks to one house per user.
 - **Inventory CRUD**. Schema exists; the `/appliances`, `/entities/[id]`, and `/documents/[id]` routes are placeholder shells.
 - **OCR + extraction routing** (receipts, nameplates, permits) — schema work has not started.
-- **Supabase-generated types**. `types/house.ts` is hand-maintained today; once `supabase gen types typescript --local` is wired into the workflow, it'll replace the hand-typed row.
+- **Supabase-generated types**. `types/house.ts` is hand-maintained today; once `supabase gen types typescript --linked` (against the remote-linked project) is wired into the workflow, it'll replace the hand-typed row.
