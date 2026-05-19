@@ -10,7 +10,7 @@ import { downscaleImage } from "@/lib/house-image/downscale";
 import {
   createCachedSignedUrl,
   HOUSE_IMAGE_CACHE_CONTROL,
-  type HouseImageBucket,
+  type CachedSignedUrlBucket,
 } from "@/lib/house-image/signed-url";
 import { createClient } from "@/lib/supabase/client";
 import type { BriefingStatus, House } from "@/types/house";
@@ -762,7 +762,7 @@ export function DashboardLive({ houseId }: { houseId: string }) {
   const generatedImagePath = house?.generated_image_url ?? null;
   const generatedImageStamp = house?.generated_image_created_at ?? null;
   const isUserPhoto = userImagePath !== null;
-  const activeBucket: HouseImageBucket = isUserPhoto
+  const activeBucket: CachedSignedUrlBucket = isUserPhoto
     ? "house-photos"
     : "house-images";
   const activePath = isUserPhoto ? userImagePath : generatedImagePath;
@@ -775,7 +775,7 @@ export function DashboardLive({ houseId }: { houseId: string }) {
   // so nav-away-and-back reuses the same URL and the browser HTTP
   // cache actually hits.
   const [imageUrlEntry, setImageUrlEntry] = useState<{
-    bucket: HouseImageBucket;
+    bucket: CachedSignedUrlBucket;
     path: string;
     stamp: string | null;
     url: string;

@@ -14,12 +14,20 @@ const CACHE_TTL_MS = Math.floor(SIGNED_URL_EXPIRES_IN_SECONDS * 0.9 * 1000);
 
 const CACHE_PREFIX = "hearthSignedUrl";
 
-export type HouseImageBucket = "house-images" | "house-photos";
+// The set of private buckets this helper is wired to sign for. House
+// images and photos were the original consumers; the hearth-documents
+// bucket joined when the appliance surfaces needed the same
+// across-navigation URL stability (see TechnicalGuide → Dashboard
+// inventory tiles + Inventory detail page).
+export type CachedSignedUrlBucket =
+  | "house-images"
+  | "house-photos"
+  | "hearth-documents";
 
 type CachedEntry = { url: string; expiresAt: number };
 
 function cacheKey(
-  bucket: HouseImageBucket,
+  bucket: CachedSignedUrlBucket,
   path: string,
   stamp: string | null,
 ): string {
@@ -27,7 +35,7 @@ function cacheKey(
 }
 
 function readCachedUrl(
-  bucket: HouseImageBucket,
+  bucket: CachedSignedUrlBucket,
   path: string,
   stamp: string | null,
 ): string | null {
@@ -51,7 +59,7 @@ function readCachedUrl(
 }
 
 function writeCachedUrl(
-  bucket: HouseImageBucket,
+  bucket: CachedSignedUrlBucket,
   path: string,
   stamp: string | null,
   url: string,
@@ -73,24 +81,31 @@ function writeCachedUrl(
 }
 
 /**
- * Resolve a stored path within a private house-image bucket to a signed
+ * Resolve a stored path within a supported private bucket to a signed
  * URL the browser can use directly. Works with either the user's
  * RLS-bound client or the service-role client.
  *
  * The issued URL is cached in `sessionStorage` keyed by
- * `(bucket, path, stamp)` so navigating away from and back to the
- * dashboard reuses the same URL string — which is what lets the
- * browser's HTTP cache actually hit on the image bytes. The bucket
- * objects themselves are uploaded with `cacheControl: '31536000,
- * immutable'`, so once the bytes are in the browser cache they stay
- * there for the duration of that cache.
+ * `(bucket, path, stamp)` so navigating away from and back to a page
+ * reuses the same URL string — which is what lets the browser's HTTP
+ * cache actually hit on the image bytes. The bucket objects
+ * themselves are uploaded with `cacheControl: '31536000, immutable'`,
+ * so once the bytes are in the browser cache they stay there for the
+ * duration of that cache.
+ *
+ * `stamp` is the cache-bust knob for buckets where a path is stable
+ * but the bytes can change in place (house-images and house-photos
+ * use `generated_image_created_at` / `user_image_uploaded_at`).
+ * `hearth-documents` paths embed a `{document_id}` segment that is
+ * unique per upload, so callers pass `stamp: null` and rely on the
+ * path itself as the version key.
  *
  * Returns null on any error so callers can fall back to a placeholder
  * rather than crash the surrounding render.
  */
 export async function createCachedSignedUrl(
   supabase: SupabaseClient,
-  bucket: HouseImageBucket,
+  bucket: CachedSignedUrlBucket,
   path: string,
   stamp: string | null,
 ): Promise<string | null> {

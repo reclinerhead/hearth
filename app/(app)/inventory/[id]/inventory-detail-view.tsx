@@ -24,6 +24,7 @@ import {
 } from "@/components/edit-inventory-item-modal";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
+import { useCachedSignedUrl } from "@/lib/house-image/use-cached-signed-url";
 import {
   Breadcrumb,
   MetricCard,
@@ -104,6 +105,14 @@ export function InventoryDetailView({
   const [editOpen, setEditOpen] = useState(false);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
 
+  // Sign the hero path client-side so the URL string is cached in
+  // sessionStorage across navigations. A cache-warm reload swaps from
+  // placeholder to image in one effect tick and the browser's HTTP
+  // cache hits the immutable `hearth-documents` bytes — see
+  // TechnicalGuide → "Signed URL caching". Stamp is null because the
+  // path itself (which contains `{document_id}`) is the version key.
+  const heroUrl = useCachedSignedUrl("hearth-documents", item.heroPath, null);
+
   const editableItem: EditableInventoryRow = {
     id: item.id,
     name: item.name,
@@ -130,15 +139,30 @@ export function InventoryDetailView({
 
       <section className="grid gap-5 md:grid-cols-[260px_1fr]">
         <div>
-          {item.heroSignedUrl ? (
+          {heroUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={item.heroSignedUrl}
+              src={heroUrl}
               alt={item.name}
               className="w-full rounded-lg object-cover"
               style={{
                 aspectRatio: "1 / 1",
                 border: "1px solid var(--color-border-subtle)",
+              }}
+            />
+          ) : item.heroPath ? (
+            // Photo exists but the signed URL hasn't resolved yet. A
+            // neutral skeleton avoids briefly flashing the "Add photo"
+            // call-to-action for an item that already has one. Warm
+            // reloads swap to the image in a single effect tick; cold
+            // visits hold the skeleton for the signing round trip.
+            <div
+              aria-hidden
+              className="w-full rounded-lg"
+              style={{
+                aspectRatio: "1 / 1",
+                border: "1px solid var(--color-border-subtle)",
+                backgroundColor: "var(--color-bg-surface-raised)",
               }}
             />
           ) : (
