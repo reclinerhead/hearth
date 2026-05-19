@@ -161,6 +161,49 @@ These helpers don't insert the `hearth.documents` row — that's a server action
 
 ---
 
+## Server actions and the Grok analyze pipeline
+
+The Smart Uploader's server-side surface is seven `"use server"` actions under `app/actions/documents/` plus the Grok 4.3 vision wrappers in `lib/documents/ai/`. The modal in phase 1.4 is the orchestrator — every action below is callable in isolation and returns the project's standard `{ data, error }` shape. None of them bypass RLS via the service-role client; ownership enforcement is the load-bearing job of `hearth.documents` and `hearth.inventory` policies, both of which delegate through `hearth.houses.owner_id = auth.uid()`.
+
+The row type for `hearth.documents` is hand-typed in [types/document.ts](../types/document.ts) (`DocumentRow`, plus the `DocumentKind` / `DocumentStatus` unions and the `AiExtraction` discriminated union used for the `ai_extraction` jsonb column). Same pattern as `types/house.ts` — kept in sync with the migration until `supabase gen types typescript` replaces it.
+
+### The seven actions
+
+All under `app/actions/documents/`, all use `createClient` from [lib/supabase/server.ts](../lib/supabase/server.ts), all return `Promise<{ data, error: null } | { data: null, error: string }>`.
+
+- **`checkDocumentDuplicateAction`** — looks up an existing `hearth.documents` row in the given house by SHA-256 `content_hash`. Used by the Smart Uploader before insert so a byte-identical re-upload jumps to the existing-row branch instead of tripping the partial unique index. Returns `{ exists: false, existingDocument: null }` or `{ exists: true, existingDocument: <row> }`.
+- **`createPendingDocumentAction`** — inserts a `hearth.documents` row with `status='analyzing'`. The storage uploads have already completed by this point; the action takes the pre-allocated client-side UUID and the storage paths and writes the row. `uploaded_by` is set from `supabase.auth.getUser()`. An optional `inventoryId` parameter pre-attaches the document for the "open Smart Uploader from inventory detail" entry point.
+- **`analyzeNameplateAction`** — the only action with non-trivial business logic. Loads the row, mints a 5-minute signed URL against the `hearth-documents` bucket via `createSignedUrl()`, calls either `classifyImage` (when no `existingInventoryData`) or `deltaImage` (when present), normalizes the result into the `AiExtraction` shape, writes back `ai_extraction` / `ai_model` / `ai_confidence` / `analyzed_at` and flips `status` to `analyzed`. On any throw from the Grok call the row flips to `status='failed'` and the action returns the error message — the modal renders this as the "couldn't read that, try again?" branch.
+- **`findMatchingInventoryAction`** — case-insensitive `ilike` lookup on `hearth.inventory.name` within a house. Returns zero or more `{ id, name, type, room_id }` rows. The review stage decides between "create new" and "link to existing" based on this result.
+- **`createInventoryFromDocumentAction`** — inserts a new `hearth.inventory` row using the user-confirmed values, then attaches the document to it (`inventory_id` set, `status='attached'`). Two sequential queries rather than a Postgres function — simple enough that a function isn't justified yet. Inventory columns are `manufacturer` / `model_number` / `serial_number` / `installed_on` / `notes` (the schema's actual column names, not the prompt-draft `model` / `serial`).
+- **`attachDocumentToInventoryAction`** — attaches a document to an *existing* inventory row, optionally merging accepted AI-extracted fields (`acceptedFields`) into that inventory row first. The merge runs before the document UPDATE so a merge failure leaves the document in its prior state — the user can retry rather than ending up with an attached document whose inventory row doesn't reflect their accepted edits.
+- **`cleanupDocumentAction`** — used by the modal's retake / cancel paths. Best-effort `storage.remove()` of the two known object paths (optimized + thumbnail) followed by an authoritative `DELETE` of the row. A failed storage removal does not block the row delete; orphaned bytes are deferred to a future periodic sweep, same pattern as the Smart Uploader's upload-orphan trade-off documented in the client-side library section.
+
+### Grok 4.3 via the Vercel AI Gateway
+
+[`lib/documents/ai/`](../lib/documents/ai/) holds the model wiring. Three files:
+
+- **`schema.ts`** — Zod schemas for `generateObject`. `classificationSchema` is a `z.discriminatedUnion("photo_kind", […])` of three branches (`nameplate`, `appliance_photo`, `not_useful`); the discriminator lets the model pick exactly one shape. `deltaSchema` is a `{ deltas: Record<string, { currentValue, proposedValue }>, confidence }` object. Both are the contract between Grok and the rest of the system — the AI SDK rejects any model output that doesn't validate, so getting these right is load-bearing.
+- **`prompt.ts`** — `buildClassifyPrompt()` returns the static classify-and-extract system prompt; `buildDeltaPrompt({ existingInventoryData })` returns the delta prompt with a JSON-serialized existing-data block appended. Separated from `analyze.ts` so they're easy to iterate on and easy to unit-test against ("the assembled string contains the existing-data block", "all three photo_kinds are named", etc.).
+- **`analyze.ts`** — `classifyImage(input)` and `deltaImage(input)`, both thin wrappers around `generateObject({ model, schema, system, messages })` from the `ai` package. The image part of the user message is `{ type: "image", image: new URL(input.imageUrl) }` — the action passes a Supabase storage signed URL rather than loading bytes into the Node process. Throws on missing `NAMEPLATE_PRIMARY_MODEL`; the calling server action catches and surfaces.
+
+The two modes correspond to the two ways a homeowner photographs an item. Mode A is "I don't know if you've seen this before, look at it fresh" — three `photo_kind` outcomes (`nameplate` with extracted fields, `appliance_photo` with classification only, `not_useful` to prompt a retake). Mode B is "you already know this item, here's another angle" — return only the fields where the photo adds or contradicts.
+
+### Kind demotion
+
+A row inserted with `kind='nameplate'` can be demoted to `kind='photo'` when the AI classifies the image as `appliance_photo`. The demotion is one-directional: rows inserted as `photo` from the dashboard's generic entry point stay where they are even if the AI judges them to be label shots. The `not_useful` path leaves `kind` untouched — the caller's next move is almost always `cleanupDocumentAction`, so the column's value stops mattering immediately.
+
+### Environment variables
+
+Both read at call time so the model can be swapped without redeploying:
+
+- **`NAMEPLATE_PRIMARY_MODEL`** — required. The model string passed to `generateObject`. Routes through the Vercel AI Gateway; the gateway forwards to xAI using the project's BYOK Grok credentials. Default in development: `xai/grok-4.3`. Missing → `analyzeNameplateAction` returns the configuration error.
+- **`NAMEPLATE_CONFIDENCE_THRESHOLD`** — float in `[0, 1]`. The Smart Uploader's review stage shows a low-confidence branch when `ai_confidence < threshold`. Default `0.6`. Consumed server-side in 1.3 only as a documented contract; the modal in 1.4 reads it via the analysis result, so neither value needs `NEXT_PUBLIC_` exposure.
+
+These are populated in `.env.local` via `vercel env pull` and configured in the Vercel dashboard for preview / production environments.
+
+---
+
 ## Auth and routing
 
 ### Sign-in surfaces
