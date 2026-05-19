@@ -340,9 +340,11 @@ export function SmartUploader(props: SmartUploaderProps) {
           "color-mix(in oklab, var(--color-bg-base) 80%, transparent)",
         backdropFilter: "blur(6px)",
       }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) handleClose();
-      }}
+      // Intentionally no backdrop-click-to-close. The Smart Uploader
+      // holds enough mid-flow state (selected file, AI analysis, form
+      // edits) that an accidental outside click discarding everything
+      // is a real foot-gun. Close via the X button or ESC only — both
+      // are deliberate gestures, and both still run cleanup.
     >
       <div
         ref={dialogRef}
