@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   EditHomeDetailsModal,
   type EditableHouseRow,
 } from "./edit-home-details-modal";
 import { Icon } from "./icon";
+import { SmartUploader } from "./smart-uploader/SmartUploader";
 import { ThemeToggle } from "./theme-toggle";
 
 // The top nav fetches enough of the house row for both its own address
@@ -18,8 +20,10 @@ export type TopNavHouse = EditableHouseRow;
 export function TopNav({ house }: { house: TopNavHouse | null }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [uploaderOpen, setUploaderOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -94,6 +98,8 @@ export function TopNav({ house }: { house: TopNavHouse | null }) {
               type="button"
               className="btn btn-primary hidden md:inline-flex"
               aria-label="Add to Hearth"
+              onClick={() => house && setUploaderOpen(true)}
+              disabled={!house}
             >
               <Icon name="plus" size={16} />
               <span>Add</span>
@@ -102,6 +108,8 @@ export function TopNav({ house }: { house: TopNavHouse | null }) {
               type="button"
               className="btn btn-primary btn-icon md:hidden"
               aria-label="Add to Hearth"
+              onClick={() => house && setUploaderOpen(true)}
+              disabled={!house}
             >
               <Icon name="plus" size={18} />
             </button>
@@ -189,6 +197,21 @@ export function TopNav({ house }: { house: TopNavHouse | null }) {
           house={house}
           onClose={() => setEditOpen(false)}
           getReturnFocusElement={() => editTriggerRef.current}
+        />
+      ) : null}
+
+      {house ? (
+        <SmartUploader
+          open={uploaderOpen}
+          onOpenChange={setUploaderOpen}
+          houseId={house.id}
+          onSaved={() => {
+            // Same refresh pattern the home-details modal uses: refresh
+            // server components so the dashboard's inventory query
+            // re-renders with the new item. See
+            // edit-home-details-modal.tsx for the precedent.
+            router.refresh();
+          }}
         />
       ) : null}
     </>
