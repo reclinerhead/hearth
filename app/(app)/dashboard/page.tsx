@@ -3,6 +3,7 @@ import { EmergencyTile, SectionHeader } from "@/components/ui";
 import { Icon, type IconName } from "@/components/icon";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import { createClient } from "@/lib/supabase/server";
+import type { House } from "@/types/house";
 import { DashboardLive } from "./dashboard-live";
 import { HabitatPreviewPanel } from "./habitat-preview-panel";
 import { InventoryPreview } from "./inventory-preview";
@@ -25,9 +26,15 @@ const EMERGENCIES: { icon: IconName; label: string; hint: string }[] = [
 export default async function DashboardPage() {
   const supabase = await createClient();
 
+  // Fetch the full house row server-side so DashboardLive can render
+  // its final layout on first paint without a client-side re-fetch.
+  // The Realtime subscription + polling fallback inside useHouseRealtime
+  // pick up any subsequent changes (briefing transitions, photo edits
+  // from the home-details modal, etc.) — the initial fetch is the only
+  // thing we skip on the client.
   const { data, error } = await supabase
     .from("houses")
-    .select("id")
+    .select("*")
     .order("created_at", { ascending: true })
     .limit(1)
     .single();
@@ -37,6 +44,8 @@ export default async function DashboardPage() {
   if (error || !data?.id) {
     redirect("/onboarding");
   }
+
+  const house = data as House;
 
   // Server-side seed for the Habitat panel. The panel itself is a client
   // component that subscribes to habitat_findings via Supabase Realtime,
@@ -56,7 +65,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <DashboardLive houseId={data.id} />
+      <DashboardLive houseId={house.id} initialHouse={house} />
 
       <section className="grid gap-6 md:grid-cols-2">
         <div className="flex flex-col gap-4">

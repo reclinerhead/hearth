@@ -468,10 +468,18 @@ function HouseImageSurface({
           // (it changes when the path/stamp changes) and the bytes are
           // already cache-friendly via the bucket's immutable
           // Cache-Control header + sessionStorage URL stability.
+          //
+          // width/height declare the image's intrinsic 4:3 ratio so the
+          // browser's preload scanner can prioritize it before layout
+          // resolves. Values match the upload downscale target in
+          // lib/house-image/downscale.ts; the rendered size is still
+          // driven by the parent's aspect-ratio + h-full w-full.
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imageUrl ?? ""}
             alt={altText}
+            width={1200}
+            height={900}
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : showSkeleton ? (
@@ -745,8 +753,22 @@ function useFirstRunDiscoveryModal(house: House | null): {
   return { ready: true, show };
 }
 
-export function DashboardLive({ houseId }: { houseId: string }) {
-  const { house, loading, error, refetch } = useHouseRealtime(houseId);
+export function DashboardLive({
+  houseId,
+  initialHouse,
+}: {
+  houseId: string;
+  // Server-rendered snapshot of the house row. Seeding the hook with
+  // this skips the client-side initial fetch and lets first paint be
+  // the final dashboard layout — no "Loading your house" flicker. The
+  // hook's Realtime subscription, polling fallback, and same-tab
+  // refresh listener still run normally on top of the seed.
+  initialHouse: House;
+}) {
+  const { house, loading, error, refetch } = useHouseRealtime(
+    houseId,
+    initialHouse,
+  );
   const [isPending, startTransition] = useTransition();
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [modalManuallyDismissed, setModalManuallyDismissed] = useState(false);

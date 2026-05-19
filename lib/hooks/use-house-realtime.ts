@@ -77,9 +77,17 @@ export function dispatchHouseUpdated(houseId: string): void {
  * This hook is intentionally generic to a single row, not Zillow-specific
  * — every future "live dashboard data" feature will reuse it.
  */
-export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
-  const [house, setHouse] = useState<House | null>(null);
-  const [loading, setLoading] = useState(true);
+export function useHouseRealtime(
+  houseId: string,
+  initialHouse?: House,
+): UseHouseRealtimeResult {
+  // Seed from the server-passed snapshot when provided so first paint
+  // is the final layout — no "Loading your house" flicker between the
+  // server-rendered shell and the first client-side fetch. The
+  // Realtime subscription, polling fallback, and same-tab refresh
+  // listener below all run identically either way.
+  const [house, setHouse] = useState<House | null>(initialHouse ?? null);
+  const [loading, setLoading] = useState(initialHouse === undefined);
   const [error, setError] = useState<string | null>(null);
   const briefingStatus = house?.briefing_status;
 
@@ -98,6 +106,10 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
   }, [houseId]);
 
   // Initial fetch + realtime subscription. Runs once per houseId.
+  // The initial fetch is skipped when the caller already seeded us
+  // with a server-rendered snapshot — the Realtime channel + polling
+  // fallback below pick up any changes that have happened since.
+  const hasInitialHouse = initialHouse !== undefined;
   useEffect(() => {
     const supabase = createClient();
     let cancelled = false;
@@ -117,7 +129,7 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
       if (data) setHouse(data as House);
     }
 
-    loadInitial();
+    if (!hasInitialHouse) loadInitial();
 
     // Auth propagation to the realtime socket is handled by
     // @supabase/ssr's onAuthStateChange wiring inside the cached
@@ -151,7 +163,9 @@ export function useHouseRealtime(houseId: string): UseHouseRealtimeResult {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [houseId]);
+    // hasInitialHouse is captured here so a (vanishingly unlikely) change
+    // would cleanly re-run the subscribe + maybe-fetch sequence.
+  }, [houseId, hasInitialHouse]);
 
   // Listen for same-tab house-updated events dispatched from write paths
   // outside this subtree (the home-details edit modal in TopNav). See
