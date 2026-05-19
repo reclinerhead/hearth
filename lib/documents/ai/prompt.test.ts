@@ -48,6 +48,47 @@ describe("buildClassifyPrompt", () => {
     expect(prompt).toMatch(/null/);
     expect(prompt).toMatch(/Do not guess/i);
   });
+
+  describe("pills extraction guidance", () => {
+    it("names the pills field as part of the nameplate extraction contract", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toContain("pills");
+    });
+
+    it("documents the { label, value } pill shape", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toContain("label");
+      expect(prompt).toContain("value");
+    });
+
+    it("includes example pills the model can pattern-match against", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toContain("Capacity");
+      expect(prompt).toContain("BTU Input");
+      expect(prompt).toContain("Voltage");
+    });
+
+    it("calls out the bounded label and value lengths", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/40 characters/);
+      expect(prompt).toMatch(/120 characters/);
+    });
+
+    it("tells the model to skip industry-internal codes", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/industry-internal/i);
+    });
+
+    it("tells the model to skip facts already captured as named fields", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/already captured as named/i);
+    });
+
+    it("tells the model to return an empty array when there is nothing to extract", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/empty array/i);
+    });
+  });
 });
 
 describe("buildDeltaPrompt", () => {

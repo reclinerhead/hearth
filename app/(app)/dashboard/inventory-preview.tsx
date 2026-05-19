@@ -70,7 +70,7 @@ function InventoryRow({ item }: { item: InventoryPreviewItem }) {
   const meta = buildMeta(item);
   return (
     <Link
-      href={`/entities/${item.id}`}
+      href={`/inventory/${item.id}`}
       className="group flex items-center gap-3 rounded-[var(--radius-md)] p-3 transition-colors"
       style={{
         backgroundColor: "var(--color-bg-surface)",

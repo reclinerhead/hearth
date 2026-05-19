@@ -302,6 +302,12 @@ export function ReviewNewStage({
               onChange={setInstalledOn}
             />
           </div>
+          {isNameplate &&
+          (analysis as NameplateExtraction).extracted.pills.length > 0 ? (
+            <ExtractedPills
+              pills={(analysis as NameplateExtraction).extracted.pills}
+            />
+          ) : null}
         </div>
       ) : null}
 
@@ -411,6 +417,33 @@ function DateField({
         onChange={(e) => onChange(e.target.value)}
         className="input"
       />
+    </div>
+  );
+}
+
+function ExtractedPills({
+  pills,
+}: {
+  pills: NameplateExtraction["extracted"]["pills"];
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div
+        className="text-small"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        Also captured
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {pills.map((pill, i) => (
+          <span key={`${pill.label}-${i}`} className="chip">
+            <span style={{ color: "var(--color-text-tertiary)" }}>
+              {pill.label}
+            </span>
+            <span>{pill.value}</span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

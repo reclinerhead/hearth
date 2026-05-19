@@ -204,6 +204,65 @@ These are populated in `.env.local` via `vercel env pull` and configured in the 
 
 ---
 
+## Inventory detail page and AI insights
+
+The inventory detail page at `app/(app)/inventory/[id]/page.tsx` is the page-level destination behind every dashboard inventory tile. Two AI surfaces live here: **structured pills** (discrete `{label, value}` facts pulled from the nameplate at upload time, rendered in the title area) and **Research this model** (an on-demand Perplexity Sonar lookup that produces a "what we know about [things] like yours" panel). Both store their output as jsonb columns on `hearth.inventory` and are independently regeneratable.
+
+### Page, not modal
+
+The detail page is a real Next.js route, not a modal. Deep links work, browser refresh works, and any future "Add another photo / re-analyze" entry point can ride the same URL. The earlier mockup floated a modal — we explicitly chose a page so the surface can grow over time without fighting modal mechanics. The page lives at `/inventory/[id]`; the older `/entities/[id]` placeholder still exists from the dashboard mockup and is intentionally untouched in this phase.
+
+### Schema additions
+
+Migration `20260519153348_add_inventory_ai_columns.sql` adds two nullable jsonb columns to `hearth.inventory`:
+
+- **`ai_pills`** — `Array<{ label: string, value: string }>`. Populated at row-creation time by `createInventoryFromDocumentAction`, which copies the source document's `ai_extraction.extracted.pills` through. Nameplate-classification documents are the only path that produces pills; appliance_photo and not_useful documents leave the column null.
+- **`ai_insights`** — single object: `{ headline, body, source_urls, found_specific_model, generated_at, model_used }`. Populated on-demand by `researchInventoryModelAction` and overwritten in place on re-run, which is what lets Todd iterate on the prompt during development without extra plumbing.
+
+Both columns are additive and forward-only; no backfill is needed.
+
+### Pills extraction
+
+`lib/documents/ai/schema.ts` extends the nameplate branch's `extracted` shape with `pills: z.array(pillSchema)`, where `pillSchema = { label: string min 1 max 40, value: string min 1 max 120 }`. Bounded lengths exist because the detail-page chip cluster can't render unbounded text without breaking the layout. The `appliancePhotoBranch` does **not** get pills — appliance photos by definition have no readable label.
+
+The classify-and-extract prompt in `lib/documents/ai/prompt.ts` gains a section that explains the pills array, gives 5–6 worked examples (Capacity / BTU Input / Fuel / Manufacture Date / Voltage / Max Pressure), and codifies two rules the prompt enforces: skip industry-internal codes (certification numbers, factory codes), and skip facts already captured as named extracted fields (manufacturer / model_number / serial_number) — those have their own structured place.
+
+The Smart Uploader review stage (`components/smart-uploader/stages/ReviewNewStage.tsx`) renders the extracted pills as a read-only chip cluster beneath the editable fields ("Also captured: …"). This is deliberate: users shouldn't discover the pills surface for the first time on the detail page. Pills are not editable in this phase.
+
+### Research this model pipeline
+
+The `lib/inventory-insights/` module mirrors `lib/briefing/` in shape and intent — Perplexity Sonar via the Vercel AI Gateway is the right tool for "research a specific physical product on the live web" the same way it's the right tool for the Zillow lookup. Three files:
+
+- **`prompt.ts`** — `buildResearchPrompt(input)`, the pure builder that frames the task ("be honest; if you can't find this model, set `found_specific_model: false`"), names the four output fields, and embeds the item's known data (type / name / manufacturer / model_number / pills / notes). The pills block and the notes block are each omitted cleanly when their source is null or empty so the prompt never carries dangling "Details from the nameplate:" headers with nothing beneath them.
+- **`prompt.test.ts`** — covers the field-presence permutations and the load-bearing prompt content (output field names, honesty rule, character caps).
+- **`research.ts`** — `researchInventoryModel(input)` wraps a `generateObject` call against `INVENTORY_INSIGHTS_MODEL ?? BRIEFING_PRIMARY_MODEL`, validating output against `insightsSchema`. The function is pure — it does not write to the database — which keeps it easy to test and easy to swap providers in isolation.
+
+The server action `app/actions/inventory/research-model.ts` is the only caller. It loads the inventory row (RLS-scoped through `hearth.houses.owner_id`), invokes `researchInventoryModel(...)`, writes the result plus `generated_at` and `model_used` into `ai_insights`, and `revalidatePath`s the detail page so the client's `router.refresh()` after the action completes pulls the updated server-rendered panel into view. **No streaming for v1** — Sonar with web grounding typically takes 5–15 seconds, which is fine for a button-click flow with a clear loading overlay.
+
+### On-demand, not auto
+
+Research runs only when the user clicks the Research button. We deliberately did not auto-run on inventory creation: the prompt is still evolving, the model choice may change, and burning Gateway credits on every new row before we know the output is what we want would be wasteful. Auto-running on save is a future enhancement; the column shape supports it (regeneratable) so we won't have to re-shape data when it lands.
+
+### Detail page surfaces
+
+- **Hero photo** comes from the most-recently-attached document for the inventory item (same query shape as the dashboard's `InventoryPreview`), signed at the optimized 1920px storage path rather than the 600px thumbnail since the detail page isn't space-constrained.
+- **Stat tiles** (Installed / Last Serviced / Next Due) render conditionally — each tile only appears when its underlying column has a value. The "X years ago" sub-label is computed client-side from the ISO date. The grid widens to fit however many tiles exist so a single tile doesn't render at one-third width.
+- **Pill cluster** renders the serial number first as an identifier pill (`chip-mono` treatment) followed by the AI pills in the order the model returned them (`chip-ai` treatment). The cluster doesn't render at all if both sources are empty.
+- **"What we know" panel** is the home for the Research surface. The button is disabled (with a tooltip) when manufacturer or model_number is missing, and is always available when insights already exist so a re-run is one click away. The panel's empty state, loading overlay, error path, and `found_specific_model: false` fallback are co-located in `inventory-detail-view.tsx`.
+
+### Deliberately deferred
+
+These appear in the page layout but are intentionally **not wired to real data** in this phase:
+
+- The **Documents** panel — wiring it to `hearth.documents` (per-inventory attachments) is its own focused work.
+- The **Notes & photos** panel — depends on a notes data model that doesn't exist yet.
+- The **Maintenance & history** panel — depends on a maintenance-log table that doesn't exist yet. The single timeline row showing `installed_on` is the only real data point on the panel today.
+- **Editing inventory fields from the detail page** — view-only in v1. Edit-from-detail-page is its own follow-up.
+- **The "Add another photo / re-analyze" flow** — the disabled Add photo button is the placeholder for the future Smart Uploader entry point keyed to a known inventory id.
+- **A `/inventory` list page** — still deferred. Tiles on the dashboard remain the primary surface.
+
+---
+
 ## Smart Uploader modal and dashboard wiring
 
 The Smart Uploader is the user-visible composition of phase 1's plumbing — the modal that homeowners actually interact with when they tap **+ Add** in the top nav. It owns the path-picker → capture → process → analyze → review → save flow end-to-end, calls the seven server actions in [app/actions/documents/](../app/actions/documents/), and writes nothing to storage or to `hearth.documents` that the client-side library helpers and server actions didn't already own.
@@ -744,6 +803,6 @@ These appear in the schema or the dashboard mockup but are not real flows. Treat
 - **Public-records sources beyond EPA radon, EPA Superfund proximity, and FEMA flood zones** — BS&A assessor data, lead-disclosure heuristics, water-system violations, etc. Each is a new habitat module under `lib/habitat/modules/<key>/`; the orchestrator already iterates the registry, so adding a module is a contained change. The finding detail modal renders these out of the box from the generic `HabitatFinding` shape; richer per-module structured content (flood-history timeline, soil testing panels, etc.) is deferred until a module forces a slotted-shell contract.
 - **Description synthesis** — for v1 we show `description_source` (Zillow's raw copy) as `description`. A future LLM step will rewrite `description` in Hearth's voice while leaving `description_source` intact.
 - **Multi-house** UI. Schema supports it; onboarding gate currently locks to one house per user.
-- **Inventory CRUD**. Schema exists; the Smart Uploader (#51) covers the create path through photo capture, but the `/appliances`, `/entities/[id]`, and `/documents/[id]` routes are still placeholder shells. The dashboard's tiles link to `/entities/[id]` and currently land on the placeholder.
+- **Inventory CRUD**. Schema exists; the Smart Uploader (#51) covers the create path through photo capture, and the new `/inventory/[id]` detail route (#53) covers the read path with hero photo, structured pills, and the Research panel. The `/appliances`, `/entities/[id]` (legacy placeholder), and `/documents/[id]` routes are still placeholder shells. Edit and delete flows are not built yet — the detail page is read-only in this phase.
 - **OCR + extraction routing for non-nameplate documents** (receipts, manuals, permits, invoices) — the `kind` discriminator and Grok pipeline are in place from phase 1.3, but the Smart Uploader only writes `nameplate` / `photo` today. The disabled "Document or receipt" and "Emergency procedure video" entries on the path-picker exist as the future surface for those flows.
 - **Supabase-generated types**. `types/house.ts` is hand-maintained today; once `supabase gen types typescript --linked` (against the remote-linked project) is wired into the workflow, it'll replace the hand-typed row.

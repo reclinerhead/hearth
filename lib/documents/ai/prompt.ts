@@ -34,7 +34,26 @@ For nameplate only, also extract identifying details if legible. Leave fields nu
    - model_number: the model/catalog number, exactly as printed
    - serial_number: the serial number, exactly as printed
    - installed_on: an installation date if one is hand-written or stickered onto the label (not the manufacture date). Format as YYYY-MM-DD if you can determine the full date, otherwise null.
-   - notes: free-form, capture anything else useful — BTU ratings, capacity, efficiency ratings, voltage, fuel type, etc. Keep brief.`;
+   - notes: free-form, capture anything else useful — BTU ratings, capacity, efficiency ratings, voltage, fuel type, etc. Keep brief.
+
+For nameplate only, also extract a "pills" array of discrete facts pulled from the label. Each pill is { label: <short>, value: <fact> }. Examples:
+
+   - { label: "Capacity", value: "40 gallons" }
+   - { label: "BTU Input", value: "40,000" }
+   - { label: "Fuel", value: "Natural gas" }
+   - { label: "Manufacture Date", value: "29 Jan 2015" }
+   - { label: "Voltage", value: "120V" }
+   - { label: "Max Pressure", value: "150 PSI" }
+
+Rules for pills:
+   - Each pill is one self-contained fact a homeowner would care about.
+   - Labels are short (1-3 words, max 40 characters).
+   - Values are concise (max 120 characters).
+   - Skip industry-internal codes (certification numbers like "ANS Z21.10.1-CSA 4.1-2013", internal model line numbers, factory codes) unless they are notable to a homeowner.
+   - Skip facts already captured as named extracted fields (manufacturer, model_number, serial_number) — those have their own structured place.
+   - Return an empty array [] if the label has no extractable facts.
+
+The free-form notes field should still summarize anything notable about the label that doesn't fit neatly into pills — they serve different purposes.`;
 
 const DELTA_SYSTEM_PROMPT = `You are an expert at identifying home appliances, systems, and equipment from photographs.
 

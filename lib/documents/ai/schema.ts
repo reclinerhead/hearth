@@ -14,6 +14,15 @@ import { z } from "zod";
 
 const equipmentType = z.enum(["appliance", "system", "exterior"]);
 
+// Bounded label/value lengths exist to prevent the model from returning
+// long blobs that would break the detail page's chip layout. 40 chars on
+// labels and 120 on values comfortably fit observed nameplate facts like
+// "BTU Input" / "40,000" or "Max Working Pressure" / "150 PSI".
+const pillSchema = z.object({
+  label: z.string().min(1).max(40),
+  value: z.string().min(1).max(120),
+});
+
 const nameplateBranch = z.object({
   photo_kind: z.literal("nameplate"),
   classification: z.object({
@@ -27,6 +36,7 @@ const nameplateBranch = z.object({
     serial_number: z.string().nullable(),
     installed_on: z.string().nullable(),
     notes: z.string().nullable(),
+    pills: z.array(pillSchema),
   }),
   room_suggestion: z.string().nullable(),
 });

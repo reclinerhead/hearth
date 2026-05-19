@@ -1,7 +1,11 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import type { DocumentRow } from "@/types/document";
+import type {
+  AiExtraction,
+  DocumentRow,
+  NameplateExtractionPill,
+} from "@/types/document";
 
 export type CreateInventoryFromDocumentInput = {
   documentId: string;
@@ -39,11 +43,12 @@ export async function createInventoryFromDocumentAction(
 > {
   const supabase = await createClient();
 
-  // Look up the document so we know which house this belongs to. RLS
-  // ensures the caller can only load documents in their own houses.
+  // Look up the document so we know which house this belongs to and
+  // can copy any nameplate-extracted pills into the new inventory row.
+  // RLS ensures the caller can only load documents in their own houses.
   const { data: doc, error: docError } = await supabase
     .from("documents")
-    .select("house_id")
+    .select("house_id, ai_extraction")
     .eq("id", input.documentId)
     .single();
 
@@ -53,6 +58,8 @@ export async function createInventoryFromDocumentAction(
       error: docError?.message ?? "Document not found",
     };
   }
+
+  const aiPills = extractPills(doc.ai_extraction as AiExtraction | null);
 
   const { data: inv, error: invError } = await supabase
     .from("inventory")
@@ -66,6 +73,7 @@ export async function createInventoryFromDocumentAction(
       serial_number: input.fields.serial_number,
       installed_on: input.fields.installed_on,
       notes: input.notes,
+      ai_pills: aiPills,
     })
     .select("id")
     .single();
@@ -101,4 +109,16 @@ export async function createInventoryFromDocumentAction(
     },
     error: null,
   };
+}
+
+// Pull the pills array out of a document's ai_extraction blob if and only
+// if the extraction is a successful nameplate classification. Appliance
+// photos and not_useful classifications have no pills to copy; delta-mode
+// extractions don't apply here because this action is the create-new path.
+function extractPills(
+  extraction: AiExtraction | null,
+): NameplateExtractionPill[] | null {
+  if (!extraction || extraction.mode !== "classification") return null;
+  if (extraction.photo_kind !== "nameplate") return null;
+  return extraction.extracted.pills;
 }
