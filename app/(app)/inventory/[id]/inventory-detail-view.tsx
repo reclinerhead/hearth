@@ -9,8 +9,19 @@
 // intentionally placeholder content — wired to real data in a later phase.
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 import { researchInventoryModelAction } from "@/app/actions/inventory/research-model";
+import {
+  EditInventoryItemModal,
+  type EditableInventoryRow,
+} from "@/components/edit-inventory-item-modal";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
 import {
@@ -20,7 +31,11 @@ import {
   SectionHeader,
   TimelineItem,
 } from "@/components/ui";
-import type { InventoryDetailItem, InventoryInsights } from "./page";
+import type {
+  InventoryDetailItem,
+  InventoryInsights,
+  RoomOption,
+} from "./page";
 
 const TYPE_BREADCRUMB_LABEL: Record<
   "appliance" | "system" | "exterior",
@@ -40,13 +55,68 @@ const TYPE_EYEBROW_LABEL: Record<
   exterior: "Exterior",
 };
 
-export function InventoryDetailView({ item }: { item: InventoryDetailItem }) {
+export function InventoryDetailView({
+  item,
+  rooms,
+  linkedDocumentCount,
+}: {
+  item: InventoryDetailItem;
+  rooms: RoomOption[];
+  linkedDocumentCount: number;
+}) {
   const title =
     item.manufacturer && item.model_number
       ? `${item.manufacturer} ${item.model_number}`
       : item.name;
 
   const eyebrow = `${TYPE_EYEBROW_LABEL[item.type].toUpperCase()} · ${item.roomName.toUpperCase()}`;
+
+  // Research lookup is owned at this level (not inside ResearchPanel) so
+  // the edit-modal can trigger a re-run after the user saves changes to
+  // manufacturer / model_number / type. Stale insights are cleared by
+  // the update action itself; this kicks off the new fetch.
+  const router = useRouter();
+  const [researchPending, startResearch] = useTransition();
+  const [researchError, setResearchError] = useState<string | null>(null);
+  const handleResearch = useCallback(() => {
+    setResearchError(null);
+    startResearch(async () => {
+      const result = await researchInventoryModelAction({ inventoryId: item.id });
+      if (result.error) {
+        setResearchError(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  }, [item.id, router]);
+
+  // Auto-trigger research after the edit modal reports that key fields
+  // changed. The ref is set inside onSaved and consumed in the effect
+  // below so the trigger fires once per save, not on every render.
+  const pendingResearchTriggerRef = useRef(false);
+  useEffect(() => {
+    if (pendingResearchTriggerRef.current) {
+      pendingResearchTriggerRef.current = false;
+      handleResearch();
+    }
+  });
+
+  const [editOpen, setEditOpen] = useState(false);
+  const editTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  const editableItem: EditableInventoryRow = {
+    id: item.id,
+    name: item.name,
+    type: item.type,
+    room_id: item.room_id,
+    manufacturer: item.manufacturer,
+    model_number: item.model_number,
+    serial_number: item.serial_number,
+    installed_on: item.installed_on,
+    last_serviced_on: item.last_serviced_on,
+    next_service_due_on: item.next_service_due_on,
+    notes: item.notes,
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -92,11 +162,24 @@ export function InventoryDetailView({ item }: { item: InventoryDetailItem }) {
         </div>
 
         <div className="flex flex-col gap-3 min-w-0">
-          <div>
-            <div className="eyebrow">{eyebrow}</div>
-            <h1 className="h1" style={{ marginTop: 4 }}>
-              {title}
-            </h1>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="eyebrow">{eyebrow}</div>
+              <h1 className="h1" style={{ marginTop: 4 }}>
+                {title}
+              </h1>
+            </div>
+            <button
+              ref={editTriggerRef}
+              type="button"
+              onClick={() => setEditOpen(true)}
+              className="btn btn-ghost shrink-0"
+              aria-label={`Edit details for ${item.name}`}
+            >
+              <Icon name="edit" size={14} />
+              <span className="hidden sm:inline">Edit details</span>
+              <span className="sm:hidden">Edit</span>
+            </button>
           </div>
 
           <StatTiles item={item} />
@@ -105,7 +188,44 @@ export function InventoryDetailView({ item }: { item: InventoryDetailItem }) {
         </div>
       </section>
 
-      <ResearchPanel item={item} />
+      <ResearchPanel
+        item={item}
+        isPending={researchPending}
+        error={researchError}
+        onResearch={handleResearch}
+      />
+
+      {/*
+        Conditionally mount: every open is a fresh React mount so the
+        modal's internal useState calls re-initialize from the latest
+        `item` snapshot. This avoids reset-in-effect (which trips
+        react-hooks/set-state-in-effect) and matches how SmartUploader
+        scopes its state to a single open.
+      */}
+      {editOpen ? (
+        <EditInventoryItemModal
+          open
+          item={editableItem}
+          rooms={rooms}
+          linkedDocumentCount={linkedDocumentCount}
+          onClose={() => setEditOpen(false)}
+          onSaved={({ researchInvalidated }) => {
+            if (researchInvalidated) {
+              // Defer the trigger to the next render — by then router.refresh()
+              // from the modal has re-fetched the server component and the
+              // panel reflects the new (cleared) ai_insights state.
+              pendingResearchTriggerRef.current = true;
+            }
+          }}
+          onDeleted={() => {
+            // Inventory list page doesn't exist yet; the dashboard's
+            // inventory tiles are the de facto landing for "where did
+            // my appliances go?" so the deleted page returns there.
+            router.replace("/dashboard");
+          }}
+          getReturnFocusElement={() => editTriggerRef.current}
+        />
+      ) : null}
 
       <section className="grid gap-4 md:grid-cols-2">
         <PlaceholderPanel
@@ -248,30 +368,19 @@ function PillCluster({ item }: { item: InventoryDetailItem }) {
   );
 }
 
-function ResearchPanel({ item }: { item: InventoryDetailItem }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+function ResearchPanel({
+  item,
+  isPending,
+  error,
+  onResearch,
+}: {
+  item: InventoryDetailItem;
+  isPending: boolean;
+  error: string | null;
+  onResearch: () => void;
+}) {
   const canResearch = Boolean(item.manufacturer && item.model_number);
   const insights = item.ai_insights;
-
-  const [error, setError] = useState<string | null>(null);
-
-  function handleResearch() {
-    setError(null);
-    startTransition(async () => {
-      const result = await researchInventoryModelAction({
-        inventoryId: item.id,
-      });
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-      // revalidatePath fired server-side; router.refresh() pulls the
-      // re-rendered server component into the current view without a
-      // full navigation.
-      router.refresh();
-    });
-  }
 
   const itemTypeLabel = TYPE_EYEBROW_LABEL[item.type].toLowerCase();
 
@@ -301,7 +410,7 @@ function ResearchPanel({ item }: { item: InventoryDetailItem }) {
           disabled={!canResearch}
           loading={isPending}
           hasResults={insights !== null}
-          onClick={handleResearch}
+          onClick={onResearch}
         />
       </div>
 
@@ -340,7 +449,7 @@ function ResearchPanel({ item }: { item: InventoryDetailItem }) {
           >
             {error} <button
               type="button"
-              onClick={handleResearch}
+              onClick={onResearch}
               className="underline"
               style={{ color: "inherit" }}
             >

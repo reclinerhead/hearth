@@ -40,6 +40,8 @@ export type InventoryInsights = {
 
 export type InventoryDetailItem = {
   id: string;
+  house_id: string;
+  room_id: string;
   name: string;
   type: InventoryType;
   manufacturer: string | null;
@@ -55,6 +57,8 @@ export type InventoryDetailItem = {
   ai_insights: InventoryInsights | null;
 };
 
+export type RoomOption = { id: string; name: string };
+
 export default async function InventoryDetailPage({
   params,
 }: {
@@ -68,6 +72,8 @@ export default async function InventoryDetailPage({
     .select(
       `
       id,
+      house_id,
+      room_id,
       name,
       type,
       manufacturer,
@@ -91,6 +97,8 @@ export default async function InventoryDetailPage({
 
   const row = item as unknown as {
     id: string;
+    house_id: string;
+    room_id: string;
     name: string;
     type: InventoryType;
     manufacturer: string | null;
@@ -107,6 +115,29 @@ export default async function InventoryDetailPage({
 
   const roomEntry = Array.isArray(row.room) ? row.room[0] : row.room;
   const roomName = roomEntry?.name ?? "Unknown";
+
+  // Rooms list powers the "Room" select in the edit modal — every room
+  // in the same house, sorted by the user's display order.
+  const { data: rooms } = await supabase
+    .from("rooms")
+    .select("id, name")
+    .eq("house_id", row.house_id)
+    .order("sort_order", { ascending: true });
+
+  const roomOptions: RoomOption[] = (rooms ?? []).map((r) => ({
+    id: r.id,
+    name: r.name,
+  }));
+
+  // Document count drives the delete-confirm modal's "Also delete N
+  // linked documents" copy. The actual deletion still walks the rows
+  // server-side; this query is just for UI labeling.
+  const { count: linkedDocumentCountRaw } = await supabase
+    .from("documents")
+    .select("id", { count: "exact", head: true })
+    .eq("inventory_id", row.id);
+
+  const linkedDocumentCount = linkedDocumentCountRaw ?? 0;
 
   // Most-recent attached document for the hero photo. Matches the
   // dashboard's inventory-preview pattern: "attached" status, ordered by
@@ -137,6 +168,8 @@ export default async function InventoryDetailPage({
 
   const detail: InventoryDetailItem = {
     id: row.id,
+    house_id: row.house_id,
+    room_id: row.room_id,
     name: row.name,
     type: row.type,
     manufacturer: row.manufacturer,
@@ -152,5 +185,11 @@ export default async function InventoryDetailPage({
     ai_insights: row.ai_insights,
   };
 
-  return <InventoryDetailView item={detail} />;
+  return (
+    <InventoryDetailView
+      item={detail}
+      rooms={roomOptions}
+      linkedDocumentCount={linkedDocumentCount}
+    />
+  );
 }
