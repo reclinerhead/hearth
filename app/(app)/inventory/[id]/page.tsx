@@ -116,40 +116,44 @@ export default async function InventoryDetailPage({
   const roomEntry = Array.isArray(row.room) ? row.room[0] : row.room;
   const roomName = roomEntry?.name ?? "Unknown";
 
-  // Rooms list powers the "Room" select in the edit modal — every room
-  // in the same house, sorted by the user's display order.
-  const { data: rooms } = await supabase
-    .from("rooms")
-    .select("id, name")
-    .eq("house_id", row.house_id)
-    .order("sort_order", { ascending: true });
+  // Three independent follow-up queries against the same Supabase
+  // connection. All three only need `row.house_id` / `row.id`, which we
+  // already have, so we run them in parallel rather than paying for
+  // three sequential round-trips on the user-visible first paint:
+  //   - rooms list powers the "Room" select in the edit modal
+  //   - document count drives the delete-confirm "Also delete N linked
+  //     documents" copy (actual deletion still walks the rows server-side)
+  //   - most-recent attached document is the hero photo; matches the
+  //     dashboard's inventory-preview pattern (attached, ordered by
+  //     analyzed_at desc with created_at as the tiebreaker, top one)
+  const [roomsResult, docCountResult, heroDocsResult] = await Promise.all([
+    supabase
+      .from("rooms")
+      .select("id, name")
+      .eq("house_id", row.house_id)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("inventory_id", row.id),
+    supabase
+      .from("documents")
+      .select("storage_path, thumbnail_path")
+      .eq("inventory_id", row.id)
+      .eq("status", "attached")
+      .order("analyzed_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(1),
+  ]);
 
-  const roomOptions: RoomOption[] = (rooms ?? []).map((r) => ({
+  const roomOptions: RoomOption[] = (roomsResult.data ?? []).map((r) => ({
     id: r.id,
     name: r.name,
   }));
 
-  // Document count drives the delete-confirm modal's "Also delete N
-  // linked documents" copy. The actual deletion still walks the rows
-  // server-side; this query is just for UI labeling.
-  const { count: linkedDocumentCountRaw } = await supabase
-    .from("documents")
-    .select("id", { count: "exact", head: true })
-    .eq("inventory_id", row.id);
+  const linkedDocumentCount = docCountResult.count ?? 0;
 
-  const linkedDocumentCount = linkedDocumentCountRaw ?? 0;
-
-  // Most-recent attached document for the hero photo. Matches the
-  // dashboard's inventory-preview pattern: "attached" status, ordered by
-  // analyzed_at desc with created_at as the tiebreaker, take the top one.
-  const { data: heroDocs } = await supabase
-    .from("documents")
-    .select("storage_path, thumbnail_path")
-    .eq("inventory_id", row.id)
-    .eq("status", "attached")
-    .order("analyzed_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false })
-    .limit(1);
+  const heroDocs = heroDocsResult.data;
 
   const heroDoc = heroDocs?.[0] ?? null;
   let heroSignedUrl: string | null = null;
