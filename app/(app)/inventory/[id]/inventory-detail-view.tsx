@@ -9,7 +9,7 @@
 // intentionally placeholder content — wired to real data in a later phase.
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type ReactNode } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { researchInventoryModelAction } from "@/app/actions/inventory/research-model";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
@@ -441,6 +441,22 @@ function InsightsSection({
   );
 }
 
+// The Sonar call takes ~10-15 seconds — most of which is the web-search
+// phase that the AI Gateway doesn't expose progress signals for. The
+// narration below is theater (timed phase changes, not real progress)
+// but it gives the user a sense that work is happening in stages and
+// makes the wait feel shorter than a single static "Researching…" line.
+//
+// Phases are paced to roughly match the model's typical behavior:
+// search → read sources → write summary, with a "still working" fallback
+// for slower runs.
+const RESEARCH_PHASES: { atMs: number; label: (subject: string) => string }[] = [
+  { atMs: 0, label: (s) => `Searching the web for ${s}…` },
+  { atMs: 5000, label: () => "Reading sources…" },
+  { atMs: 11000, label: () => "Writing your summary…" },
+  { atMs: 20000, label: () => "Still working — almost there…" },
+];
+
 function ResearchLoadingOverlay({
   manufacturer,
   modelNumber,
@@ -452,11 +468,30 @@ function ResearchLoadingOverlay({
     manufacturer && modelNumber
       ? `${manufacturer} ${modelNumber}`
       : manufacturer ?? modelNumber ?? "this item";
+
+  // The overlay only mounts while the research call is in flight, so
+  // the initial phase is always 0 — no synchronous reset needed inside
+  // the effect (which would trip react-hooks/set-state-in-effect). The
+  // setTimeouts that advance the phase are async, so they're fine.
+  const [phaseIndex, setPhaseIndex] = useState(0);
+
+  useEffect(() => {
+    const timers = RESEARCH_PHASES.slice(1).map((phase, i) =>
+      setTimeout(() => setPhaseIndex(i + 1), phase.atMs),
+    );
+    return () => {
+      for (const t of timers) clearTimeout(t);
+    };
+  }, []);
+
+  const label = RESEARCH_PHASES[phaseIndex].label(subject);
+
   return (
     <div
       className="absolute inset-0 flex items-center justify-center"
       style={{
-        backgroundColor: "color-mix(in oklab, var(--color-bg-surface-ai) 80%, transparent)",
+        backgroundColor:
+          "color-mix(in oklab, var(--color-bg-surface-ai) 80%, transparent)",
         borderRadius: "inherit",
       }}
     >
@@ -473,15 +508,26 @@ function ResearchLoadingOverlay({
             borderTopColor: "var(--color-accent)",
           }}
         />
-        <span className="text-small" style={{ color: "var(--color-text-secondary)" }}>
-          Researching {subject}…
+        <span
+          key={phaseIndex}
+          className="research-phase-label text-small"
+          style={{ color: "var(--color-text-secondary)" }}
+          aria-live="polite"
+        >
+          {label}
         </span>
       </div>
       <style>{`
         @keyframes research-spinner-rotate { to { transform: rotate(360deg); } }
         .research-spinner { animation: research-spinner-rotate 0.9s linear infinite; }
+        @keyframes research-phase-fade {
+          from { opacity: 0; transform: translateY(2px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .research-phase-label { animation: research-phase-fade 240ms ease-out; }
         @media (prefers-reduced-motion: reduce) {
           .research-spinner { animation: none; }
+          .research-phase-label { animation: none; }
         }
       `}</style>
     </div>
