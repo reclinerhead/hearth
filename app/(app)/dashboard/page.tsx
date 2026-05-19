@@ -1,61 +1,20 @@
 import { redirect } from "next/navigation";
-import { EmergencyTile, EntityRow, SectionHeader } from "@/components/ui";
+import { EmergencyTile, SectionHeader } from "@/components/ui";
 import { Icon, type IconName } from "@/components/icon";
-import { DocumentTrigger, SAMPLE_DOCUMENT } from "@/components/document-modal";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardLive } from "./dashboard-live";
 import { HabitatPreviewPanel } from "./habitat-preview-panel";
+import { InventoryPreview } from "./inventory-preview";
 
-// Sections below the hero are placeholders pending their own issues:
-// - Appliances + the latest document tile (#TBD: inventory CRUD)
-// - Emergencies (#TBD: emergency capture flow)
-// They keep their hardcoded copy for now so the dashboard isn't half-empty
-// during day-one demos; the hero + house facts above is what's live.
-
-const APPLIANCES: {
-  icon: IconName;
-  name: string;
-  type: string;
-  meta: string;
-  href: string;
-}[] = [
-  {
-    icon: "fridge",
-    name: "Maytag refrigerator",
-    type: "Kitchen",
-    meta: "Filter due in 3 mo",
-    href: "/entities/maytag-fridge",
-  },
-  {
-    icon: "droplet",
-    name: "Rheem water heater",
-    type: "Basement",
-    meta: "Installed Sep 2021",
-    href: "/entities/rheem-water-heater",
-  },
-  {
-    icon: "flame-burner",
-    name: "Carrier furnace",
-    type: "Basement",
-    meta: "Tune-up due Oct 2026",
-    href: "/entities/carrier-furnace",
-  },
-  {
-    icon: "wind",
-    name: "Trane central AC",
-    type: "Side yard",
-    meta: "Last serviced Apr 2025",
-    href: "/entities/trane-ac",
-  },
-  {
-    icon: "device-tv-old",
-    name: "Maytag dishwasher",
-    type: "Kitchen",
-    meta: "Pump replaced Dec 2024",
-    href: "/entities/maytag-dishwasher",
-  },
-];
+// Emergencies remains a placeholder pending its own issue (#TBD: emergency
+// capture flow); the hardcoded copy keeps the dashboard layout populated
+// for day-one demos. Inventory ships live as of #51 — InventoryPreview
+// queries hearth.inventory for the current house and renders each item's
+// most-recent attached document as a hero thumbnail (with a type-based
+// fallback icon). `router.refresh()` from the Smart Uploader's onSaved
+// callback re-runs this server component so newly saved items appear
+// automatically.
 
 const EMERGENCIES: { icon: IconName; label: string; hint: string }[] = [
   { icon: "droplet", label: "Water shutoff", hint: "Basement, NE corner" },
@@ -154,30 +113,7 @@ export default async function DashboardPage() {
               </a>
             }
           />
-          <div className="flex flex-col gap-2">
-            {APPLIANCES.map((a) => (
-              <EntityRow key={a.name} {...a} />
-            ))}
-          </div>
-
-          <div className="mt-4">
-            <DocumentTrigger
-              document={SAMPLE_DOCUMENT}
-              className="btn btn-ghost w-full justify-start"
-            >
-              <Icon name="file-text" size={16} />
-              <span className="truncate">
-                View latest document — drain pump receipt
-              </span>
-              <span
-                aria-hidden
-                className="ml-auto"
-                style={{ color: "var(--color-text-tertiary)" }}
-              >
-                <Icon name="chevron-right" size={14} />
-              </span>
-            </DocumentTrigger>
-          </div>
+          <InventoryPreview houseId={data.id} />
         </div>
       </section>
     </div>

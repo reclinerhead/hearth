@@ -204,6 +204,91 @@ These are populated in `.env.local` via `vercel env pull` and configured in the 
 
 ---
 
+## Smart Uploader modal and dashboard wiring
+
+The Smart Uploader is the user-visible composition of phase 1's plumbing — the modal that homeowners actually interact with when they tap **+ Add** in the top nav. It owns the path-picker → capture → process → analyze → review → save flow end-to-end, calls the seven server actions in [app/actions/documents/](../app/actions/documents/), and writes nothing to storage or to `hearth.documents` that the client-side library helpers and server actions didn't already own.
+
+### Entry point
+
+The top-nav `+ Add` button (`components/top-nav.tsx`) opens the modal. The same button is rendered twice — once as a labeled button on `md+` viewports, once as an icon-only button on small viewports — so it survives the mobile breakpoint without a separate mount. Both invocations share state. The button is disabled until the user has a house (`(app)/layout.tsx` passes the house row through `AppShell`); during onboarding the user can't open the uploader because there's no `houseId` to attach to. Other entry points are intentionally not wired in phase 1.4 — the future "Add another photo" affordance from `/inventory/[id]` will set `targetInventoryId` on the same component when that detail page lands.
+
+### Component layout
+
+```
+components/smart-uploader/
+├── SmartUploader.tsx          # modal shell, owns the stage state machine
+├── match-room.ts              # pure default-room picker (suggestion → fallback)
+├── match-room.test.ts         # Vitest coverage
+├── hooks/
+│   └── use-document-upload.ts # orchestration of the upload pipeline
+└── stages/
+    ├── PathPickerStage.tsx    # photo active; document/video greyed "Soon"
+    ├── CaptureStage.tsx       # file input, preview, retake/analyze
+    ├── ProcessingStage.tsx    # spinner with phase-specific status copy
+    ├── DuplicateStage.tsx     # short-circuit when content_hash already exists
+    ├── ReviewNewStage.tsx     # nameplate / appliance_photo / manual-entry form
+    ├── NotUsefulStage.tsx     # AI said the photo doesn't show an appliance
+    └── AnalysisFailedStage.tsx # any thrown error → retake or enter manually
+```
+
+### Stage state machine
+
+`SmartUploader.tsx` holds a discriminated union over `stage.name` in a single `useState`. Transitions are driven by two sources: user action (advance from path-picker → capture → analyze) and the `useDocumentUpload` hook's published state (the modal `useEffect`-watches `uploadState.phase`/`.duplicate`/`.analysis` and translates them into the corresponding user-facing stage). Keeping the user-facing state machine separate from the pipeline phases lets each evolve independently — the hook can grow new sub-phases (e.g. for video uploads) without churning the modal's branches.
+
+The five reachable post-processing branches are:
+
+- **Duplicate** — `checkDocumentDuplicateAction` returned `exists: true`. No new row is created, no storage is uploaded, no cleanup is needed.
+- **Review-new (nameplate)** — AI classified the photo as a nameplate and extracted manufacturer/model/serial/installed.
+- **Review-new (appliance_photo)** — AI classified the photo as a generic equipment shot. Same review form, no extracted-fields panel.
+- **Not-useful** — AI returned `not_useful`. Both buttons (Cancel / Try a different photo) call `cleanupDocumentAction` before transitioning.
+- **Analysis-failed** — any action returned an error. Retake calls cleanup and returns to capture; "Enter manually" advances to a `manual-entry` variant of `ReviewNewStage` (same form with empty defaults and no AI-driven headline) so the user can still capture the item by hand against the photo that's already stored.
+
+The low-confidence variant of review-new fires when `ai_confidence < NAMEPLATE_CONFIDENCE_THRESHOLD` (currently `0.6`). The threshold is mirrored as a constant in `ReviewNewStage.tsx` and the technical-guide contract is that the server-side env var and the client-side constant move together — bumping one without the other will silently mis-classify a band of photos.
+
+The "you already have a Furnace" banner is `ReviewNewStage`'s opt-in to the link-to-existing path: when `findMatchingInventoryAction` returns one or more matches, a banner appears above the form with one button per match (capped at 3) that calls `attachDocumentToInventoryAction` and short-circuits the create path entirely. The "Create new" button dismisses the banner and falls through to the regular form. The first call wins — `saving` disables both paths during the round trip.
+
+### `useDocumentUpload` orchestration
+
+`hooks/use-document-upload.ts` is the client-side pipeline. It exposes `start(file)`, `state`, and `reset()`. Subtle ordering inside `start` is load-bearing and worth describing in one place:
+
+1. `crypto.randomUUID()` mints the document id client-side. The same id becomes the row PK *and* the `{documentId}` storage directory segment, which is what makes upload-before-row-insert safe.
+2. `phase = "hashing"` — `computeContentHash(file)` runs on the original bytes. This is intentionally before any Canvas resize so the dedup index fires on byte-identical re-uploads even when the user has already tried once.
+3. `checkDocumentDuplicateAction` short-circuits the pipeline. The modal's `duplicate` branch renders without ever touching storage.
+4. `phase = "uploading"` — `processImage(file)` resizes to optimized + thumbnail; `uploadDocumentFiles(...)` writes both in parallel via the RLS-bound browser client.
+5. `phase = "creating-row"` — `createPendingDocumentAction(...)` writes the row with `status='analyzing'` and `kind='nameplate'`. The kind may be demoted to `'photo'` by the analyze step.
+6. `phase = "analyzing"` — `analyzeNameplateAction(...)` either returns the persisted row (with `ai_extraction` populated and `status='analyzed'`) or sets `status='failed'` and returns an error.
+7. `phase = "matching"` — `findMatchingInventoryAction(...)` looks for existing inventory in the house with a matching name. Skipped for `not_useful` (no name to match against) and `delta` (delta-mode never matches; the inventory id is already known by the caller).
+8. `phase = "done"` — terminal success. The modal moves into duplicate / review-new / not-useful based on what the hook surfaced.
+
+Any throw lands in the catch and sets `phase = "error"` with the message. A `runningRef` prevents double-fire from React strict-mode effect re-runs or a rapid double-tap on Analyze. The hook owns no cleanup logic — the modal calls `cleanupDocumentAction` directly when the user retakes, cancels, or closes mid-flow, with the document id the hook published in state.
+
+### Save and close paths
+
+Two save paths exist:
+
+- **Create new** — `createInventoryFromDocumentAction(...)` inserts a `hearth.inventory` row and attaches the document. Used by the "Save furnace" button in review-new (including the manual-entry variant).
+- **Attach to existing** — `attachDocumentToInventoryAction(...)` attaches the document to an existing inventory row without creating a new one. Used by the match-banner's per-match buttons. No `acceptedFields` payload in phase 1.4 — the user picks an inventory item and the AI fields are not merged in this entry-point's UI. That payload is plumbed for the future inventory-detail "Add another photo" entry point.
+
+Both fire `onSaved({ inventoryId })`. The modal then drops into the `success` stage for `SUCCESS_DISMISS_MS` (600ms — long enough to read "Saved!" and short enough not to feel like waiting) before calling `onOpenChange(false)`.
+
+Close-mid-flow cleanup: the modal tracks the currently-displayed stage and the current document id in a ref. On close, if the stage is one where a row was created but not attached (`review-new`, `manual-entry`, `not-useful`, `analysis-failed`), it fires `cleanupDocumentAction` so the row and its storage objects don't linger. Duplicate doesn't need cleanup — the row we'd be removing belongs to the previous, legitimate upload. Path-picker / capture / processing close paths don't have a document id yet (or the in-flight upload's id never reached the database before close) — the hook's own `runningRef` and the modal's `reset()` on next open handle the in-memory cleanup, and any orphaned storage bytes from a half-completed upload land in the same future periodic sweep documented elsewhere.
+
+### Refresh on save
+
+`onSaved` calls `router.refresh()` from inside `TopNav` — the same pattern the home-details edit modal uses. `router.refresh()` re-runs server components without a full page reload, which means the dashboard's `InventoryPreview` server component re-queries `hearth.inventory` and the new item appears in the tile list automatically.
+
+The home-details modal *also* dispatches the `HOUSE_UPDATED_EVENT` because `useHouseRealtime` is unreliable in some browsers (see "Cross-tree refresh signal" elsewhere in this guide). Smart Uploader does *not* dispatch a custom event because the dashboard's inventory tiles are server-rendered, not driven by a Realtime hook — a server-component re-render is the only signal the surface listens for, so `router.refresh()` is sufficient.
+
+### Dashboard inventory tiles
+
+`app/(app)/dashboard/inventory-preview.tsx` is the server component that renders the dashboard's inventory tile list. It replaces the dashboard's earlier hardcoded mock APPLIANCES array. Queries `hearth.inventory` filtered by `house_id` with a `PREVIEW_LIMIT` of 6 items in created-date-descending order. The accompanying tile renderer is co-located inline; it's only used here and pulling it into `components/ui.tsx` would be premature.
+
+Hero photos: a follow-up query fetches every `hearth.documents` row with `status='attached'` and `inventory_id IN (...)` ordered by `analyzed_at desc`, then picks the most-recent per inventory id client-side. All the resulting thumbnail paths are signed in one `createSignedUrls` call against the `hearth-documents` bucket with a 1-hour TTL — long enough that the dashboard's signed URLs survive a typical browsing session, short enough that they're not effectively-permanent if logs ever pick them up. Items with no attached document get a type-based fallback icon (appliance → fridge, system → flame-burner, exterior → home).
+
+The component handles the empty-inventory case inline with a soft hint pointing the user at the `+ Add` button. There is no separate `/documents` list page or per-inventory detail page in this phase — the tiles link to `/entities/[id]`, which is still the placeholder route from earlier work.
+
+---
+
 ## Auth and routing
 
 ### Sign-in surfaces
@@ -655,10 +740,10 @@ The module uses the generic finding modal — no `getOverviewCards` or `renderDe
 
 These appear in the schema or the dashboard mockup but are not real flows. Treat as roadmap, not as currently-working features:
 
-- **Inventory hero photos**. `inventory.hero_photo_path` exists in the schema for per-appliance / per-room hero images but no upload UI or storage policy ships with it yet. The dashboard's user-photo upload covers the house-level surface only.
+- **Per-inventory hero column**. `inventory.hero_photo_path` exists in the schema for per-appliance / per-room hero images. The dashboard's inventory tiles now derive a hero from the most-recent attached document's thumbnail (via `InventoryPreview`), so the explicit `hero_photo_path` column is unused for now; promote when a user wants to *pin* a specific photo as the hero independent of upload chronology.
 - **Public-records sources beyond EPA radon, EPA Superfund proximity, and FEMA flood zones** — BS&A assessor data, lead-disclosure heuristics, water-system violations, etc. Each is a new habitat module under `lib/habitat/modules/<key>/`; the orchestrator already iterates the registry, so adding a module is a contained change. The finding detail modal renders these out of the box from the generic `HabitatFinding` shape; richer per-module structured content (flood-history timeline, soil testing panels, etc.) is deferred until a module forces a slotted-shell contract.
 - **Description synthesis** — for v1 we show `description_source` (Zillow's raw copy) as `description`. A future LLM step will rewrite `description` in Hearth's voice while leaving `description_source` intact.
 - **Multi-house** UI. Schema supports it; onboarding gate currently locks to one house per user.
-- **Inventory CRUD**. Schema exists; the `/appliances`, `/entities/[id]`, and `/documents/[id]` routes are placeholder shells.
-- **OCR + extraction routing** (receipts, nameplates, permits) — schema work has not started.
+- **Inventory CRUD**. Schema exists; the Smart Uploader (#51) covers the create path through photo capture, but the `/appliances`, `/entities/[id]`, and `/documents/[id]` routes are still placeholder shells. The dashboard's tiles link to `/entities/[id]` and currently land on the placeholder.
+- **OCR + extraction routing for non-nameplate documents** (receipts, manuals, permits, invoices) — the `kind` discriminator and Grok pipeline are in place from phase 1.3, but the Smart Uploader only writes `nameplate` / `photo` today. The disabled "Document or receipt" and "Emergency procedure video" entries on the path-picker exist as the future surface for those flows.
 - **Supabase-generated types**. `types/house.ts` is hand-maintained today; once `supabase gen types typescript --linked` (against the remote-linked project) is wired into the workflow, it'll replace the hand-typed row.
