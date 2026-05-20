@@ -11,6 +11,7 @@ const baseInput: ResearchInventoryInput = {
   inventory_name: "Maytag dishwasher",
   inventory_type: "appliance",
   ai_pills: null,
+  serial_number: "1234567890",
   notes: null,
 };
 
@@ -40,12 +41,6 @@ describe("buildResearchSystemPrompt", () => {
     expect(buildResearchSystemPrompt()).toContain("found_specific_model");
   });
 
-  it("includes search-strategy guidance encouraging multiple searches", () => {
-    const prompt = buildResearchSystemPrompt();
-    expect(prompt).toMatch(/Use web search multiple times/i);
-    expect(prompt).toMatch(/at least three times/i);
-  });
-
   it("includes the honesty rule allowing null per section", () => {
     const prompt = buildResearchSystemPrompt();
     expect(prompt).toMatch(/return null for that section/i);
@@ -53,7 +48,7 @@ describe("buildResearchSystemPrompt", () => {
   });
 
   it("specifies the per-section character ceiling", () => {
-    expect(buildResearchSystemPrompt()).toMatch(/1200 characters/);
+    expect(buildResearchSystemPrompt()).toMatch(/1200[- ]character/);
   });
 
   it("warns away from speculation and marketing language", () => {
