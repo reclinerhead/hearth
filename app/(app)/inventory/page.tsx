@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Icon, type IconName } from "@/components/icon";
 import { InventoryThumbnail } from "@/components/inventory-thumbnail";
 import { SectionHeader } from "@/components/ui";
+import { displayModelNumber } from "@/lib/inventory/model-number";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -221,12 +222,13 @@ function InventoryListRow({ item }: { item: InventoryItem }) {
 
 function buildDetailLine(item: InventoryItem): string | null {
   const parts: string[] = [];
-  if (item.manufacturer && item.modelNumber) {
-    parts.push(`${item.manufacturer} · ${item.modelNumber}`);
+  const model = displayModelNumber(item.modelNumber);
+  if (item.manufacturer && model) {
+    parts.push(`${item.manufacturer} · ${model}`);
   } else if (item.manufacturer) {
     parts.push(item.manufacturer);
-  } else if (item.modelNumber) {
-    parts.push(item.modelNumber);
+  } else if (model) {
+    parts.push(model);
   }
   if (item.installedOn) {
     parts.push(`Installed ${formatYearMonth(item.installedOn)}`);
