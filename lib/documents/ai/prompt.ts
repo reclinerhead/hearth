@@ -5,6 +5,21 @@
 //
 // These prompts are intentionally verbose for the first cut. Expect to
 // slim them down once we've watched real Grok outputs in phase 1.4.
+//
+// IMPORTANT — pill-example few-shot leak (issue #81). An earlier
+// revision of CLASSIFY_SYSTEM_PROMPT used realistic-looking literal
+// values in its pill examples — most notably
+// `{ label: "Manufacture Date", value: "29 Jan 2015" }`. Grok 4.3 was
+// observed echoing that exact string verbatim into output for real
+// appliances whose nameplates contained no such date, laundering
+// serial-decode inference as on-label observation. The fix was three-
+// part: (1) replace literal example values with angle-bracket
+// placeholder syntax (`"<voltage as printed>"` etc.), (2) remove the
+// Manufacture Date example entirely and add an explicit prohibition,
+// (3) name "derived from decoding identifiers" as a category of facts
+// that must never appear in pills. When editing the pill examples
+// below, do not introduce specific-looking dates, capacities, or
+// other literal-looking values — keep the placeholder style.
 
 const CLASSIFY_SYSTEM_PROMPT = `You are an expert at identifying home appliances, systems, and equipment from photographs.
 
@@ -36,16 +51,20 @@ For nameplate only, also extract identifying details if legible. Leave fields nu
    - installed_on: an installation date if one is hand-written or stickered onto the label (not the manufacture date). Format as YYYY-MM-DD if you can determine the full date, otherwise null.
    - notes: free-form, capture anything else useful — BTU ratings, capacity, efficiency ratings, voltage, fuel type, etc. Keep brief.
 
-For nameplate only, also extract a "pills" array of discrete facts pulled from the label. Each pill is { label: <short>, value: <fact> }. Examples:
+For nameplate only, also extract a "pills" array of discrete facts pulled from the label. Each pill is { label: <short>, value: <fact> }.
 
-   - { label: "Capacity", value: "40 gallons" }
-   - { label: "BTU Input", value: "40,000" }
-   - { label: "Fuel", value: "Natural gas" }
-   - { label: "Manufacture Date", value: "29 Jan 2015" }
-   - { label: "Voltage", value: "120V" }
-   - { label: "Max Pressure", value: "150 PSI" }
+The examples below are SHAPE templates, not values to copy. The placeholders in angle brackets indicate where to put what you actually read off the label — do not output the literal placeholder text, and do not invent specific values that resemble these placeholders.
+
+   - { label: "Capacity", value: "<capacity as printed>" }
+   - { label: "BTU Input", value: "<BTU rating as printed>" }
+   - { label: "Fuel", value: "<fuel type as printed>" }
+   - { label: "Voltage", value: "<voltage as printed>" }
+   - { label: "Max Pressure", value: "<pressure as printed>" }
 
 Rules for pills:
+   - Pills must be facts printed directly on the label. Do not include facts derived from decoding serial numbers, model numbers, certification codes, or any other identifier. If a fact requires inference or lookup to produce, omit it from pills — even if you are confident the inference is correct.
+   - Do not include a Manufacture Date pill. Appliance nameplates almost never print a manufacture date directly; what looks like one is usually derived by decoding the serial number, which is inference, not observation. If a manufacture date IS printed directly on the label as a date (e.g. "MFG DATE: 03/2019"), capture it as a pill with the value exactly as printed. Otherwise, omit it entirely — do not decode the serial number to produce one.
+   - The same prohibition applies to model release year, generation or series identification, and equipment age. These are derived facts and belong in AI Insights, not in pills.
    - Each pill is one self-contained fact a homeowner would care about.
    - Labels are short (1-3 words, max 40 characters).
    - Values are concise (max 120 characters).
