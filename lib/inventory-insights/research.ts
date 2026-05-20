@@ -33,7 +33,19 @@ export const insightsSchema = z.object({
   overview: z.string().min(1).max(1200).nullable(),
   service_life: z.string().min(1).max(1200).nullable(),
   maintenance: z.string().min(1).max(1200).nullable(),
-  source_urls: z.array(z.string().url()),
+  source_urls: z.array(
+    z.string().refine(
+      (s) => {
+        try {
+          new URL(s);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: "Invalid URL" },
+    ),
+  ),
   found_specific_model: z.boolean(),
 });
 
