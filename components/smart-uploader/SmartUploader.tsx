@@ -37,6 +37,11 @@ const FOCUSABLE_SELECTOR =
 
 const SUCCESS_DISMISS_MS = 600;
 
+// Distance the user has to drag the page-sheet down before release
+// dismisses it. ~15% of an iPhone 11 Pro viewport (812 * 0.15 ≈ 122) —
+// enough to feel deliberate, low enough that a thumb flick gets it.
+const SWIPE_DISMISS_THRESHOLD_PX = 120;
+
 export type SmartUploaderProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -80,6 +85,12 @@ export function SmartUploader(props: SmartUploaderProps) {
 
   const [stage, setStage] = useState<Stage>({ name: "path-picker" });
   const [rooms, setRooms] = useState<SeededRoomOption[] | null>(null);
+  // Drag-to-dismiss: tracks the live downward translation of the sheet
+  // during a touch drag on the chrome (handle + header). `null` means
+  // no drag is in progress, so the sheet snaps back to translateY(0)
+  // via the CSS transition.
+  const [dragOffset, setDragOffset] = useState<number | null>(null);
+  const dragStartY = useRef<number | null>(null);
 
   const { state: uploadState, start, reset: resetUpload } =
     useDocumentUpload({ houseId, targetInventoryId });
@@ -226,6 +237,43 @@ export function SmartUploader(props: SmartUploaderProps) {
     };
   }, [stage]);
 
+  // Drag-to-dismiss touch handlers. Bound to the sheet's chrome (drag
+  // handle + header) only — the content area below scrolls normally
+  // and never starts a dismissal gesture. We gate on viewport width
+  // because the sheet shape only exists below the `sm` breakpoint; on
+  // a touchscreen laptop the centred desktop modal would feel wrong
+  // sliding off the bottom edge.
+  function isMobileViewport() {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(max-width: 639.98px)").matches;
+  }
+
+  function onDragStart(e: React.TouchEvent) {
+    if (!isMobileViewport()) return;
+    if (e.touches.length !== 1) return;
+    dragStartY.current = e.touches[0].clientY;
+    setDragOffset(0);
+  }
+
+  function onDragMove(e: React.TouchEvent) {
+    if (dragStartY.current === null) return;
+    if (e.touches.length !== 1) return;
+    const delta = e.touches[0].clientY - dragStartY.current;
+    // Ignore upward motion — the sheet doesn't grow past 95dvh, so
+    // resisting up-drags keeps the gesture honest.
+    setDragOffset(delta > 0 ? delta : 0);
+  }
+
+  function onDragEnd() {
+    if (dragStartY.current === null) return;
+    const delta = dragOffset ?? 0;
+    dragStartY.current = null;
+    setDragOffset(null);
+    if (delta >= SWIPE_DISMISS_THRESHOLD_PX) {
+      handleClose();
+    }
+  }
+
   // Modal mechanics: scroll-lock, focus trap, ESC.
   useEffect(() => {
     if (!open) return;
@@ -351,14 +399,44 @@ export function SmartUploader(props: SmartUploaderProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="surface-ai relative w-full sm:max-w-lg max-h-[100dvh] sm:max-h-[92dvh] flex flex-col overflow-hidden"
+        className="surface-ai page-sheet relative w-full sm:max-w-lg sm:h-auto sm:max-h-[92dvh] flex flex-col overflow-hidden"
         style={{
-          borderRadius: "var(--radius-lg)",
+          transform:
+            dragOffset && dragOffset > 0
+              ? `translateY(${dragOffset}px)`
+              : undefined,
+          transition:
+            dragOffset === null ? "transform 200ms ease-out" : "none",
         }}
       >
+        {/*
+         * Mobile drag handle. Visually communicates "this is a sheet
+         * you can swipe down" and doubles as the touch target for the
+         * dismissal gesture. Hidden on `sm:` and up where the dialog
+         * is a centred modal instead.
+         */}
+        <div
+          className="sm:hidden flex justify-center pt-2 pb-1 shrink-0"
+          style={{ touchAction: "none" }}
+          onTouchStart={onDragStart}
+          onTouchMove={onDragMove}
+          onTouchEnd={onDragEnd}
+          onTouchCancel={onDragEnd}
+          aria-hidden
+        >
+          <span
+            className="h-1 w-10 rounded-full"
+            style={{ backgroundColor: "var(--color-border-emphasis)" }}
+          />
+        </div>
+
         <header
           className="flex items-start gap-3 p-4 sm:p-5 shrink-0"
           style={{ borderBottom: "1px solid var(--color-border-subtle)" }}
+          onTouchStart={onDragStart}
+          onTouchMove={onDragMove}
+          onTouchEnd={onDragEnd}
+          onTouchCancel={onDragEnd}
         >
           <div className="min-w-0 flex-1">
             <div className="eyebrow mb-1">Add to Hearth</div>
