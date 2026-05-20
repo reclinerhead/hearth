@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { CSSProperties, ReactNode } from "react";
 import Image from "next/image";
+import { Icon, type IconName } from "@/components/icon";
 import {
   SEVERITY_COLOR,
   SEVERITY_WORD,
@@ -287,6 +288,275 @@ function ModuleSection({
   );
 }
 
+/**
+ * Icon-on-tinted-surface stand-in for the photographic thumbnails the
+ * habitat modules use. Sized and framed identically to the habitat
+ * `Image` containers so non-habitat sections (Inventory) read at the
+ * same visual weight on the page.
+ */
+function IconThumbnail({ icon }: { icon: IconName }) {
+  return (
+    <div
+      style={{
+        flexShrink: 0,
+        width: 96,
+        height: 96,
+        borderRadius: "var(--radius-md)",
+        border: "1px solid var(--color-border-subtle)",
+        backgroundColor: "var(--color-bg-surface-raised)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "var(--color-text-secondary)",
+      }}
+    >
+      <Icon name={icon} size={44} />
+    </div>
+  );
+}
+
+/**
+ * Inventory section. Same outer layout as `ModuleSection` (heading row
+ * with thumbnail + overview, supporting prose, sources, last-updated)
+ * but without a classification table — inventory isn't a habitat
+ * finding, so there's nothing to map raw data to a severity. Inlined
+ * rather than going through `ModuleSection` because `ModuleSection`'s
+ * thumbnail prop is a photo URL and the broader visual shape is the
+ * thing we're matching, not the prop signature.
+ */
+function InventorySection() {
+  return (
+    <section
+      id="inventory"
+      style={{
+        ...sectionStyle,
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--space-4)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          gap: "var(--space-4)",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+        }}
+      >
+        <IconThumbnail icon="device-tv-old" />
+        <div style={{ flex: "1 1 280px", minWidth: 0 }}>
+          <h2
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 24,
+              fontWeight: 500,
+              lineHeight: 1.2,
+              letterSpacing: "-0.01em",
+              color: "var(--color-text-primary)",
+              margin: 0,
+              marginBottom: "var(--space-2)",
+            }}
+          >
+            Inventory
+          </h2>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            A record of the major systems, appliances, and notable items in
+            your home — the things that have a model, a service history, or
+            a reason to be remembered. Each item lives in a room (rooms are
+            seeded for every house and can be renamed, added, or removed).
+          </p>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--space-4)",
+          maxWidth: "62ch",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <h3 className="h3" style={{ margin: 0 }}>
+            How items get in
+          </h3>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            The fastest path is a photo. Hearth's Smart Uploader accepts a
+            photo of a nameplate, label, or appliance and uses AI to figure
+            out what it's looking at, pull structured facts off the label
+            (manufacturer, model, serial, install date when visible, plus
+            other useful facts like capacity or fuel type), and pre-fill an
+            inventory entry that you confirm or edit before saving. Items
+            can also be created manually. Additional photos, manuals,
+            receipts, and other documents attach to an item over time.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <h3 className="h3" style={{ margin: 0 }}>
+            What Hearth does with it
+          </h3>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            Each item has a detail page that surfaces the captured facts as
+            visual pills, the photos that document it, and an on-demand
+            "Research this model" panel that uses an AI search to look up
+            what's generally known about appliances and systems like yours —
+            typical service life, common maintenance, things to watch for —
+            with source links so you can verify.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <h3 className="h3" style={{ margin: 0 }}>
+            What it's for
+          </h3>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            The inventory is the foundation Hearth's other surfaces lean on.
+            Maintenance tasks (coming soon — see below) attach to inventory
+            items. Future surfaces like a pre-listing export, warranty
+            tracking, and service history all expect a real inventory
+            underneath them.
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <div className="eyebrow" style={{ marginBottom: 6 }}>
+          Sources
+        </div>
+        <SourcesList
+          items={[
+            {
+              label: "Vercel AI Gateway (model routing)",
+              href: "https://vercel.com/docs/ai-gateway",
+            },
+            {
+              label: "xAI Grok — nameplate analysis",
+              href: "https://x.ai",
+            },
+            {
+              label: "Perplexity Sonar — \"Research this model\" lookups",
+              href: "https://docs.perplexity.ai",
+            },
+          ]}
+        />
+      </div>
+
+      <div
+        className="text-small"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        Last updated: May 20, 2026
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Maintenance "coming soon" teaser. Sits between the active Inventory
+ * section and the habitat modules. Deliberately lighter than a full
+ * `ModuleSection` — no thumbnail box, no sources, no last-updated — so
+ * a reader can tell at a glance that this is a preview, not a
+ * documented module. Will be promoted to a real section when the
+ * maintenance module ships.
+ */
+function MaintenanceTeaser() {
+  return (
+    <section
+      id="maintenance"
+      style={{
+        ...sectionStyle,
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--space-3)",
+        padding: "var(--space-4)",
+        borderRadius: "var(--radius-md)",
+        border: "1px dashed var(--color-border-subtle)",
+        backgroundColor:
+          "color-mix(in oklab, var(--color-bg-surface-raised) 30%, transparent)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          gap: "var(--space-3)",
+          alignItems: "flex-start",
+        }}
+      >
+        <span
+          style={{
+            color: "var(--color-text-tertiary)",
+            marginTop: 4,
+            flexShrink: 0,
+          }}
+          aria-hidden
+        >
+          <Icon name="tool" size={22} />
+        </span>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--space-2)",
+            minWidth: 0,
+            maxWidth: "62ch",
+          }}
+        >
+          <div className="eyebrow">Coming soon</div>
+          <h2
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 22,
+              fontWeight: 500,
+              lineHeight: 1.2,
+              letterSpacing: "-0.01em",
+              color: "var(--color-text-primary)",
+              margin: 0,
+            }}
+          >
+            Maintenance is coming
+          </h2>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            Hearth's maintenance system will surface the recurring tasks
+            every home needs — seasonal work, replacement schedules, things
+            that need attention before they fail — tied to the specific
+            items in your inventory rather than a generic checklist. A water
+            heater Hearth knows the age of can tell you when to flush it; a
+            furnace Hearth knows the install date of can tell you when its
+            next service is due. We'll update this page when the module
+            ships.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const PILLARS: { title: string; body: string }[] = [
   {
     title: "Emergency procedures",
@@ -419,54 +689,9 @@ export default function HowItWorksPage() {
           </div>
         </section>
 
-        <section
-          style={{
-            ...sectionStyle,
-            display: "flex",
-            flexDirection: "column",
-            gap: "var(--space-3)",
-          }}
-        >
-          <h2
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 24,
-              fontWeight: 500,
-              lineHeight: 1.2,
-              letterSpacing: "-0.01em",
-              color: "var(--color-text-primary)",
-              margin: 0,
-            }}
-          >
-            About the data and our limitations
-          </h2>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "var(--space-3)",
-              color: "var(--color-text-secondary)",
-              maxWidth: "62ch",
-            }}
-          >
-            <p style={{ margin: 0 }}>
-              Hearth's findings are interpretations of public data, not
-              authoritative determinations. We pull from EPA, FEMA, Mapbox,
-              and other public sources, and we apply our own classification
-              logic to turn raw data into something useful. If you're making
-              a decision that has legal or financial weight — buying flood
-              insurance, contesting a property assessment, filing an
-              environmental claim — please use Hearth as a starting point,
-              not a substitute for talking to a professional in that field.
-            </p>
-            <p style={{ margin: 0 }}>
-              When the underlying data updates, we update with it. When our
-              classification logic changes, this page changes too. Anything
-              Hearth tells you about your home, you can trace back to its
-              source through the activity log on each finding.
-            </p>
-          </div>
-        </section>
+        <InventorySection />
+
+        <MaintenanceTeaser />
 
         <section
           style={{
@@ -841,6 +1066,55 @@ export default function HowItWorksPage() {
               </p>
             </div>
           </ModuleSection>
+        </section>
+
+        <section
+          style={{
+            ...sectionStyle,
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--space-3)",
+          }}
+        >
+          <h2
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 24,
+              fontWeight: 500,
+              lineHeight: 1.2,
+              letterSpacing: "-0.01em",
+              color: "var(--color-text-primary)",
+              margin: 0,
+            }}
+          >
+            About the data and our limitations
+          </h2>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--space-3)",
+              color: "var(--color-text-secondary)",
+              maxWidth: "62ch",
+            }}
+          >
+            <p style={{ margin: 0 }}>
+              Hearth's findings are interpretations of public data, not
+              authoritative determinations. We pull from EPA, FEMA, Mapbox,
+              and other public sources, and we apply our own classification
+              logic to turn raw data into something useful. If you're making
+              a decision that has legal or financial weight — buying flood
+              insurance, contesting a property assessment, filing an
+              environmental claim — please use Hearth as a starting point,
+              not a substitute for talking to a professional in that field.
+            </p>
+            <p style={{ margin: 0 }}>
+              When the underlying data updates, we update with it. When our
+              classification logic changes, this page changes too. Anything
+              Hearth tells you about your home, you can trace back to its
+              source through the activity log on each finding.
+            </p>
+          </div>
         </section>
     </div>
   );
