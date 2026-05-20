@@ -56,6 +56,19 @@ describe("buildResearchSystemPrompt", () => {
     expect(prompt).toMatch(/Avoid marketing language/i);
     expect(prompt).toMatch(/Avoid speculation/i);
   });
+
+  it("explicitly defers serial-number decoding to a separate process", () => {
+    expect(buildResearchSystemPrompt()).toMatch(
+      /Do not attempt to decode the serial number to a manufacture date/i,
+    );
+  });
+
+  it("no longer references the manufacture-date encoding protocol", () => {
+    const prompt = buildResearchSystemPrompt();
+    expect(prompt).not.toMatch(/Manufacture date decoding/i);
+    expect(prompt).not.toMatch(/Confidence gate/i);
+    expect(prompt).not.toMatch(/character[- ]by[- ]character/i);
+  });
 });
 
 describe("buildResearchUserMessage", () => {
@@ -99,6 +112,12 @@ describe("buildResearchUserMessage", () => {
     it("includes the numbered ask for service_life", () => {
       const message = buildResearchUserMessage(baseInput);
       expect(message).toMatch(/2\.[\s\S]*?Populate the `service_life` field/);
+    });
+
+    it("no longer asks the model to decode the serial number to a date", () => {
+      const message = buildResearchUserMessage(baseInput);
+      expect(message).not.toMatch(/decoding it to a manufacture date/i);
+      expect(message).not.toMatch(/encoding rule/i);
     });
 
     it("includes the numbered ask for maintenance", () => {

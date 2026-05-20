@@ -30,7 +30,13 @@ import {
   type EditableInventoryRow,
 } from "@/components/edit-inventory-item-modal";
 import { Icon, type IconName } from "@/components/icon";
+import { Toast } from "@/components/toast";
 import { Tooltip } from "@/components/tooltip";
+import {
+  formatManufactureDate,
+  pickFirstDateTile,
+} from "@/lib/inventory/first-date-tile";
+import type { DecodeSerialResult } from "@/lib/serial-decode/schema";
 import { displayModelNumber } from "@/lib/inventory/model-number";
 import { insightsSchema } from "@/lib/inventory-insights/research";
 import { useCachedSignedUrl } from "@/lib/house-image/use-cached-signed-url";
@@ -128,9 +134,58 @@ export function InventoryDetailView({
     },
   });
   const researchError = researchHookError?.message ?? null;
+
+  // Parallel serial-decode call (issue #77). Fires alongside the
+  // research stream on the same click. The decode endpoint waits for a
+  // reasoning model to return a structured result, then persists it
+  // server-side only when confidence === "high". When that happens, we
+  // surface a small toast and call router.refresh() so the StatTiles
+  // fallback (Manufactured vs Installed) sees the new column values.
+  // The decode in-flight state is tracked separately from researchPending
+  // so cancelling one doesn't affect the other.
+  const [decodedToast, setDecodedToast] = useState<string | null>(null);
+  const decodeRequestIdRef = useRef(0);
   const handleResearch = useCallback(() => {
     submitResearch({});
-  }, [submitResearch]);
+
+    // Capture a request id so a fast re-click cancels the older toast
+    // path — only the most recent decode call can land a toast.
+    decodeRequestIdRef.current += 1;
+    const myId = decodeRequestIdRef.current;
+
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/inventory/${item.id}/decode-serial`,
+          { method: "POST" },
+        );
+        if (!response.ok) return;
+        const body = (await response.json()) as
+          | { skipped: "no-serial" }
+          | { result: DecodeSerialResult | null };
+
+        if ("skipped" in body) return;
+        if (decodeRequestIdRef.current !== myId) return;
+
+        const result = body.result;
+        if (!result || result.confidence !== "high" || !result.manufacture_date) {
+          return;
+        }
+
+        const formatted = formatManufactureDate(
+          result.manufacture_date,
+          result.precision,
+        );
+        setDecodedToast(`We decoded your manufacture date: ${formatted}`);
+        router.refresh();
+      } catch (err) {
+        // The toast is a nice-to-have surface — a network failure on the
+        // decode call should never break the page or interrupt the
+        // research stream that's running in parallel.
+        console.warn("[serial-decode] decode call failed:", err);
+      }
+    })();
+  }, [submitResearch, item.id, router]);
 
   // Auto-trigger research after the edit modal reports that key fields
   // changed. The ref is set inside onSaved and consumed in the effect
@@ -333,6 +388,13 @@ export function InventoryDetailView({
           <StatTiles item={item} />
 
           <PillCluster item={item} />
+
+          {decodedToast ? (
+            <Toast
+              message={decodedToast}
+              onClose={() => setDecodedToast(null)}
+            />
+          ) : null}
         </div>
       </section>
 
@@ -446,16 +508,50 @@ export function InventoryDetailView({
 }
 
 function StatTiles({ item }: { item: InventoryDetailItem }) {
-  // Always render all three tiles. Empty slots show "Unknown" so the
-  // user can see the field exists and edit it later (edit-from-detail
-  // is a future phase). Showing the placeholder is more useful than
-  // hiding the tile entirely — the layout stays stable across items.
-  const tiles: {
+  // Always render all three tiles. The first tile uses the
+  // installed-vs-manufactured-vs-unknown selector (issue #77): when
+  // installed_on is null AND a high-confidence manufacture date is
+  // present, the tile flips its eyebrow to "Manufactured" and renders
+  // the decoded date. Otherwise it shows "Installed" with either the
+  // real value or the "Unknown" placeholder. Layout stays stable.
+  const firstTile = pickFirstDateTile({
+    installedOn: item.installed_on,
+    manufactureDate: item.manufacture_date,
+    manufactureDatePrecision: item.manufacture_date_precision,
+    manufactureDateConfidence: item.manufacture_date_confidence,
+  });
+
+  const firstTileEyebrow =
+    firstTile.kind === "manufactured" ? "Manufactured" : "Installed";
+
+  const firstTileValue: ReactNode = (() => {
+    if (firstTile.kind === "installed") {
+      return formatYearMonth(firstTile.isoDate);
+    }
+    if (firstTile.kind === "manufactured") {
+      return formatManufactureDate(
+        firstTile.manufactureDate,
+        firstTile.precision,
+      );
+    }
+    return (
+      <span style={{ color: "var(--color-text-tertiary)" }}>Unknown</span>
+    );
+  })();
+
+  // Relative-time meta only makes sense for a known date. The
+  // manufactured branch could in theory compute a "12 years ago" line,
+  // but unit age isn't the same conceptual axis as install age, and
+  // mixing them in the same slot would be misleading. Keep the meta
+  // line empty for the manufactured branch.
+  const firstTileMeta =
+    firstTile.kind === "installed" ? formatRelativeYears(firstTile.isoDate) : null;
+
+  const secondaryTiles: {
     eyebrow: string;
     isoDate: string | null;
     icon: IconName;
   }[] = [
-    { eyebrow: "Installed", isoDate: item.installed_on, icon: "calendar" },
     {
       eyebrow: "Last serviced",
       isoDate: item.last_serviced_on,
@@ -466,7 +562,13 @@ function StatTiles({ item }: { item: InventoryDetailItem }) {
 
   return (
     <div className="grid grid-cols-3 gap-2 sm:gap-3">
-      {tiles.map((t) => (
+      <MetricCard
+        eyebrow={firstTileEyebrow}
+        value={firstTileValue}
+        meta={firstTileMeta}
+        icon="calendar"
+      />
+      {secondaryTiles.map((t) => (
         <MetricCard
           key={t.eyebrow}
           eyebrow={t.eyebrow}

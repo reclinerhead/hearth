@@ -36,17 +36,8 @@ How to write:
 - Avoid marketing language. Avoid speculation. Avoid generic platitudes.
 - Be specific. "Compressors in this generation typically last 12-15 years" is useful. "It is built to last" is not.
 - Aim for 300–500 characters per section when the section is grounded. Stop earlier if you've genuinely said what's worth saying — don't pad to hit the floor. The 1200-character ceiling is a hard maximum; don't exceed it. If a section would be just generic platitudes that could apply to any equipment, prefer null; but if it's substantive class-level content, populate it even if it ends up briefer than 300 characters.
-Manufacture date decoding (HIGH PRIORITY when a serial number is provided):
 
-Major appliance and HVAC manufacturers (GE, Whirlpool, Maytag, KitchenAid, Frigidaire, Bosch, Samsung, LG, Carrier, Trane, Lennox, Rheem, A.O. Smith, etc.) encode the year and week or month of manufacture into the serial number. Decode it under these strict constraints — these rules exist because confidently-wrong manufacture dates are worse than no date at all:
-
-1. **Show your work in the response itself.** In the \`service_life\` field, first name the encoding rule you are applying (e.g., "Whirlpool post-2014 serial format: first letter = year, digits 2–3 = week of year"). Then apply it character-by-character to the actual serial provided. Then state the final manufacture date and the resulting unit age. The homeowner must be able to follow your decode step-by-step and spot a mistake. A bare date with no rule or character mapping is not acceptable output.
-
-2. **Internal consistency check, before committing to a date.** Verify that the year, the week-or-month, and the resulting month all agree with each other. If you find yourself writing "manufactured in March" but your week-number decode points to November (or any similar mismatch), the decode is wrong — stop, reconsider, and either re-decode correctly or fall back to rule 3. Self-contradicting decodes ship as confident wrong answers to the homeowner; catch them here.
-
-3. **Confidence gate — when in doubt, skip the date.** State a manufacture date only when both of these are true: (a) you can name the specific encoding rule you are applying for this manufacturer and era, and (b) all decoded components agree with each other on the same date. If either fails — you don't recognize the encoding for this manufacturer or this era, or the components conflict and you can't resolve it — say so plainly in \`service_life\` ("the serial encoding for this manufacturer/era is not one I can confirm with confidence") and skip the date rather than guessing. A confident null is far better than a confident wrong answer; homeowners will act on this data.
-
-Lead the \`service_life\` section with either the fully-shown decode or the honest "cannot confirm" statement. Class-level service-life facts then follow.
+Do not attempt to decode the serial number to a manufacture date — a separate process handles that. Stay focused on the three asks below.
 
 Output structure:
 
@@ -85,7 +76,7 @@ Three explicit asks, in order:
 
 1. First, tell me about this model line: what is it, where does it sit in the manufacturer's range, what's distinctive about it. Populate the \`overview\` field.
 
-2. Second, tell me about expected service life: how long do the major components last, what are the common failure points, at what age do problems typically appear. Populate the \`service_life\` field. **If a serial number is provided, decoding it to a manufacture date is the most valuable thing you can do — lead the section with it, following the strict decoding protocol in your instructions: (a) name the encoding rule for this manufacturer/era, (b) apply it character-by-character to the actual serial, (c) verify the year and week/month decode to the same date with no internal contradiction, and (d) if any of (a)–(c) fails, say so honestly and skip the date rather than guessing.**
+2. Second, tell me about expected service life: how long do the major components last, what are the common failure points, at what age do problems typically appear. Populate the \`service_life\` field.
 
 3. Third, tell me about maintenance: what tasks should the homeowner do and at what cadence, what happens if those tasks are skipped, and what requires a professional. Populate the \`maintenance\` field.
 
