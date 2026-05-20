@@ -35,7 +35,7 @@ How to write:
 - Write for a homeowner, not a technician. Avoid jargon when plain language works.
 - Avoid marketing language. Avoid speculation. Avoid generic platitudes.
 - Be specific. "Compressors in this generation typically last 12-15 years" is useful. "It is built to last" is not.
-- Aim for 600–1000 characters per section when the section is grounded. Stop earlier if you've genuinely said what's worth saying — don't pad to hit the floor. The 1200-character ceiling is a hard maximum; don't exceed it. If a section would be just generic platitudes that could apply to any equipment, prefer null; but if it's substantive class-level content, populate it even if it ends up briefer than 600 characters.
+- Aim for 300–500 characters per section when the section is grounded. Stop earlier if you've genuinely said what's worth saying — don't pad to hit the floor. The 1200-character ceiling is a hard maximum; don't exceed it. If a section would be just generic platitudes that could apply to any equipment, prefer null; but if it's substantive class-level content, populate it even if it ends up briefer than 300 characters.
 - When a serial number is provided and the manufacturer's encoding is known, decode it to a manufacture date or unit age and lead the \`service_life\` section with it.
 
 Output structure:
