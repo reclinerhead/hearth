@@ -156,6 +156,18 @@ export function InventoryDetailView({
       return item.ai_insights;
     }, [streamingObject, item.ai_insights]);
 
+  // "Regenerating" is the gap between clicking re-run on an item that
+  // already has insights and the first streamed chunk arriving — easily
+  // 10-15s on GPT-5.5. Without an explicit signal here, the panel just
+  // sits there showing the old content unchanged because the
+  // displayInsights fallback keeps rendering item.ai_insights. The
+  // panel uses this flag to dim the old content and surface a small
+  // "Regenerating…" indicator so the click visibly registers.
+  const isRegenerating =
+    researchPending &&
+    Boolean(item.ai_insights) &&
+    !(streamingObject as StreamingInsights | undefined)?.headline;
+
   const [editOpen, setEditOpen] = useState(false);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -326,6 +338,7 @@ export function InventoryDetailView({
         item={item}
         insights={displayInsights}
         isPending={researchPending}
+        isRegenerating={isRegenerating}
         error={researchError}
         onResearch={handleResearch}
       />
@@ -515,12 +528,14 @@ function ResearchPanel({
   item,
   insights,
   isPending,
+  isRegenerating,
   error,
   onResearch,
 }: {
   item: InventoryDetailItem;
   insights: PanelInsights | null;
   isPending: boolean;
+  isRegenerating: boolean;
   error: string | null;
   onResearch: () => void;
 }) {
@@ -533,11 +548,10 @@ function ResearchPanel({
   // category-level disclaimer below is more useful than burying it.
   const eyebrow = `What we know about ${itemTypeLabel}s like yours`;
 
-  // True when the call is in flight and we have nothing on screen yet
-  // — no headline, no sections, no prior committed insights. This is
-  // the only moment the loading overlay shows; once any field arrives
-  // (typically the headline within 1-3s) the overlay yields and the
-  // panel progressively populates as the rest of the stream comes in.
+  // First-time run with nothing on screen: show the loading overlay
+  // until the first chunk arrives. For regenerate-with-prior-insights,
+  // the overlay would cover the existing content unhelpfully — we use
+  // the dim + "Regenerating…" indicator instead, owned by isRegenerating.
   const showOverlay =
     isPending && !insights?.headline && !insights?.overview;
 
@@ -554,6 +568,23 @@ function ResearchPanel({
               <Icon name="sparkles" size={14} />
             </span>
             <span className="eyebrow">{eyebrow}</span>
+            {isRegenerating ? (
+              <span
+                className="text-small regenerating-pill"
+                style={{
+                  marginLeft: 6,
+                  padding: "1px 8px",
+                  borderRadius: 999,
+                  border: "1px solid var(--color-border-subtle)",
+                  color: "var(--color-text-secondary)",
+                  background:
+                    "color-mix(in oklab, var(--color-bg-surface-ai) 70%, transparent)",
+                }}
+                aria-live="polite"
+              >
+                Regenerating…
+              </span>
+            ) : null}
           </div>
           {insights?.headline ? (
             <div className="h3 insights-appear" style={{ marginTop: 2 }}>
@@ -583,11 +614,22 @@ function ResearchPanel({
         ) : null}
 
         {insights ? (
-          <InsightsBody
-            insights={insights}
-            itemTypeLabel={itemTypeLabel}
-            isStreaming={isPending}
-          />
+          // While regenerating with prior insights on screen, dim the
+          // old content + suppress the per-section appear animation so
+          // the user sees a clear "this is being replaced" state. As
+          // soon as the first streamed chunk arrives, isRegenerating
+          // flips false, opacity returns to 1, and the new content
+          // takes over with its normal appear-in animation.
+          <div
+            className="insights-body-dim"
+            data-regenerating={isRegenerating ? "true" : "false"}
+          >
+            <InsightsBody
+              insights={insights}
+              itemTypeLabel={itemTypeLabel}
+              isStreaming={isPending}
+            />
+          </div>
         ) : null}
 
         {showOverlay ? (
@@ -634,8 +676,30 @@ function ResearchPanel({
         .insights-appear {
           animation: insights-appear-kf 240ms ease-out both;
         }
+        /*
+          Dim the old insights while a regenerate is in flight but no
+          stream chunks have arrived yet. The opacity transition is
+          long enough (180ms) to read as intentional but short enough
+          that the visible feedback is near-instant after the click.
+        */
+        .insights-body-dim {
+          transition: opacity 180ms ease-out;
+        }
+        .insights-body-dim[data-regenerating="true"] {
+          opacity: 0.45;
+        }
+        /*
+          The "Regenerating…" pill that appears next to the eyebrow
+          while waiting on the first streamed chunk. Fade-in matches
+          the .insights-appear keyframe.
+        */
+        .regenerating-pill {
+          animation: insights-appear-kf 180ms ease-out both;
+        }
         @media (prefers-reduced-motion: reduce) {
-          .insights-appear { animation: none; }
+          .insights-appear,
+          .regenerating-pill { animation: none; }
+          .insights-body-dim { transition: none; }
         }
       `}</style>
     </section>
@@ -840,17 +904,45 @@ function ResearchButton({
   hasResults: boolean;
   onClick: () => void;
 }) {
+  // Loading state needs to look obviously inactive — otherwise users
+  // (rightly) keep clicking when nothing visible happens for the first
+  // ~15s before stream content starts arriving. Opacity drop + the
+  // refresh-cw icon spinning gives an immediate "I heard you" signal,
+  // and the disabled attribute already prevents repeat submissions.
+  const inactive = disabled || loading;
+
   const button = (
     <button
       type="button"
-      disabled={disabled || loading}
+      disabled={inactive}
       onClick={onClick}
-      className="btn btn-ghost"
-      aria-disabled={disabled || loading ? "true" : "false"}
-      style={disabled ? { opacity: 0.55 } : undefined}
+      className="btn btn-ghost research-button"
+      aria-disabled={inactive ? "true" : "false"}
+      data-loading={loading ? "true" : "false"}
+      style={inactive ? { opacity: 0.55 } : undefined}
     >
-      <Icon name={hasResults ? "refresh-cw" : "sparkles"} size={14} />
-      {hasResults ? "Research again" : "Research this model"}
+      <span
+        className={loading && hasResults ? "research-button-icon-spin" : ""}
+        style={{ display: "inline-flex", alignItems: "center" }}
+      >
+        <Icon name={hasResults ? "refresh-cw" : "sparkles"} size={14} />
+      </span>
+      {loading
+        ? hasResults
+          ? "Regenerating…"
+          : "Researching…"
+        : hasResults
+          ? "Research again"
+          : "Research this model"}
+      <style>{`
+        @keyframes research-button-icon-rotate { to { transform: rotate(360deg); } }
+        .research-button-icon-spin {
+          animation: research-button-icon-rotate 0.9s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .research-button-icon-spin { animation: none; }
+        }
+      `}</style>
     </button>
   );
 
