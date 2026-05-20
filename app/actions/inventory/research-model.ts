@@ -1,15 +1,18 @@
 "use server";
 
 // On-demand "Research this model" server action. Loads the inventory row
-// (RLS scopes it through the user's houses), calls Perplexity Sonar via
-// the Vercel AI Gateway, and writes the structured result into the
-// hearth.inventory.ai_insights jsonb column.
+// (RLS scopes it through the user's houses), calls the configured
+// insights model via the Vercel AI Gateway, and writes the structured
+// result into the hearth.inventory.ai_insights jsonb column. The model
+// is selected by INVENTORY_INSIGHTS_MODEL (with a fallback to
+// BRIEFING_PRIMARY_MODEL) so providers can be swapped without code
+// changes.
 //
-// The Sonar call typically takes 5-15 seconds. We block on it (no
-// streaming for v1) and surface a loading state in the UI. Re-running is
-// idempotent on the row — the new result overwrites whatever was there,
-// which lets Todd iterate on the prompt during development without any
-// extra plumbing.
+// The model call blocks for several seconds. We don't stream for v1 and
+// surface a loading state in the UI instead. Re-running is idempotent on
+// the row — the new result overwrites whatever was there, which lets
+// Todd iterate on the prompt during development without any extra
+// plumbing.
 
 import { revalidatePath } from "next/cache";
 import {
@@ -32,6 +35,7 @@ type InventoryItemRow = {
   type: "appliance" | "system" | "exterior";
   manufacturer: string | null;
   model_number: string | null;
+  serial_number: string | null;
   notes: string | null;
   ai_pills: { label: string; value: string }[] | null;
 };
@@ -46,7 +50,9 @@ export async function researchInventoryModelAction(
 
   const { data: item, error: loadError } = await supabase
     .from("inventory")
-    .select("id, name, type, manufacturer, model_number, notes, ai_pills")
+    .select(
+      "id, name, type, manufacturer, model_number, serial_number, notes, ai_pills",
+    )
     .eq("id", input.inventoryId)
     .single();
 
@@ -64,6 +70,7 @@ export async function researchInventoryModelAction(
     insights = await researchInventoryModel({
       manufacturer: typed.manufacturer,
       model_number: typed.model_number,
+      serial_number: typed.serial_number,
       inventory_name: typed.name,
       inventory_type: typed.type,
       ai_pills: typed.ai_pills,
