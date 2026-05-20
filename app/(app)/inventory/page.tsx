@@ -120,7 +120,7 @@ export default async function InventoryPage() {
             {sectionItems.length === 0 ? (
               <EmptySection hint={section.emptyHint} />
             ) : (
-              <div className="flex flex-col gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {sectionItems.map((item) => (
                   <InventoryListRow key={item.id} item={item} />
                 ))}

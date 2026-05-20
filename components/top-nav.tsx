@@ -76,7 +76,7 @@ export function TopNav({ house }: { house: TopNavHouse | null }) {
                 letterSpacing: "-0.005em",
               }}
             >
-              Hearth - Home Awareness
+              Hearth - Awareness
             </span>
           </Link>
 
