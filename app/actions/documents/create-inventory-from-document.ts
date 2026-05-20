@@ -1,5 +1,6 @@
 "use server";
 
+import { normalizeModelNumberForCreate } from "@/lib/inventory/model-number";
 import { createClient } from "@/lib/supabase/server";
 import type {
   AiExtraction,
@@ -69,7 +70,7 @@ export async function createInventoryFromDocumentAction(
       type: input.type,
       room_id: input.roomId,
       manufacturer: input.fields.manufacturer,
-      model_number: input.fields.model_number,
+      model_number: normalizeModelNumberForCreate(input.fields.model_number),
       serial_number: input.fields.serial_number,
       installed_on: input.fields.installed_on,
       notes: input.notes,

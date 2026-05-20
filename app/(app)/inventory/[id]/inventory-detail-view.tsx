@@ -31,6 +31,7 @@ import {
 } from "@/components/edit-inventory-item-modal";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
+import { displayModelNumber } from "@/lib/inventory/model-number";
 import { insightsSchema } from "@/lib/inventory-insights/research";
 import { useCachedSignedUrl } from "@/lib/house-image/use-cached-signed-url";
 import { PhotoLightbox } from "./photo-lightbox";
@@ -88,9 +89,10 @@ export function InventoryDetailView({
   rooms: RoomOption[];
   linkedDocumentCount: number;
 }) {
+  const displayModel = displayModelNumber(item.model_number);
   const title =
-    item.manufacturer && item.model_number
-      ? `${item.manufacturer} ${item.model_number}`
+    item.manufacturer && displayModel
+      ? `${item.manufacturer} ${displayModel}`
       : item.name;
 
   const eyebrow = `${TYPE_EYEBROW_LABEL[item.type].toUpperCase()} · ${item.roomName.toUpperCase()}`;
