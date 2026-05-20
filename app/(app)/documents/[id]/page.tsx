@@ -14,7 +14,7 @@ export default async function DocumentPage({
     <div className="flex flex-col gap-5">
       <Breadcrumb
         items={[
-          { label: "Appliances", href: "/appliances" },
+          { label: "Appliances", href: "/inventory" },
           { label: "Maytag dishwasher", href: "/entities/maytag-dishwasher" },
           { label: "Drain pump receipt" },
         ]}

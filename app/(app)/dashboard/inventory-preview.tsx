@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Icon, type IconName } from "@/components/icon";
+import { InventoryThumbnail } from "@/components/inventory-thumbnail";
 import { createClient } from "@/lib/supabase/server";
-import { InventoryThumbnail } from "./inventory-thumbnail";
 
 /**
  * Dashboard inventory preview — server component. Renders the

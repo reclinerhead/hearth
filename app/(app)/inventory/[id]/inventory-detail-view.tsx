@@ -143,7 +143,7 @@ export function InventoryDetailView({
     <div className="flex flex-col gap-6">
       <Breadcrumb
         items={[
-          { label: TYPE_BREADCRUMB_LABEL[item.type] },
+          { label: TYPE_BREADCRUMB_LABEL[item.type], href: "/inventory" },
           { label: item.roomName },
           { label: item.name },
         ]}
@@ -299,10 +299,7 @@ export function InventoryDetailView({
             }
           }}
           onDeleted={() => {
-            // Inventory list page doesn't exist yet; the dashboard's
-            // inventory tiles are the de facto landing for "where did
-            // my appliances go?" so the deleted page returns there.
-            router.replace("/dashboard");
+            router.replace("/inventory");
           }}
           getReturnFocusElement={() => editTriggerRef.current}
         />

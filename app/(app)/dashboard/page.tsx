@@ -113,7 +113,7 @@ export default async function DashboardPage() {
             title="Appliances"
             trailing={
               <a
-                href="/appliances"
+                href="/inventory"
                 className="text-small inline-flex items-center gap-1"
                 style={{ color: "var(--color-text-secondary)" }}
               >

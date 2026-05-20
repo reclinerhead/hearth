@@ -21,7 +21,7 @@ export default async function EntityPage({
     <div className="flex flex-col gap-6">
       <Breadcrumb
         items={[
-          { label: "Appliances", href: "/appliances" },
+          { label: "Appliances", href: "/inventory" },
           { label: "Kitchen" },
           { label: "Maytag dishwasher" },
         ]}
