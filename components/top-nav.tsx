@@ -104,7 +104,7 @@ export function TopNav({ house }: { house: TopNavHouse | null }) {
               <Icon name="plus" size={16} />
               <span>Add</span>
             </button>
-            <button
+            {/* <button
               type="button"
               className="btn btn-primary btn-icon md:hidden"
               aria-label="Add to Hearth"
@@ -112,7 +112,7 @@ export function TopNav({ house }: { house: TopNavHouse | null }) {
               disabled={!house}
             >
               <Icon name="plus" size={18} />
-            </button>
+            </button> */}
 
             <ThemeToggle className="hidden sm:inline-flex" />
 
