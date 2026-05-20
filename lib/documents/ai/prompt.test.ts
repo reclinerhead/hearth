@@ -89,6 +89,71 @@ describe("buildClassifyPrompt", () => {
       expect(prompt).toMatch(/empty array/i);
     });
   });
+
+  describe("derived-facts prohibition (#81)", () => {
+    // The prior revision of this prompt used realistic-looking literal
+    // pill values; Grok 4.3 was observed echoing them verbatim into
+    // unrelated appliances' output. These assertions pin the no-leak
+    // contract so a future edit can't silently re-introduce the bug.
+
+    it("does not contain the previously-leaked Manufacture Date example value", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).not.toContain("29 Jan 2015");
+    });
+
+    it("does not contain the prior specific-looking pill example values", () => {
+      // The Manufacture Date example was the proven leak vector, but
+      // the surrounding examples used similarly specific-looking values
+      // that could leak the same way. All replaced with placeholder
+      // syntax.
+      const prompt = buildClassifyPrompt();
+      expect(prompt).not.toContain("40 gallons");
+      expect(prompt).not.toContain("40,000");
+      expect(prompt).not.toContain('"Natural gas"');
+      expect(prompt).not.toContain('"120V"');
+      expect(prompt).not.toContain('"150 PSI"');
+    });
+
+    it("uses angle-bracket placeholder syntax for pill example values", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/<[^>]+as printed>/);
+    });
+
+    it("explicitly prohibits a Manufacture Date pill", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/Do not include a Manufacture Date pill/i);
+    });
+
+    it("explicitly tells the model not to decode the serial number to produce a manufacture date", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/do not decode the serial number/i);
+    });
+
+    it("requires pills to be facts printed directly on the label", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/printed directly on the label/i);
+    });
+
+    it("prohibits pills derived from decoding identifiers", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/decoding serial numbers/i);
+    });
+
+    it("names model release year, generation, and equipment age as also-prohibited derived facts", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/model release year/i);
+      expect(prompt).toMatch(/generation/i);
+      expect(prompt).toMatch(/equipment age/i);
+    });
+
+    it("allows a Manufacture Date pill only when the date is printed verbatim on the label", () => {
+      // The conditional exception — if a manufacture date IS printed
+      // directly on the label (rare on appliances, common on water
+      // heaters), capture it as a pill exactly as printed.
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/exactly as printed/i);
+    });
+  });
 });
 
 describe("buildDeltaPrompt", () => {
