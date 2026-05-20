@@ -112,34 +112,6 @@ describe("buildResearchUserMessage", () => {
     });
   });
 
-  describe("pills block", () => {
-    it("includes the pills block when pills are present", () => {
-      const message = buildResearchUserMessage({
-        ...baseInput,
-        ai_pills: [
-          { label: "Capacity", value: "40 gallons" },
-          { label: "BTU Input", value: "40,000" },
-        ],
-      });
-      expect(message).toMatch(/Details from the nameplate/i);
-      expect(message).toContain("Capacity: 40 gallons");
-      expect(message).toContain("BTU Input: 40,000");
-    });
-
-    it("omits the pills block when ai_pills is null", () => {
-      const message = buildResearchUserMessage({
-        ...baseInput,
-        ai_pills: null,
-      });
-      expect(message).not.toMatch(/Details from the nameplate/i);
-    });
-
-    it("omits the pills block when ai_pills is an empty array", () => {
-      const message = buildResearchUserMessage({ ...baseInput, ai_pills: [] });
-      expect(message).not.toMatch(/Details from the nameplate/i);
-    });
-  });
-
   describe("notes block", () => {
     it("includes the notes block when notes are present", () => {
       const message = buildResearchUserMessage({

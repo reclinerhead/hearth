@@ -28,13 +28,14 @@ Source quality and grounding:
 - "Grounded" means: a factual claim you have high confidence in from manufacturer documentation, technical service literature, professional trade publications, reputable HVAC/appliance industry sources, or well-established training knowledge about this equipment class or model line. You do not need to be able to cite a specific URL — confident knowledge from training is acceptable. What is NOT grounded: speculation, generalization from loosely similar equipment, marketing claims, or filler.
 - Prefer manufacturer documentation and trade sources over forum speculation and SEO content farms when you have a choice.
 - If you cannot ground a section in the sense above, return null for that section. Do not invent details. Do not pad with generic platitudes about "things like this."
+- Class-level content (typical service life and maintenance for the broad equipment category — gas range, central AC, water heater, etc.) IS grounded content and SHOULD be returned even when you have no model-line-specific data. Returning null is only correct when you can't even speak to the equipment class — not when you merely lack unit-specific info.
 - The \`source_urls\` field is for specific URLs you actually consulted or grounded a non-obvious claim against. It may legitimately be empty when the answer comes from training knowledge with no specific document to cite. Do not invent URLs.
 
 How to write:
 - Write for a homeowner, not a technician. Avoid jargon when plain language works.
 - Avoid marketing language. Avoid speculation. Avoid generic platitudes.
 - Be specific. "Compressors in this generation typically last 12-15 years" is useful. "It is built to last" is not.
-- Aim for 600–1000 characters per section when the section is grounded. Stop earlier if you've genuinely said what's worth saying — don't pad to hit the floor. The 1200-character ceiling is a hard maximum; don't exceed it. If a section can only honestly be 200 characters, that's a signal it should probably be null instead.
+- Aim for 600–1000 characters per section when the section is grounded. Stop earlier if you've genuinely said what's worth saying — don't pad to hit the floor. The 1200-character ceiling is a hard maximum; don't exceed it. If a section would be just generic platitudes that could apply to any equipment, prefer null; but if it's substantive class-level content, populate it even if it ends up briefer than 600 characters.
 - When a serial number is provided and the manufacturer's encoding is known, decode it to a manufacture date or unit age and lead the \`service_life\` section with it.
 
 Output structure:
@@ -58,12 +59,6 @@ Output structure:
 export function buildResearchUserMessage(
   input: ResearchInventoryInput,
 ): string {
-  const pillsBlock = input.ai_pills?.length
-    ? `\n\nDetails from the nameplate:\n${input.ai_pills
-        .map((p) => `- ${p.label}: ${p.value}`)
-        .join("\n")}`
-    : "";
-
   const notesBlock = input.notes ? `\n\nAdditional notes:\n${input.notes}` : "";
 
   return `Research this specific item in a homeowner's home and produce the structured summary defined in your instructions.
@@ -74,7 +69,7 @@ Type: ${input.inventory_type}
 Name: ${input.inventory_name}
 Manufacturer: ${input.manufacturer ?? "(unknown)"}
 Model number: ${input.model_number ?? "(unknown)"}
-Serial number: ${input.serial_number ?? "(unknown)"}${pillsBlock}${notesBlock}
+Serial number: ${input.serial_number ?? "(unknown)"}${notesBlock}
 
 Three explicit asks, in order:
 
