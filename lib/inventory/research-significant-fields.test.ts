@@ -7,7 +7,6 @@ import {
 const BASE: ResearchSignificantFields = {
   manufacturer: "Whirlpool",
   model_number: "WFG361LFQ",
-  type: "appliance",
 };
 
 describe("researchSignificantFieldsChanged", () => {
@@ -15,10 +14,16 @@ describe("researchSignificantFieldsChanged", () => {
     expect(researchSignificantFieldsChanged(BASE, { ...BASE })).toBe(false);
   });
 
-  it("returns true when the type changes", () => {
+  it("returns false when only the type changes — type is organizational, not research-grounding (#69)", () => {
+    // Even when the caller previously had a `type` field on the input,
+    // the helper now ignores it. Passing extra keys is a no-op because
+    // the function reads only manufacturer + model_number.
     expect(
-      researchSignificantFieldsChanged(BASE, { ...BASE, type: "system" }),
-    ).toBe(true);
+      researchSignificantFieldsChanged(
+        { ...BASE, type: "appliance" } as ResearchSignificantFields,
+        { ...BASE, type: "system" } as ResearchSignificantFields,
+      ),
+    ).toBe(false);
   });
 
   it("returns true when manufacturer changes", () => {
@@ -70,13 +75,13 @@ describe("researchSignificantFieldsChanged", () => {
     ).toBe(true);
   });
 
-  it("ignores fields it does not own — name, serial, dates, notes don't matter here", () => {
+  it("ignores fields it does not own — name, type, serial, dates, notes don't matter here", () => {
     // The helper's input type is intentionally narrow; this test exists to
     // pin the documented contract that the helper is responsible *only*
-    // for the three research-grounding fields. If a future contributor
+    // for the two research-grounding fields. If a future contributor
     // wants to widen the contract, the test failure here is the prompt to
     // update the type and the technical guide together.
     const keys = Object.keys(BASE).sort();
-    expect(keys).toEqual(["manufacturer", "model_number", "type"]);
+    expect(keys).toEqual(["manufacturer", "model_number"]);
   });
 });
