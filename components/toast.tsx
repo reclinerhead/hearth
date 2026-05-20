@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon, type IconName } from "./icon";
 
-// Minimal Hearth toast primitive. Bottom-center across viewports (only
-// ever one at a time, no stack), slide-up + fade in on mount, auto-
+// Minimal Hearth toast primitive. Top-center across viewports (only
+// ever one at a time, no stack), slide-down + fade in on mount, auto-
 // dismisses after `autoDismissMs` with a hover-pause. The X button is
 // the explicit close; clicking outside does not dismiss. Designed to
 // surface a one-line acknowledgment after a user-initiated action — the
@@ -71,7 +71,7 @@ export function Toast({
       data-mounted={mounted ? "true" : "false"}
     >
       <span aria-hidden className="hearth-toast-icon">
-        <Icon name={icon} size={14} />
+        <Icon name={icon} size={16} />
       </span>
       <span className="hearth-toast-message">{message}</span>
       <button
@@ -80,27 +80,27 @@ export function Toast({
         aria-label="Dismiss notification"
         className="hearth-toast-close"
       >
-        <Icon name="x" size={14} />
+        <Icon name="x" size={16} />
       </button>
       <style>{`
         .hearth-toast {
           position: fixed;
           left: 50%;
-          bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
-          transform: translate(-50%, 12px);
+          top: calc(env(safe-area-inset-top, 0px) + var(--nav-top-h, 56px) + 16px);
+          transform: translate(-50%, -12px);
           opacity: 0;
           z-index: 60;
           display: inline-flex;
           align-items: center;
-          gap: 10px;
-          max-width: min(420px, calc(100vw - 32px));
-          padding: 10px 12px 10px 14px;
+          gap: 12px;
+          max-width: min(480px, calc(100vw - 32px));
+          padding: 14px 16px 14px 20px;
           background-color: var(--color-bg-surface-raised);
           border: 1px solid var(--color-border-subtle);
           border-radius: var(--radius-md);
-          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+          box-shadow: 0 14px 36px rgba(0, 0, 0, 0.36);
           color: var(--color-text-primary);
-          font-size: var(--text-small);
+          font-size: var(--text-body);
           line-height: 1.45;
           transition:
             transform 280ms cubic-bezier(0.2, 0.7, 0.2, 1),
@@ -136,8 +136,8 @@ export function Toast({
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          padding: 4px;
-          margin: -4px -2px -4px 0;
+          padding: 6px;
+          margin: -6px -4px -6px 0;
           border: none;
           background: transparent;
           color: var(--color-text-tertiary);
