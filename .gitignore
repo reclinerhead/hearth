@@ -49,3 +49,6 @@ next-env.d.ts
 .claude/worktrees/
 
 .env*.local
+
+# local debug logs (e.g. AI insights prompt log) — never commit
+/logs/

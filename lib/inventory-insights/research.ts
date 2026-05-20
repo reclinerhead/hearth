@@ -12,6 +12,8 @@
 // server action's job. Keeping the lookup pure makes it easier to test
 // and to swap providers in isolation.
 
+import { appendFile, mkdir } from "node:fs/promises";
+import path from "node:path";
 import { generateObject } from "ai";
 import { z } from "zod";
 import {
@@ -57,16 +59,88 @@ export async function researchInventoryModel(
     );
   }
 
-  const result = await generateObject({
-    model,
-    schema: insightsSchema,
-    system: buildResearchSystemPrompt(),
-    messages: [
-      {
-        role: "user",
-        content: buildResearchUserMessage(input),
-      },
-    ],
-  });
-  return result.object;
+  const systemPrompt = buildResearchSystemPrompt();
+  const userMessage = buildResearchUserMessage(input);
+
+  const startedAt = new Date();
+  const startNs = process.hrtime.bigint();
+
+  let result;
+  let thrown: unknown = null;
+  try {
+    result = await generateObject({
+      model,
+      schema: insightsSchema,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMessage }],
+    });
+    return result.object;
+  } catch (e) {
+    thrown = e;
+    throw e;
+  } finally {
+    const durationMs = Number(process.hrtime.bigint() - startNs) / 1_000_000;
+    void writeInsightsDebugLog({
+      startedAt,
+      durationMs,
+      model,
+      input,
+      systemPrompt,
+      userMessage,
+      response: result?.object ?? null,
+      error: thrown
+        ? thrown instanceof Error
+          ? { name: thrown.name, message: thrown.message }
+          : { name: "unknown", message: String(thrown) }
+        : null,
+    });
+  }
+}
+
+type InsightsDebugLogEntry = {
+  startedAt: Date;
+  durationMs: number;
+  model: string;
+  input: ResearchInventoryInput;
+  systemPrompt: string;
+  userMessage: string;
+  response: InsightsResult | null;
+  error: { name: string; message: string } | null;
+};
+
+// Local-only debug log for prompt/response iteration. Written to
+// `logs/ai-insights-prompts.log` at the repo root (gitignored). All errors
+// are swallowed so a logging failure can never break the user request.
+async function writeInsightsDebugLog(entry: InsightsDebugLogEntry) {
+  try {
+    const dir = path.join(process.cwd(), "logs");
+    await mkdir(dir, { recursive: true });
+    const file = path.join(dir, "ai-insights-prompts.log");
+
+    const block = [
+      "================================================================================",
+      `Timestamp:    ${entry.startedAt.toISOString()}`,
+      `Model:        ${entry.model}`,
+      `Duration:     ${entry.durationMs.toFixed(0)} ms`,
+      `Status:       ${entry.error ? `error (${entry.error.name}: ${entry.error.message})` : "ok"}`,
+      "",
+      "--- input ---",
+      JSON.stringify(entry.input, null, 2),
+      "",
+      "--- system prompt ---",
+      entry.systemPrompt,
+      "",
+      "--- user message ---",
+      entry.userMessage,
+      "",
+      "--- response (json) ---",
+      entry.response ? JSON.stringify(entry.response, null, 2) : "(no response)",
+      "",
+      "",
+    ].join("\n");
+
+    await appendFile(file, block, "utf8");
+  } catch (e) {
+    console.warn("[inventory-insights] failed to write debug log:", e);
+  }
 }
