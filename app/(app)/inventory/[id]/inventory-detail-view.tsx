@@ -521,6 +521,7 @@ type PanelInsights = {
   overview?: string | null | undefined;
   service_life?: string | null | undefined;
   maintenance?: string | null | undefined;
+  source_urls?: string[] | undefined;
   found_specific_model?: boolean | undefined;
 };
 
@@ -772,6 +773,80 @@ function InsightsBody({
           />
         ))
       )}
+
+      <SourcesList urls={insights.source_urls} />
+    </div>
+  );
+}
+
+function SourcesList({ urls }: { urls: string[] | undefined }) {
+  // source_urls is the LAST field the model emits, so during streaming
+  // it's undefined until almost the end. We only render the subsection
+  // when there's at least one URL to show — no dangling "Sources"
+  // header when the array is empty or missing. Filter out anything
+  // that isn't a parseable URL: the schema validates the final object
+  // but mid-stream the partial may briefly carry a half-typed URL like
+  // "https://www.whirlp" before the next chunk arrives, and an <a> with
+  // a broken href is worse than the field rendering a fraction of a
+  // second late.
+  const valid = (urls ?? []).filter((u) => {
+    try {
+      new URL(u);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  if (valid.length === 0) return null;
+
+  return (
+    <div className="insights-appear">
+      <div
+        className="eyebrow mb-1"
+        style={{ letterSpacing: "1.2px", fontSize: 10 }}
+      >
+        Sources
+      </div>
+      <ul className="flex flex-col gap-1" style={{ listStyle: "none" }}>
+        {valid.map((url, i) => (
+          <li key={`${url}-${i}`} className="text-small sources-list-item">
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="sources-list-link"
+            >
+              {url}
+            </a>
+          </li>
+        ))}
+      </ul>
+      <style>{`
+        .sources-list-item {
+          /*
+            Long PDF / spec-sheet URLs are common — truncate with
+            ellipsis on a single line so they never wrap and break the
+            panel layout. The underlying anchor keeps the full href, so
+            the click target is the visible (truncated) text and the
+            destination is the complete URL.
+          */
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .sources-list-link {
+          color: var(--color-text-secondary);
+          text-decoration: underline;
+          text-decoration-color: var(--color-border-subtle);
+          text-underline-offset: 2px;
+          transition: color 120ms ease-out, text-decoration-color 120ms ease-out;
+        }
+        .sources-list-link:hover {
+          color: var(--color-accent);
+          text-decoration-color: currentColor;
+        }
+      `}</style>
     </div>
   );
 }
