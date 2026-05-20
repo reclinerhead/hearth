@@ -10,6 +10,10 @@
 // work — the same ownership chain the dashboard uses.
 
 import { notFound } from "next/navigation";
+import type {
+  ManufactureDateConfidence,
+  ManufactureDatePrecision,
+} from "@/lib/inventory/first-date-tile";
 import { createClient } from "@/lib/supabase/server";
 import { InventoryDetailView } from "./inventory-detail-view";
 
@@ -60,6 +64,15 @@ export type InventoryDetailItem = {
   photos: InventoryPhoto[];
   ai_pills: { label: string; value: string }[] | null;
   ai_insights: InventoryInsights | null;
+  // Decoded manufacture date columns (issue #77). Populated only by the
+  // dedicated /api/inventory/[id]/decode-serial route, and only when the
+  // reasoning model returned confidence === "high" for the decode. The
+  // detail page's first stat tile falls back to showing "Manufactured"
+  // here when installed_on is null and a confirmed manufacture date is
+  // available.
+  manufacture_date: string | null;
+  manufacture_date_precision: ManufactureDatePrecision | null;
+  manufacture_date_confidence: ManufactureDateConfidence | null;
 };
 
 export type RoomOption = { id: string; name: string };
@@ -90,6 +103,9 @@ export default async function InventoryDetailPage({
       notes,
       ai_pills,
       ai_insights,
+      manufacture_date,
+      manufacture_date_precision,
+      manufacture_date_confidence,
       room:rooms!inner(name)
       `,
     )
@@ -115,6 +131,9 @@ export default async function InventoryDetailPage({
     notes: string | null;
     ai_pills: { label: string; value: string }[] | null;
     ai_insights: InventoryInsights | null;
+    manufacture_date: string | null;
+    manufacture_date_precision: ManufactureDatePrecision | null;
+    manufacture_date_confidence: ManufactureDateConfidence | null;
     room: { name: string } | { name: string }[] | null;
   };
 
@@ -193,6 +212,9 @@ export default async function InventoryDetailPage({
     photos,
     ai_pills: row.ai_pills,
     ai_insights: row.ai_insights,
+    manufacture_date: row.manufacture_date,
+    manufacture_date_precision: row.manufacture_date_precision,
+    manufacture_date_confidence: row.manufacture_date_confidence,
   };
 
   return (
