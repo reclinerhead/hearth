@@ -86,13 +86,33 @@ function formatBuilt(year: number | null): HouseFact {
   };
 }
 
-function formatLivingArea(sqft: number | null): HouseFact {
+function formatBedroomCount(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+function formatBedroomsBathroomsMeta(
+  bedrooms: number | null,
+  bathrooms: number | null,
+): string | null {
+  const parts: string[] = [];
+  if (bedrooms !== null) parts.push(`${formatBedroomCount(bedrooms)}BR`);
+  if (bathrooms !== null) parts.push(`${formatBedroomCount(bathrooms)}BA`);
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
+function formatLivingArea(
+  sqft: number | null,
+  bedrooms: number | null,
+  bathrooms: number | null,
+): HouseFact {
+  const meta = formatBedroomsBathroomsMeta(bedrooms, bathrooms);
   if (sqft === null)
-    return { eyebrow: "Living area", icon: "ruler", value: null };
+    return { eyebrow: "Living area", icon: "ruler", value: null, meta };
   return {
     eyebrow: "Living area",
     icon: "ruler",
     value: `${formatNumber(sqft)} sf`,
+    meta,
   };
 }
 
@@ -116,31 +136,11 @@ function formatLot(sqft: number | null): HouseFact {
   };
 }
 
-function formatBedrooms(n: number | null): HouseFact {
-  if (n === null) return { eyebrow: "Bedrooms", icon: "bed", value: null };
-  return {
-    eyebrow: "Bedrooms",
-    icon: "bed",
-    value: Number.isInteger(n) ? String(n) : n.toFixed(1),
-  };
-}
-
-function formatBathrooms(n: number | null): HouseFact {
-  if (n === null) return { eyebrow: "Bathrooms", icon: "bath", value: null };
-  return {
-    eyebrow: "Bathrooms",
-    icon: "bath",
-    value: Number.isInteger(n) ? String(n) : n.toFixed(1),
-  };
-}
-
 function buildFacts(house: House): HouseFact[] {
   return [
     formatBuilt(house.year_built),
-    formatLivingArea(house.living_area_sqft),
+    formatLivingArea(house.living_area_sqft, house.bedrooms, house.bathrooms),
     formatLot(house.lot_size_sqft),
-    formatBedrooms(house.bedrooms),
-    formatBathrooms(house.bathrooms),
   ];
 }
 

@@ -19,8 +19,6 @@ import { InventoryPreview } from "./inventory-preview";
 
 const EMERGENCIES: { icon: IconName; label: string; hint: string }[] = [
   { icon: "droplet", label: "Water shutoff", hint: "Basement, NE corner" },
-  { icon: "flame-burner", label: "Gas shutoff", hint: "Meter, side yard" },
-  { icon: "bolt", label: "Electrical panel", hint: "Basement, by stairs" },
 ];
 
 export default async function DashboardPage() {
@@ -78,7 +76,7 @@ export default async function DashboardPage() {
                   className="text-small"
                   style={{ color: "var(--color-text-tertiary)" }}
                 >
-                  3 saved
+                  1 saved
                 </span>
               }
             />
