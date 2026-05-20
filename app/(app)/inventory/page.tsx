@@ -254,6 +254,13 @@ function groupByType(items: InventoryItem[]): Record<InventoryType, InventoryIte
   for (const item of items) {
     groups[item.type].push(item);
   }
+  // Alphabetical within each section. localeCompare with sensitivity:
+  // "base" gives a case-insensitive, accent-insensitive natural sort so
+  // "amana" and "Whirlpool" land where the user expects.
+  const collator = new Intl.Collator("en", { sensitivity: "base" });
+  for (const type of Object.keys(groups) as InventoryType[]) {
+    groups[type].sort((a, b) => collator.compare(a.name, b.name));
+  }
   return groups;
 }
 
