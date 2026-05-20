@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import type { CSSProperties, ReactNode } from "react";
 import Image from "next/image";
-import Link from "next/link";
-import { Icon } from "@/components/icon";
 import {
   SEVERITY_COLOR,
   SEVERITY_WORD,
@@ -314,72 +312,16 @@ const PILLARS: { title: string; body: string }[] = [
 
 export default function HowItWorksPage() {
   return (
-    <main
+    <div
       style={{
-        minHeight: "100dvh",
-        paddingTop: "var(--space-5)",
-        paddingBottom: "var(--space-8)",
-        paddingLeft: "var(--space-4)",
-        paddingRight: "var(--space-4)",
+        maxWidth: PAGE_MAX_WIDTH,
+        margin: "0 auto",
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--space-7)",
       }}
     >
-      <div
-        style={{
-          maxWidth: PAGE_MAX_WIDTH,
-          margin: "0 auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-7)",
-        }}
-      >
-        <nav
-          aria-label="Site"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "var(--space-3)",
-          }}
-        >
-          <Link
-            href="/"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "var(--space-2)",
-              color: "var(--color-text-primary)",
-              textDecoration: "none",
-            }}
-          >
-            <span style={{ color: "var(--color-accent)" }}>
-              <Icon name="flame" size={18} aria-label="Hearth" />
-            </span>
-            <span
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 18,
-                fontWeight: 500,
-              }}
-            >
-              Hearth
-            </span>
-          </Link>
-          <Link
-            href="/"
-            className="text-small"
-            style={{
-              color: "var(--color-text-secondary)",
-              textDecoration: "none",
-            }}
-          >
-            Back to Hearth
-            <span aria-hidden style={{ marginLeft: 4 }}>
-              ›
-            </span>
-          </Link>
-        </nav>
-
-        <header
+      <header
           style={{
             display: "flex",
             flexDirection: "column",
@@ -900,7 +842,6 @@ export default function HowItWorksPage() {
             </div>
           </ModuleSection>
         </section>
-      </div>
-    </main>
+    </div>
   );
 }

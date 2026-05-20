@@ -875,15 +875,15 @@ The radon module (`lib/habitat/modules/epa-radon-zone/index.ts`) is the referenc
 
 **Timing fidelity.** `createActivityLogger` uses `performance.now()` directly (Node 18+ and all browsers have it). `at_ms` and `total_duration_ms` are rounded to 1 decimal place — sub-millisecond resolution is enough to distinguish fast in-memory steps without storing float noise in jsonb. An earlier fallback to `Date.now()` caused every radon step to report `at_ms: 0` because the whole check ran inside a single millisecond tick.
 
-### Public methodology page — `/how-it-works`
+### Methodology page — `/how-it-works`
 
-The `/how-it-works` route at `app/how-it-works/page.tsx` is Hearth's public-facing methodology document. Each habitat module's classification logic — the table that maps raw data into a Hearth severity — is documented there alongside the upstream sources and any model-vs-authority note where Hearth's interpretation diverges from the original publisher. Every habitat finding's activity log cites this page from its `decide` (and, for Superfund, `rule`) step.
+The `/how-it-works` route at `app/(app)/how-it-works/page.tsx` is Hearth's in-app methodology document. Each habitat module's classification logic — the table that maps raw data into a Hearth severity — is documented there alongside the upstream sources and any model-vs-authority note where Hearth's interpretation diverges from the original publisher. Every habitat finding's activity log cites this page from its `decide` (and, for Superfund, `rule`) step.
 
-The page is reachable without authentication so the transparency layer works for both signed-in users clicking through from a finding and anonymous direct hits. Public-route exception is configured in `lib/supabase/proxy.ts`.
+The page lives inside the `(app)` route group so it inherits the standard app shell (top nav, desktop sidebar, bottom nav) and authentication gate. Anonymous visitors clicking a `/how-it-works` link from outside the app are bounced to `/login` by the proxy like any other authenticated route.
 
 Anchor IDs on the page (`#radon`, `#superfund`, `#flood-zones`) are load-bearing — they're embedded verbatim in the `activity_log` JSONB of every existing `habitat_findings` row, frozen-in-time. The slug version of the module key (without the `epa_` or `fema_` source prefix) is the convention for future modules. Old findings persisted with the prior `/about/classification#<anchor>` URL still resolve via a permanent redirect rule in `next.config.ts`; browsers carry the anchor through the redirect automatically, so no per-anchor rules are needed.
 
-**Governance principle (load-bearing).** Modifying a habitat module's classification logic without updating its corresponding section in `/how-it-works` is a regression. The page is Hearth's public methodology, and the activity log on every finding tells users they can read this page to understand how the finding was produced. If the page is out of date with the code, users get inaccurate transparency, which is worse than no transparency at all. Module PRs that change classification thresholds, severity mappings, or data sources must include corresponding edits to `app/how-it-works/page.tsx` and update the "Last updated" date for that module's section.
+**Governance principle (load-bearing).** Modifying a habitat module's classification logic without updating its corresponding section in `/how-it-works` is a regression. The page is Hearth's public methodology, and the activity log on every finding tells users they can read this page to understand how the finding was produced. If the page is out of date with the code, users get inaccurate transparency, which is worse than no transparency at all. Module PRs that change classification thresholds, severity mappings, or data sources must include corresponding edits to `app/(app)/how-it-works/page.tsx` and update the "Last updated" date for that module's section.
 
 ### `HabitatModule.iconImage`
 

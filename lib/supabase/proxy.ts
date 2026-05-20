@@ -41,15 +41,10 @@ export async function updateSession(request: NextRequest) {
 
   // Route protection: redirect unauthenticated users to /login,
   // except when they're already on a public auth route.
-  // /how-it-works is Hearth's public methodology document — reachable
-  // without auth so the transparency layer works for both signed-in
-  // users clicking through from a finding's activity log and anyone
-  // landing on a direct link.
   const isPublicRoute =
     pathname === "/" ||
     pathname.startsWith("/login") ||
-    pathname.startsWith("/auth") ||
-    pathname === "/how-it-works";
+    pathname.startsWith("/auth");
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
