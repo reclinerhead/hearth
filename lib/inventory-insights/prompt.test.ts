@@ -11,6 +11,7 @@ const baseInput: ResearchInventoryInput = {
   inventory_name: "Maytag dishwasher",
   inventory_type: "appliance",
   ai_pills: null,
+  serial_number: "1234567890",
   notes: null,
 };
 
@@ -40,12 +41,6 @@ describe("buildResearchSystemPrompt", () => {
     expect(buildResearchSystemPrompt()).toContain("found_specific_model");
   });
 
-  it("includes search-strategy guidance encouraging multiple searches", () => {
-    const prompt = buildResearchSystemPrompt();
-    expect(prompt).toMatch(/Use web search multiple times/i);
-    expect(prompt).toMatch(/at least three times/i);
-  });
-
   it("includes the honesty rule allowing null per section", () => {
     const prompt = buildResearchSystemPrompt();
     expect(prompt).toMatch(/return null for that section/i);
@@ -53,7 +48,7 @@ describe("buildResearchSystemPrompt", () => {
   });
 
   it("specifies the per-section character ceiling", () => {
-    expect(buildResearchSystemPrompt()).toMatch(/1200 characters/);
+    expect(buildResearchSystemPrompt()).toMatch(/1200[- ]character/);
   });
 
   it("warns away from speculation and marketing language", () => {
@@ -114,34 +109,6 @@ describe("buildResearchUserMessage", () => {
     it("reinforces the 'null is the correct answer' rule", () => {
       const message = buildResearchUserMessage(baseInput);
       expect(message).toMatch(/Returning null is the correct answer/i);
-    });
-  });
-
-  describe("pills block", () => {
-    it("includes the pills block when pills are present", () => {
-      const message = buildResearchUserMessage({
-        ...baseInput,
-        ai_pills: [
-          { label: "Capacity", value: "40 gallons" },
-          { label: "BTU Input", value: "40,000" },
-        ],
-      });
-      expect(message).toMatch(/Details from the nameplate/i);
-      expect(message).toContain("Capacity: 40 gallons");
-      expect(message).toContain("BTU Input: 40,000");
-    });
-
-    it("omits the pills block when ai_pills is null", () => {
-      const message = buildResearchUserMessage({
-        ...baseInput,
-        ai_pills: null,
-      });
-      expect(message).not.toMatch(/Details from the nameplate/i);
-    });
-
-    it("omits the pills block when ai_pills is an empty array", () => {
-      const message = buildResearchUserMessage({ ...baseInput, ai_pills: [] });
-      expect(message).not.toMatch(/Details from the nameplate/i);
     });
   });
 

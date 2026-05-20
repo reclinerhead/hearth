@@ -3,27 +3,35 @@
 // Client-side render of the inventory detail page. The server component
 // in page.tsx loads the row (RLS-scoped) and hands us a fully-typed
 // item; this component owns presentation plus the on-demand Research
-// surface (button state, loading overlay, error handling, refresh).
+// surface (streaming hook, partial-state rendering, error handling).
+//
+// The Research call is a POST to /api/inventory/[id]/research that
+// streams a structured object via the AI SDK's useObject hook. The
+// panel populates progressively as each field arrives — first headline,
+// then the three sections one by one. The DB write happens server-side
+// in the route's onFinish; we call router.refresh() once the stream
+// completes so subsequent navigations see the persisted state.
 //
 // Documents / Notes & photos / Maintenance & history panels are
 // intentionally placeholder content — wired to real data in a later phase.
 
+import { experimental_useObject as useObject } from "@ai-sdk/react";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
-  useTransition,
   type ReactNode,
 } from "react";
-import { researchInventoryModelAction } from "@/app/actions/inventory/research-model";
 import {
   EditInventoryItemModal,
   type EditableInventoryRow,
 } from "@/components/edit-inventory-item-modal";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
+import { insightsSchema } from "@/lib/inventory-insights/research";
 import { useCachedSignedUrl } from "@/lib/house-image/use-cached-signed-url";
 import { PhotoLightbox } from "./photo-lightbox";
 import {
@@ -38,6 +46,20 @@ import type {
   InventoryInsights,
   RoomOption,
 } from "./page";
+
+// Shape the Research panel reads from. While streaming, fields are
+// `undefined` until the model emits them; once persisted, the
+// committed InventoryInsights from the server has them all (with
+// section fields nullable per the schema). The panel handles both by
+// only rendering fields that are present.
+type StreamingInsights = {
+  headline?: string;
+  overview?: string | null;
+  service_life?: string | null;
+  maintenance?: string | null;
+  source_urls?: string[];
+  found_specific_model?: boolean;
+};
 
 const TYPE_BREADCRUMB_LABEL: Record<
   "appliance" | "system" | "exterior",
@@ -76,32 +98,75 @@ export function InventoryDetailView({
   // Research lookup is owned at this level (not inside ResearchPanel) so
   // the edit-modal can trigger a re-run after the user saves changes to
   // manufacturer / model_number / type. Stale insights are cleared by
-  // the update action itself; this kicks off the new fetch.
+  // the update action itself; the hook below kicks off the new fetch.
+  //
+  // useObject streams a structured object from the POST endpoint. While
+  // in flight, `object` is a DeepPartial — fields populate as the model
+  // emits them. We render the streaming object during the call and fall
+  // back to the persisted item.ai_insights once router.refresh() has
+  // pulled the new server-rendered state.
   const router = useRouter();
-  const [researchPending, startResearch] = useTransition();
-  const [researchError, setResearchError] = useState<string | null>(null);
-  const handleResearch = useCallback(() => {
-    setResearchError(null);
-    startResearch(async () => {
-      const result = await researchInventoryModelAction({ inventoryId: item.id });
-      if (result.error) {
-        setResearchError(result.error);
-        return;
+  const {
+    object: streamingObject,
+    submit: submitResearch,
+    isLoading: researchPending,
+    error: researchHookError,
+    clear: clearResearch,
+  } = useObject({
+    api: `/api/inventory/${item.id}/research`,
+    schema: insightsSchema,
+    onFinish: ({ object, error }) => {
+      // router.refresh() pulls the freshly-persisted ai_insights into
+      // the page so subsequent navigations and reloads see the same
+      // data the stream just produced. The streaming object is still
+      // held by the hook until clear() runs, so the user sees no flash.
+      if (object && !error) {
+        router.refresh();
       }
-      router.refresh();
-    });
-  }, [item.id, router]);
+    },
+  });
+  const researchError = researchHookError?.message ?? null;
+  const handleResearch = useCallback(() => {
+    submitResearch({});
+  }, [submitResearch]);
 
   // Auto-trigger research after the edit modal reports that key fields
   // changed. The ref is set inside onSaved and consumed in the effect
   // below so the trigger fires once per save, not on every render.
+  // clearResearch() drops any prior streamed object so the panel starts
+  // fresh — otherwise a stale stream from the previous click would
+  // briefly flash during the re-run.
   const pendingResearchTriggerRef = useRef(false);
   useEffect(() => {
     if (pendingResearchTriggerRef.current) {
       pendingResearchTriggerRef.current = false;
+      clearResearch();
       handleResearch();
     }
   });
+
+  // Source of truth for the Research panel: prefer the in-flight /
+  // just-completed streaming object when present, otherwise the
+  // persisted insights the server component handed us. The streaming
+  // object lives in client state and is gone after a navigation, so the
+  // committed value is what users see on subsequent loads.
+  const displayInsights: StreamingInsights | InventoryInsights | null =
+    useMemo(() => {
+      if (streamingObject) return streamingObject as StreamingInsights;
+      return item.ai_insights;
+    }, [streamingObject, item.ai_insights]);
+
+  // "Regenerating" is the gap between clicking re-run on an item that
+  // already has insights and the first streamed chunk arriving — easily
+  // 10-15s on GPT-5.5. Without an explicit signal here, the panel just
+  // sits there showing the old content unchanged because the
+  // displayInsights fallback keeps rendering item.ai_insights. The
+  // panel uses this flag to dim the old content and surface a small
+  // "Regenerating…" indicator so the click visibly registers.
+  const isRegenerating =
+    researchPending &&
+    Boolean(item.ai_insights) &&
+    !(streamingObject as StreamingInsights | undefined)?.headline;
 
   const [editOpen, setEditOpen] = useState(false);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -271,7 +336,9 @@ export function InventoryDetailView({
 
       <ResearchPanel
         item={item}
+        insights={displayInsights}
         isPending={researchPending}
+        isRegenerating={isRegenerating}
         error={researchError}
         onResearch={handleResearch}
       />
@@ -446,20 +513,33 @@ function PillCluster({ item }: { item: InventoryDetailItem }) {
   );
 }
 
+// Insights coming from either the in-flight streaming object or the
+// committed server-side row. Both are read-only here; the panel only
+// needs to know which fields are present right now.
+type PanelInsights = {
+  headline?: string | undefined;
+  overview?: string | null | undefined;
+  service_life?: string | null | undefined;
+  maintenance?: string | null | undefined;
+  found_specific_model?: boolean | undefined;
+};
+
 function ResearchPanel({
   item,
+  insights,
   isPending,
+  isRegenerating,
   error,
   onResearch,
 }: {
   item: InventoryDetailItem;
+  insights: PanelInsights | null;
   isPending: boolean;
+  isRegenerating: boolean;
   error: string | null;
   onResearch: () => void;
 }) {
   const canResearch = Boolean(item.manufacturer && item.model_number);
-  const insights = item.ai_insights;
-
   const itemTypeLabel = TYPE_EYEBROW_LABEL[item.type].toLowerCase();
 
   // Always show the model's headline when insights are present, even
@@ -467,6 +547,17 @@ function ResearchPanel({
   // best one-line description of the category, and pairing it with the
   // category-level disclaimer below is more useful than burying it.
   const eyebrow = `What we know about ${itemTypeLabel}s like yours`;
+
+  // First-time run with nothing on screen: show the loading overlay
+  // until the first chunk arrives. For regenerate-with-prior-insights,
+  // the overlay would cover the existing content unhelpfully — we use
+  // the dim + "Regenerating…" indicator instead, owned by isRegenerating.
+  const showOverlay =
+    isPending && !insights?.headline && !insights?.overview;
+
+  // The "research has results" state for the button — true any time we
+  // have content to show, whether persisted or streaming.
+  const hasResults = Boolean(insights);
 
   return (
     <section className="surface-ai p-4 sm:p-5">
@@ -477,9 +568,26 @@ function ResearchPanel({
               <Icon name="sparkles" size={14} />
             </span>
             <span className="eyebrow">{eyebrow}</span>
+            {isRegenerating ? (
+              <span
+                className="text-small regenerating-pill"
+                style={{
+                  marginLeft: 6,
+                  padding: "1px 8px",
+                  borderRadius: 999,
+                  border: "1px solid var(--color-border-subtle)",
+                  color: "var(--color-text-secondary)",
+                  background:
+                    "color-mix(in oklab, var(--color-bg-surface-ai) 70%, transparent)",
+                }}
+                aria-live="polite"
+              >
+                Regenerating…
+              </span>
+            ) : null}
           </div>
           {insights?.headline ? (
-            <div className="h3" style={{ marginTop: 2 }}>
+            <div className="h3 insights-appear" style={{ marginTop: 2 }}>
               {insights.headline}
             </div>
           ) : null}
@@ -487,7 +595,7 @@ function ResearchPanel({
         <ResearchButton
           disabled={!canResearch}
           loading={isPending}
-          hasResults={insights !== null}
+          hasResults={hasResults}
           onClick={onResearch}
         />
       </div>
@@ -506,13 +614,25 @@ function ResearchPanel({
         ) : null}
 
         {insights ? (
-          <InsightsBody
-            insights={insights}
-            itemTypeLabel={itemTypeLabel}
-          />
+          // While regenerating with prior insights on screen, dim the
+          // old content + suppress the per-section appear animation so
+          // the user sees a clear "this is being replaced" state. As
+          // soon as the first streamed chunk arrives, isRegenerating
+          // flips false, opacity returns to 1, and the new content
+          // takes over with its normal appear-in animation.
+          <div
+            className="insights-body-dim"
+            data-regenerating={isRegenerating ? "true" : "false"}
+          >
+            <InsightsBody
+              insights={insights}
+              itemTypeLabel={itemTypeLabel}
+              isStreaming={isPending}
+            />
+          </div>
         ) : null}
 
-        {isPending ? (
+        {showOverlay ? (
           <ResearchLoadingOverlay
             manufacturer={item.manufacturer}
             modelNumber={item.model_number}
@@ -536,6 +656,52 @@ function ResearchPanel({
           </p>
         ) : null}
       </div>
+
+      {/*
+        Fade + slight slide-in on first mount for each progressively-
+        rendered piece — headline, sections, disclaimer. Streaming the
+        AI Insights field-by-field would otherwise be a series of hard
+        layout pops; this turns each appearance into a soft handoff.
+        Matches the existing research-phase-fade keyframe in
+        ResearchLoadingOverlay (same duration, same easing). Mounted at
+        the panel level (not inside InsightsBody) so the keyframes are
+        registered when the headline first animates in, even before
+        InsightsBody itself has rendered.
+      */}
+      <style>{`
+        @keyframes insights-appear-kf {
+          from { opacity: 0; transform: translateY(3px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .insights-appear {
+          animation: insights-appear-kf 240ms ease-out both;
+        }
+        /*
+          Dim the old insights while a regenerate is in flight but no
+          stream chunks have arrived yet. The opacity transition is
+          long enough (180ms) to read as intentional but short enough
+          that the visible feedback is near-instant after the click.
+        */
+        .insights-body-dim {
+          transition: opacity 180ms ease-out;
+        }
+        .insights-body-dim[data-regenerating="true"] {
+          opacity: 0.45;
+        }
+        /*
+          The "Regenerating…" pill that appears next to the eyebrow
+          while waiting on the first streamed chunk. Fade-in matches
+          the .insights-appear keyframe.
+        */
+        .regenerating-pill {
+          animation: insights-appear-kf 180ms ease-out both;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .insights-appear,
+          .regenerating-pill { animation: none; }
+          .insights-body-dim { transition: none; }
+        }
+      `}</style>
     </section>
   );
 }
@@ -543,14 +709,18 @@ function ResearchPanel({
 function InsightsBody({
   insights,
   itemTypeLabel,
+  isStreaming,
 }: {
-  insights: InventoryInsights;
+  insights: PanelInsights;
   itemTypeLabel: string;
+  isStreaming: boolean;
 }) {
   // Three independently-nullable sections. A section only renders if
   // its text is present — there's no empty header for a section the
-  // model returned null for. If all three are null (the model could
-  // only produce a headline), the all-null caption explains why.
+  // model returned null for. If all three are null AND we're not still
+  // streaming (so we know the model is done), the all-null caption
+  // explains why. While streaming, missing sections may still arrive,
+  // so we just render what we have so far without a final-state caption.
   const sections: { eyebrow: string; body: string }[] = [];
   if (insights.overview) {
     sections.push({ eyebrow: "Overview", body: insights.overview });
@@ -562,13 +732,20 @@ function InsightsBody({
     sections.push({ eyebrow: "Maintenance", body: insights.maintenance });
   }
 
-  const allNull = sections.length === 0;
+  const allNull = sections.length === 0 && !isStreaming;
+
+  // The model can only set found_specific_model after generating the
+  // body, so it arrives near the end of the stream. We don't want to
+  // flash the "category-level only" disclaimer mid-stream when the
+  // field is briefly undefined, so the disclaimer only shows when the
+  // field has explicitly been set to false (committed or fully streamed).
+  const showCategoryDisclaimer = insights.found_specific_model === false;
 
   return (
     <div className="flex flex-col gap-4">
-      {!insights.found_specific_model ? (
+      {showCategoryDisclaimer ? (
         <p
-          className="text-small"
+          className="text-small insights-appear"
           style={{ color: "var(--color-text-secondary)" }}
         >
           We couldn&apos;t find information about this specific{" "}
@@ -579,7 +756,7 @@ function InsightsBody({
 
       {allNull ? (
         <p
-          className="text-small"
+          className="text-small insights-appear"
           style={{ color: "var(--color-text-secondary)" }}
         >
           We couldn&apos;t find detailed information about this specific{" "}
@@ -607,7 +784,7 @@ function InsightsSection({
   body: string;
 }) {
   return (
-    <div>
+    <div className="insights-appear">
       <div
         className="eyebrow mb-1"
         style={{ letterSpacing: "1.2px", fontSize: 10 }}
@@ -628,20 +805,15 @@ function InsightsSection({
   );
 }
 
-// The Sonar call takes ~10-15 seconds — most of which is the web-search
-// phase that the AI Gateway doesn't expose progress signals for. The
-// narration below is theater (timed phase changes, not real progress)
-// but it gives the user a sense that work is happening in stages and
-// makes the wait feel shorter than a single static "Researching…" line.
-//
-// Phases are paced to roughly match the model's typical behavior:
-// search → read sources → write summary, with a "still working" fallback
-// for slower runs.
+// With streaming, the overlay's job is to cover the brief gap between
+// click and first-token (typically 1-3 seconds before the headline
+// arrives). After that the panel populates progressively from the
+// stream and the overlay is gone. The narration is intentionally short
+// — there's not enough time to need multiple stages, and once the
+// stream starts the real content does the talking.
 const RESEARCH_PHASES: { atMs: number; label: (subject: string) => string }[] = [
-  { atMs: 0, label: (s) => `Searching the web for ${s}…` },
-  { atMs: 5000, label: () => "Reading sources…" },
-  { atMs: 11000, label: () => "Writing your summary…" },
-  { atMs: 20000, label: () => "Still working — almost there…" },
+  { atMs: 0, label: (s) => `Looking up ${s}…` },
+  { atMs: 4000, label: () => "Almost there…" },
 ];
 
 function ResearchLoadingOverlay({
@@ -732,17 +904,45 @@ function ResearchButton({
   hasResults: boolean;
   onClick: () => void;
 }) {
+  // Loading state needs to look obviously inactive — otherwise users
+  // (rightly) keep clicking when nothing visible happens for the first
+  // ~15s before stream content starts arriving. Opacity drop + the
+  // refresh-cw icon spinning gives an immediate "I heard you" signal,
+  // and the disabled attribute already prevents repeat submissions.
+  const inactive = disabled || loading;
+
   const button = (
     <button
       type="button"
-      disabled={disabled || loading}
+      disabled={inactive}
       onClick={onClick}
-      className="btn btn-ghost"
-      aria-disabled={disabled || loading ? "true" : "false"}
-      style={disabled ? { opacity: 0.55 } : undefined}
+      className="btn btn-ghost research-button"
+      aria-disabled={inactive ? "true" : "false"}
+      data-loading={loading ? "true" : "false"}
+      style={inactive ? { opacity: 0.55 } : undefined}
     >
-      <Icon name={hasResults ? "refresh-cw" : "sparkles"} size={14} />
-      {hasResults ? "Research again" : "Research this model"}
+      <span
+        className={loading && hasResults ? "research-button-icon-spin" : ""}
+        style={{ display: "inline-flex", alignItems: "center" }}
+      >
+        <Icon name={hasResults ? "refresh-cw" : "sparkles"} size={14} />
+      </span>
+      {loading
+        ? hasResults
+          ? "Regenerating…"
+          : "Researching…"
+        : hasResults
+          ? "Research again"
+          : "Research this model"}
+      <style>{`
+        @keyframes research-button-icon-rotate { to { transform: rotate(360deg); } }
+        .research-button-icon-spin {
+          animation: research-button-icon-rotate 0.9s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .research-button-icon-spin { animation: none; }
+        }
+      `}</style>
     </button>
   );
 

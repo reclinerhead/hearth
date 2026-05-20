@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.114",
+    "@ai-sdk/react": "^3.0.187",
     "@mapbox/search-js-react": "^1.5.1",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",

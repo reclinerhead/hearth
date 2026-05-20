@@ -1,24 +1,13 @@
-// The "Research this model" lookup. Wraps a structured generateObject
-// call to Perplexity Sonar via the Vercel AI Gateway — same pattern the
-// Day One Briefing's Zillow lookup uses (lib/briefing/zillow.ts), because
-// the task is structurally identical: live web search plus a strict
-// output schema.
-//
-// Model selection prefers INVENTORY_INSIGHTS_MODEL but falls back to
-// BRIEFING_PRIMARY_MODEL so a single Sonar configuration covers both
-// surfaces during development. Either env var being set is enough.
-//
-// The function does not write to the database — that's the calling
-// server action's job. Keeping the lookup pure makes it easier to test
-// and to swap providers in isolation.
+// Zod schema + model selector for the "Research this model" feature.
+// The AI call itself lives in the route handler at
+// app/api/inventory/[id]/research/route.ts so that the stream can be
+// piped straight to the client via the AI SDK's useObject hook. This
+// file stays narrow on purpose — schema + env-driven model selection
+// are the bits worth importing from multiple places (the route, the
+// client-side useObject options, future tests).
 
-import { generateObject } from "ai";
 import { z } from "zod";
-import {
-  buildResearchSystemPrompt,
-  buildResearchUserMessage,
-  type ResearchInventoryInput,
-} from "./prompt";
+import type { ResearchInventoryInput } from "./prompt";
 
 // Three independently-nullable sections. The model is explicitly told
 // it's allowed (and expected) to return null for any section it can't
@@ -26,12 +15,29 @@ import {
 // home instead of forcing an all-or-nothing body field. `.min(1)` on
 // each section means an empty string is invalid — the only way to skip
 // is null, which forces a binary "I have something grounded" decision.
+//
+// source_urls uses .refine() rather than .url() so the generated JSON
+// schema sent to the model is just `string` (OpenAI structured outputs
+// rejects the "format": "uri" keyword). Runtime URL validation is
+// preserved on the Zod side.
 export const insightsSchema = z.object({
   headline: z.string().min(1).max(120),
   overview: z.string().min(1).max(1200).nullable(),
   service_life: z.string().min(1).max(1200).nullable(),
   maintenance: z.string().min(1).max(1200).nullable(),
-  source_urls: z.array(z.string().url()),
+  source_urls: z.array(
+    z.string().refine(
+      (s) => {
+        try {
+          new URL(s);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: "Invalid URL" },
+    ),
+  ),
   found_specific_model: z.boolean(),
 });
 
@@ -45,28 +51,4 @@ export function getInventoryInsightsModel(): string {
     process.env.BRIEFING_PRIMARY_MODEL ||
     ""
   );
-}
-
-export async function researchInventoryModel(
-  input: ResearchInventoryInput,
-): Promise<InsightsResult> {
-  const model = getInventoryInsightsModel();
-  if (!model) {
-    throw new Error(
-      "Neither INVENTORY_INSIGHTS_MODEL nor BRIEFING_PRIMARY_MODEL is set.",
-    );
-  }
-
-  const result = await generateObject({
-    model,
-    schema: insightsSchema,
-    system: buildResearchSystemPrompt(),
-    messages: [
-      {
-        role: "user",
-        content: buildResearchUserMessage(input),
-      },
-    ],
-  });
-  return result.object;
 }
