@@ -5,15 +5,16 @@
 // read and the write through the user's houses, so the action does not
 // re-check ownership itself.
 //
-// When the edit changes any of the three fields the "Research this
-// model" panel grounds on (manufacturer, model_number, type) the stored
+// When the edit changes either of the two fields the "Research this
+// model" panel grounds on (manufacturer, model_number) the stored
 // ai_insights are invalidated in the same UPDATE — leaving a stale
 // research summary tied to the old model number is worse than leaving
-// the panel empty. The client kicks off a fresh researchInventoryModel
-// run when the action returns `researchInvalidated: true`. The "did key
-// fields change?" decision lives in a pure helper
-// (lib/inventory/research-significant-fields.ts) so it can be tested
-// without a Supabase round-trip.
+// the panel empty. `type` was previously invalidating too but is now
+// treated as organizational only (issue #69). The client kicks off a
+// fresh researchInventoryModel run when the action returns
+// `researchInvalidated: true`. The "did key fields change?" decision
+// lives in a pure helper (lib/inventory/research-significant-fields.ts)
+// so it can be tested without a Supabase round-trip.
 
 import { revalidatePath } from "next/cache";
 import { researchSignificantFieldsChanged } from "@/lib/inventory/research-significant-fields";
@@ -50,7 +51,7 @@ export async function updateInventoryItemAction(
 
   const { data: existing, error: loadError } = await supabase
     .from("inventory")
-    .select("manufacturer, model_number, type, ai_insights")
+    .select("manufacturer, model_number, ai_insights")
     .eq("id", input.inventoryId)
     .single();
 
@@ -67,12 +68,10 @@ export async function updateInventoryItemAction(
       {
         manufacturer: existing.manufacturer,
         model_number: existing.model_number,
-        type: existing.type as EquipmentType,
       },
       {
         manufacturer: input.fields.manufacturer,
         model_number: input.fields.model_number,
-        type: input.fields.type,
       },
     );
 
