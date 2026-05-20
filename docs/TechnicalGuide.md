@@ -31,9 +31,10 @@ app/                       # Next.js App Router
     layout.tsx             # Mounts AppShell (top/bottom nav + sidebar)
     dashboard/             # Live house facts + placeholder lower sections
     onboarding/            # First-run address capture
-    appliances/            # Inventory list
-    documents/[id]/        # Document detail view
-    entities/[id]/         # Inventory item detail view
+    inventory/             # Home inventory list (server component)
+    inventory/[id]/        # Inventory item detail view
+    documents/[id]/        # Document detail view (legacy placeholder)
+    entities/[id]/         # Older detail-page placeholder (kept, unused)
   auth/                    # Supabase auth route handlers
     callback/              # OAuth callback exchange
     confirm/               # Magic-link verification
@@ -259,7 +260,6 @@ These appear in the page layout but are intentionally **not wired to real data**
 - The **Notes & photos** panel — depends on a notes data model that doesn't exist yet.
 - The **Maintenance & history** panel — depends on a maintenance-log table that doesn't exist yet. The single timeline row showing `installed_on` is the only real data point on the panel today.
 - **The "Add another photo / re-analyze" flow** — the disabled Add photo button is the placeholder for the future Smart Uploader entry point keyed to a known inventory id.
-- **A `/inventory` list page** — still deferred. Tiles on the dashboard remain the primary surface; deleting an item redirects to `/dashboard` rather than to a list view.
 
 ---
 
@@ -312,7 +312,7 @@ In addition to the inventory row, [`/inventory/[id]/page.tsx`](../app/(app)/inve
 
 ### Post-delete navigation
 
-The delete-confirm modal's `onConfirm` closes both modals on success and the parent's `onDeleted` callback fires `router.replace("/dashboard")`. There is no `/inventory` list page yet, so the dashboard's inventory tiles are the de facto landing for "where did my appliances go?".
+The delete-confirm modal's `onConfirm` closes both modals on success and the parent's `onDeleted` callback fires `router.replace("/inventory")` — the home inventory list is the natural landing for "where did my appliances go?".
 
 ---
 
@@ -395,9 +395,21 @@ The home-details modal *also* dispatches the `HOUSE_UPDATED_EVENT` because `useH
 
 `app/(app)/dashboard/inventory-preview.tsx` is the server component that renders the dashboard's inventory tile list. It replaces the dashboard's earlier hardcoded mock APPLIANCES array. Queries `hearth.inventory` filtered by `house_id` with a `PREVIEW_LIMIT` of 6 items in created-date-descending order. The accompanying tile renderer is co-located inline; it's only used here and pulling it into `components/ui.tsx` would be premature.
 
-Hero photos: a follow-up query fetches every `hearth.documents` row with `status='attached'` and `inventory_id IN (...)` ordered by `analyzed_at desc`, then picks the most-recent per inventory id server-side. The thumbnail **path** (not a signed URL) is handed to `<InventoryThumbnail>`, a small client component that resolves the signed URL via `useCachedSignedUrl` against the `hearth-documents` bucket — the same `sessionStorage`-cached URL pattern the house image uses. Caching the URL string is what lets the browser's HTTP cache actually hit the immutable bucket bytes across navigations and reloads; the earlier server-side `createSignedUrls` batch generated a fresh URL on every render and busted the cache. Items with no attached document get a type-based fallback icon (appliance → fridge, system → flame-burner, exterior → home), which also fills the slot for one effect tick while the URL resolves on a cache miss.
+Hero photos: a follow-up query fetches every `hearth.documents` row with `status='attached'` and `inventory_id IN (...)` ordered by `analyzed_at desc`, then picks the most-recent per inventory id server-side. The thumbnail **path** (not a signed URL) is handed to `<InventoryThumbnail>` (`components/inventory-thumbnail.tsx`), a small client component that resolves the signed URL via `useCachedSignedUrl` against the `hearth-documents` bucket — the same `sessionStorage`-cached URL pattern the house image uses. Caching the URL string is what lets the browser's HTTP cache actually hit the immutable bucket bytes across navigations and reloads; the earlier server-side `createSignedUrls` batch generated a fresh URL on every render and busted the cache. Items with no attached document get a type-based fallback icon (appliance → fridge, system → flame-burner, exterior → home), which also fills the slot for one effect tick while the URL resolves on a cache miss. The component now has two consumers (the dashboard preview and the full inventory list page), so it lives in `components/` rather than co-located with the dashboard preview.
 
-The component handles the empty-inventory case inline with a soft hint pointing the user at the `+ Add` button. There is no separate `/documents` list page or per-inventory detail page in this phase — the tiles link to `/entities/[id]`, which is still the placeholder route from earlier work.
+The component handles the empty-inventory case inline with a soft hint pointing the user at the `+ Add` button. Tiles link to `/inventory/[id]`; the dashboard's "See all" trailing link points to the full list page at `/inventory`.
+
+### Home inventory list page (`/inventory`)
+
+`app/(app)/inventory/page.tsx` is the server component for the full inventory surface — every appliance, system, and exterior item the user has captured, grouped by type. It is the destination for the dashboard's "See all" trailing link, the primary navigation entry ("Home inventory" in the desktop sidebar and bottom-nav), and the post-delete redirect from the detail page.
+
+**Data shape.** The page reuses the dashboard preview's query shape so behavior stays predictable across both surfaces: query `hearth.inventory` filtered by `house_id` (no limit), then a follow-up query against `hearth.documents` for each item's most-recent attached photo (`status='attached'`, `kind in ('nameplate', 'photo')`, ordered by `analyzed_at desc nullsLast` then `created_at desc`). The thumbnail path is handed to `<InventoryThumbnail>` — server-side signing is explicitly avoided because a fresh signed URL on every render busts the browser HTTP cache against the immutable `hearth-documents` bytes. The same caching contract documented in "Signed URL caching" applies unchanged.
+
+**Three sections, always rendered.** Items are grouped into Appliances (`type='appliance'`), Systems (`type='system'`), and Exterior (`type='exterior'`) in that order. Each section uses `SectionHeader` for its eyebrow + title and always renders — empty sections show a soft hint pointing the user at the `+ Add` button so the page structure stays discoverable. Within a section, items sort by `created_at desc`, matching the dashboard preview.
+
+**Tile design.** One tile per row (no grid), full content-column width. Thumbnail is 96×96 (vs. the dashboard's 48×48) so the photo is actually legible at a glance. Three text lines: item name (16px, primary), room name (tertiary), and a contextual detail line built from whatever is populated (`manufacturer · model_number`, `Installed Mar 2018`). Once a maintenance-log table lands, "Last serviced" / "Next due" will slot into a second tertiary line area — the nullable `last_serviced_on` / `next_service_due_on` columns are not surfaced today because no flow populates them and "Unknown" everywhere would just be noise.
+
+Out of scope for this surface: search, per-type sort toggles, filtering, bulk operations. The list isn't long enough to need them yet.
 
 ---
 
@@ -861,6 +873,6 @@ These appear in the schema or the dashboard mockup but are not real flows. Treat
 - **Public-records sources beyond EPA radon, EPA Superfund proximity, and FEMA flood zones** — BS&A assessor data, lead-disclosure heuristics, water-system violations, etc. Each is a new habitat module under `lib/habitat/modules/<key>/`; the orchestrator already iterates the registry, so adding a module is a contained change. The finding detail modal renders these out of the box from the generic `HabitatFinding` shape; richer per-module structured content (flood-history timeline, soil testing panels, etc.) is deferred until a module forces a slotted-shell contract.
 - **Description synthesis** — for v1 we show `description_source` (Zillow's raw copy) as `description`. A future LLM step will rewrite `description` in Hearth's voice while leaving `description_source` intact.
 - **Multi-house** UI. Schema supports it; onboarding gate currently locks to one house per user.
-- **Inventory CRUD**. Schema exists; the Smart Uploader (#51) covers the create path through photo capture, and the new `/inventory/[id]` detail route (#53) covers the read path with hero photo, structured pills, and the Research panel. The `/appliances`, `/entities/[id]` (legacy placeholder), and `/documents/[id]` routes are still placeholder shells. Edit and delete flows are not built yet — the detail page is read-only in this phase.
+- **Inventory CRUD**. Schema exists; the Smart Uploader (#51) covers the create path through photo capture, the `/inventory/[id]` detail route (#53) covers the read path with hero photo, structured pills, and the Research panel, the edit / delete modal (#54) covers update + destroy, and the `/inventory` list page (#67) covers browse across all items. The `/entities/[id]` and `/documents/[id]` routes are vestigial placeholder shells from the original dashboard mockup — kept around because nothing references them anymore.
 - **OCR + extraction routing for non-nameplate documents** (receipts, manuals, permits, invoices) — the `kind` discriminator and Grok pipeline are in place from phase 1.3, but the Smart Uploader only writes `nameplate` / `photo` today. The disabled "Document or receipt" and "Emergency procedure video" entries on the path-picker exist as the future surface for those flows.
 - **Supabase-generated types**. `types/house.ts` is hand-maintained today; once `supabase gen types typescript --linked` (against the remote-linked project) is wired into the workflow, it'll replace the hand-typed row.

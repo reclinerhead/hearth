@@ -10,7 +10,7 @@ type Item = { href: string; label: string; icon: IconName };
 // sidebar destination — there is no /home-details page to link to.
 const ITEMS: Item[] = [
   { href: "/dashboard", label: "Dashboard", icon: "layout-dashboard" },
-  { href: "/appliances", label: "Home inventory", icon: "device-tv-old" },
+  { href: "/inventory", label: "Home inventory", icon: "device-tv-old" },
   { href: "/how-it-works", label: "How it Works", icon: "info" },
 ];
 

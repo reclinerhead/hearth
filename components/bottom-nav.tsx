@@ -12,7 +12,7 @@ type Tab = { href: string; label: string; icon: IconName };
 // placeholder and was removed when the bar gained a third real destination.
 const TABS: Tab[] = [
   { href: "/dashboard", label: "Dashboard", icon: "layout-dashboard" },
-  { href: "/appliances", label: "Inventory", icon: "device-tv-old" },
+  { href: "/inventory", label: "Inventory", icon: "device-tv-old" },
   { href: "/how-it-works", label: "How it Works", icon: "info" },
 ];
 
