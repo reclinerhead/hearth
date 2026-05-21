@@ -70,7 +70,25 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <DashboardLive houseId={house.id} initialHouse={house} />
+      {/*
+        Key the two client components below on the active house id so a
+        property switch or property delete forces a full remount rather
+        than a prop-only update. Their internal hooks
+        (`useHouseRealtime`, `useHabitatFindings`) seed `useState` from
+        `initialHouse` / `initialRows` exactly once per mount and don't
+        re-seed when the prop changes — so without a key change, after
+        the post-delete `redirect("/dashboard")` re-renders this server
+        component with a new house, the client tree would keep
+        displaying the previous (now-deleted) row until something
+        triggered a manual refetch. Keying on house id makes the active
+        property switch the unmount/remount boundary that hooks already
+        expect.
+      */}
+      <DashboardLive
+        key={house.id}
+        houseId={house.id}
+        initialHouse={house}
+      />
 
       <section className="grid gap-6 md:grid-cols-2">
         <div className="flex flex-col gap-4">
@@ -106,6 +124,7 @@ export default async function DashboardPage() {
               title="Habitat"
             />
             <HabitatPreviewPanel
+              key={data.id}
               houseId={data.id}
               initialRows={initialHabitatRows}
             />
