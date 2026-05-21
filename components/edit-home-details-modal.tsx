@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { DatePicker } from "./date-picker";
 import { Icon } from "./icon";
 import { dispatchHouseUpdated } from "@/lib/hooks/use-house-realtime";
 import { createClient } from "@/lib/supabase/client";
@@ -321,7 +322,7 @@ export function EditHomeDetailsModal({
                 inputMode="decimal"
                 placeholder="e.g. 1.5"
               />
-              <FieldDate
+              <DatePicker
                 label="Ownership start"
                 value={purchaseDate}
                 onChange={setPurchaseDate}
@@ -408,24 +409,3 @@ function FieldNumber({
   );
 }
 
-function FieldDate({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div>
-      <label className="label">{label}</label>
-      <input
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="input"
-      />
-    </div>
-  );
-}
