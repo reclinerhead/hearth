@@ -9,8 +9,10 @@ import {
 } from "@/app/actions/inventory/update-item";
 import { useCachedSignedUrl } from "@/lib/house-image/use-cached-signed-url";
 import type { EquipmentType } from "@/types/document";
+import { DatePicker } from "./date-picker";
 import { DeleteInventoryItemConfirmModal } from "./delete-inventory-item-confirm-modal";
 import { Icon } from "./icon";
+import { MonthPicker } from "./month-picker";
 
 /**
  * Modal edit surface for a single hearth.inventory row. Triggered from
@@ -85,21 +87,6 @@ function dateInputValue(iso: string | null): string {
   return iso ? iso.slice(0, 10) : "";
 }
 
-// The user-entered manufacture date input is `type="month"` so the
-// value shape is `YYYY-MM`. Decoded values can be `YYYY`, `YYYY-MM`,
-// or `YYYY-Www`; only the `YYYY-MM` case prefills the input cleanly,
-// and `YYYY` is rendered as `YYYY-01` so the user can still see/edit
-// the year they had. ISO weeks (`YYYY-Www`) are rare and the
-// month-picker can't represent them, so the field stays blank in that
-// case — the user can pick a real month if they know it.
-function monthInputValue(value: string | null): string {
-  if (!value) return "";
-  const trimmed = value.trim();
-  if (/^\d{4}-\d{2}$/.test(trimmed)) return trimmed;
-  if (/^\d{4}$/.test(trimmed)) return `${trimmed}-01`;
-  return "";
-}
-
 function emptyToNull(s: string): string | null {
   const trimmed = s.trim();
   return trimmed === "" ? null : trimmed;
@@ -158,8 +145,14 @@ export function EditInventoryItemModal({
   const [manufacturer, setManufacturer] = useState(item.manufacturer ?? "");
   const [modelNumber, setModelNumber] = useState(item.model_number ?? "");
   const [serialNumber, setSerialNumber] = useState(item.serial_number ?? "");
+  // MonthPicker is lenient about its initial value: `YYYY-MM` prefills
+  // exact, `YYYY` (legacy decoded values) renders as January of that
+  // year, and anything else (ISO week, malformed) falls through to no
+  // selection. Passing the raw column value preserves whatever decoded
+  // form the row currently holds until the user picks an explicit
+  // month and overwrites it.
   const [manufactureDate, setManufactureDate] = useState(
-    monthInputValue(item.manufacture_date),
+    item.manufacture_date ?? "",
   );
   const [installedOn, setInstalledOn] = useState(dateInputValue(item.installed_on));
   const [lastServicedOn, setLastServicedOn] = useState(
@@ -421,22 +414,23 @@ export function EditInventoryItemModal({
               </div>
 
               <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <FieldMonth
+                <MonthPicker
                   label="Manufactured"
                   value={manufactureDate}
                   onChange={setManufactureDate}
+                  placeholder="Pick a month"
                 />
-                <FieldDate
+                <DatePicker
                   label="Installed"
                   value={installedOn}
                   onChange={setInstalledOn}
                 />
-                <FieldDate
+                <DatePicker
                   label="Last serviced"
                   value={lastServicedOn}
                   onChange={setLastServicedOn}
                 />
-                <FieldDate
+                <DatePicker
                   label="Next due"
                   value={nextServiceDueOn}
                   onChange={setNextServiceDueOn}
@@ -577,99 +571,6 @@ function FieldText({
         placeholder={placeholder}
         className="input"
       />
-    </div>
-  );
-}
-
-function FieldDate({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div>
-      <label className="label">{label}</label>
-      <input
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="input"
-      />
-    </div>
-  );
-}
-
-function FieldMonth({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  // Native `<input type="month">` renders empty as a row of dashes
-  // (Chromium "mm/yyyy", Firefox/Safari fall back to text). That's the
-  // most common point of confusion for new users — they see dashes and
-  // don't realise it's a date picker. We hide the native edit area
-  // when the input is empty and not focused, then overlay a real
-  // placeholder string. Focusing the input flips back to the native
-  // widget so typing / arrow-keys / the calendar popup all keep
-  // working unchanged.
-  const isEmpty = value === "";
-  return (
-    <div>
-      <label className="label">{label}</label>
-      <div className="month-field" data-empty={isEmpty ? "true" : "false"}>
-        <input
-          type="month"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="input month-field-input"
-        />
-        {isEmpty ? (
-          <span aria-hidden className="month-field-placeholder">
-            Pick a month
-          </span>
-        ) : null}
-        <style>{`
-          .month-field {
-            position: relative;
-          }
-          /*
-            When empty and not focused, hide the native dashes so the
-            overlay placeholder reads cleanly. Focusing returns the
-            native widget to full opacity so the user can type or use
-            the calendar popup. The calendar/clear icons sit outside
-            ::-webkit-datetime-edit, so they remain visible the whole
-            time on Chromium.
-          */
-          .month-field[data-empty="true"] .month-field-input::-webkit-datetime-edit {
-            opacity: 0;
-          }
-          .month-field[data-empty="true"] .month-field-input:focus::-webkit-datetime-edit {
-            opacity: 1;
-          }
-          .month-field[data-empty="true"] .month-field-input:focus ~ .month-field-placeholder {
-            display: none;
-          }
-          .month-field-placeholder {
-            position: absolute;
-            left: 12px;
-            top: 0;
-            bottom: 0;
-            display: flex;
-            align-items: center;
-            pointer-events: none;
-            color: var(--color-text-tertiary);
-            font: inherit;
-          }
-        `}</style>
-      </div>
     </div>
   );
 }

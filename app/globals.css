@@ -349,37 +349,253 @@ h1.h1 {
 }
 
 /*
-  Native date/month pickers default to the system blue for the
-  "This month" link and the year-row selection highlight. accent-color
-  pulls those into the Hearth palette so the popup matches the rest
-  of the surface. We inherit the document's color-scheme (dark by
-  default; light when [data-theme="light"]) rather than forcing one,
-  so the popup chrome follows the user's theme choice.
+  Date and month picker triggers (components/date-picker.tsx and
+  components/month-picker.tsx, issue #107). The button is .input shaped
+  so it sits flush in form rows next to text / select inputs. A small
+  calendar icon at the right edge signals it opens a picker.
 */
-.input[type="date"],
-.input[type="month"] {
-  accent-color: var(--color-accent);
+.picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+.picker-trigger:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+}
+.picker-trigger-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.picker-trigger-icon {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.55;
+  transition: opacity 120ms ease-out;
+  flex-shrink: 0;
+}
+.picker-trigger:hover .picker-trigger-icon,
+.picker-trigger:focus-visible .picker-trigger-icon {
+  opacity: 0.9;
 }
 
 /*
-  The Chromium-built-in calendar icon at the right edge of date/month
-  inputs renders near-black by default. On the dark surface it reads
-  as a smudge — inverting + dimming brings it in line with the rest
-  of our icon weight. Scoped to dark mode only; in light mode the
-  near-black icon already sits well on the cream background.
+  Popover card hosted by <PickerPopover>. The .surface-ai class on the
+  card itself already supplies the diagonal accent halo and warm dark
+  fill; we just add the soft elevation shadow that lifts the popover
+  off the modal it opens out of.
 */
-:root:not([data-theme="light"]) .input[type="date"]::-webkit-calendar-picker-indicator,
-:root:not([data-theme="light"]) .input[type="month"]::-webkit-calendar-picker-indicator {
-  filter: invert(1);
-  opacity: 0.55;
-  cursor: pointer;
-  transition: opacity 120ms ease-out;
+.picker-popover-card {
+  box-shadow:
+    0 12px 32px -8px color-mix(in oklab, black 50%, transparent),
+    0 4px 12px -4px color-mix(in oklab, black 35%, transparent);
 }
-:root:not([data-theme="light"]) .input[type="date"]:hover::-webkit-calendar-picker-indicator,
-:root:not([data-theme="light"]) .input[type="month"]:hover::-webkit-calendar-picker-indicator,
-:root:not([data-theme="light"]) .input[type="date"]:focus::-webkit-calendar-picker-indicator,
-:root:not([data-theme="light"]) .input[type="month"]:focus::-webkit-calendar-picker-indicator {
-  opacity: 0.9;
+
+.picker-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+.picker-popover-link {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-accent);
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.picker-popover-link:hover,
+.picker-popover-link:focus-visible {
+  outline: none;
+  background-color: color-mix(in oklab, var(--color-accent) 14%, transparent);
+}
+
+/*
+  Month picker — custom year stepper + 4x3 month grid. The grid is
+  fixed-width on desktop so the popup doesn't shrink/expand as the
+  user steps through years. On mobile it stays the same and the
+  popover positioner clamps horizontally so it never overflows.
+*/
+.month-picker {
+  width: 240px;
+}
+.month-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.month-picker-year {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  letter-spacing: 0.5px;
+}
+.month-picker-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  border: 1px solid transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+.month-picker-nav:hover,
+.month-picker-nav:focus-visible {
+  outline: none;
+  background-color: color-mix(in oklab, var(--color-accent) 14%, transparent);
+  color: var(--color-text-primary);
+}
+.month-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.month-picker-cell {
+  height: 36px;
+  font-size: 13px;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  border: 1px solid transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+.month-picker-cell:hover,
+.month-picker-cell:focus-visible {
+  outline: none;
+  background-color: color-mix(in oklab, var(--color-accent) 14%, transparent);
+  color: var(--color-text-primary);
+}
+.month-picker-cell[data-today="true"] {
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklab, var(--color-accent) 55%, transparent);
+}
+.month-picker-cell[data-selected="true"] {
+  background-color: var(--color-accent);
+  color: var(--color-bg-base);
+  font-weight: 500;
+}
+.month-picker-cell[data-selected="true"]:hover {
+  background-color: color-mix(in oklab, var(--color-accent) 88%, white);
+}
+
+/*
+  react-day-picker v10 overrides. Every class the library emits
+  is prefixed with `rdp-`. We don't import the library's own
+  stylesheet — these rules supply the entire visual language for
+  the day grid so the popup blends into the .surface-ai card.
+*/
+.rdp-root {
+  --rdp-day-width: 36px;
+  --rdp-day-height: 36px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.rdp-month_caption {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  padding: 2px 4px 8px;
+}
+.rdp-nav {
+  gap: 4px;
+}
+.rdp-button_previous,
+.rdp-button_next {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+.rdp-button_previous:hover,
+.rdp-button_next:hover,
+.rdp-button_previous:focus-visible,
+.rdp-button_next:focus-visible {
+  outline: none;
+  background-color: color-mix(in oklab, var(--color-accent) 14%, transparent);
+  color: var(--color-text-primary);
+}
+.rdp-weekday {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  padding: 4px 0;
+}
+.rdp-day {
+  padding: 1px;
+}
+.rdp-day_button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+.rdp-day_button:hover,
+.rdp-day_button:focus-visible {
+  outline: none;
+  background-color: color-mix(in oklab, var(--color-accent) 14%, transparent);
+  color: var(--color-text-primary);
+}
+.rdp-outside .rdp-day_button {
+  color: var(--color-text-tertiary);
+  opacity: 0.4;
+}
+.rdp-today:not(.rdp-selected) .rdp-day_button {
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklab, var(--color-accent) 55%, transparent);
+  color: var(--color-text-primary);
+}
+.rdp-selected .rdp-day_button {
+  background-color: var(--color-accent);
+  color: var(--color-bg-base);
+  font-weight: 500;
+}
+.rdp-selected .rdp-day_button:hover {
+  background-color: color-mix(in oklab, var(--color-accent) 88%, white);
+}
+.rdp-chevron {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
 }
 
 .label {

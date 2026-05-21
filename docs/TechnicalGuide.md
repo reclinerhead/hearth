@@ -348,7 +348,7 @@ lib/inventory/
 
 ### Modal mechanics
 
-`EditInventoryItemModal` reuses the conventions of [`EditHomeDetailsModal`](../components/edit-home-details-modal.tsx) — scroll-lock, focus-trap, ESC, return-focus, the `surface-ai` shell, and the `FieldText` / `FieldDate` / `FieldMonth` / `FieldSelect` helpers. The parent (`inventory-detail-view.tsx`) mounts the modal **conditionally on `editOpen`** rather than mounting it permanently and gating with the `open` prop. This is the deliberate alternative to a reset-in-effect: every reopen is a fresh React mount, so `useState(initial)` re-initializes from the latest `item` snapshot without tripping `react-hooks/set-state-in-effect`. The same conditional-mount discipline applies to the nested delete-confirm modal — it mounts only while `deleteOpen` is true, so the "Also delete linked documents" checkbox is freshly defaulted to checked on every open.
+`EditInventoryItemModal` reuses the conventions of [`EditHomeDetailsModal`](../components/edit-home-details-modal.tsx) — scroll-lock, focus-trap, ESC, return-focus, the `surface-ai` shell, the `FieldText` / `FieldSelect` helpers, and the shared `<DatePicker>` and `<MonthPicker>` components for any date input (see "Custom date and month pickers" further down). The parent (`inventory-detail-view.tsx`) mounts the modal **conditionally on `editOpen`** rather than mounting it permanently and gating with the `open` prop. This is the deliberate alternative to a reset-in-effect: every reopen is a fresh React mount, so `useState(initial)` re-initializes from the latest `item` snapshot without tripping `react-hooks/set-state-in-effect`. The same conditional-mount discipline applies to the nested delete-confirm modal — it mounts only while `deleteOpen` is true, so the "Also delete linked documents" checkbox is freshly defaulted to checked on every open.
 
 The shell width is `max-w-3xl` (matching `HabitatFindingModal`) so the Service tracking row can fit Manufactured / Installed / Last serviced / Next due on a single line at desktop widths via `sm:grid-cols-2 lg:grid-cols-4`. Mobile rendering is unchanged — below the `sm:` breakpoint the modal stays full-width with the existing padding. **Backdrop clicks intentionally do not close the modal**: only ESC, the X button, and Cancel dismiss it. Accidental outside-clicks while editing fields used to wipe in-progress work — same trap any reviewer of this surface should preserve.
 
@@ -356,7 +356,7 @@ The form is sectioned into Identity, Classification, Service tracking, Notes, **
 
 ### Manufacture date input
 
-The Service tracking section's first field is a `<input type="month">` for the manufacture date (issue #105). It writes to the same six columns the serial-decode pipeline uses (`manufacture_date`, `manufacture_date_precision = 'month'`, `manufacture_date_confidence = 'high'`, `manufacture_date_model = 'user-entered'`, `manufacture_date_decoded_at = now()`, `manufacture_date_reasoning = null`), so the detail page's "Manufactured" tile fallback (in `pickFirstDateTile`) lights up for both decoded and user-asserted values without any helper change. Clearing the field nulls all six columns in the same UPDATE. The input prefills from any `YYYY-MM` value already on the row; decoded `YYYY` values pre-fill as `YYYY-01` so the user can still edit them, and the rare ISO-week (`YYYY-Www`) precision can't be represented by a month picker and falls through as blank. Manufacture date is **not** part of `researchSignificantFieldsChanged()` and a manufacture-date-only edit does not invalidate `ai_insights` — research grounds on manufacturer + model_number, and the decoded date is a separate axis.
+The Service tracking section's first field is a `<MonthPicker>` for the manufacture date (issue #105, picker swapped in #107). It writes to the same six columns the serial-decode pipeline uses (`manufacture_date`, `manufacture_date_precision = 'month'`, `manufacture_date_confidence = 'high'`, `manufacture_date_model = 'user-entered'`, `manufacture_date_decoded_at = now()`, `manufacture_date_reasoning = null`), so the detail page's "Manufactured" tile fallback (in `pickFirstDateTile`) lights up for both decoded and user-asserted values without any helper change. Clearing the field nulls all six columns in the same UPDATE. The picker's lenient parsing handles all three prior shapes on prefill: `YYYY-MM` shows exact, decoded `YYYY` renders as January of that year, and the rare ISO-week (`YYYY-Www`) precision the picker can't represent falls through as no selection — the underlying state preserves the raw string so a save without a touched field round-trips the value unchanged. Manufacture date is **not** part of `researchSignificantFieldsChanged()` and a manufacture-date-only edit does not invalidate `ai_insights` — research grounds on manufacturer + model_number, and the decoded date is a separate axis.
 
 ### Hero photo selection
 
@@ -388,6 +388,57 @@ In addition to the inventory row, [`/inventory/[id]/page.tsx`](../app/(app)/inve
 ### Post-delete navigation
 
 The delete-confirm modal's `onConfirm` closes both modals on success and the parent's `onDeleted` callback fires `router.replace("/inventory")` — the home inventory list is the natural landing for "where did my appliances go?".
+
+---
+
+## Custom date and month pickers
+
+`<DatePicker>` and `<MonthPicker>` (issue #107) are the only date input primitives in the app — native `<input type="date">` and `<input type="month">` are no longer used. The native widgets came with a system-blue, square-cornered popup chrome that couldn't be CSS-styled into the Hearth palette no matter how much `accent-color` or `::-webkit-calendar-picker-indicator` filtering we threw at it; the custom pickers replace that popup wholesale while preserving the underlying wire format (`YYYY-MM-DD` for date, `YYYY-MM` for month) so server actions and stored values didn't change.
+
+### Component layout
+
+```
+components/
+  picker-popover.tsx   # shared portal + position + focus + ESC mechanics
+  date-picker.tsx      # input-styled trigger + react-day-picker popup
+  month-picker.tsx     # input-styled trigger + custom year stepper + 4x3 month grid
+```
+
+`<DatePicker>` and `<MonthPicker>` share the same API shape — `{ label, value, onChange, placeholder? }` — and the same trigger visual: a `.picker-trigger` button styled identically to `.input` with the date display (or placeholder copy in tertiary text) on the left and a small calendar icon on the right. Both render the popup body inside a `<PickerPopover>`.
+
+### PickerPopover mechanics
+
+`<PickerPopover>` renders through a React portal to `document.body` so the popup escapes the host modal's `overflow: hidden` clip. It positions itself viewport-aware — anchored below the trigger by default, flipping above when there's more room above than below — and clamps horizontally so it never escapes the viewport edges. Mounted via a single `useLayoutEffect` listener so it re-runs on resize and on any scroll in the document tree, keeping the popup glued to the trigger as the modal scrolls.
+
+The popover owns the close mechanics for both pickers so consumers don't have to:
+
+- A transparent click-eater overlay (positioned `fixed inset-0`) calls `onClose` on `onMouseDown` and `stopPropagation`s the event so a parent modal that listens for backdrop clicks (`EditHomeDetailsModal` still does, by design — `EditInventoryItemModal` does not after #105) doesn't also fire and close the modal behind the popover.
+- ESC and Tab are intercepted at the document level with `{ capture: true }` so they land on the popover before any ancestor modal's bubble-phase listener. ESC closes only the popover and `stopPropagation`s the event. Tab cycles focus inside the popover card rather than letting focus escape back into the modal form.
+- Initial focus moves into the popover on open (the first focusable inside the card), and on close focus is returned to the trigger so keyboard navigation picks up where the user left off.
+
+The popup card itself uses the `surface-ai` class so it inherits the same diagonal accent halo + warm dark fill the modals it opens out of already use. A `.picker-popover-card` rule layers a softer elevation shadow on top so the popover reads as floating above the modal surface. The open transition is the existing `.insights-appear` keyframe (240ms fade + 3px slide) — same handoff used by the Research panel's streaming chunks, so the visual language is consistent across surfaces.
+
+### DatePicker
+
+The date picker wraps [`react-day-picker`](https://react-day-picker.dev) v10 in single-selection mode. The library's own stylesheet is **not imported** — the `.rdp-*` classes the library emits are styled from scratch in [app/globals.css](../app/globals.css) so the day grid, navigation buttons, weekday headers, today indicator, and selected-day fill all match Hearth's palette. The selected day uses `var(--color-accent)` as a solid fill; today (when not selected) gets an inset accent-tinted ring; out-of-month cells are dimmed.
+
+Local-time conversion is owned in `date-picker.tsx` so a `new Date("2025-10-24")`-style UTC parse doesn't cause display dates to shift back a day in negative-UTC time zones. The picker speaks `YYYY-MM-DD` strings via `dateFromIso` / `isoFromDate` helpers that use local-time accessors (`getFullYear`, `getMonth`, `getDate`).
+
+Two footer affordances live below the day grid: **Clear** (writes `""` and closes) and **Today** (selects today and closes). Both are styled as accent-colored text buttons via `.picker-popover-link`.
+
+### MonthPicker
+
+The month picker is custom (no library). The popup is a year header — `◀ 2026 ▶` with chevron nav buttons — above a 4×3 grid of month cells (`Jan` through `Dec`). Selected cells fill with the accent; today's month-year combination gets the same inset accent ring as today's day in the date picker; hover/focus on any cell brightens it with the accent-tinted background mix the rest of the surface-ai surfaces use.
+
+`parseValue` accepts the three legacy shapes from the manufacture-date pipeline: `YYYY-MM` (preferred, exact), `YYYY` (decoded values from the serial-decode pipeline — rendered as January of that year), and anything else (notably ISO `YYYY-Www`) as no selection. `onChange` always emits a canonical `YYYY-MM` string, or `""` when cleared. The year header is initialized from the selected year (or the current year if no value) on every open, so prior navigation on one open doesn't bleed into the next.
+
+Footer affordances mirror the date picker: **Clear** and **This month** (which writes the current calendar month and closes).
+
+### Why custom over the native widgets
+
+The native `<input type="date">` / `<input type="month">` popup is a Chromium dialog — `accent-color` reaches some selection cells but the popup's panel chrome (square corners, system font, panel background, "This month" link color) is fundamentally not stylable from CSS. The shim in `globals.css` that tried to invert the calendar-picker-indicator icon and tint the accent was the proof of what *isn't* achievable with the native widget. Replacing the widget entirely is the only path to a popup that visually matches the rest of the surface — and once the popup is custom anyway, the trigger becomes a styled button instead of a faux-input, which sidesteps the empty-state "dashes" problem the month input has on Chromium without needing the CSS overlay trick #105 introduced.
+
+The `react-day-picker` dependency is the only third-party UI dep added by this work. The month picker is intentionally custom: a 4×3 grid of buttons doesn't need a library's worth of abstraction, and keeping it in-house means we own the visual contract for the most-touched picker in the inventory edit flow.
 
 ---
 
