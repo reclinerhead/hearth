@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { UserCapabilities } from "@/lib/houses/capabilities";
 import { TopNav, type TopNavHouse } from "./top-nav";
 import { BottomNav } from "./bottom-nav";
 import { DesktopSidebar } from "./desktop-sidebar";
@@ -6,13 +7,15 @@ import { DesktopSidebar } from "./desktop-sidebar";
 export function AppShell({
   children,
   house,
+  capabilities,
 }: {
   children: ReactNode;
   house: TopNavHouse | null;
+  capabilities: UserCapabilities;
 }) {
   return (
     <div className="flex flex-col min-h-dvh">
-      <TopNav house={house} />
+      <TopNav house={house} capabilities={capabilities} />
       <div className="flex flex-1 min-h-0">
         <DesktopSidebar />
         <main
