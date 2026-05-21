@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useHouseRealtime } from "@/lib/hooks/use-house-realtime";
+import {
+  EditHomeDetailsModal,
+  type EditableHouseRow,
+} from "@/components/edit-home-details-modal";
 import { Icon, type IconName } from "@/components/icon";
+import { Toast } from "@/components/toast";
 import { AICard, MetricCard, PlaceholderImage } from "@/components/ui";
 import { diffHouseFacts } from "@/lib/briefing/diff";
 import type { MergeableHouseFacts } from "@/lib/briefing/merge";
@@ -148,13 +153,23 @@ function HeroAddress({
   house,
   onRefresh,
   refreshing,
+  onEdit,
+  editTriggerRef,
 }: {
   house: House;
   onRefresh: () => void;
   refreshing: boolean;
+  onEdit: () => void;
+  editTriggerRef: React.RefObject<HTMLButtonElement | null>;
 }) {
   const display = house.nickname ?? house.address_line1;
   const region = `${house.city}, ${house.state}`;
+  // Edit sits immediately to the left of Refresh per issue #110: when
+  // the admin-only Refresh button eventually goes away, Edit reads
+  // naturally next to the address without a layout shuffle. Both are
+  // icon-only on mobile (44px tap target via the .btn min height) and
+  // gain a text label at sm+ for refresh; edit stays icon-only across
+  // viewports so it doesn't dominate the address row.
   return (
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
@@ -169,8 +184,45 @@ function HeroAddress({
           {region}
         </p>
       </div>
-      <RefreshBriefingButton onClick={onRefresh} refreshing={refreshing} />
+      <div className="flex items-center gap-2 shrink-0">
+        <EditPropertyButton onClick={onEdit} triggerRef={editTriggerRef} />
+        <RefreshBriefingButton onClick={onRefresh} refreshing={refreshing} />
+      </div>
     </div>
+  );
+}
+
+/**
+ * Icon-only pencil button that opens the Property Details edit modal.
+ * Lives inline with the address row to keep editing one tap away from
+ * the surface that displays the value — moved here from the account
+ * dropdown per issue #110 (the dropdown is for account-scoped actions;
+ * editing property details is direct manipulation of the current
+ * property).
+ *
+ * The `btn-icon` class gives a 36px square; combined with the .btn
+ * height (≥36px) this clears the 44px tap-target guideline on touch
+ * devices when the user's font scaling is applied, while staying
+ * visually balanced next to RefreshBriefingButton on desktop.
+ */
+function EditPropertyButton({
+  onClick,
+  triggerRef,
+}: {
+  onClick: () => void;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <button
+      ref={triggerRef}
+      type="button"
+      onClick={onClick}
+      aria-label="Edit property details"
+      title="Edit property details"
+      className="btn btn-ghost btn-icon"
+    >
+      <Icon name="edit" size={14} />
+    </button>
   );
 }
 
@@ -774,6 +826,16 @@ export function DashboardLive({
   const [modalManuallyDismissed, setModalManuallyDismissed] = useState(false);
   const firstRun = useFirstRunDiscoveryModal(house);
 
+  // Property Details edit modal — opened from the pencil button next
+  // to the address. Moved here from the top-nav account dropdown per
+  // issue #110. The delete-property flow lives inside this modal's
+  // danger zone; on a failed delete the modal closes itself and
+  // bubbles the error up via `setDeleteToast` so the user lands back
+  // on the dashboard with a top-center toast.
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteToast, setDeleteToast] = useState<string | null>(null);
+  const editTriggerRef = useRef<HTMLButtonElement | null>(null);
+
   // The image surface shows the user's uploaded photo when one exists,
   // and falls back to the generated illustration. Either way the
   // dashboard fetches a signed URL for the active bucket+path, keyed by
@@ -1267,6 +1329,8 @@ export function DashboardLive({
             house={house}
             onRefresh={handleRefresh}
             refreshing={refreshing}
+            onEdit={() => setEditOpen(true)}
+            editTriggerRef={editTriggerRef}
           />
 
           {status === "failed" ? (
@@ -1333,6 +1397,48 @@ export function DashboardLive({
           onDismiss={handleDiscoveryModalDismiss}
         />
       ) : null}
+
+      {editOpen ? (
+        <EditHomeDetailsModal
+          open
+          house={toEditableHouseRow(house)}
+          onClose={() => setEditOpen(false)}
+          onDeleteError={(message) => setDeleteToast(message)}
+          getReturnFocusElement={() => editTriggerRef.current}
+        />
+      ) : null}
+
+      {deleteToast ? (
+        <Toast
+          message={deleteToast}
+          icon="alert-triangle"
+          onClose={() => setDeleteToast(null)}
+        />
+      ) : null}
     </>
   );
+}
+
+/**
+ * Project the live House row into the narrower shape EditHomeDetailsModal
+ * expects. Inline rather than going through a hand-cast so excess
+ * fields on `House` (briefing lifecycle, generated-image columns, etc.)
+ * don't leak into the modal's prop surface — keeps the modal's contract
+ * with its callers tight.
+ */
+function toEditableHouseRow(house: House): EditableHouseRow {
+  return {
+    id: house.id,
+    address_line1: house.address_line1,
+    address_line2: house.address_line2,
+    city: house.city,
+    state: house.state,
+    postal_code: house.postal_code,
+    year_built: house.year_built,
+    living_area_sqft: house.living_area_sqft,
+    lot_size_sqft: house.lot_size_sqft,
+    bedrooms: house.bedrooms,
+    bathrooms: house.bathrooms,
+    purchase_date: house.purchase_date,
+  };
 }

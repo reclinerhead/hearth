@@ -5,19 +5,20 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { setActiveHouseAction } from "@/app/actions/houses/set-active-house";
 import type { UserCapabilities } from "@/lib/houses/capabilities";
-import {
-  EditHomeDetailsModal,
-  type EditableHouseRow,
-} from "./edit-home-details-modal";
+import type { EditableHouseRow } from "./edit-home-details-modal";
 import { Icon } from "./icon";
 import { PropertySwitcher, type HouseSummary } from "./property-switcher";
 import { SmartUploader } from "./smart-uploader/SmartUploader";
 import { ThemeToggle } from "./theme-toggle";
 
-// The top nav fetches enough of the house row for both its own address
-// chip and the home-details edit modal. The display path only reads the
-// address subset, but consolidating the type avoids a second select on
-// every authed page render just to populate the modal.
+// The top nav reads the address-chip subset of the house row for its
+// PropertySwitcher chip + the account-menu property submenu. The shape
+// is currently wider than strictly needed because the (app) layout
+// also passes the same row to surfaces that mount the Property Details
+// edit modal — which now lives on the dashboard rather than here, per
+// issue #110. Trimming the layout's query and narrowing this type is
+// follow-up cleanup; the over-fetch is one row of column data and
+// costs effectively nothing.
 export type TopNavHouse = EditableHouseRow;
 
 // The account menu's "Switch property" entry swaps the menu contents
@@ -38,12 +39,10 @@ export function TopNav({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuView, setMenuView] = useState<MenuView>("root");
-  const [editOpen, setEditOpen] = useState(false);
   const [uploaderOpen, setUploaderOpen] = useState(false);
   const [pendingHouseId, setPendingHouseId] = useState<string | null>(null);
   const [isSwitchPending, startSwitchTransition] = useTransition();
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const editTriggerRef = useRef<HTMLButtonElement | null>(null);
   const router = useRouter();
 
   // Closing the menu always resets the submenu view so the next open
@@ -73,11 +72,6 @@ export function TopNav({
       document.removeEventListener("keydown", onKey);
     };
   }, [menuOpen, closeMenu]);
-
-  function openEditModal() {
-    closeMenu();
-    setEditOpen(true);
-  }
 
   function handleMenuSwitch(houseId: string) {
     if (houseId === house?.id) {
@@ -189,11 +183,8 @@ export function TopNav({
                 >
                   {menuView === "root" ? (
                     <RootMenu
-                      house={house}
                       houses={houses}
                       capabilities={capabilities}
-                      editTriggerRef={editTriggerRef}
-                      onEditDetails={openEditModal}
                       onOpenProperties={() => setMenuView("properties")}
                       onClose={closeMenu}
                     />
@@ -215,15 +206,6 @@ export function TopNav({
       </header>
 
       {house ? (
-        <EditHomeDetailsModal
-          open={editOpen}
-          house={house}
-          onClose={() => setEditOpen(false)}
-          getReturnFocusElement={() => editTriggerRef.current}
-        />
-      ) : null}
-
-      {house ? (
         <SmartUploader
           open={uploaderOpen}
           onOpenChange={setUploaderOpen}
@@ -242,42 +224,21 @@ export function TopNav({
 }
 
 function RootMenu({
-  house,
   houses,
   capabilities,
-  editTriggerRef,
-  onEditDetails,
   onOpenProperties,
   onClose,
 }: {
-  house: TopNavHouse | null;
   houses: HouseSummary[];
   capabilities: UserCapabilities;
-  editTriggerRef: React.RefObject<HTMLButtonElement | null>;
-  onEditDetails: () => void;
   onOpenProperties: () => void;
   onClose: () => void;
 }) {
   return (
     <>
-      {/*
-        Home details is the *only* entry point for editing house facts
-        now — the standalone /home-details page and its sidebar/bottom-
-        nav links have been removed. Hidden when there's no house yet
-        (still onboarding).
-      */}
-      {house ? (
-        <button
-          ref={editTriggerRef}
-          type="button"
-          role="menuitem"
-          onClick={onEditDetails}
-          className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[color:var(--color-bg-surface)]"
-        >
-          <Icon name="home" size={16} />
-          <span>Home details</span>
-        </button>
-      ) : null}
+      {/* Edit property details lives on the property page itself now
+          (pencil icon next to the address) per issue #110, so it no
+          longer occupies a slot in this account-scoped menu.          */}
 
       {/* Switch + add entries — mobile parity for the PropertySwitcher in
           the header, which is hidden below md. Visible on desktop too
