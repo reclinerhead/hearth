@@ -43,11 +43,13 @@ function phaseCopy(phase: DocumentUploadPhase): string {
       return "Uploading…";
     case "creating-row":
     case "matching":
+    case "attaching":
       return "Almost there…";
     case "analyzing":
       return "Analyzing your photo…";
     case "idle":
     case "done":
+    case "attached":
     case "error":
       return "Working on it…";
   }

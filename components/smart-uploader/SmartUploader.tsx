@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { attachDocumentToInventoryAction } from "@/app/actions/documents/attach-document-to-inventory";
 import { cleanupDocumentAction } from "@/app/actions/documents/cleanup-document";
 import type { MatchingInventoryItem } from "@/app/actions/documents/find-matching-inventory";
 import { createClient } from "@/lib/supabase/client";
@@ -47,11 +48,18 @@ export type SmartUploaderProps = {
   onOpenChange: (open: boolean) => void;
   houseId: string;
   /**
-   * Plumbed for future entry points (an inventory-detail "Add another
-   * photo" button). In phase 1.4 the navbar entry point never sets
-   * this — the modal always runs in "no target" mode.
+   * When set, the Smart Uploader runs in *target mode*: the document
+   * is born already attached to this inventory item, matching is
+   * skipped, and a successful analyze flows directly to the success
+   * stage. Set by the Add-photo button on /inventory/[id].
    */
   targetInventoryId?: string;
+  /**
+   * Item name for the target — only used to render a contextual header
+   * ("Add photo of Microwave") so the user knows where the photo will
+   * land. Ignored when targetInventoryId is unset.
+   */
+  targetInventoryName?: string;
   /**
    * Fires after a successful save (create-from-document or
    * attach-to-existing). The parent uses this to trigger the
@@ -78,7 +86,14 @@ type Stage =
   | { name: "success" };
 
 export function SmartUploader(props: SmartUploaderProps) {
-  const { open, onOpenChange, houseId, targetInventoryId, onSaved } = props;
+  const {
+    open,
+    onOpenChange,
+    houseId,
+    targetInventoryId,
+    targetInventoryName,
+    onSaved,
+  } = props;
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -145,6 +160,18 @@ export function SmartUploader(props: SmartUploaderProps) {
   // into the user-facing stage is the legitimate "synchronize with
   // external system" pattern useEffect+setState exists for.
   useEffect(() => {
+    if (uploadState.phase === "attached") {
+      // Target-mode terminal: the hook already attached the document to
+      // targetInventoryId, so we surface the success stage immediately
+      // (no review form) and auto-dismiss on the same cadence as the
+      // no-target save path.
+      if (!targetInventoryId) return;
+      onSaved?.({ inventoryId: targetInventoryId });
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStage({ name: "success" });
+      const timer = setTimeout(() => onOpenChange(false), SUCCESS_DISMISS_MS);
+      return () => clearTimeout(timer);
+    }
     if (uploadState.phase === "done") {
       if (uploadState.duplicate) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -185,6 +212,9 @@ export function SmartUploader(props: SmartUploaderProps) {
     uploadState.documentId,
     uploadState.matches,
     uploadState.error,
+    targetInventoryId,
+    onSaved,
+    onOpenChange,
   ]);
 
   // Track the latest document id and stage so the close path can decide
@@ -357,6 +387,39 @@ export function SmartUploader(props: SmartUploaderProps) {
     setStage({ name: "manual-entry", documentId: stage.documentId });
   }
 
+  // Target-mode counterpart to "Enter manually". The user's photo is
+  // already on disk and the row already exists with inventory_id set
+  // (we attached at row-insert time). We just flip the status from
+  // 'analyzing' to 'attached' so the photo survives even when AI
+  // extraction failed — they can still see it on the inventory page.
+  async function savePhotoAnywayFromAnalysisFailed() {
+    if (stage.name !== "analysis-failed") return;
+    if (!targetInventoryId) return;
+    if (!stage.documentId) {
+      onOpenChange(false);
+      return;
+    }
+    const result = await attachDocumentToInventoryAction({
+      documentId: stage.documentId,
+      inventoryId: targetInventoryId,
+    });
+    if (result.error !== null) {
+      // The original failure already showed; this is a follow-on
+      // failure on the user-initiated rescue path. Surface it inline
+      // by updating the failure stage's message rather than blowing
+      // up the modal.
+      setStage({
+        name: "analysis-failed",
+        documentId: stage.documentId,
+        message: result.error,
+      });
+      return;
+    }
+    onSaved?.({ inventoryId: targetInventoryId });
+    setStage({ name: "success" });
+    setTimeout(() => onOpenChange(false), SUCCESS_DISMISS_MS);
+  }
+
   async function tryDifferentFromNotUseful() {
     if (stage.name !== "not-useful") return;
     await cleanupDocumentAction({ documentId: stage.documentId });
@@ -439,9 +502,13 @@ export function SmartUploader(props: SmartUploaderProps) {
           onTouchCancel={onDragEnd}
         >
           <div className="min-w-0 flex-1">
-            <div className="eyebrow mb-1">Add to Hearth</div>
+            <div className="eyebrow mb-1">
+              {targetInventoryId ? "Add to inventory item" : "Add to Hearth"}
+            </div>
             <h2 id={titleId} className="h2 mt-0.5">
-              {headerTitleForStage(stage)}
+              {headerTitleForStage(stage, {
+                targetInventoryName: targetInventoryName ?? null,
+              })}
             </h2>
           </div>
           <button
@@ -523,8 +590,15 @@ export function SmartUploader(props: SmartUploaderProps) {
           {stage.name === "analysis-failed" ? (
             <AnalysisFailedStage
               message={stage.message}
+              secondaryLabel={
+                targetInventoryId ? "Save photo anyway" : "Enter manually"
+              }
               onTryAgain={tryAgainFromAnalysisFailed}
-              onEnterManually={enterManuallyFromAnalysisFailed}
+              onSecondaryAction={
+                targetInventoryId
+                  ? savePhotoAnywayFromAnalysisFailed
+                  : enterManuallyFromAnalysisFailed
+              }
             />
           ) : null}
 
@@ -535,7 +609,36 @@ export function SmartUploader(props: SmartUploaderProps) {
   );
 }
 
-function headerTitleForStage(stage: Stage): string {
+function headerTitleForStage(
+  stage: Stage,
+  opts: { targetInventoryName: string | null },
+): string {
+  // In target mode, the user already knows the context — they came in
+  // from /inventory/[id]. The header anchors the entire flow to that
+  // specific item so the path-picker and capture stages don't ask the
+  // "what are you adding?" question that's irrelevant here.
+  if (opts.targetInventoryName) {
+    switch (stage.name) {
+      case "path-picker":
+      case "capture":
+      case "processing":
+        return `Add photo of ${opts.targetInventoryName}`;
+      case "duplicate":
+        return "Already in your library";
+      case "review-new":
+      case "manual-entry":
+        // Not reachable in target mode (the hook skips matching and
+        // goes straight to attached → success), but the type checker
+        // wants every case covered.
+        return `Add photo of ${opts.targetInventoryName}`;
+      case "not-useful":
+        return "Couldn't identify";
+      case "analysis-failed":
+        return "Something went wrong";
+      case "success":
+        return "Saved";
+    }
+  }
   switch (stage.name) {
     case "path-picker":
       return "What are you adding?";
