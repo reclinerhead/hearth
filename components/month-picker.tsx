@@ -3,6 +3,7 @@
 import { useId, useRef, useState } from "react";
 import { Icon } from "./icon";
 import { PickerPopover } from "./picker-popover";
+import { YearSelect } from "./year-select";
 
 /**
  * Hearth's custom month picker (issue #107). Replaces the native
@@ -98,13 +99,11 @@ export function MonthPicker({
     selected?.year ?? todayValue.year,
   );
 
-  // Bounded year range for the dropdown. 100 back / 10 forward
+  // Bounded year range for the YearSelect. 100 back / 10 forward
   // matches the DatePicker contract — covers older homes' install
   // dates and the rare appliance from before the user was born.
   const yearMin = todayValue.year - 100;
   const yearMax = todayValue.year + 10;
-  const yearOptions: number[] = [];
-  for (let y = yearMax; y >= yearMin; y -= 1) yearOptions.push(y);
 
   function handleOpen() {
     if (!open) {
@@ -167,26 +166,12 @@ export function MonthPicker({
             >
               <Icon name="chevron-left" size={16} />
             </button>
-            <span className="month-picker-year-root">
-              <select
-                className="month-picker-year-select"
-                aria-label="Year"
-                value={headerYear}
-                onChange={(e) =>
-                  setHeaderYear(Number.parseInt(e.target.value, 10))
-                }
-              >
-                {yearOptions.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-              <span aria-hidden className="month-picker-year-label">
-                {headerYear}
-                <Icon name="chevron-down" size={14} />
-              </span>
-            </span>
+            <YearSelect
+              value={headerYear}
+              min={yearMin}
+              max={yearMax}
+              onChange={setHeaderYear}
+            />
             <button
               type="button"
               className="month-picker-nav"

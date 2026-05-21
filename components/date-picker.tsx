@@ -1,9 +1,10 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import { Icon } from "./icon";
 import { PickerPopover } from "./picker-popover";
+import { YearSelect } from "./year-select";
 
 /**
  * Hearth's custom date picker (issue #107). Replaces native
@@ -79,14 +80,27 @@ export function DatePicker({
   const display = formatDisplay(value);
   const isEmpty = display === "";
 
-  // Bounded month + year dropdowns so the user can jump to a far-back
-  // year without click-stepping the chevrons month-by-month. 100 years
-  // back covers older homes' purchase dates and the oldest realistic
-  // install dates; 10 years forward covers next-service-due dates with
-  // generous headroom. defaultMonth (today) falls inside this range.
+  // Bounded year range so the chevrons disable at the edges and the
+  // custom YearSelect knows how many years to render. 100 back / 10
+  // forward covers older homes' purchase dates and the oldest realistic
+  // install dates without an unbounded list.
   const today = new Date();
-  const startMonth = new Date(today.getFullYear() - 100, 0, 1);
-  const endMonth = new Date(today.getFullYear() + 10, 11, 31);
+  const yearMin = today.getFullYear() - 100;
+  const yearMax = today.getFullYear() + 10;
+  const startMonth = new Date(yearMin, 0, 1);
+  const endMonth = new Date(yearMax, 11, 31);
+
+  // The currently displayed month is externally controlled so the
+  // custom MonthCaption can jump to an arbitrary year via the
+  // YearSelect without losing the displayed month index. Reset on
+  // each open so the next interaction starts from the user's
+  // selected value (or today, if no selection).
+  const [displayedMonth, setDisplayedMonth] = useState<Date>(
+    selected ?? new Date(),
+  );
+  useEffect(() => {
+    if (open) setDisplayedMonth(selected ?? new Date());
+  }, [open, value]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
@@ -128,16 +142,30 @@ export function DatePicker({
       >
         <DayPicker
           mode="single"
-          captionLayout="dropdown"
           startMonth={startMonth}
           endMonth={endMonth}
+          month={displayedMonth}
+          onMonthChange={setDisplayedMonth}
           selected={selected}
-          defaultMonth={selected ?? new Date()}
           onSelect={(d) => {
             if (d) {
               onChange(isoFromDate(d));
               setOpen(false);
             }
+          }}
+          components={{
+            MonthCaption: ({ calendarMonth }) => (
+              <DateMonthCaption
+                month={calendarMonth.date}
+                yearMin={yearMin}
+                yearMax={yearMax}
+                onYearChange={(y) =>
+                  setDisplayedMonth(
+                    new Date(y, calendarMonth.date.getMonth(), 1),
+                  )
+                }
+              />
+            ),
           }}
           autoFocus
         />
@@ -164,6 +192,31 @@ export function DatePicker({
           </button>
         </div>
       </PickerPopover>
+    </div>
+  );
+}
+
+function DateMonthCaption({
+  month,
+  yearMin,
+  yearMax,
+  onYearChange,
+}: {
+  month: Date;
+  yearMin: number;
+  yearMax: number;
+  onYearChange: (year: number) => void;
+}) {
+  const monthName = month.toLocaleString("en-US", { month: "long" });
+  return (
+    <div className="rdp-month_caption rdp-month_caption--custom">
+      <span className="rdp-month_caption_text">{monthName}</span>
+      <YearSelect
+        value={month.getFullYear()}
+        min={yearMin}
+        max={yearMax}
+        onChange={onYearChange}
+      />
     </div>
   );
 }

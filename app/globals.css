@@ -440,30 +440,21 @@ h1.h1 {
   margin-bottom: 8px;
 }
 /*
-  Year dropdown sits between the prev/next chevrons in the month
-  picker header. The `<select>` is positioned absolutely over the
-  visible label so clicks land on it (native dropdown popup); the
-  label is what the user sees and is styled like a small chip with
-  a trailing chevron-down to signal it's openable.
+  YearSelect — custom dropdown used by both DatePicker and MonthPicker.
+  Native <select> popups were unstylable on older Chromium builds
+  (light-themed body, no padding, full-viewport scroll list); the
+  custom version renders the year list inside the picker popover so
+  it inherits the dark Hearth palette and proper padding.
+
+  Trigger is a small chip matching the picker popover's other chrome.
+  List opens absolutely below the trigger, ~240px tall with internal
+  scroll, with the selected year auto-scrolled into view on open.
 */
-.month-picker-year-root {
+.year-select-root {
   position: relative;
   display: inline-flex;
 }
-.month-picker-year-select {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  appearance: none;
-  cursor: pointer;
-  border: 0;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-}
-.month-picker-year-label {
+.year-select-trigger {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -473,15 +464,81 @@ h1.h1 {
   border: 1px solid var(--color-border-subtle);
   background-color: transparent;
   color: var(--color-text-primary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  letter-spacing: 0.5px;
-  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out;
 }
-.month-picker-year-root:hover .month-picker-year-label,
-.month-picker-year-select:focus-visible ~ .month-picker-year-label {
+.year-select-trigger:hover,
+.year-select-trigger:focus-visible {
+  outline: none;
   background-color: color-mix(in oklab, var(--color-accent) 14%, transparent);
   border-color: color-mix(in oklab, var(--color-accent) 35%, transparent);
+}
+.year-select-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1;
+  width: 92px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  margin: 0;
+  list-style: none;
+  background-color: var(--color-bg-surface-raised);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow:
+    0 10px 24px -8px color-mix(in oklab, black 55%, transparent),
+    0 3px 8px -3px color-mix(in oklab, black 35%, transparent);
+}
+.year-select-list::-webkit-scrollbar {
+  width: 6px;
+}
+.year-select-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.year-select-list::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklab, var(--color-text-tertiary) 50%, transparent);
+  border-radius: 3px;
+}
+.year-select-list li {
+  margin: 0;
+  padding: 0;
+}
+.year-select-item {
+  display: block;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+.year-select-item:hover,
+.year-select-item:focus-visible {
+  outline: none;
+  background-color: color-mix(in oklab, var(--color-accent) 14%, transparent);
+  color: var(--color-text-primary);
+}
+.year-select-item[data-selected="true"] {
+  background-color: var(--color-accent);
+  color: var(--color-bg-base);
+  font-weight: 500;
+}
+.year-select-item[data-selected="true"]:hover {
+  background-color: color-mix(in oklab, var(--color-accent) 88%, white);
 }
 .month-picker-nav {
   display: inline-flex;
@@ -559,59 +616,19 @@ h1.h1 {
   color: var(--color-text-primary);
   padding: 2px 4px 8px;
 }
-
 /*
-  Month + year dropdowns shown when `captionLayout="dropdown"`. Each
-  dropdown root is a small chip with the selected label and a
-  down-chevron; the underlying <select> sits invisibly on top to
-  catch clicks. Styled to match the month-picker year selector so
-  both pickers feel like the same picker family.
+  Custom caption row used by DatePicker. The month name sits on the
+  left, the YearSelect chip on the right. Two-up flex so the chip
+  hangs in the same row as the month label rather than wrapping
+  below it.
 */
-.rdp-dropdowns {
-  display: inline-flex;
+.rdp-month_caption--custom {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
-.rdp-dropdown_root {
-  position: relative;
-  display: inline-flex;
-}
-.rdp-dropdown {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  appearance: none;
-  cursor: pointer;
-  border: 0;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-}
-.rdp-dropdown_root > .rdp-caption_label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 28px;
-  padding: 0 8px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border-subtle);
-  background-color: transparent;
-  color: var(--color-text-primary);
-  font-size: 13px;
-  font-weight: 500;
+.rdp-month_caption_text {
   letter-spacing: 0.3px;
-  transition: background-color 120ms ease-out, border-color 120ms ease-out;
-}
-.rdp-dropdown_root:hover > .rdp-caption_label,
-.rdp-dropdown:focus-visible ~ .rdp-caption_label {
-  background-color: color-mix(in oklab, var(--color-accent) 14%, transparent);
-  border-color: color-mix(in oklab, var(--color-accent) 35%, transparent);
-}
-.rdp-dropdown_root > .rdp-caption_label > .rdp-chevron {
-  width: 12px;
-  height: 12px;
 }
 .rdp-nav {
   gap: 4px;
