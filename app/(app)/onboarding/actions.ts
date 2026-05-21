@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { start } from "workflow/api";
 import { createClient } from "@/lib/supabase/server";
@@ -95,5 +96,12 @@ export async function createHouseFromMapboxFeature(
     }
   }
 
+  // Invalidate the (app) layout cache so the top-nav address chip and the
+  // home-details modal pick up the new active house instead of serving
+  // the stale snapshot from /houses/new (or /onboarding). Without this,
+  // /dashboard server-renders the new house in its own body but the
+  // shared layout above it keeps the prior data — the same staleness
+  // /setActiveHouseAction guards against on every switch.
+  revalidatePath("/", "layout");
   redirect("/dashboard");
 }
