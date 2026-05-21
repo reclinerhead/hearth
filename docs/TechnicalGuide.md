@@ -33,6 +33,7 @@ app/                       # Next.js App Router
     onboarding/            # First-run address capture
     inventory/             # Home inventory list (server component)
     inventory/[id]/        # Inventory item detail view
+    reports/               # Hearth Reporting hub (UI mockup, no generation)
     documents/[id]/        # Document detail view (legacy placeholder)
     entities/[id]/         # Older detail-page placeholder (kept, unused)
   auth/                    # Supabase auth route handlers
@@ -572,6 +573,26 @@ The component handles the empty-inventory case inline with a soft hint pointing 
 **Tile design.** One tile per row (no grid), full content-column width. Thumbnail is 96×96 (vs. the dashboard's 48×48) so the photo is actually legible at a glance. Three text lines: item name (16px, primary), room name (tertiary), and a contextual detail line built from whatever is populated (`manufacturer · model_number`, `Installed Mar 2018`). Once a maintenance-log table lands, "Last serviced" / "Next due" will slot into a second tertiary line area — the nullable `last_serviced_on` / `next_service_due_on` columns are not surfaced today because no flow populates them and "Unknown" everywhere would just be noise.
 
 Out of scope for this surface: search, per-type sort toggles, filtering, bulk operations. The list isn't long enough to need them yet.
+
+---
+
+## Reports page (mockup)
+
+`/reports` is the central hub for Hearth's synthesis reports — documents generated from the homeowner's ingested data, each tuned to a specific reader (carrier, adjuster, buyer's agent, contractor, family member, or the homeowner themselves). The page that ships today is **UI-only**: the report taxonomy, naming, and visual treatment are locked in, but every Generate button is visibly disabled with a "Coming soon" indicator. No generation logic, no PDF rendering, no tier gating.
+
+The page exists first because most of the reports depend on the maintenance module to deliver meaningful intelligence — service-life forecasts adjusted for habitat findings, cost projections built on the maintenance task model, structured inventories with service history. Shipping the page shell ahead of the engines lets us validate the taxonomy with real users, surface exactly what data the maintenance module needs to capture, and give the rest of the product a destination URL to deep-link into.
+
+**Route and navigation.** Server component at `app/(app)/reports/page.tsx`, no data fetching — the report inventory is a static const in the file. Reachable from the desktop sidebar (between "Home inventory" and "How it Works") and the mobile bottom nav (which moved from a three-column to a four-column grid to accommodate the entry). Both nav surfaces use the `file-text` icon.
+
+**Three groups, in this order.**
+
+- **Forward-looking** — the most novel surface, leads the page. Houses the **10-Year Home Improvement Forecast**, the **Forecasted Maintenance Cost Report**, and the **Capital Planning Timeline** (a visual companion to the 10-year forecast that may end up as a view inside that report rather than a standalone export — decided when the engine lands).
+- **Retrospective** — documentation of what is. Houses the **Insurance Inventory & Annual Refresh Packet**, the **On-Demand Claim Packet**, and the **Pre-Listing Export Package**.
+- **External stakeholder** — documents shaped for someone outside the household. Houses the **Underwriting / Binding Packet** (with an explicit honest-framing caveat that it's homeowner input, not an inspection substitute), the **Contractor Briefing Packet** (will eventually compose with the contractor magic-link feature), and the **Family / Co-Owner Summary**.
+
+**Card composition.** Each report renders as a `surface` card with: an accent-tinted icon medallion in the top-left, the report title, a 2–3 sentence description hinting at the intelligence layer ("adjusted for your home's specific conditions" rather than "based on your data"), an optional italic caveat line beneath the description (underwriting only today), a wide 16:9 preview placeholder (decorative gradient + icon + stub line bars — reads as a document preview rather than a missing photo, and intentionally doesn't commit to a specific paginated layout the real generator may not produce), and a footer row pairing a `Coming soon` chip with a disabled `Generate` button. Cards lay out on an `auto-fill` grid at `minmax(320px, 1fr)` so they widen on desktop and collapse to one column on phones.
+
+**Deliberately not yet present.** Per-report generation engines, PDF rendering, background jobs, premium / free tier gating, analytics, distribution flows (email, share links). Each is its own focused project tracked outside this issue.
 
 ---
 
