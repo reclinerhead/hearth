@@ -2,7 +2,9 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { deleteHouseAction } from "@/app/actions/houses/delete-house";
 import { DatePicker } from "./date-picker";
+import { DeletePropertyConfirmModal } from "./delete-property-confirm-modal";
 import { Icon } from "./icon";
 import { dispatchHouseUpdated } from "@/lib/hooks/use-house-realtime";
 import { createClient } from "@/lib/supabase/client";
@@ -68,16 +70,26 @@ export function EditHomeDetailsModal({
   open,
   house,
   onClose,
+  onDeleteError,
   getReturnFocusElement,
 }: {
   open: boolean;
   house: EditableHouseRow;
   onClose: () => void;
+  /**
+   * Called when the delete server action returns a failure response.
+   * The parent surfaces a toast and the edit + confirm modals are
+   * already closed by the time this fires. On success the action
+   * redirects (NEXT_REDIRECT throws), so this callback never runs in
+   * the happy path.
+   */
+  onDeleteError?: (message: string) => void;
   getReturnFocusElement?: () => HTMLElement | null;
 }) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
   const router = useRouter();
 
   const [yearBuilt, setYearBuilt] = useState(
@@ -100,6 +112,10 @@ export function EditHomeDetailsModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!open) return;
     const html = document.documentElement;
@@ -110,9 +126,12 @@ export function EditHomeDetailsModal({
     requestAnimationFrame(() => closeButtonRef.current?.focus());
 
     function handleKey(e: KeyboardEvent) {
+      // Let the delete-confirm modal handle its own ESC when it's open
+      // — its handler runs first because it mounts later in the tree.
+      if (deleteOpen) return;
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        if (!saving) onClose();
         return;
       }
       if (e.key === "Tab" && dialogRef.current) {
@@ -143,7 +162,7 @@ export function EditHomeDetailsModal({
       body.classList.remove("scroll-locked");
       getReturnFocusElement?.()?.focus();
     };
-  }, [open, onClose, getReturnFocusElement]);
+  }, [open, onClose, getReturnFocusElement, saving, deleteOpen]);
 
   if (!open) return null;
 
@@ -199,7 +218,49 @@ export function EditHomeDetailsModal({
     }
   }
 
+  async function handleDeleteConfirm() {
+    setDeleteError(null);
+    setDeletePending(true);
+    try {
+      // Happy path: the action calls redirect() which throws
+      // NEXT_REDIRECT; we never reach the line after the await. The
+      // edit + confirm modals stay mounted until the navigation lands,
+      // at which point this component unmounts. Any returned value
+      // therefore signals a failure that the parent should surface as
+      // a toast.
+      const result = await deleteHouseAction(house.id);
+      if (result && !result.ok) {
+        // Close both modals and bubble the error up — the user lands
+        // back on the property page with a top-center toast explaining
+        // what went wrong.
+        setDeleteOpen(false);
+        onClose();
+        onDeleteError?.(result.error);
+      }
+    } catch (err) {
+      // NEXT_REDIRECT is the redirect-in-progress signal — let it
+      // propagate so the framework completes the navigation. Anything
+      // else is a real failure surfaced via the same toast path.
+      if (
+        err &&
+        typeof err === "object" &&
+        "digest" in err &&
+        typeof (err as { digest?: unknown }).digest === "string" &&
+        (err as { digest: string }).digest.startsWith("NEXT_REDIRECT")
+      ) {
+        throw err;
+      }
+      console.error("property delete failed", err);
+      setDeleteOpen(false);
+      onClose();
+      onDeleteError?.("Something went wrong deleting. Try again.");
+    } finally {
+      setDeletePending(false);
+    }
+  }
+
   return (
+    <>
     <div
       aria-hidden={false}
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6"
@@ -209,7 +270,10 @@ export function EditHomeDetailsModal({
         backdropFilter: "blur(6px)",
       }}
       onClick={(e) => {
-        if (e.target === e.currentTarget && !saving) onClose();
+        // Don't close on backdrop click while the nested delete-confirm
+        // modal is open — the user's click could be a mis-aimed attempt
+        // to cancel the confirm modal and we'd otherwise dismiss both.
+        if (e.target === e.currentTarget && !saving && !deleteOpen) onClose();
       }}
     >
       <div
@@ -329,6 +393,12 @@ export function EditHomeDetailsModal({
               />
             </div>
 
+            <DangerZone
+              triggerRef={deleteTriggerRef}
+              disabled={saving}
+              onDelete={() => setDeleteOpen(true)}
+            />
+
             {error ? (
               <p
                 className="text-small"
@@ -373,6 +443,98 @@ export function EditHomeDetailsModal({
             </div>
           </footer>
         </form>
+      </div>
+    </div>
+
+    {deleteOpen ? (
+      <DeletePropertyConfirmModal
+        open
+        streetAddress={house.address_line1}
+        pending={deletePending}
+        error={deleteError}
+        onCancel={() => {
+          if (deletePending) return;
+          setDeleteOpen(false);
+          // Return focus to the danger-zone delete button on cancel so
+          // the user can re-trigger easily, matching the inventory
+          // edit modal's return-focus pattern.
+          requestAnimationFrame(() => deleteTriggerRef.current?.focus());
+        }}
+        onConfirm={handleDeleteConfirm}
+      />
+    ) : null}
+    </>
+  );
+}
+
+/**
+ * GitHub-style danger zone — a red-tinted bordered region clearly
+ * separated from the rest of the form so a destructive action can't
+ * be fat-fingered while editing fields. Mirrors the same component in
+ * `edit-inventory-item-modal.tsx`; the two have drifted to slightly
+ * different copy and would consolidate cleanly once a third caller
+ * lands, but two is below the threshold for shared extraction.
+ */
+function DangerZone({
+  triggerRef,
+  disabled,
+  onDelete,
+}: {
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+  disabled: boolean;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      className="mt-2"
+      style={{
+        borderRadius: "var(--radius-md)",
+        border:
+          "1px solid color-mix(in oklab, var(--color-danger) 50%, transparent)",
+        padding: 16,
+        backgroundColor:
+          "color-mix(in oklab, var(--color-danger) 6%, transparent)",
+      }}
+    >
+      <div
+        className="eyebrow"
+        style={{
+          letterSpacing: "1.2px",
+          fontSize: 10,
+          color: "var(--color-danger)",
+        }}
+      >
+        Danger zone
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mt-2">
+        <div className="min-w-0">
+          <div style={{ fontSize: 14, fontWeight: 500 }}>
+            Delete this property
+          </div>
+          <div
+            className="text-small mt-0.5"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            Removes this property and everything tied to it &mdash; rooms,
+            inventory, documents, habitat findings, and Day One Briefing
+            data. Your other properties are not affected.
+          </div>
+        </div>
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={onDelete}
+          disabled={disabled}
+          className="btn"
+          style={{
+            color: "var(--color-danger)",
+            borderColor:
+              "color-mix(in oklab, var(--color-danger) 55%, transparent)",
+            backgroundColor: "transparent",
+          }}
+        >
+          Delete this property&hellip;
+        </button>
       </div>
     </div>
   );
