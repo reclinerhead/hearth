@@ -36,7 +36,7 @@ import {
 const FOCUSABLE_SELECTOR =
   'a[href], area[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), iframe, [tabindex]:not([tabindex="-1"])';
 
-const SUCCESS_DISMISS_MS = 600;
+const SUCCESS_DISMISS_MS = 2000;
 
 // Distance the user has to drag the page-sheet down before release
 // dismisses it. ~15% of an iPhone 11 Pro viewport (812 * 0.15 ≈ 122) —
@@ -110,6 +110,23 @@ export function SmartUploader(props: SmartUploaderProps) {
   const { state: uploadState, start, reset: resetUpload } =
     useDocumentUpload({ houseId, targetInventoryId });
 
+  // Latest-ref pattern for parent-supplied callbacks. The target-mode
+  // success effect below transitions on `uploadState.phase` and would
+  // otherwise have to list `onSaved` / `onOpenChange` in its deps —
+  // both are typically inline arrow functions, so the parent passes
+  // new identities every render. router.refresh() (called from inside
+  // onSaved) re-renders the parent, which would re-fire the effect,
+  // clear the pending dismiss timer, and re-fire onSaved → an infinite
+  // loop where the modal never auto-closes. Reading the current
+  // callbacks through refs lets the effect run exactly once per
+  // attached-phase transition while still seeing the latest props.
+  const onSavedRef = useRef(onSaved);
+  const onOpenChangeRef = useRef(onOpenChange);
+  useEffect(() => {
+    onSavedRef.current = onSaved;
+    onOpenChangeRef.current = onOpenChange;
+  });
+
   // Reset everything when the modal opens. Keeping state between opens
   // would let a half-finished previous flow leak in — the upload hook
   // has its own `runningRef` too, so this is also the moment to clear
@@ -164,12 +181,17 @@ export function SmartUploader(props: SmartUploaderProps) {
       // Target-mode terminal: the hook already attached the document to
       // targetInventoryId, so we surface the success stage immediately
       // (no review form) and auto-dismiss on the same cadence as the
-      // no-target save path.
+      // no-target save path. Callbacks come through refs so router
+      // .refresh() inside onSaved doesn't re-trigger this effect — see
+      // the latest-ref block above for the rationale.
       if (!targetInventoryId) return;
-      onSaved?.({ inventoryId: targetInventoryId });
+      onSavedRef.current?.({ inventoryId: targetInventoryId });
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStage({ name: "success" });
-      const timer = setTimeout(() => onOpenChange(false), SUCCESS_DISMISS_MS);
+      const timer = setTimeout(
+        () => onOpenChangeRef.current(false),
+        SUCCESS_DISMISS_MS,
+      );
       return () => clearTimeout(timer);
     }
     if (uploadState.phase === "done") {
@@ -205,6 +227,12 @@ export function SmartUploader(props: SmartUploaderProps) {
           uploadState.error ?? "Something went wrong analyzing this photo.",
       });
     }
+    // onSaved / onOpenChange intentionally omitted from deps — they
+    // are inline arrows from the parent and identity-change on every
+    // render, which would re-fire this effect each time the parent
+    // renders. Both are consumed through refs above so the effect
+    // sees the latest version without needing to re-run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     uploadState.phase,
     uploadState.duplicate,
@@ -213,8 +241,6 @@ export function SmartUploader(props: SmartUploaderProps) {
     uploadState.matches,
     uploadState.error,
     targetInventoryId,
-    onSaved,
-    onOpenChange,
   ]);
 
   // Track the latest document id and stage so the close path can decide
