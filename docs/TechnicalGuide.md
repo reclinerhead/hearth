@@ -402,7 +402,7 @@ components/smart-uploader/
 │   └── use-document-upload.ts # orchestration of the upload pipeline
 └── stages/
     ├── PathPickerStage.tsx    # photo active; document/video greyed "Soon"
-    ├── CaptureStage.tsx       # file input, preview, retake/analyze
+    ├── CaptureStage.tsx       # dropzone + file input, preview, retake/analyze
     ├── ProcessingStage.tsx    # spinner with phase-specific status copy
     ├── DuplicateStage.tsx     # short-circuit when content_hash already exists
     ├── ReviewNewStage.tsx     # nameplate / appliance_photo / manual-entry form
@@ -425,6 +425,10 @@ The mechanics:
 - **Sheet height vs. inner scroll** — the outer dialog is `flex flex-col overflow-hidden` and its content region is `flex-1 overflow-y-auto`, so the sheet's outer dimensions stay locked at 95dvh while the active stage scrolls within whatever space remains under the header. This is the same flex shape the dialog already used; the only change is dropping `max-h-[100dvh]` for a hard `height` so the surface no longer shrinks to fit short stages.
 
 The pattern is the page-sheet half of a deliberate split documented in issue #56: page-sheet for **multi-step / content-heavy** flows (this one; future siblings for documents and emergency-procedure videos when those paths come online), and a smaller fixed-height bottom-sheet for **single-action** prompts (confirms, quick pickers) that hasn't been built yet. New multi-step capture flows should reuse `.page-sheet` plus the same drag-handle + touch-handler shape rather than rolling their own; once a second consumer lands it's worth extracting the shell into a `<PageSheet>` primitive, but two callers is the bar.
+
+### CaptureStage dropzone
+
+The empty state of [`CaptureStage`](../components/smart-uploader/stages/CaptureStage.tsx) is a bounded drag-and-drop region on desktop and a tap-to-open target on touch — both paths funnel through the same `onPickFile` prop, so the rest of the pipeline never sees which gesture initiated the upload. The container is a plain `div` (clickable, but not focusable) wrapping a single focusable "Choose from your computer" button — no nested-interactive-elements anti-pattern, but tapping anywhere in the dashed region still opens the picker so mobile keeps its one-tap behaviour. Drag handlers `preventDefault` on `dragover`/`drop` (the browser otherwise navigates to the file's local URL), use a `currentTarget.contains(relatedTarget)` check on `dragleave` to keep the active-border highlight from flickering as the cursor moves across child elements, and a window-level `dragend` listener resets state if the user releases outside the modal. Non-image drops are validated against `file.type.startsWith("image/")` before `onPickFile` fires — same gate the dashboard photo upload uses, with the same inline "Please choose an image file." message under the dropzone. Multi-drops are deliberately truncated to `dataTransfer.files[0]` since the Smart Uploader is one-photo-at-a-time.
 
 ### Stage state machine
 
