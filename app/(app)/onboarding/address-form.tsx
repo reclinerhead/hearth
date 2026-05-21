@@ -21,7 +21,14 @@ const Autofill = AddressAutofill as unknown as React.FC<AutofillProps>;
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN ?? "";
 
-export function AddressForm() {
+// The form is shared between /onboarding (first house) and /houses/new
+// (adding a subsequent property). The only user-visible difference is
+// the submit button text; everything else — Mapbox flow, confirmation
+// minimap, server action — is identical, so reuse beats fork. The
+// default keeps the existing onboarding copy unchanged.
+export function AddressForm({
+  submitLabel = "Set up my house",
+}: { submitLabel?: string } = {}) {
   const [streetValue, setStreetValue] = useState("");
   const [feature, setFeature] = useState<MapboxRetrievedFeature | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -181,7 +188,7 @@ export function AddressForm() {
           cursor: submitDisabled ? "not-allowed" : "pointer",
         }}
       >
-        {isPending ? "Setting up…" : "Set up my house"}
+        {isPending ? "Setting up…" : submitLabel}
         {!isPending ? <Icon name="arrow-right" size={16} /> : null}
       </button>
     </form>

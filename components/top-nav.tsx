@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { setActiveHouseAction } from "@/app/actions/houses/set-active-house";
 import type { UserCapabilities } from "@/lib/houses/capabilities";
 import {
   EditHomeDetailsModal,
   type EditableHouseRow,
 } from "./edit-home-details-modal";
 import { Icon } from "./icon";
+import { PropertySwitcher, type HouseSummary } from "./property-switcher";
 import { SmartUploader } from "./smart-uploader/SmartUploader";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -18,32 +20,51 @@ import { ThemeToggle } from "./theme-toggle";
 // every authed page render just to populate the modal.
 export type TopNavHouse = EditableHouseRow;
 
-// `capabilities` arrives plumbed from the (app) layout but isn't rendered
-// in this issue (#98). The follow-up house-switcher UI will consume
-// `canSwitchHouses` and `canCreateAdditionalHouse`; committing the prop
-// signature now means that issue is a one-file change.
+// The account menu's "Switch property" entry swaps the menu contents
+// for an inline property list with a back affordance. This keeps mobile
+// switching usable when the PropertySwitcher dropdown is hidden by the
+// md breakpoint; desktop users get the same affordance redundantly,
+// which is fine for a single-touch interaction.
+type MenuView = "root" | "properties";
+
 export function TopNav({
   house,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  capabilities: _capabilities,
+  houses,
+  capabilities,
 }: {
   house: TopNavHouse | null;
+  houses: HouseSummary[];
   capabilities: UserCapabilities;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuView, setMenuView] = useState<MenuView>("root");
   const [editOpen, setEditOpen] = useState(false);
   const [uploaderOpen, setUploaderOpen] = useState(false);
+  const [pendingHouseId, setPendingHouseId] = useState<string | null>(null);
+  const [isSwitchPending, startSwitchTransition] = useTransition();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
   const router = useRouter();
 
+  // Closing the menu always resets the submenu view so the next open
+  // starts at root rather than the last-viewed pane. Routing the reset
+  // through a single `closeMenu` callback (rather than a state-watching
+  // effect) avoids the cascading-render warning that fires when you
+  // setState in an effect body.
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false);
+    setMenuView("root");
+  }, []);
+
   useEffect(() => {
     if (!menuOpen) return;
     function onClick(e: MouseEvent) {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+      if (!menuRef.current?.contains(e.target as Node)) {
+        closeMenu();
+      }
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setMenuOpen(false);
+      if (e.key === "Escape") closeMenu();
     }
     document.addEventListener("mousedown", onClick);
     document.addEventListener("keydown", onKey);
@@ -51,12 +72,36 @@ export function TopNav({
       document.removeEventListener("mousedown", onClick);
       document.removeEventListener("keydown", onKey);
     };
-  }, [menuOpen]);
+  }, [menuOpen, closeMenu]);
 
   function openEditModal() {
-    setMenuOpen(false);
+    closeMenu();
     setEditOpen(true);
   }
+
+  function handleMenuSwitch(houseId: string) {
+    if (houseId === house?.id) {
+      closeMenu();
+      return;
+    }
+    setPendingHouseId(houseId);
+    startSwitchTransition(async () => {
+      const res = await setActiveHouseAction(houseId);
+      if (res && !res.ok) {
+        console.error("setActiveHouseAction (menu) failed", res.error);
+        setPendingHouseId(null);
+      }
+    });
+  }
+
+  const activeChipHouse: HouseSummary | null = house
+    ? {
+        id: house.id,
+        address_line1: house.address_line1,
+        city: house.city,
+        state: house.state,
+      }
+    : null;
 
   return (
     <>
@@ -92,17 +137,12 @@ export function TopNav({
             </span>
           </Link>
 
-          {house ? (
-            <div
-              className="hidden md:flex items-center gap-1 text-[color:var(--color-text-tertiary)] truncate"
-              style={{ fontSize: 13 }}
-            >
-              <span style={{ color: "var(--color-border-emphasis)" }}>·</span>
-              <Icon name="map-pin" size={14} />
-              <span className="truncate">
-                {house.address_line1}, {house.city} {house.state}
-              </span>
-            </div>
+          {activeChipHouse ? (
+            <PropertySwitcher
+              activeHouse={activeChipHouse}
+              houses={houses}
+              capabilities={capabilities}
+            />
           ) : null}
 
           <div className="ml-auto flex items-center gap-2">
@@ -116,15 +156,6 @@ export function TopNav({
               <Icon name="plus" size={16} />
               <span>Add</span>
             </button>
-            {/* <button
-              type="button"
-              className="btn btn-primary btn-icon md:hidden"
-              aria-label="Add to Hearth"
-              onClick={() => house && setUploaderOpen(true)}
-              disabled={!house}
-            >
-              <Icon name="plus" size={18} />
-            </button> */}
 
             <ThemeToggle className="hidden sm:inline-flex" />
 
@@ -133,7 +164,7 @@ export function TopNav({
                 type="button"
                 className="flex items-center gap-2 rounded-full p-0.5 pr-2"
                 style={{ border: "1px solid var(--color-border-subtle)" }}
-                onClick={() => setMenuOpen((v) => !v)}
+                onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 aria-label="Account menu"
@@ -153,49 +184,29 @@ export function TopNav({
               {menuOpen ? (
                 <div
                   role="menu"
-                  className="absolute right-0 mt-2 w-56 surface-raised p-1 shadow-lg"
+                  className="absolute right-0 mt-2 w-64 surface-raised p-1 shadow-lg"
                   style={{ borderRadius: "var(--radius-md)", zIndex: 50 }}
                 >
-                  {/*
-                    Home details is the *only* entry point for editing
-                    house facts now — the standalone /home-details page
-                    and its sidebar/bottom-nav links have been removed.
-                    Hidden when there's no house yet (still onboarding).
-                  */}
-                  {house ? (
-                    <button
-                      ref={editTriggerRef}
-                      type="button"
-                      role="menuitem"
-                      onClick={openEditModal}
-                      className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[color:var(--color-bg-surface)]"
-                    >
-                      <Icon name="home" size={16} />
-                      <span>Home details</span>
-                    </button>
-                  ) : null}
-                  <div className="sm:hidden">
-                    <ThemeToggleMenuItem onClick={() => setMenuOpen(false)} />
-                  </div>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[color:var(--color-bg-surface)]"
-                  >
-                    <Icon name="settings" size={16} />
-                    <span>Settings</span>
-                  </button>
-                  <div className="divider my-1" />
-                  <form action="/auth/signout" method="post">
-                    <button
-                      type="submit"
-                      role="menuitem"
-                      className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[color:var(--color-bg-surface)]"
-                    >
-                      <Icon name="logout" size={16} />
-                      <span>Sign out</span>
-                    </button>
-                  </form>
+                  {menuView === "root" ? (
+                    <RootMenu
+                      house={house}
+                      houses={houses}
+                      capabilities={capabilities}
+                      editTriggerRef={editTriggerRef}
+                      onEditDetails={openEditModal}
+                      onOpenProperties={() => setMenuView("properties")}
+                      onClose={closeMenu}
+                    />
+                  ) : (
+                    <PropertiesSubmenu
+                      activeHouseId={house?.id ?? null}
+                      houses={houses}
+                      pendingHouseId={pendingHouseId}
+                      isPending={isSwitchPending}
+                      onBack={() => setMenuView("root")}
+                      onSelect={handleMenuSwitch}
+                    />
+                  )}
                 </div>
               ) : null}
             </div>
@@ -227,6 +238,193 @@ export function TopNav({
         />
       ) : null}
     </>
+  );
+}
+
+function RootMenu({
+  house,
+  houses,
+  capabilities,
+  editTriggerRef,
+  onEditDetails,
+  onOpenProperties,
+  onClose,
+}: {
+  house: TopNavHouse | null;
+  houses: HouseSummary[];
+  capabilities: UserCapabilities;
+  editTriggerRef: React.RefObject<HTMLButtonElement | null>;
+  onEditDetails: () => void;
+  onOpenProperties: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      {/*
+        Home details is the *only* entry point for editing house facts
+        now — the standalone /home-details page and its sidebar/bottom-
+        nav links have been removed. Hidden when there's no house yet
+        (still onboarding).
+      */}
+      {house ? (
+        <button
+          ref={editTriggerRef}
+          type="button"
+          role="menuitem"
+          onClick={onEditDetails}
+          className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[color:var(--color-bg-surface)]"
+        >
+          <Icon name="home" size={16} />
+          <span>Home details</span>
+        </button>
+      ) : null}
+
+      {/* Switch + add entries — mobile parity for the PropertySwitcher in
+          the header, which is hidden below md. Visible on desktop too
+          so the menu reads the same regardless of viewport.            */}
+      {capabilities.canSwitchHouses && houses.length >= 2 ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={onOpenProperties}
+          className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[color:var(--color-bg-surface)]"
+        >
+          <Icon name="map-pin" size={16} />
+          <span className="flex-1">Switch property</span>
+          <Icon name="chevron-right" size={14} />
+        </button>
+      ) : null}
+
+      {capabilities.canCreateAdditionalHouse ? (
+        <Link
+          href="/houses/new"
+          role="menuitem"
+          onClick={onClose}
+          className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[color:var(--color-bg-surface)]"
+          style={{ color: "var(--color-text-primary)" }}
+        >
+          <Icon name="plus" size={16} />
+          <span>Add a property</span>
+        </Link>
+      ) : null}
+
+      <div className="sm:hidden">
+        <ThemeToggleMenuItem onClick={onClose} />
+      </div>
+      <button
+        type="button"
+        role="menuitem"
+        className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[color:var(--color-bg-surface)]"
+      >
+        <Icon name="settings" size={16} />
+        <span>Settings</span>
+      </button>
+      <div className="divider my-1" />
+      <form action="/auth/signout" method="post">
+        <button
+          type="submit"
+          role="menuitem"
+          className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[color:var(--color-bg-surface)]"
+        >
+          <Icon name="logout" size={16} />
+          <span>Sign out</span>
+        </button>
+      </form>
+    </>
+  );
+}
+
+function PropertiesSubmenu({
+  activeHouseId,
+  houses,
+  pendingHouseId,
+  isPending,
+  onBack,
+  onSelect,
+}: {
+  activeHouseId: string | null;
+  houses: HouseSummary[];
+  pendingHouseId: string | null;
+  isPending: boolean;
+  onBack: () => void;
+  onSelect: (houseId: string) => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onBack}
+        className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[color:var(--color-bg-surface)]"
+        style={{ color: "var(--color-text-secondary)" }}
+      >
+        <Icon name="chevron-left" size={14} />
+        <span className="text-small">Account menu</span>
+      </button>
+      <div
+        className="eyebrow px-3 pt-2 pb-1"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        Your properties
+      </div>
+      {houses.map((h) => {
+        const isActive = h.id === activeHouseId;
+        const itemPending = isPending && pendingHouseId === h.id;
+        return (
+          <button
+            key={h.id}
+            type="button"
+            role="menuitem"
+            onClick={() => onSelect(h.id)}
+            disabled={isPending && !itemPending}
+            className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[color:var(--color-bg-surface)] disabled:opacity-60"
+            style={{ color: "var(--color-text-primary)" }}
+          >
+            <span
+              aria-hidden
+              className="flex h-5 w-5 shrink-0 items-center justify-center"
+              style={{ color: "var(--color-accent)" }}
+            >
+              {itemPending ? (
+                <MenuSpinner />
+              ) : isActive ? (
+                <Icon name="circle-check" size={16} />
+              ) : null}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span
+                className="block truncate"
+                style={{ fontSize: 14, fontWeight: isActive ? 500 : 400 }}
+              >
+                {h.address_line1 ?? "Untitled property"}
+              </span>
+              <span
+                className="block truncate text-small"
+                style={{ color: "var(--color-text-tertiary)" }}
+              >
+                {[h.city, h.state].filter(Boolean).join(", ")}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+function MenuSpinner() {
+  return (
+    <span
+      aria-label="Switching"
+      role="status"
+      className="inline-block animate-spin"
+      style={{
+        width: 14,
+        height: 14,
+        border: "2px solid color-mix(in oklab, var(--color-accent) 30%, transparent)",
+        borderTopColor: "var(--color-accent)",
+        borderRadius: "50%",
+      }}
+    />
   );
 }
 
