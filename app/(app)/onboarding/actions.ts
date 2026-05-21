@@ -64,13 +64,30 @@ export async function createHouseFromMapboxFeature(
     };
   }
 
-  // Kick off the Day One Briefing in the background. The dashboard
-  // subscribes to row updates via Realtime and shows progress in place,
-  // so we don't await here. If start() throws (workflow infrastructure
-  // issue), log and continue — the dashboard handles the resulting
-  // 'pending' status gracefully and the user shouldn't be blocked from
-  // reaching their dashboard.
   if (inserted?.id) {
+    // Set this house as the user's active house. For onboarding (first
+    // house) this is essentially a no-op against the null default; for
+    // the /houses/new flow this moves them to the newly added property
+    // so the dashboard they land on is the right one. The profile
+    // UPDATE policy from #98 allows the user to write active_house_id.
+    // A failure here doesn't block the redirect — resolveActiveHouseId's
+    // fallback path resolves to the most-recently-created house, which
+    // is the new one anyway.
+    const { error: profileError } = await supabase
+      .schema("public")
+      .from("profiles")
+      .update({ active_house_id: inserted.id })
+      .eq("id", user.id);
+    if (profileError) {
+      console.error("set active_house_id on new house failed", profileError);
+    }
+
+    // Kick off the Day One Briefing in the background. The dashboard
+    // subscribes to row updates via Realtime and shows progress in
+    // place, so we don't await here. If start() throws (workflow
+    // infrastructure issue), log and continue — the dashboard handles
+    // the resulting 'pending' status gracefully and the user shouldn't
+    // be blocked from reaching their dashboard.
     try {
       await start(runBriefing, [inserted.id]);
     } catch (briefingError) {

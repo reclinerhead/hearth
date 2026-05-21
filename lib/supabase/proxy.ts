@@ -52,18 +52,55 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Onboarding gate: authenticated users with no house in hearth.houses go
-  // to /onboarding before any of the protected app routes. We skip this
-  // check on public routes (which already render fine pre-house) and on
-  // /onboarding itself (otherwise we'd loop). This adds one count query
-  // per protected request; revisit if it shows up in perf work.
-  if (user && !isPublicRoute && pathname !== "/onboarding") {
+  // Onboarding gate: authenticated users with no house go to /onboarding
+  // before any of the protected app routes. /houses/new is the existing-
+  // user add path and has its own gate below — it's exempt here because
+  // we only want it to handle add-property navigation for users who
+  // already have at least one house (zero-house users still belong on
+  // /onboarding). One COUNT query per protected request; revisit if it
+  // shows up in perf work.
+  if (
+    user &&
+    !isPublicRoute &&
+    pathname !== "/onboarding" &&
+    pathname !== "/houses/new"
+  ) {
     const { count } = await supabase
       .from("houses")
       .select("id", { count: "exact", head: true });
     if ((count ?? 0) === 0) {
       const url = request.nextUrl.clone();
       url.pathname = "/onboarding";
+      return NextResponse.redirect(url);
+    }
+  }
+
+  // Add-property gate: /houses/new requires the capability AND at least
+  // one existing house. The page itself re-checks both as defense in
+  // depth. Inlined rather than calling resolveUserCapabilities so the
+  // proxy doesn't pull app-layer helpers; one COUNT plus one profile
+  // read costs the same as the page would do.
+  if (user && pathname === "/houses/new") {
+    const [{ count }, { data: profile }] = await Promise.all([
+      supabase.from("houses").select("id", { count: "exact", head: true }),
+      supabase
+        .schema("public")
+        .from("profiles")
+        .select("plan_tier, is_admin")
+        .maybeSingle(),
+    ]);
+
+    if ((count ?? 0) === 0) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/onboarding";
+      return NextResponse.redirect(url);
+    }
+
+    const canCreate =
+      profile?.is_admin === true || profile?.plan_tier === "premium";
+    if (!canCreate) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
       return NextResponse.redirect(url);
     }
   }
