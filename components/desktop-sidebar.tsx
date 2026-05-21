@@ -11,6 +11,7 @@ type Item = { href: string; label: string; icon: IconName };
 const ITEMS: Item[] = [
   { href: "/dashboard", label: "Dashboard", icon: "layout-dashboard" },
   { href: "/inventory", label: "Home inventory", icon: "device-tv-old" },
+  { href: "/reports", label: "Reports", icon: "file-text" },
   { href: "/how-it-works", label: "How it Works", icon: "info" },
 ];
 

@@ -7,12 +7,15 @@ import { Icon, type IconName } from "./icon";
 type Tab = { href: string; label: string; icon: IconName };
 
 // Home details is edited from the top-nav account menu (modal), not a
-// bottom-nav destination. Three equal tabs: Dashboard | Inventory |
-// How it Works. The earlier floating "+" Add button was a non-functional
-// placeholder and was removed when the bar gained a third real destination.
+// bottom-nav destination. Four equal tabs: Dashboard | Inventory |
+// Reports | How it Works. The earlier floating "+" Add button was a
+// non-functional placeholder and was removed when the bar gained a
+// third real destination; Reports landed alongside the mocked /reports
+// hub in issue #96.
 const TABS: Tab[] = [
   { href: "/dashboard", label: "Dashboard", icon: "layout-dashboard" },
   { href: "/inventory", label: "Inventory", icon: "device-tv-old" },
+  { href: "/reports", label: "Reports", icon: "file-text" },
   { href: "/how-it-works", label: "How it Works", icon: "info" },
 ];
 
@@ -39,7 +42,7 @@ export function BottomNav() {
     >
       <ul
         className="grid h-[var(--nav-bottom-h)] items-stretch"
-        style={{ gridTemplateColumns: "1fr 1fr 1fr" }}
+        style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}
       >
         {TABS.map((t) => (
           <TabLink key={t.href} tab={t} active={isActive(pathname, t.href)} />
