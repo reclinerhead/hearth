@@ -90,6 +90,64 @@ describe("buildClassifyPrompt", () => {
     });
   });
 
+  describe("canonical equipment names (#90)", () => {
+    // The Smart Uploader's match-existing-inventory step depends on the
+    // model returning a stable name for the same physical item across
+    // multiple photos. The prompt pins seven equipment categories to
+    // canonical names; lib/inventory/match-name.ts handles the residual
+    // drift via aliases. These assertions pin the prompt contract so a
+    // future edit can't quietly drop the guidance.
+
+    it("instructs the model to return the canonical name exactly for common categories", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/EXACTLY the canonical name/i);
+    });
+
+    it("lists every canonical name the matcher relies on", () => {
+      const prompt = buildClassifyPrompt();
+      for (const canonical of [
+        "Microwave",
+        "Washing Machine",
+        "Dryer",
+        "Water Heater",
+        "Refrigerator",
+        "Air Conditioner",
+        "Furnace",
+      ]) {
+        expect(prompt).toContain(`"${canonical}"`);
+      }
+    });
+
+    it("names the synonyms the model must avoid for each canonical", () => {
+      const prompt = buildClassifyPrompt();
+      // Each "not X" disclaimer is the load-bearing part — without it
+      // the model defaults to whatever form fits the image.
+      for (const avoided of [
+        "Microwave Oven",
+        "Washer",
+        "Clothes Washer",
+        "Clothes Dryer",
+        "Hot Water Heater",
+        "Fridge",
+        "AC",
+        "Air Conditioning",
+        "Gas Furnace",
+      ]) {
+        expect(prompt).toContain(`"${avoided}"`);
+      }
+    });
+
+    it("explains why canonical names matter (so future edits don't strip the rationale)", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/duplicate inventory entry/i);
+    });
+
+    it("leaves room for natural vocabulary on items outside the canonical list", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/outside this list/i);
+    });
+  });
+
   describe("derived-facts prohibition (#81)", () => {
     // The prior revision of this prompt used realistic-looking literal
     // pill values; Grok 4.3 was observed echoing them verbatim into

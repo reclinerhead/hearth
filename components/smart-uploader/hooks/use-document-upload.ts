@@ -213,9 +213,11 @@ export function useDocumentUpload(
         setState((s) => ({ ...s, phase: "matching", analysis: aiExtraction }));
 
         const matchName = aiExtraction.classification.name;
+        const matchType = aiExtraction.classification.type;
         const matches = await findMatchingInventoryAction({
           houseId: args.houseId,
           inventoryName: matchName,
+          inventoryType: matchType,
         });
         if (matches.error !== null) throw new Error(matches.error);
 
