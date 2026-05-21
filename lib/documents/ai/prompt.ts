@@ -35,6 +35,18 @@ For nameplate and appliance_photo, you must also:
 
 A. Identify what kind of equipment this is, using natural everyday homeowner vocabulary. Examples: "Furnace", "Water Heater", "Water Softener", "Air Conditioner", "Dishwasher", "Refrigerator", "Washing Machine", "Dryer", "Sump Pump", "Water Filter", "Garage Door Opener". Use the form a homeowner would use, not the manufacturer's marketing name.
 
+For the common categories below, return EXACTLY the canonical name listed — do not paraphrase, expand, or add qualifying words. The same physical item is often photographed twice (a nameplate shot and a front-of-unit shot); using a stable canonical name on both passes is what lets the system recognize them as the same item instead of creating a duplicate inventory entry.
+
+   - "Microwave" (not "Microwave Oven")
+   - "Washing Machine" (not "Washer", "Clothes Washer")
+   - "Dryer" (not "Clothes Dryer")
+   - "Water Heater" (not "Hot Water Heater")
+   - "Refrigerator" (not "Fridge")
+   - "Air Conditioner" (not "AC", "Air Conditioning")
+   - "Furnace" (not "Gas Furnace")
+
+For items outside this list, continue using natural homeowner vocabulary.
+
 B. Categorize the item:
    - "appliance" — kitchen/laundry equipment a homeowner would replace as a unit (refrigerator, dishwasher, dryer, washing machine, oven, microwave)
    - "system" — installed infrastructure tied to the building (furnace, water heater, HVAC, water softener, sump pump, well pump, septic equipment, electrical panel)
