@@ -275,6 +275,7 @@ async function loadInventory(houseId: string): Promise<InventoryItem[]> {
       manufacturer,
       model_number,
       installed_on,
+      hero_document_id,
       created_at,
       room:rooms!inner(name)
       `,
@@ -291,6 +292,7 @@ async function loadInventory(houseId: string): Promise<InventoryItem[]> {
     manufacturer: string | null;
     model_number: string | null;
     installed_on: string | null;
+    hero_document_id: string | null;
     created_at: string;
     room: { name: string } | { name: string }[] | null;
   }>;
@@ -304,23 +306,41 @@ async function loadInventory(houseId: string): Promise<InventoryItem[]> {
   // one-liner, so we pull every attached doc for the batch and pick the
   // most-recent per inventory_id in JS. Filter to actual photos so
   // future receipts / manuals stay out of the thumbnail slot.
+  //
+  // When an inventory row has a `hero_document_id` (issue #105) we
+  // prefer that document's thumbnail over the most-recent one. Falls
+  // back cleanly to the most-recent rule when the FK is null or the
+  // pinned doc isn't in the batch.
   const { data: docs } = await supabase
     .from("documents")
-    .select("inventory_id, thumbnail_path, analyzed_at, created_at")
+    .select("id, inventory_id, thumbnail_path, analyzed_at, created_at")
     .in("inventory_id", ids)
     .eq("status", "attached")
     .in("kind", ["nameplate", "photo"])
     .order("analyzed_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
 
+  const pinnedHeroIdByInventory = new Map<string, string>();
+  for (const r of rowList) {
+    if (r.hero_document_id) {
+      pinnedHeroIdByInventory.set(r.id, r.hero_document_id);
+    }
+  }
+
   const heroByInventory = new Map<string, string>();
+  const pinnedThumbByInventory = new Map<string, string>();
   for (const d of (docs ?? []) as Array<{
+    id: string | null;
     inventory_id: string | null;
     thumbnail_path: string | null;
   }>) {
     if (!d.inventory_id || !d.thumbnail_path) continue;
     if (!heroByInventory.has(d.inventory_id)) {
       heroByInventory.set(d.inventory_id, d.thumbnail_path);
+    }
+    const pinnedId = pinnedHeroIdByInventory.get(d.inventory_id);
+    if (pinnedId && d.id === pinnedId) {
+      pinnedThumbByInventory.set(d.inventory_id, d.thumbnail_path);
     }
   }
 
@@ -335,7 +355,8 @@ async function loadInventory(houseId: string): Promise<InventoryItem[]> {
       manufacturer: r.manufacturer,
       modelNumber: r.model_number,
       installedOn: r.installed_on,
-      thumbnailPath: heroByInventory.get(r.id) ?? null,
+      thumbnailPath:
+        pinnedThumbByInventory.get(r.id) ?? heroByInventory.get(r.id) ?? null,
     };
   });
 }

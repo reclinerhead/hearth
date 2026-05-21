@@ -175,6 +175,7 @@ async function loadPreviewItems(
       manufacturer,
       model_number,
       installed_on,
+      hero_document_id,
       created_at,
       room:rooms!inner(name)
     `,
@@ -192,6 +193,7 @@ async function loadPreviewItems(
     manufacturer: string | null;
     model_number: string | null;
     installed_on: string | null;
+    hero_document_id: string | null;
     created_at: string;
     room: { name: string } | { name: string }[] | null;
   }>;
@@ -206,21 +208,39 @@ async function loadPreviewItems(
   // and pick the most-recent per inventory_id client-side. The set is
   // small (≤ PREVIEW_LIMIT items × however many photos each has) and
   // each row is a few columns, so the cost is negligible.
+  //
+  // When the inventory row has a `hero_document_id` (issue #105) we
+  // prefer that document's thumbnail over the most-recent one. If the
+  // FK has since been SET NULL'd or the doc isn't in the batch for any
+  // reason, we cleanly fall through to the existing rule.
   const { data: docs } = await supabase
     .from("documents")
-    .select("inventory_id, thumbnail_path, analyzed_at, created_at")
+    .select("id, inventory_id, thumbnail_path, analyzed_at, created_at")
     .in("inventory_id", ids)
     .eq("status", "attached")
     .order("analyzed_at", { ascending: false, nullsFirst: false });
 
+  const pinnedHeroIdByInventory = new Map<string, string>();
+  for (const r of rowList) {
+    if (r.hero_document_id) {
+      pinnedHeroIdByInventory.set(r.id, r.hero_document_id);
+    }
+  }
+
   const heroByInventory = new Map<string, string>();
+  const pinnedThumbByInventory = new Map<string, string>();
   for (const d of (docs ?? []) as Array<{
+    id: string | null;
     inventory_id: string | null;
     thumbnail_path: string;
   }>) {
     if (!d.inventory_id || !d.thumbnail_path) continue;
     if (!heroByInventory.has(d.inventory_id)) {
       heroByInventory.set(d.inventory_id, d.thumbnail_path);
+    }
+    const pinnedId = pinnedHeroIdByInventory.get(d.inventory_id);
+    if (pinnedId && d.id === pinnedId) {
+      pinnedThumbByInventory.set(d.inventory_id, d.thumbnail_path);
     }
   }
 
@@ -239,7 +259,8 @@ async function loadPreviewItems(
       manufacturer: r.manufacturer,
       modelNumber: r.model_number,
       installedOn: r.installed_on,
-      thumbnailPath: heroByInventory.get(r.id) ?? null,
+      thumbnailPath:
+        pinnedThumbByInventory.get(r.id) ?? heroByInventory.get(r.id) ?? null,
     };
   });
 }

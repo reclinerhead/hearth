@@ -262,7 +262,18 @@ export function InventoryDetailView({
     last_serviced_on: item.last_serviced_on,
     next_service_due_on: item.next_service_due_on,
     notes: item.notes,
+    manufacture_date: item.manufacture_date,
+    hero_document_id: item.hero_document_id,
   };
+
+  // The edit modal needs the document id alongside the thumbnail path
+  // so it can persist the user's hero selection back to
+  // inventory.hero_document_id. The same list the hero / lightbox use,
+  // re-shaped to the modal's prop type.
+  const photoChoices = item.photos.map((p) => ({
+    id: p.id,
+    thumbnailPath: p.thumbnailPath,
+  }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -417,6 +428,7 @@ export function InventoryDetailView({
           open
           item={editableItem}
           rooms={rooms}
+          photos={photoChoices}
           linkedDocumentCount={linkedDocumentCount}
           onClose={() => setEditOpen(false)}
           onSaved={({ researchInvalidated }) => {

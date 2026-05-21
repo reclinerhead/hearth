@@ -7,31 +7,41 @@ import {
   updateInventoryItemAction,
   type UpdateInventoryItemInput,
 } from "@/app/actions/inventory/update-item";
+import { useCachedSignedUrl } from "@/lib/house-image/use-cached-signed-url";
 import type { EquipmentType } from "@/types/document";
 import { DeleteInventoryItemConfirmModal } from "./delete-inventory-item-confirm-modal";
 import { Icon } from "./icon";
 
 /**
  * Modal edit surface for a single hearth.inventory row. Triggered from
- * the EDIT DETAILS button on /inventory/[id] (issue #57). Reuses the
- * conventions established by EditHomeDetailsModal: scroll-lock,
- * focus-trap, ESC, return-focus, ai-surface styling, label/input
- * helpers.
+ * the EDIT DETAILS button on /inventory/[id] (issue #57, extended by
+ * issue #105). Reuses the conventions established by EditHomeDetailsModal:
+ * scroll-lock, focus-trap, ESC, return-focus, ai-surface styling,
+ * label/input helpers.
  *
- * Owns three things in addition to the standard edit form:
+ * Owns four things in addition to the standard edit form:
  *  - A type select (re-classifying mis-detected items) and a room
  *    select (relocating mis-categorized items) — both are common
  *    failure modes of the upload-time AI classification.
+ *  - A manufacture-date (month input) parallel to the decoded value
+ *    written by the serial-decode pipeline (issue #77). A user-entered
+ *    value writes confidence='high' / model='user-entered' so the
+ *    detail page's "Manufactured" tile fallback flows through unchanged.
+ *  - A hero-photo selector (issue #105) — thumbnails of every attached
+ *    `nameplate`/`photo` document; tapping one sets the row's
+ *    `hero_document_id`. NULL means fall back to the "most-recently
+ *    attached" rule the detail page and dashboard tile already use.
  *  - A danger zone footer with the DELETE button that mounts the
  *    nested DeleteInventoryItemConfirmModal.
  *  - A `researchInvalidated` signal back to the parent: when the user
- *    edits manufacturer / model_number / type, the previously stored
+ *    edits manufacturer / model_number, the previously stored
  *    "Research this model" insights are stale and the panel should be
  *    re-run. The decision is made by the server action's pure helper;
  *    the parent uses the returned flag to kick off researchInventoryModelAction.
  *
- * Modal mechanics match EditHomeDetailsModal. If a fourth caller needs
- * the same shell we can pull a shared base out.
+ * The modal intentionally does NOT close on backdrop click — accidental
+ * outside-clicks while editing fields used to wipe in-progress work
+ * (issue #105). ESC, the X button, and Cancel are the only close paths.
  */
 
 const FOCUSABLE_SELECTOR =
@@ -49,6 +59,8 @@ export type EditableInventoryRow = {
   last_serviced_on: string | null;
   next_service_due_on: string | null;
   notes: string | null;
+  manufacture_date: string | null;
+  hero_document_id: string | null;
 };
 
 export type EditInventoryItemRoomOption = {
@@ -56,8 +68,36 @@ export type EditInventoryItemRoomOption = {
   name: string;
 };
 
+/**
+ * Every attached `nameplate` / `photo` document for the item, in the
+ * detail page's read order (analyzed_at desc, created_at desc). The
+ * hero-photo section in the modal renders these as a wrapping strip;
+ * `id` is what gets persisted into `inventory.hero_document_id` when
+ * the user picks one. The parent fetches the list server-side so the
+ * modal stays a pure render of its props.
+ */
+export type EditInventoryItemPhoto = {
+  id: string;
+  thumbnailPath: string;
+};
+
 function dateInputValue(iso: string | null): string {
   return iso ? iso.slice(0, 10) : "";
+}
+
+// The user-entered manufacture date input is `type="month"` so the
+// value shape is `YYYY-MM`. Decoded values can be `YYYY`, `YYYY-MM`,
+// or `YYYY-Www`; only the `YYYY-MM` case prefills the input cleanly,
+// and `YYYY` is rendered as `YYYY-01` so the user can still see/edit
+// the year they had. ISO weeks (`YYYY-Www`) are rare and the
+// month-picker can't represent them, so the field stays blank in that
+// case — the user can pick a real month if they know it.
+function monthInputValue(value: string | null): string {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}$/.test(trimmed)) return trimmed;
+  if (/^\d{4}$/.test(trimmed)) return `${trimmed}-01`;
+  return "";
 }
 
 function emptyToNull(s: string): string | null {
@@ -74,6 +114,7 @@ export function EditInventoryItemModal({
   open,
   item,
   rooms,
+  photos,
   linkedDocumentCount,
   onClose,
   onSaved,
@@ -83,6 +124,12 @@ export function EditInventoryItemModal({
   open: boolean;
   item: EditableInventoryRow;
   rooms: EditInventoryItemRoomOption[];
+  /**
+   * Every attached photo for this item, ordered by analyzed_at desc /
+   * created_at desc. Empty when the item has no photos yet — the Hero
+   * photo section then hides itself entirely.
+   */
+  photos: EditInventoryItemPhoto[];
   linkedDocumentCount: number;
   onClose: () => void;
   /**
@@ -111,6 +158,9 @@ export function EditInventoryItemModal({
   const [manufacturer, setManufacturer] = useState(item.manufacturer ?? "");
   const [modelNumber, setModelNumber] = useState(item.model_number ?? "");
   const [serialNumber, setSerialNumber] = useState(item.serial_number ?? "");
+  const [manufactureDate, setManufactureDate] = useState(
+    monthInputValue(item.manufacture_date),
+  );
   const [installedOn, setInstalledOn] = useState(dateInputValue(item.installed_on));
   const [lastServicedOn, setLastServicedOn] = useState(
     dateInputValue(item.last_serviced_on),
@@ -119,6 +169,18 @@ export function EditInventoryItemModal({
     dateInputValue(item.next_service_due_on),
   );
   const [notes, setNotes] = useState(item.notes ?? "");
+  // Defensive: if the stored hero_document_id points at a document the
+  // current `photos` list doesn't contain (e.g. the chosen photo was
+  // deleted and the FK SET NULL hasn't propagated to the read yet, or
+  // the photo dropped out of the kind filter), treat the form state as
+  // "none selected" so we don't show a phantom highlight on a thumbnail
+  // that isn't visible.
+  const [heroDocumentId, setHeroDocumentId] = useState<string | null>(() => {
+    if (!item.hero_document_id) return null;
+    return photos.some((p) => p.id === item.hero_document_id)
+      ? item.hero_document_id
+      : null;
+  });
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -207,10 +269,12 @@ export function EditInventoryItemModal({
           manufacturer: emptyToNull(manufacturer),
           model_number: emptyToNull(modelNumber),
           serial_number: emptyToNull(serialNumber),
+          manufacture_date: emptyToNull(manufactureDate),
           installed_on: dateOrNull(installedOn),
           last_serviced_on: dateOrNull(lastServicedOn),
           next_service_due_on: dateOrNull(nextServiceDueOn),
           notes: emptyToNull(notes),
+          hero_document_id: heroDocumentId,
         },
       };
       const result = await updateInventoryItemAction(payload);
@@ -268,18 +332,16 @@ export function EditInventoryItemModal({
             "color-mix(in oklab, var(--color-bg-base) 80%, transparent)",
           backdropFilter: "blur(6px)",
         }}
-        onClick={(e) => {
-          if (e.target === e.currentTarget && !saving && !deleteOpen) {
-            onClose();
-          }
-        }}
+        // Intentionally no onClick on the backdrop — accidental outside
+        // clicks while editing fields used to wipe in-progress work.
+        // ESC, the X, and Cancel are the only close paths.
       >
         <div
           ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          className="surface-ai relative w-full max-w-lg max-h-[92dvh] flex flex-col overflow-hidden"
+          className="surface-ai relative w-full max-w-3xl max-h-[92dvh] flex flex-col overflow-hidden"
         >
           <form
             onSubmit={handleSubmit}
@@ -364,9 +426,14 @@ export function EditInventoryItemModal({
 
               <SectionHeading
                 title="Service tracking"
-                hint="When this item was installed and serviced."
+                hint="When this item was manufactured, installed, and serviced."
               />
-              <div className="grid sm:grid-cols-3 gap-4">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <FieldMonth
+                  label="Manufactured"
+                  value={manufactureDate}
+                  onChange={setManufactureDate}
+                />
                 <FieldDate
                   label="Installed"
                   value={installedOn}
@@ -399,6 +466,14 @@ export function EditInventoryItemModal({
                   style={{ height: "auto", paddingTop: 8, paddingBottom: 8 }}
                 />
               </div>
+
+              {photos.length > 0 ? (
+                <HeroPhotoSection
+                  photos={photos}
+                  selectedId={heroDocumentId}
+                  onSelect={setHeroDocumentId}
+                />
+              ) : null}
 
               <DangerZone
                 triggerRef={deleteTriggerRef}
@@ -539,6 +614,28 @@ function FieldDate({
   );
 }
 
+function FieldMonth({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <input
+        type="month"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="input"
+      />
+    </div>
+  );
+}
+
 function FieldSelect({
   label,
   value,
@@ -565,6 +662,114 @@ function FieldSelect({
         ))}
       </select>
     </div>
+  );
+}
+
+function HeroPhotoSection({
+  photos,
+  selectedId,
+  onSelect,
+}: {
+  photos: EditInventoryItemPhoto[];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+}) {
+  // A thin wrapping flex row — desktop with `max-w-3xl` fits ~8 thumbnails
+  // per row before wrapping. The strip is intentionally not horizontally
+  // scrollable: wrapping keeps every photo discoverable without a hidden
+  // overflow that some users won't think to drag.
+  return (
+    <div className="flex flex-col gap-2">
+      <SectionHeading
+        title="Hero photo"
+        hint="Pick which photo represents this item."
+      />
+      <div className="flex flex-wrap gap-2">
+        {photos.map((photo) => (
+          <HeroPhotoThumb
+            key={photo.id}
+            photo={photo}
+            selected={photo.id === selectedId}
+            onSelect={() =>
+              onSelect(selectedId === photo.id ? null : photo.id)
+            }
+          />
+        ))}
+      </div>
+      <p
+        className="text-small"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        Or leave unselected to use your most recent photo.
+      </p>
+    </div>
+  );
+}
+
+function HeroPhotoThumb({
+  photo,
+  selected,
+  onSelect,
+}: {
+  photo: EditInventoryItemPhoto;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const url = useCachedSignedUrl("hearth-documents", photo.thumbnailPath, null);
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      aria-label={selected ? "Hero photo (selected)" : "Choose as hero photo"}
+      className="relative overflow-hidden"
+      style={{
+        width: 80,
+        height: 80,
+        borderRadius: "var(--radius-md)",
+        border: "1px solid var(--color-border-subtle)",
+        backgroundColor: "var(--color-bg-surface-raised)",
+        padding: 0,
+        boxShadow: selected ? "0 0 0 2px var(--color-accent)" : undefined,
+      }}
+    >
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt=""
+          className="block w-full h-full object-cover"
+        />
+      ) : null}
+      {selected ? (
+        <span
+          aria-hidden
+          className="absolute flex items-center justify-center"
+          style={{
+            top: 4,
+            right: 4,
+            width: 18,
+            height: 18,
+            borderRadius: 999,
+            color: "var(--color-bg-base)",
+            backgroundColor: "var(--color-accent)",
+          }}
+        >
+          <svg
+            width={11}
+            height={11}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m5 12 5 5 9-10" />
+          </svg>
+        </span>
+      ) : null}
+    </button>
   );
 }
 

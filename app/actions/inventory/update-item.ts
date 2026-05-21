@@ -15,6 +15,13 @@
 // `researchInvalidated: true`. The "did key fields change?" decision
 // lives in a pure helper (lib/inventory/research-significant-fields.ts)
 // so it can be tested without a Supabase round-trip.
+//
+// Manufacture-date and hero_document_id were added by issue #105 as
+// user-facing edits parallel to the existing decoded values and the
+// implicit "most-recent attached photo" hero rule. Manufacture date
+// is **not** a research-grounding field — research depends on
+// manufacturer + model_number — and is intentionally left out of
+// researchSignificantFieldsChanged.
 
 import { revalidatePath } from "next/cache";
 import { researchSignificantFieldsChanged } from "@/lib/inventory/research-significant-fields";
@@ -34,6 +41,17 @@ export type UpdateInventoryItemInput = {
     last_serviced_on: string | null;
     next_service_due_on: string | null;
     notes: string | null;
+    // YYYY-MM when set; null clears all six manufacture-date columns
+    // in the same UPDATE. See "Manufacture date write contract" in
+    // docs/TechnicalGuide.md for why we write the satellite columns
+    // (precision, confidence, model, decoded_at, reasoning) alongside
+    // the user-entered date.
+    manufacture_date: string | null;
+    // Nullable FK into hearth.documents. NULL means "fall back to the
+    // most-recently attached photo" — the legacy rule. The DB FK has
+    // ON DELETE SET NULL, so a deleted photo reverts this column to
+    // null automatically.
+    hero_document_id: string | null;
   };
 };
 
@@ -75,7 +93,32 @@ export async function updateInventoryItemAction(
       },
     );
 
-  const update: Record<string, unknown> = { ...input.fields };
+  // Pull manufacture_date out of the spread — it's persisted across six
+  // columns, not one, so the satellite columns need their own write
+  // alongside the user-entered date.
+  const { manufacture_date, ...restFields } = input.fields;
+  const update: Record<string, unknown> = { ...restFields };
+
+  if (manufacture_date === null) {
+    // User cleared the field — null every related column in the same
+    // UPDATE so the detail page's "Manufactured" tile fallback reverts
+    // immediately. Otherwise stale satellite columns (e.g. "high"
+    // confidence) would still keep the tile lit with no real value.
+    update.manufacture_date = null;
+    update.manufacture_date_precision = null;
+    update.manufacture_date_confidence = null;
+    update.manufacture_date_model = null;
+    update.manufacture_date_decoded_at = null;
+    update.manufacture_date_reasoning = null;
+  } else {
+    update.manufacture_date = manufacture_date;
+    update.manufacture_date_precision = "month";
+    update.manufacture_date_confidence = "high";
+    update.manufacture_date_model = "user-entered";
+    update.manufacture_date_decoded_at = new Date().toISOString();
+    update.manufacture_date_reasoning = null;
+  }
+
   if (researchInvalidated) {
     // Clear the stale insights in the same UPDATE so the panel doesn't
     // briefly show outdated content between save and the client-side
