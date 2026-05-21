@@ -40,6 +40,9 @@ export type InventoryInsights = {
 };
 
 export type InventoryPhoto = {
+  // hearth.documents.id — the same id the edit modal uses to set
+  // hero_document_id when the user picks this photo as the hero.
+  id: string;
   storagePath: string;
   thumbnailPath: string;
 };
@@ -58,21 +61,26 @@ export type InventoryDetailItem = {
   next_service_due_on: string | null;
   notes: string | null;
   roomName: string;
-  // Every attached photo for this item, most-recent first. Empty for
-  // items with no photos yet. The hero uses photos[0]'s thumbnail; the
-  // lightbox steps through all of them at full resolution.
+  // Every attached photo for this item, most-recent first — except
+  // when `hero_document_id` is set, in which case that photo moves to
+  // index 0 so the hero slot / lightbox / preview pickers all read the
+  // user's pinned choice. The lightbox steps through all of them at
+  // full resolution.
   photos: InventoryPhoto[];
   ai_pills: { label: string; value: string }[] | null;
   ai_insights: InventoryInsights | null;
-  // Decoded manufacture date columns (issue #77). Populated only by the
-  // dedicated /api/inventory/[id]/decode-serial route, and only when the
-  // reasoning model returned confidence === "high" for the decode. The
-  // detail page's first stat tile falls back to showing "Manufactured"
-  // here when installed_on is null and a confirmed manufacture date is
-  // available.
+  // Decoded manufacture date columns (issue #77). Populated by the
+  // dedicated /api/inventory/[id]/decode-serial route when the
+  // reasoning model returned confidence === "high", or by the edit
+  // modal when the user enters a value (issue #105) — same six-column
+  // contract with confidence = 'high' / model = 'user-entered'.
   manufacture_date: string | null;
   manufacture_date_precision: ManufactureDatePrecision | null;
   manufacture_date_confidence: ManufactureDateConfidence | null;
+  // User-pinned hero photo selection (issue #105). NULL means "use the
+  // most-recently-attached photo" — the legacy rule, still applied by
+  // the photo ordering above.
+  hero_document_id: string | null;
 };
 
 export type RoomOption = { id: string; name: string };
@@ -106,6 +114,7 @@ export default async function InventoryDetailPage({
       manufacture_date,
       manufacture_date_precision,
       manufacture_date_confidence,
+      hero_document_id,
       room:rooms!inner(name)
       `,
     )
@@ -134,6 +143,7 @@ export default async function InventoryDetailPage({
     manufacture_date: string | null;
     manufacture_date_precision: ManufactureDatePrecision | null;
     manufacture_date_confidence: ManufactureDateConfidence | null;
+    hero_document_id: string | null;
     room: { name: string } | { name: string }[] | null;
   };
 
@@ -163,7 +173,7 @@ export default async function InventoryDetailPage({
       .eq("inventory_id", row.id),
     supabase
       .from("documents")
-      .select("storage_path, thumbnail_path")
+      .select("id, storage_path, thumbnail_path")
       .eq("inventory_id", row.id)
       .eq("status", "attached")
       .in("kind", ["nameplate", "photo"])
@@ -184,16 +194,38 @@ export default async function InventoryDetailPage({
   // photos at storagePath (1920px) on user click. Both URL sources
   // are signed client-side via the shared sessionStorage-cached
   // helper — see "Signed URL caching" in the Technical Guide.
-  const photos: InventoryPhoto[] = (heroDocsResult.data ?? [])
-    .filter(
-      (d): d is { storage_path: string; thumbnail_path: string } =>
-        typeof d.storage_path === "string" &&
-        typeof d.thumbnail_path === "string",
-    )
-    .map((d) => ({
-      storagePath: d.storage_path,
-      thumbnailPath: d.thumbnail_path,
-    }));
+  //
+  // When the user has pinned a hero via `hero_document_id` (issue
+  // #105), move that document to the front of the array so every
+  // downstream read site (hero slot, lightbox, modal default) sees
+  // the same first-photo-is-hero contract. The FK has ON DELETE SET
+  // NULL, so a deleted hero reverts to the most-recent fallback
+  // automatically; this client-side reorder also no-ops cleanly when
+  // the pinned id isn't present in the photos list for any other
+  // reason (e.g. status change pushing it out of the kind filter).
+  const orderedDocs = (heroDocsResult.data ?? []).filter(
+    (
+      d,
+    ): d is { id: string; storage_path: string; thumbnail_path: string } =>
+      typeof d.id === "string" &&
+      typeof d.storage_path === "string" &&
+      typeof d.thumbnail_path === "string",
+  );
+
+  const heroId = row.hero_document_id;
+  if (heroId) {
+    const idx = orderedDocs.findIndex((d) => d.id === heroId);
+    if (idx > 0) {
+      const [hero] = orderedDocs.splice(idx, 1);
+      orderedDocs.unshift(hero);
+    }
+  }
+
+  const photos: InventoryPhoto[] = orderedDocs.map((d) => ({
+    id: d.id,
+    storagePath: d.storage_path,
+    thumbnailPath: d.thumbnail_path,
+  }));
 
   const detail: InventoryDetailItem = {
     id: row.id,
@@ -215,6 +247,7 @@ export default async function InventoryDetailPage({
     manufacture_date: row.manufacture_date,
     manufacture_date_precision: row.manufacture_date_precision,
     manufacture_date_confidence: row.manufacture_date_confidence,
+    hero_document_id: row.hero_document_id,
   };
 
   return (

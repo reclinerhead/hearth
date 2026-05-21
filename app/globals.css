@@ -348,6 +348,40 @@ h1.h1 {
   border-color: var(--color-accent);
 }
 
+/*
+  Native date/month pickers default to the system blue for the
+  "This month" link and the year-row selection highlight. accent-color
+  pulls those into the Hearth palette so the popup matches the rest
+  of the surface. We inherit the document's color-scheme (dark by
+  default; light when [data-theme="light"]) rather than forcing one,
+  so the popup chrome follows the user's theme choice.
+*/
+.input[type="date"],
+.input[type="month"] {
+  accent-color: var(--color-accent);
+}
+
+/*
+  The Chromium-built-in calendar icon at the right edge of date/month
+  inputs renders near-black by default. On the dark surface it reads
+  as a smudge — inverting + dimming brings it in line with the rest
+  of our icon weight. Scoped to dark mode only; in light mode the
+  near-black icon already sits well on the cream background.
+*/
+:root:not([data-theme="light"]) .input[type="date"]::-webkit-calendar-picker-indicator,
+:root:not([data-theme="light"]) .input[type="month"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 120ms ease-out;
+}
+:root:not([data-theme="light"]) .input[type="date"]:hover::-webkit-calendar-picker-indicator,
+:root:not([data-theme="light"]) .input[type="month"]:hover::-webkit-calendar-picker-indicator,
+:root:not([data-theme="light"]) .input[type="date"]:focus::-webkit-calendar-picker-indicator,
+:root:not([data-theme="light"]) .input[type="month"]:focus::-webkit-calendar-picker-indicator {
+  opacity: 0.9;
+}
+
 .label {
   display: block;
   font-size: 12px;
