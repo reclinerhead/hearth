@@ -10,6 +10,12 @@ import { HABITAT_MODULES } from "@/lib/habitat/registry";
 import type { HabitatModule, HouseContext } from "@/lib/habitat/types";
 import { getBriefingMessage } from "@/lib/briefing/getBriefingMessage";
 import type { House } from "@/types/house";
+import {
+  buildRowList,
+  fallbackOnboardingMessage,
+  type DiscoveryRowProps,
+  type Phase,
+} from "./onboarding-discovery-rows";
 
 /**
  * First-run discovery modal. Narrates Hearth's public-data lookups in real
@@ -41,14 +47,6 @@ const TERMINAL_FINDING_STATUSES = new Set([
   "not_applicable",
 ]);
 
-type Phase =
-  | { kind: "intro" }
-  | { kind: "briefing-checking" }
-  | { kind: "briefing-result" }
-  | { kind: "module-checking"; index: number }
-  | { kind: "module-result"; index: number }
-  | { kind: "done" };
-
 function houseContextFromRow(house: House): HouseContext {
   return {
     houseId: house.id,
@@ -61,17 +59,6 @@ function houseContextFromRow(house: House): HouseContext {
     longitude: house.longitude,
     parcelId: house.parcel_id,
   };
-}
-
-/**
- * Generic fallback rendered when a habitat module doesn't expose
- * getOnboardingMessage. The orchestrator's check() returns a headline
- * already, but we keep this string deliberately bland so module authors
- * are nudged toward writing a real onboarding message instead of leaning
- * on the fallback forever.
- */
-function fallbackOnboardingMessage(module: HabitatModule): string {
-  return `Checked ${module.name} for your area.`;
 }
 
 function modulesApplicableTo(house: House): HabitatModule[] {
@@ -275,14 +262,22 @@ export function OnboardingDiscoveryModal({
                 ? "All set — your home is ready."
                 : "We're looking up information about your home."}
             </h2>
-            {phase.kind !== "done" ? (
-              <p
-                className="text-small mt-1"
-                style={{ color: "var(--color-text-secondary)" }}
-              >
-                This usually takes about 10 seconds.
-              </p>
-            ) : null}
+            {/*
+              Always render the subtitle paragraph so its vertical space
+              stays reserved through the "All set" beat. The text is
+              hidden (not removed) on done, which keeps the surface
+              height stable end-to-end per issue #108.
+            */}
+            <p
+              className="text-small mt-1"
+              style={{
+                color: "var(--color-text-secondary)",
+                visibility: phase.kind === "done" ? "hidden" : "visible",
+              }}
+              aria-hidden={phase.kind === "done"}
+            >
+              This usually takes about 10 seconds.
+            </p>
           </div>
 
           <ul className="flex flex-col gap-2">
@@ -312,108 +307,46 @@ export function OnboardingDiscoveryModal({
   );
 }
 
-type DiscoveryRowProps = {
-  id: string;
-  state: "checking" | "done";
-  text: string;
-};
-
 function DiscoveryRow({ state, text }: DiscoveryRowProps) {
+  const indicatorColor =
+    state === "checking"
+      ? "var(--color-accent)"
+      : state === "done"
+        ? "var(--color-success)"
+        : "var(--color-border-subtle)";
+  const textColor =
+    state === "checking"
+      ? "var(--color-text-secondary)"
+      : state === "done"
+        ? "var(--color-text-primary)"
+        : "var(--color-text-tertiary)";
   return (
     <li className="flex items-start gap-3">
       <span
         aria-hidden
         className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center"
-        style={{
-          color:
-            state === "checking"
-              ? "var(--color-accent)"
-              : "var(--color-success)",
-        }}
+        style={{ color: indicatorColor }}
       >
         {state === "checking" ? (
           <span
             className="inline-block h-2.5 w-2.5 rounded-full animate-pulse"
             style={{ backgroundColor: "currentColor" }}
           />
-        ) : (
+        ) : state === "done" ? (
           <Icon name="circle-check" size={16} />
+        ) : (
+          <span
+            className="inline-block h-2.5 w-2.5 rounded-full"
+            style={{
+              border: "1px solid currentColor",
+              backgroundColor: "transparent",
+            }}
+          />
         )}
       </span>
-      <span
-        style={{
-          fontSize: 14,
-          lineHeight: 1.45,
-          color:
-            state === "checking"
-              ? "var(--color-text-secondary)"
-              : "var(--color-text-primary)",
-        }}
-      >
+      <span style={{ fontSize: 14, lineHeight: 1.45, color: textColor }}>
         {text}
       </span>
     </li>
   );
-}
-
-/**
- * Build the user-facing list of rows from the current phase. Previous
- * phases collapse into their "done" line; the current phase shows live
- * "checking" copy or the just-resolved result.
- */
-function buildRowList(
-  phase: Phase,
-  modules: HabitatModule[],
-  briefingLine: string | null,
-  moduleLines: Record<number, string>,
-): DiscoveryRowProps[] {
-  const rows: DiscoveryRowProps[] = [];
-
-  // Briefing row appears once we leave the intro.
-  if (phase.kind !== "intro") {
-    if (phase.kind === "briefing-checking") {
-      rows.push({
-        id: "briefing",
-        state: "checking",
-        text: "Checking public home records…",
-      });
-    } else {
-      rows.push({
-        id: "briefing",
-        state: "done",
-        text: briefingLine ?? "Looked up your home's public records",
-      });
-    }
-  }
-
-  // Module rows — show all modules whose turn has come (revealed in
-  // registry order). The current one is "checking"; earlier ones are "done".
-  const currentModuleIndex =
-    phase.kind === "module-checking" || phase.kind === "module-result"
-      ? phase.index
-      : phase.kind === "done"
-        ? modules.length - 1
-        : -1;
-
-  modules.forEach((m, i) => {
-    if (i > currentModuleIndex) return;
-    const isCurrentChecking =
-      phase.kind === "module-checking" && phase.index === i;
-    if (isCurrentChecking) {
-      rows.push({
-        id: m.key,
-        state: "checking",
-        text: `Checking ${m.name.toLowerCase()}…`,
-      });
-    } else {
-      const line = moduleLines[i] ?? fallbackOnboardingMessage(m);
-      rows.push({
-        id: m.key,
-        state: "done",
-        text: line,
-      });
-    }
-  });
-
-  return rows;
 }
