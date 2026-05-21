@@ -98,6 +98,14 @@ export function MonthPicker({
     selected?.year ?? todayValue.year,
   );
 
+  // Bounded year range for the dropdown. 100 back / 10 forward
+  // matches the DatePicker contract — covers older homes' install
+  // dates and the rare appliance from before the user was born.
+  const yearMin = todayValue.year - 100;
+  const yearMax = todayValue.year + 10;
+  const yearOptions: number[] = [];
+  for (let y = yearMax; y >= yearMin; y -= 1) yearOptions.push(y);
+
   function handleOpen() {
     if (!open) {
       setHeaderYear(selected?.year ?? todayValue.year);
@@ -154,16 +162,37 @@ export function MonthPicker({
               type="button"
               className="month-picker-nav"
               aria-label="Previous year"
-              onClick={() => setHeaderYear((y) => y - 1)}
+              onClick={() => setHeaderYear((y) => Math.max(yearMin, y - 1))}
+              disabled={headerYear <= yearMin}
             >
               <Icon name="chevron-left" size={16} />
             </button>
-            <span className="month-picker-year">{headerYear}</span>
+            <span className="month-picker-year-root">
+              <select
+                className="month-picker-year-select"
+                aria-label="Year"
+                value={headerYear}
+                onChange={(e) =>
+                  setHeaderYear(Number.parseInt(e.target.value, 10))
+                }
+              >
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+              <span aria-hidden className="month-picker-year-label">
+                {headerYear}
+                <Icon name="chevron-down" size={14} />
+              </span>
+            </span>
             <button
               type="button"
               className="month-picker-nav"
               aria-label="Next year"
-              onClick={() => setHeaderYear((y) => y + 1)}
+              onClick={() => setHeaderYear((y) => Math.min(yearMax, y + 1))}
+              disabled={headerYear >= yearMax}
             >
               <Icon name="chevron-right" size={16} />
             </button>

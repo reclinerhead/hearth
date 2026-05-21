@@ -79,6 +79,15 @@ export function DatePicker({
   const display = formatDisplay(value);
   const isEmpty = display === "";
 
+  // Bounded month + year dropdowns so the user can jump to a far-back
+  // year without click-stepping the chevrons month-by-month. 100 years
+  // back covers older homes' purchase dates and the oldest realistic
+  // install dates; 10 years forward covers next-service-due dates with
+  // generous headroom. defaultMonth (today) falls inside this range.
+  const today = new Date();
+  const startMonth = new Date(today.getFullYear() - 100, 0, 1);
+  const endMonth = new Date(today.getFullYear() + 10, 11, 31);
+
   return (
     <div>
       <label id={labelId} className="label">
@@ -119,6 +128,9 @@ export function DatePicker({
       >
         <DayPicker
           mode="single"
+          captionLayout="dropdown"
+          startMonth={startMonth}
+          endMonth={endMonth}
           selected={selected}
           defaultMonth={selected ?? new Date()}
           onSelect={(d) => {

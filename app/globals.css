@@ -439,11 +439,49 @@ h1.h1 {
   justify-content: space-between;
   margin-bottom: 8px;
 }
-.month-picker-year {
+/*
+  Year dropdown sits between the prev/next chevrons in the month
+  picker header. The `<select>` is positioned absolutely over the
+  visible label so clicks land on it (native dropdown popup); the
+  label is what the user sees and is styled like a small chip with
+  a trailing chevron-down to signal it's openable.
+*/
+.month-picker-year-root {
+  position: relative;
+  display: inline-flex;
+}
+.month-picker-year-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  appearance: none;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+}
+.month-picker-year-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  background-color: transparent;
+  color: var(--color-text-primary);
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text-primary);
   letter-spacing: 0.5px;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+}
+.month-picker-year-root:hover .month-picker-year-label,
+.month-picker-year-select:focus-visible ~ .month-picker-year-label {
+  background-color: color-mix(in oklab, var(--color-accent) 14%, transparent);
+  border-color: color-mix(in oklab, var(--color-accent) 35%, transparent);
 }
 .month-picker-nav {
   display: inline-flex;
@@ -520,6 +558,60 @@ h1.h1 {
   font-weight: 500;
   color: var(--color-text-primary);
   padding: 2px 4px 8px;
+}
+
+/*
+  Month + year dropdowns shown when `captionLayout="dropdown"`. Each
+  dropdown root is a small chip with the selected label and a
+  down-chevron; the underlying <select> sits invisibly on top to
+  catch clicks. Styled to match the month-picker year selector so
+  both pickers feel like the same picker family.
+*/
+.rdp-dropdowns {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rdp-dropdown_root {
+  position: relative;
+  display: inline-flex;
+}
+.rdp-dropdown {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  appearance: none;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+}
+.rdp-dropdown_root > .rdp-caption_label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  background-color: transparent;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+}
+.rdp-dropdown_root:hover > .rdp-caption_label,
+.rdp-dropdown:focus-visible ~ .rdp-caption_label {
+  background-color: color-mix(in oklab, var(--color-accent) 14%, transparent);
+  border-color: color-mix(in oklab, var(--color-accent) 35%, transparent);
+}
+.rdp-dropdown_root > .rdp-caption_label > .rdp-chevron {
+  width: 12px;
+  height: 12px;
 }
 .rdp-nav {
   gap: 4px;
