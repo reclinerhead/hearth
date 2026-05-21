@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import type { UserCapabilities } from "@/lib/houses/capabilities";
 import {
   EditHomeDetailsModal,
   type EditableHouseRow,
@@ -17,7 +18,18 @@ import { ThemeToggle } from "./theme-toggle";
 // every authed page render just to populate the modal.
 export type TopNavHouse = EditableHouseRow;
 
-export function TopNav({ house }: { house: TopNavHouse | null }) {
+// `capabilities` arrives plumbed from the (app) layout but isn't rendered
+// in this issue (#98). The follow-up house-switcher UI will consume
+// `canSwitchHouses` and `canCreateAdditionalHouse`; committing the prop
+// signature now means that issue is a one-file change.
+export function TopNav({
+  house,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  capabilities: _capabilities,
+}: {
+  house: TopNavHouse | null;
+  capabilities: UserCapabilities;
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [uploaderOpen, setUploaderOpen] = useState(false);

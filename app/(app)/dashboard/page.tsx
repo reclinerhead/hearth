@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { EmergencyTile, SectionHeader } from "@/components/ui";
 import { Icon, type IconName } from "@/components/icon";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
+import { resolveActiveHouseId } from "@/lib/houses/active-house";
 import { createClient } from "@/lib/supabase/server";
 import type { House } from "@/types/house";
 import { DashboardLive } from "./dashboard-live";
@@ -30,15 +31,21 @@ export default async function DashboardPage() {
   // pick up any subsequent changes (briefing transitions, photo edits
   // from the home-details modal, etc.) — the initial fetch is the only
   // thing we skip on the client.
+  const activeHouseId = await resolveActiveHouseId(supabase);
+
+  // Onboarding gate in proxy.ts ensures users have at least one house here,
+  // and resolveActiveHouseId returns null only when the user has zero
+  // houses, but guard defensively in case of a race or session edge.
+  if (!activeHouseId) {
+    redirect("/onboarding");
+  }
+
   const { data, error } = await supabase
     .from("houses")
     .select("*")
-    .order("created_at", { ascending: true })
-    .limit(1)
+    .eq("id", activeHouseId)
     .single();
 
-  // Onboarding gate in proxy.ts ensures users have at least one house here,
-  // but guard defensively in case of a race or session edge.
   if (error || !data?.id) {
     redirect("/onboarding");
   }

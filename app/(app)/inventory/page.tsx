@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Icon, type IconName } from "@/components/icon";
 import { InventoryThumbnail } from "@/components/inventory-thumbnail";
 import { SectionHeader } from "@/components/ui";
+import { resolveActiveHouseId } from "@/lib/houses/active-house";
 import { displayModelNumber } from "@/lib/inventory/model-number";
 import { createClient } from "@/lib/supabase/server";
 
@@ -75,21 +76,16 @@ const SECTIONS: {
 export default async function InventoryPage() {
   const supabase = await createClient();
 
-  // Resolve the user's house the same way DashboardPage does. The
-  // onboarding gate in proxy.ts ensures a row exists for any authed
-  // visitor to this page; guard defensively in case of a race.
-  const { data: house, error: houseError } = await supabase
-    .from("houses")
-    .select("id")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .single();
+  // Resolve the user's active house. The onboarding gate in proxy.ts
+  // ensures a row exists for any authed visitor to this page; guard
+  // defensively in case of a race.
+  const activeHouseId = await resolveActiveHouseId(supabase);
 
-  if (houseError || !house?.id) {
+  if (!activeHouseId) {
     redirect("/onboarding");
   }
 
-  const items = await loadInventory(house.id);
+  const items = await loadInventory(activeHouseId);
   const byType = groupByType(items);
 
   return (
