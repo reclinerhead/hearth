@@ -323,7 +323,6 @@ These appear in the page layout but are intentionally **not wired to real data**
 - The **Documents** panel — wiring it to `hearth.documents` (per-inventory attachments) is its own focused work.
 - The **Notes & photos** panel — depends on a notes data model that doesn't exist yet.
 - The **Maintenance & history** panel — depends on a maintenance-log table that doesn't exist yet. The single timeline row showing `installed_on` is the only real data point on the panel today.
-- **The "Add another photo / re-analyze" flow** — the disabled Add photo button is the placeholder for the future Smart Uploader entry point keyed to a known inventory id.
 
 ---
 
@@ -386,7 +385,9 @@ The Smart Uploader is the user-visible composition of phase 1's plumbing — the
 
 ### Entry point
 
-The top-nav `+ Add` button (`components/top-nav.tsx`) opens the modal. The same button is rendered twice — once as a labeled button on `md+` viewports, once as an icon-only button on small viewports — so it survives the mobile breakpoint without a separate mount. Both invocations share state. The button is disabled until the user has a house (`(app)/layout.tsx` passes the house row through `AppShell`); during onboarding the user can't open the uploader because there's no `houseId` to attach to. Other entry points are intentionally not wired in phase 1.4 — the future "Add another photo" affordance from `/inventory/[id]` will set `targetInventoryId` on the same component when that detail page lands.
+The top-nav `+ Add` button (`components/top-nav.tsx`) opens the modal in **discovery mode**. The same button is rendered twice — once as a labeled button on `md+` viewports, once as an icon-only button on small viewports — so it survives the mobile breakpoint without a separate mount. Both invocations share state. The button is disabled until the user has a house (`(app)/layout.tsx` passes the house row through `AppShell`); during onboarding the user can't open the uploader because there's no `houseId` to attach to.
+
+The **Add photo** button on `/inventory/[id]` opens the modal in **target mode**: it passes `targetInventoryId={item.id}` and `targetInventoryName={item.name}` so the Smart Uploader knows up front which physical item this photo belongs to. The two modes share the same path-picker → capture → analyze prefix; they diverge after analyze — discovery mode runs matching and lands on a review form, while target mode attaches directly to the known item and lands on the success stage. See the post-processing branches and the `useDocumentUpload` orchestration sections below for the exact fork. The detail-page mount follows the same conditional-mount pattern the edit modal uses — every open is a fresh React mount, so the stage machine and upload hook re-initialize cleanly without a reset-in-effect.
 
 ### Component layout
 
@@ -427,13 +428,14 @@ The pattern is the page-sheet half of a deliberate split documented in issue #56
 
 `SmartUploader.tsx` holds a discriminated union over `stage.name` in a single `useState`. Transitions are driven by two sources: user action (advance from path-picker → capture → analyze) and the `useDocumentUpload` hook's published state (the modal `useEffect`-watches `uploadState.phase`/`.duplicate`/`.analysis` and translates them into the corresponding user-facing stage). Keeping the user-facing state machine separate from the pipeline phases lets each evolve independently — the hook can grow new sub-phases (e.g. for video uploads) without churning the modal's branches.
 
-The five reachable post-processing branches are:
+The reachable post-processing branches are:
 
-- **Duplicate** — `checkDocumentDuplicateAction` returned `exists: true`. No new row is created, no storage is uploaded, no cleanup is needed.
-- **Review-new (nameplate)** — AI classified the photo as a nameplate and extracted manufacturer/model/serial/installed.
-- **Review-new (appliance_photo)** — AI classified the photo as a generic equipment shot. Same review form, no extracted-fields panel.
-- **Not-useful** — AI returned `not_useful`. Both buttons (Cancel / Try a different photo) call `cleanupDocumentAction` before transitioning.
-- **Analysis-failed** — any action returned an error. Retake calls cleanup and returns to capture; "Enter manually" advances to a `manual-entry` variant of `ReviewNewStage` (same form with empty defaults and no AI-driven headline) so the user can still capture the item by hand against the photo that's already stored.
+- **Duplicate** — `checkDocumentDuplicateAction` returned `exists: true`. No new row is created, no storage is uploaded, no cleanup is needed. Same shape in both discovery and target mode.
+- **Review-new (nameplate)** — AI classified the photo as a nameplate and extracted manufacturer/model/serial/installed. Discovery mode only.
+- **Review-new (appliance_photo)** — AI classified the photo as a generic equipment shot. Same review form, no extracted-fields panel. Discovery mode only.
+- **Success** — target mode only. The hook reaches its terminal `attached` phase and the modal renders the existing brief "Saved!" confirmation before auto-dismissing on the same cadence as a discovery-mode save.
+- **Not-useful** — AI returned `not_useful`. Both buttons (Cancel / Try a different photo) call `cleanupDocumentAction` before transitioning. Target mode also cleans up — even though the row was born attached, "not an appliance" never deserves to be permanently linked.
+- **Analysis-failed** — any action returned an error. Retake calls cleanup and returns to capture. The secondary button is mode-dependent: in discovery mode it's "Enter manually" (opens a `manual-entry` variant of `ReviewNewStage`); in target mode it's "Save photo anyway" (calls `attachDocumentToInventoryAction` directly so the user keeps the photo even when AI extraction failed).
 
 The low-confidence variant of review-new fires when `ai_confidence < NAMEPLATE_CONFIDENCE_THRESHOLD` (currently `0.6`). The threshold is mirrored as a constant in `ReviewNewStage.tsx` and the technical-guide contract is that the server-side env var and the client-side constant move together — bumping one without the other will silently mis-classify a band of photos.
 
@@ -449,8 +451,10 @@ The "you already have a Furnace" banner is `ReviewNewStage`'s opt-in to the link
 4. `phase = "uploading"` — `processImage(file)` resizes to optimized + thumbnail; `uploadDocumentFiles(...)` writes both in parallel via the RLS-bound browser client.
 5. `phase = "creating-row"` — `createPendingDocumentAction(...)` writes the row with `status='analyzing'` and `kind='nameplate'`. The kind may be demoted to `'photo'` by the analyze step.
 6. `phase = "analyzing"` — `analyzeNameplateAction(...)` either returns the persisted row (with `ai_extraction` populated and `status='analyzed'`) or sets `status='failed'` and returns an error.
-7. `phase = "matching"` — `findMatchingInventoryAction(...)` looks for existing inventory in the house with a matching name. Skipped for `not_useful` (no name to match against) and `delta` (delta-mode never matches; the inventory id is already known by the caller).
-8. `phase = "done"` — terminal success. The modal moves into duplicate / review-new / not-useful based on what the hook surfaced.
+7. After analyze the pipeline forks on `targetInventoryId`:
+   - **No target (discovery mode)** → `phase = "matching"` → `findMatchingInventoryAction(...)` looks for existing inventory in the house with a matching name → `phase = "done"`. The modal then moves into duplicate / review-new / not-useful based on what the hook surfaced.
+   - **Target set (Add-photo from `/inventory/[id]`)** → `phase = "attaching"` → `attachDocumentToInventoryAction({ documentId, inventoryId: targetInventoryId })` flips `status: 'attached'` → `phase = "attached"`. The modal jumps directly to the success stage; no review form, no match banner. `acceptedFields` is intentionally omitted on this call — a second photo of the same item might contradict existing inventory fields and we don't want a silent overwrite from this entry point.
+   - Matching is also skipped for `not_useful` (no name to match against) and `delta` (delta-mode never matches; the inventory id is already known by the caller).
 
 Any throw lands in the catch and sets `phase = "error"` with the message. A `runningRef` prevents double-fire from React strict-mode effect re-runs or a rapid double-tap on Analyze. The hook owns no cleanup logic — the modal calls `cleanupDocumentAction` directly when the user retakes, cancels, or closes mid-flow, with the document id the hook published in state.
 
@@ -459,7 +463,7 @@ Any throw lands in the catch and sets `phase = "error"` with the message. A `run
 Two save paths exist:
 
 - **Create new** — `createInventoryFromDocumentAction(...)` inserts a `hearth.inventory` row and attaches the document. Used by the "Save furnace" button in review-new (including the manual-entry variant).
-- **Attach to existing** — `attachDocumentToInventoryAction(...)` attaches the document to an existing inventory row without creating a new one. Used by the match-banner's per-match buttons. No `acceptedFields` payload in phase 1.4 — the user picks an inventory item and the AI fields are not merged in this entry-point's UI. That payload is plumbed for the future inventory-detail "Add another photo" entry point.
+- **Attach to existing** — `attachDocumentToInventoryAction(...)` attaches the document to an existing inventory row without creating a new one. Two callers today: the discovery-mode match-banner's per-match buttons (user explicitly picked "Add to my Furnace"), and the target-mode hook path (the user came in from the inventory detail, so the target is implicit). Neither path passes `acceptedFields` — the payload stays plumbed for a future "we noticed this photo says serial=X, update the inventory record?" delta-confirm affordance that hasn't shipped yet.
 
 Both fire `onSaved({ inventoryId })`. The modal then drops into the `success` stage for `SUCCESS_DISMISS_MS` (600ms — long enough to read "Saved!" and short enough not to feel like waiting) before calling `onOpenChange(false)`.
 

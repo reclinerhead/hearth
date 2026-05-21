@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { analyzeNameplateAction } from "@/app/actions/documents/analyze-nameplate";
+import { attachDocumentToInventoryAction } from "@/app/actions/documents/attach-document-to-inventory";
 import { checkDocumentDuplicateAction } from "@/app/actions/documents/check-duplicate";
 import { createPendingDocumentAction } from "@/app/actions/documents/create-pending";
 import {
@@ -18,8 +19,8 @@ import type { AiExtraction, DocumentRow } from "@/types/document";
  * The orchestration hook for the Smart Uploader.
  *
  * Owns the client-side pipeline: hash → dedup check → resize → upload →
- * pending-row insert → analyze → match-existing-inventory. Subtle
- * ordering matters and is enforced here:
+ * pending-row insert → analyze → (match | attach). Subtle ordering
+ * matters and is enforced here:
  *  - hash before resize, so a byte-identical re-upload short-circuits
  *    before we touch storage at all
  *  - resize before upload, so we never push the original uncompressed
@@ -27,6 +28,13 @@ import type { AiExtraction, DocumentRow } from "@/types/document";
  *  - upload before row insert, so the row never references storage
  *    objects that don't exist
  *  - row insert before analyze, so the row can absorb the AI write
+ *
+ * The post-analyze fork depends on `targetInventoryId`:
+ *  - no target → match-existing-inventory → "done" (modal opens the
+ *    review-new stage so the user can pick "Save new" or "Add to X").
+ *  - target → attach-to-target → "attached" (modal goes straight to
+ *    the success stage, no review form). The inventory item is known
+ *    from the entry-point context, so matching adds zero value here.
  *
  * The hook owns no cleanup logic — if the user retakes or cancels,
  * the modal calls cleanupDocumentAction directly with the document id
@@ -41,6 +49,8 @@ export type DocumentUploadPhase =
   | "creating-row"
   | "analyzing"
   | "matching"
+  | "attaching"
+  | "attached"
   | "done"
   | "error";
 
@@ -65,9 +75,13 @@ const INITIAL_STATE: DocumentUploadState = {
 export type UseDocumentUploadArgs = {
   houseId: string;
   /**
-   * Phase 1.4's navbar entry never passes this. Plumbed for the future
-   * "open Smart Uploader from an inventory detail" entry point so that
-   * later phases don't need to refactor.
+   * When set, the Smart Uploader runs in *target mode*: the document
+   * row is created already attached to this inventory item, the
+   * match-existing-inventory phase is skipped entirely (the user has
+   * already told us which item this photo belongs to), and a successful
+   * analyze flows straight to "attached" (the modal renders the success
+   * stage with no user confirmation form). Used by the Add-photo button
+   * on /inventory/[id].
    */
   targetInventoryId?: string;
 };
@@ -177,10 +191,10 @@ export function useDocumentUpload(
           throw new Error("Analysis returned no extraction");
         }
 
-        // not_useful and delta both short-circuit matching. The modal
-        // only ever requests delta from the inventory-detail entry
-        // point (not wired in this phase), but the typecheck still
-        // wants us to handle every branch.
+        // not_useful and delta both short-circuit matching regardless of
+        // entry point. Delta only ever fires from the inventory-detail
+        // entry once we wire that path; the typecheck still wants us to
+        // handle every branch here.
         if (
           aiExtraction.mode === "classification" &&
           aiExtraction.photo_kind === "not_useful"
@@ -201,6 +215,36 @@ export function useDocumentUpload(
           // it without running findMatchingInventoryAction.
           setState({
             phase: "done",
+            documentId,
+            analysis: aiExtraction,
+            matches: null,
+            duplicate: null,
+            error: null,
+          });
+          return;
+        }
+
+        // Target mode (Smart Uploader opened from /inventory/[id]):
+        // skip matching, attach the document to the known target, and
+        // resolve to the terminal "attached" phase. acceptedFields is
+        // intentionally omitted — the user might be photographing a
+        // different angle that contradicts existing inventory fields,
+        // and we don't want a silent overwrite from this entry point.
+        // (A future "we noticed this photo says serial=X, update?"
+        // affordance can layer on later.)
+        if (args.targetInventoryId) {
+          setState((s) => ({
+            ...s,
+            phase: "attaching",
+            analysis: aiExtraction,
+          }));
+          const attached = await attachDocumentToInventoryAction({
+            documentId,
+            inventoryId: args.targetInventoryId,
+          });
+          if (attached.error !== null) throw new Error(attached.error);
+          setState({
+            phase: "attached",
             documentId,
             analysis: aiExtraction,
             matches: null,

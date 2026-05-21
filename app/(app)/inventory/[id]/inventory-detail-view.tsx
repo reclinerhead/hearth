@@ -30,6 +30,7 @@ import {
   type EditableInventoryRow,
 } from "@/components/edit-inventory-item-modal";
 import { Icon, type IconName } from "@/components/icon";
+import { SmartUploader } from "@/components/smart-uploader/SmartUploader";
 import { Toast } from "@/components/toast";
 import { Tooltip } from "@/components/tooltip";
 import {
@@ -227,6 +228,8 @@ export function InventoryDetailView({
 
   const [editOpen, setEditOpen] = useState(false);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [uploaderOpen, setUploaderOpen] = useState(false);
+  const addPhotoTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   // The hero slot is 260px wide; the 600px thumbnail is plenty (2x+
   // DPR) and is the same asset already cached by dashboard tiles, so
@@ -347,21 +350,16 @@ export function InventoryDetailView({
               onClose={() => setLightboxOpen(false)}
             />
           ) : null}
-          <Tooltip
-            content="Adding more photos from the detail page is coming soon."
-            side="bottom"
+          <button
+            ref={addPhotoTriggerRef}
+            type="button"
+            onClick={() => setUploaderOpen(true)}
+            className="btn btn-ghost w-full mt-2"
+            aria-label={`Add another photo of ${item.name}`}
           >
-            <button
-              type="button"
-              disabled
-              className="btn btn-ghost w-full mt-2"
-              aria-disabled="true"
-              style={{ opacity: 0.55 }}
-            >
-              <Icon name="camera" size={16} />
-              Add photo
-            </button>
-          </Tooltip>
+            <Icon name="camera" size={16} />
+            Add photo
+          </button>
         </div>
 
         <div className="flex flex-col gap-3 min-w-0">
@@ -433,6 +431,38 @@ export function InventoryDetailView({
             router.replace("/inventory");
           }}
           getReturnFocusElement={() => editTriggerRef.current}
+        />
+      ) : null}
+
+      {/*
+        Same conditional-mount pattern as the edit modal: every open
+        is a fresh React mount, so the Smart Uploader's stage state and
+        upload hook re-initialize cleanly. The target* props lock the
+        Smart Uploader to this inventory item — matching is skipped and
+        a successful analyze flows straight to the success stage.
+      */}
+      {uploaderOpen ? (
+        <SmartUploader
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setUploaderOpen(false);
+              // Return focus to the Add photo button so keyboard users
+              // pick up where they left off, matching the edit modal
+              // pattern below.
+              requestAnimationFrame(() =>
+                addPhotoTriggerRef.current?.focus(),
+              );
+            }
+          }}
+          houseId={item.house_id}
+          targetInventoryId={item.id}
+          targetInventoryName={item.name}
+          onSaved={() => {
+            // Pull the just-attached document into the photos array so
+            // the hero / photo strip surfaces it on the next paint.
+            router.refresh();
+          }}
         />
       ) : null}
 
