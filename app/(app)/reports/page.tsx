@@ -166,8 +166,6 @@ const GROUPS: ReportGroup[] = [
   },
 ];
 
-const PAGE_MAX_WIDTH = 1040;
-
 const sectionStyle: CSSProperties = {
   scrollMarginTop: "var(--space-6)",
 };
@@ -176,8 +174,6 @@ export default function ReportsPage() {
   return (
     <div
       style={{
-        maxWidth: PAGE_MAX_WIDTH,
-        margin: "0 auto",
         display: "flex",
         flexDirection: "column",
         gap: "var(--space-7)",

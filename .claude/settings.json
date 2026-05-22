@@ -31,7 +31,8 @@
       "Bash(pnpm --version)",
       "Skill(frontend-design:frontend-design)",
       "Skill(frontend-design:frontend-design:*)",
-      "Bash(xxd)"
+      "Bash(xxd)",
+      "PowerShell(npx tsc --noEmit; echo \"exit=$LASTEXITCODE\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\toddw\\AppData\\Local\\Temp",

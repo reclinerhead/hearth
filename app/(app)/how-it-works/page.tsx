@@ -15,8 +15,6 @@ export const metadata: Metadata = {
     "Hearth's living methodology — what we cover, where our data comes from, and how each habitat finding gets its severity.",
 };
 
-const PAGE_MAX_WIDTH = 760;
-
 const sectionStyle: CSSProperties = {
   scrollMarginTop: "var(--space-6)",
 };
@@ -584,8 +582,6 @@ export default function HowItWorksPage() {
   return (
     <div
       style={{
-        maxWidth: PAGE_MAX_WIDTH,
-        margin: "0 auto",
         display: "flex",
         flexDirection: "column",
         gap: "var(--space-7)",
