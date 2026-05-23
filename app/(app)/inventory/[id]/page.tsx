@@ -14,6 +14,7 @@ import type {
   ManufactureDateConfidence,
   ManufactureDatePrecision,
 } from "@/lib/inventory/first-date-tile";
+import type { SynthesisRunLog } from "@/lib/maintenance/types";
 import { createClient } from "@/lib/supabase/server";
 import type { InventorySubtype } from "@/types/document";
 import { InventoryDetailView } from "./inventory-detail-view";
@@ -107,6 +108,11 @@ export type InventoryDetailItem = {
   // most-recently-attached photo" — the legacy rule, still applied by
   // the photo ordering above.
   hero_document_id: string | null;
+  // Most recent maintenance-synthesis run trace (issue #126). NULL when
+  // the item has never had a plan built. Drives the inventory detail
+  // page's "Build" vs "Rebuild" button copy and gives the future task
+  // modal the activity-log slice for "here's what the model considered."
+  last_synthesis_run: SynthesisRunLog | null;
 };
 
 export type RoomOption = { id: string; name: string };
@@ -145,6 +151,7 @@ export default async function InventoryDetailPage({
       manufacture_date_precision,
       manufacture_date_confidence,
       hero_document_id,
+      last_synthesis_run,
       room:rooms!inner(name)
       `,
     )
@@ -178,6 +185,7 @@ export default async function InventoryDetailPage({
     manufacture_date_precision: ManufactureDatePrecision | null;
     manufacture_date_confidence: ManufactureDateConfidence | null;
     hero_document_id: string | null;
+    last_synthesis_run: SynthesisRunLog | null;
     room: { name: string } | { name: string }[] | null;
   };
 
@@ -359,6 +367,7 @@ export default async function InventoryDetailPage({
     manufacture_date_precision: row.manufacture_date_precision,
     manufacture_date_confidence: row.manufacture_date_confidence,
     hero_document_id: row.hero_document_id,
+    last_synthesis_run: row.last_synthesis_run,
   };
 
   return (

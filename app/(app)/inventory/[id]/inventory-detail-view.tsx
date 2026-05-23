@@ -25,6 +25,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { buildMaintenancePlanAction } from "@/app/actions/maintenance/build-plan";
 import {
   EditInventoryItemModal,
   type EditableInventoryRow,
@@ -46,6 +47,8 @@ import {
 } from "@/lib/inventory/metadata-schemas";
 import { insightsSchema } from "@/lib/inventory-insights/research";
 import { useCachedSignedUrl } from "@/lib/house-image/use-cached-signed-url";
+import type { SynthesisRunLog } from "@/lib/maintenance/types";
+import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { PhotoLightbox } from "./photo-lightbox";
 import { ReceiptPageFlipModal } from "./receipt-page-flip-modal";
 import {
@@ -267,6 +270,110 @@ export function InventoryDetailView({
     Boolean(item.ai_insights) &&
     !(streamingObject as StreamingInsights | undefined)?.headline;
 
+  // Maintenance plan build/rebuild state. The button is gated on
+  // ai_insights.maintenance being populated; the workflow runs in the
+  // background and writes hearth.inventory.last_synthesis_run at
+  // completion. The Realtime subscription below flips us out of the
+  // in-flight state when that write lands.
+  const maintenanceInsight =
+    typeof (item.ai_insights as { maintenance?: string | null } | null)
+      ?.maintenance === "string"
+      ? (item.ai_insights as { maintenance: string }).maintenance
+      : null;
+  const hasMaintenanceInsight = Boolean(
+    maintenanceInsight && maintenanceInsight.trim().length > 0,
+  );
+
+  const [liveSynthesisRun, setLiveSynthesisRun] =
+    useState<SynthesisRunLog | null>(item.last_synthesis_run);
+  // Captured the moment the user clicks Build. Tells the realtime
+  // listener which trace counts as "the new one" — anything newer than
+  // this baseline is a fresh run completing. Null means no baseline
+  // captured yet (the user hasn't clicked since the page loaded).
+  const synthesisBaselineRef = useRef<string | null>(
+    item.last_synthesis_run?.completed_at ?? null,
+  );
+  const [synthesisInFlight, setSynthesisInFlight] = useState(false);
+  const [synthesisError, setSynthesisError] = useState<string | null>(null);
+
+  // Subscribe to UPDATE events on this inventory row so the button
+  // can flip out of its in-flight state the moment the workflow
+  // finishes. Same pattern as useHouseRealtime, but narrow enough that
+  // inlining it here is simpler than extracting a generic hook for a
+  // single consumer. Realtime is the primary signal; the timeout-based
+  // safety hatch below covers the websocket-blocked path.
+  useEffect(() => {
+    const supabase = createBrowserSupabaseClient();
+    const channel = supabase
+      .channel(`inventory:${item.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "hearth",
+          table: "inventory",
+          filter: `id=eq.${item.id}`,
+        },
+        (payload: { new: Record<string, unknown> }) => {
+          const next = payload.new.last_synthesis_run as
+            | SynthesisRunLog
+            | null
+            | undefined;
+          if (!next) return;
+          setLiveSynthesisRun(next);
+          // The trace's completed_at is the load-bearing comparison —
+          // if it advanced past our baseline, this is a fresh run
+          // finishing and we should flip out of in-flight.
+          const baseline = synthesisBaselineRef.current;
+          if (!baseline || next.completed_at > baseline) {
+            setSynthesisInFlight(false);
+            if (next.error) {
+              setSynthesisError(next.error);
+            }
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [item.id]);
+
+  const handleBuildMaintenancePlan = useCallback(async () => {
+    setSynthesisError(null);
+    setSynthesisInFlight(true);
+    synthesisBaselineRef.current =
+      liveSynthesisRun?.completed_at ??
+      item.last_synthesis_run?.completed_at ??
+      null;
+    try {
+      const result = await buildMaintenancePlanAction(item.id);
+      if (!result.ok) {
+        setSynthesisInFlight(false);
+        setSynthesisError(result.error);
+      }
+      // On ok we leave in-flight true — the Realtime subscription
+      // above flips it back when last_synthesis_run lands.
+    } catch (err) {
+      setSynthesisInFlight(false);
+      setSynthesisError(
+        err instanceof Error
+          ? err.message
+          : "Couldn't start the synthesis. Try again in a moment.",
+      );
+    }
+  }, [item.id, item.last_synthesis_run, liveSynthesisRun]);
+
+  // Source-of-truth for "has a successful prior run" — prefer the live
+  // trace from realtime (newer than first paint) but fall back to the
+  // server-rendered value so refreshes get the right copy on first
+  // paint without waiting for a Realtime echo.
+  const effectiveSynthesisRun = liveSynthesisRun ?? item.last_synthesis_run;
+  const hasPriorPlan = Boolean(
+    effectiveSynthesisRun && !effectiveSynthesisRun.error,
+  );
+
   const [editOpen, setEditOpen] = useState(false);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
   // The Smart Uploader can be opened in two target modes: photo (the
@@ -446,18 +553,53 @@ export function InventoryDetailView({
                 {title}
               </h1>
             </div>
-            <button
-              ref={editTriggerRef}
-              type="button"
-              onClick={() => setEditOpen(true)}
-              className="btn btn-ghost shrink-0"
-              aria-label={`Edit details for ${item.name}`}
-            >
-              <Icon name="edit" size={14} />
-              <span className="hidden sm:inline">Edit details</span>
-              <span className="sm:hidden">Edit</span>
-            </button>
+            <div className="flex flex-wrap items-start justify-end gap-2 shrink-0">
+              {hasMaintenanceInsight ? (
+                <BuildMaintenancePlanButton
+                  hasPriorPlan={hasPriorPlan}
+                  inFlight={synthesisInFlight}
+                  onClick={handleBuildMaintenancePlan}
+                />
+              ) : null}
+              <button
+                ref={editTriggerRef}
+                type="button"
+                onClick={() => setEditOpen(true)}
+                className="btn btn-ghost shrink-0"
+                aria-label={`Edit details for ${item.name}`}
+              >
+                <Icon name="edit" size={14} />
+                <span className="hidden sm:inline">Edit details</span>
+                <span className="sm:hidden">Edit</span>
+              </button>
+            </div>
           </div>
+          {synthesisInFlight ? (
+            <p
+              className="text-small"
+              style={{ color: "var(--color-text-tertiary)" }}
+              aria-live="polite"
+            >
+              This usually takes about a minute.
+            </p>
+          ) : null}
+          {synthesisError ? (
+            <p
+              className="text-small"
+              role="alert"
+              style={{ color: "var(--color-danger, #c44)" }}
+            >
+              {synthesisError}{" "}
+              <button
+                type="button"
+                onClick={() => setSynthesisError(null)}
+                className="underline"
+                style={{ color: "inherit" }}
+              >
+                Dismiss
+              </button>
+            </p>
+          ) : null}
 
           <StatTiles item={item} />
 
@@ -1620,6 +1762,69 @@ function ResearchButton({
     >
       {button}
     </Tooltip>
+  );
+}
+
+function BuildMaintenancePlanButton({
+  hasPriorPlan,
+  inFlight,
+  onClick,
+}: {
+  hasPriorPlan: boolean;
+  inFlight: boolean;
+  onClick: () => void;
+}) {
+  // First build is a call-to-action — surface it with the primary
+  // accent treatment so a user with research insights actually notices
+  // the next step. After a successful build the action drops to ghost:
+  // the work is done, rebuild is a maintenance affordance rather than
+  // a "do this next" pointer.
+  const variantClass = hasPriorPlan ? "btn btn-ghost" : "btn btn-primary";
+  const iconName: IconName = hasPriorPlan ? "refresh-cw" : "sparkles";
+  const labelLong = inFlight
+    ? hasPriorPlan
+      ? "Rebuilding plan…"
+      : "Building plan…"
+    : hasPriorPlan
+      ? "Rebuild maintenance plan"
+      : "Build maintenance plan";
+  const labelShort = inFlight
+    ? hasPriorPlan
+      ? "Rebuilding…"
+      : "Building…"
+    : hasPriorPlan
+      ? "Rebuild plan"
+      : "Build plan";
+
+  return (
+    <button
+      type="button"
+      disabled={inFlight}
+      onClick={onClick}
+      className={`${variantClass} shrink-0 build-plan-button`}
+      aria-disabled={inFlight ? "true" : "false"}
+      aria-label={labelLong}
+      data-loading={inFlight ? "true" : "false"}
+      style={inFlight ? { opacity: 0.65 } : undefined}
+    >
+      <span
+        className={inFlight ? "build-plan-icon-spin" : ""}
+        style={{ display: "inline-flex", alignItems: "center" }}
+      >
+        <Icon name={iconName} size={14} />
+      </span>
+      <span className="hidden sm:inline">{labelLong}</span>
+      <span className="sm:hidden">{labelShort}</span>
+      <style>{`
+        @keyframes build-plan-icon-rotate { to { transform: rotate(360deg); } }
+        .build-plan-icon-spin {
+          animation: build-plan-icon-rotate 0.9s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .build-plan-icon-spin { animation: none; }
+        }
+      `}</style>
+    </button>
   );
 }
 
