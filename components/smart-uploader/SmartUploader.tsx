@@ -570,6 +570,7 @@ export function SmartUploader(props: SmartUploaderProps) {
               onRetake={retakeFromCapture}
               onBack={() => setStage({ name: "path-picker" })}
               onAnalyze={() => stage.file && startAnalysisFromCapture(stage.file)}
+              targetInventoryName={targetInventoryName ?? null}
             />
           ) : null}
 

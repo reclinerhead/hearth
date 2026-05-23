@@ -25,6 +25,7 @@ export function CaptureStage({
   onRetake,
   onBack,
   onAnalyze,
+  targetInventoryName,
 }: {
   file: File | null;
   previewUrl: string | null;
@@ -32,7 +33,16 @@ export function CaptureStage({
   onRetake: () => void;
   onBack: () => void;
   onAnalyze: () => void;
+  /**
+   * When set, the Smart Uploader is in target mode (opened from a
+   * specific inventory item's "Add photo" button). The capture stage's
+   * copy reflects that the photo is being attached to a known item
+   * rather than analyzed, and the primary button reads "Upload photo"
+   * instead of "Analyze this photo" since no AI runs in target mode.
+   */
+  targetInventoryName?: string | null;
 }) {
+  const isTargetMode = Boolean(targetInventoryName);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,8 +122,9 @@ export function CaptureStage({
         className="text-small"
         style={{ color: "var(--color-text-secondary)" }}
       >
-        Take a clear photo of the nameplate or identifying sticker. If
-        there&apos;s no visible label, a photo of the unit itself works.
+        {isTargetMode
+          ? `Add another photo of ${targetInventoryName}. We'll attach it to this item — no analysis needed.`
+          : "Take a clear photo of the nameplate or identifying sticker. If there's no visible label, a photo of the unit itself works."}
       </p>
 
       <input
@@ -294,7 +305,7 @@ export function CaptureStage({
               onClick={onAnalyze}
               className="btn btn-primary"
             >
-              Analyze this photo
+              {isTargetMode ? "Upload photo" : "Analyze this photo"}
             </button>
           </div>
         ) : null}
