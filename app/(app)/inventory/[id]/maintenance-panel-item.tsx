@@ -55,7 +55,17 @@ export async function MaintenancePanelItem({
         .maybeSingle(),
     ]);
 
-  const tasks = (openTasksRaw ?? []) as MaintenancePanelTask[];
+  // The item-scoped panel never labels rows with the inventory name —
+  // the user is already on that item's page and the prefix would be
+  // visual noise. Setting inventoryName: null on every row here keeps
+  // the row component branch-free.
+  const rows = (openTasksRaw ?? []) as Array<
+    Omit<MaintenancePanelTask, "inventoryName">
+  >;
+  const tasks: MaintenancePanelTask[] = rows.map((r) => ({
+    ...r,
+    inventoryName: null,
+  }));
   const completedThisYear = completedThisYearRaw ?? 0;
 
   const itemEmptyState: ItemEmptyState = hasActionableInsights

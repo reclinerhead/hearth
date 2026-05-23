@@ -16,6 +16,15 @@ export type MaintenanceTaskRowData = {
   subtitle: string | null;
   next_due_at: string;
   source: "direct_event" | "synthesis";
+  /**
+   * The display name of the inventory item this task belongs to. Set by
+   * the dashboard wrapper so house-scoped rows can call out *which*
+   * appliance the task is for ("Check and refill rinse aid" alone isn't
+   * obvious; "DISHWASHER · Check and refill rinse aid" is). The item-
+   * scoped wrapper leaves this null — the user is already on the item's
+   * page, so the context is implicit.
+   */
+  inventoryName: string | null;
 };
 
 export type RowTone = "danger" | "caution" | "neutral";
@@ -105,7 +114,7 @@ export function MaintenanceTaskRow({
             </span>
           ) : null}
         </div>
-        {task.subtitle ? (
+        {task.inventoryName || task.subtitle ? (
           <div
             className="text-small truncate"
             style={{
@@ -113,7 +122,38 @@ export function MaintenanceTaskRow({
               marginTop: 2,
             }}
           >
-            {task.subtitle}
+            {task.inventoryName ? (
+              <>
+                <span
+                  style={{
+                    color: "var(--color-text-tertiary)",
+                    fontSize: 11,
+                    fontWeight: 500,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    marginRight: 6,
+                  }}
+                >
+                  {task.inventoryName}
+                </span>
+                {task.subtitle ? (
+                  <>
+                    <span
+                      aria-hidden
+                      style={{
+                        color: "var(--color-text-tertiary)",
+                        marginRight: 6,
+                      }}
+                    >
+                      ·
+                    </span>
+                    {task.subtitle}
+                  </>
+                ) : null}
+              </>
+            ) : (
+              task.subtitle
+            )}
           </div>
         ) : null}
       </div>

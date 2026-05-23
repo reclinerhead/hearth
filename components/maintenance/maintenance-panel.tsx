@@ -11,10 +11,14 @@
 //   - Next 30 days: calm surface cards with a date pill on the right.
 //     "You should know about these."
 //   - Later this season: transparent rows with reduced contrast. Aware,
-//     not actionable.
+//     not actionable. (House scope: capped to next-30 days, so this tier
+//     never appears — the dashboard is a "what's on plate now" surface
+//     and the full timeline lives at /maintenance.)
 // The Good Steward footer beneath everything turns the panel from a nag
 // into a daily-positive moment whenever the user has completed any tasks.
 
+import Link from "next/link";
+import { Icon } from "@/components/icon";
 import { SectionHeader } from "@/components/ui";
 import {
   groupTasksByTier,
@@ -90,9 +94,24 @@ export function MaintenancePanel({
                 {overdueCount} overdue
               </span>
             ) : null}
-            <span style={{ color: "var(--color-text-tertiary)" }}>
-              {totalOpen} total
-            </span>
+            {scope === "house" ? (
+              // The dashboard query caps at next-30 days, so "N total"
+              // here would misrepresent the broader open list. View all
+              // is the affordance to see everything; the destination
+              // page owns the timeframe controls.
+              <Link
+                href="/maintenance"
+                className="inline-flex items-center gap-1"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                View all
+                <Icon name="chevron-right" size={14} />
+              </Link>
+            ) : (
+              <span style={{ color: "var(--color-text-tertiary)" }}>
+                {totalOpen} total
+              </span>
+            )}
           </div>
         }
       />
