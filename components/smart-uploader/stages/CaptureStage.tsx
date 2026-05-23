@@ -288,9 +288,17 @@ export function CaptureStage({
       )}
 
       <div className="flex items-center justify-between gap-2 mt-1">
-        <button type="button" onClick={onBack} className="btn btn-ghost">
-          Back
-        </button>
+        {isTargetMode ? (
+          // Target mode opens directly on capture, so there's no
+          // path-picker to go back to. The modal's X / ESC are the
+          // only exit paths; reserving the left slot keeps the right
+          // edge buttons in the same place across modes.
+          <span aria-hidden />
+        ) : (
+          <button type="button" onClick={onBack} className="btn btn-ghost">
+            Back
+          </button>
+        )}
         {file ? (
           <div className="flex items-center gap-2">
             <button
