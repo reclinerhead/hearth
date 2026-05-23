@@ -731,19 +731,15 @@ export function InventoryDetailView({
         </div>
       </section>
 
-      {isProperty ? (
-        // Property doesn't use the "Research this model" panel —
-        // it's tuned for appliances and systems (service life,
-        // maintenance, manufacturer-published spec sheets) and
-        // those questions don't apply to a Land Cruiser or a
-        // television. A future enhancement could swap this for a
-        // depreciation / replacement-value lookup tuned to the
-        // property category; tracked as out-of-scope follow-up.
-        <PropertyInsightsPlaceholder
-          isVehicle={isVehicle}
-          isPet={isPet}
-        />
-      ) : (
+      {isProperty ? null : (
+        // Property doesn't use the "Research this model" panel — it's
+        // tuned for appliances and systems (service life, maintenance,
+        // manufacturer-published spec sheets) and those questions don't
+        // apply to a Land Cruiser or a television. The slot is left
+        // empty until the property-side lookup module (depreciation /
+        // replacement-value / recall) ships; the earlier "What we'll
+        // surface for vehicles" placeholder was promising work that
+        // isn't queued, which read as filler rather than information.
         <ResearchPanel
           item={item}
           insights={displayInsights}
@@ -1328,42 +1324,6 @@ type PanelInsights = {
   source_urls?: string[] | undefined;
   found_specific_model?: boolean | undefined;
 };
-
-function PropertyInsightsPlaceholder({
-  isVehicle,
-  isPet,
-}: {
-  isVehicle: boolean;
-  isPet: boolean;
-}) {
-  const eyebrow = isVehicle
-    ? "What we'll surface for vehicles"
-    : isPet
-      ? "What we'll surface for pets"
-      : "What we'll surface for property";
-  const body = isVehicle
-    ? "Depreciation, replacement value, and recall lookups for this vehicle are on the roadmap. For now, capture the VIN, plate, and value above so we have what we need when those land."
-    : isPet
-      ? "A dedicated pet experience — vet records, vaccinations, microchip lookup — is a follow-up. Capture the basics above so we have a head start when it lands."
-      : "Depreciation and replacement-value lookups for property are on the roadmap. Capture purchase details and an estimated value above so we have what we need when those land.";
-
-  return (
-    <section className="surface-ai p-4 sm:p-5">
-      <div className="flex items-center gap-2 mb-2">
-        <span style={{ color: "var(--color-accent)" }}>
-          <Icon name="sparkles" size={14} />
-        </span>
-        <span className="eyebrow">{eyebrow}</span>
-      </div>
-      <p
-        className="text-small"
-        style={{ color: "var(--color-text-secondary)" }}
-      >
-        {body}
-      </p>
-    </section>
-  );
-}
 
 function ResearchPanel({
   item,
