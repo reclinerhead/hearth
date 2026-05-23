@@ -35,11 +35,17 @@ create table hearth.maintenance_tasks (
   -- registration renewal" → the Camry row). A few synthesis tasks may
   -- be house-scoped without an inventory anchor ("gutter cleaning" if
   -- gutters aren't an inventory item) — those leave this column null.
-  -- ON DELETE SET NULL preserves task history when an inventory item
-  -- is removed; the user can still see "you've completed this 4 times"
-  -- in reports even if the underlying appliance row was deleted.
+  -- ON DELETE CASCADE so deleting an inventory item removes its tasks
+  -- atomically. Two reasons we don't preserve task history past the
+  -- item: (1) the per-task reasoning jsonb is frozen at row-creation
+  -- time with manufacturer/model/serial embedded, so each completed
+  -- row is already self-contained for any history view that survives
+  -- — we don't need a dangling FK to keep history readable; (2) we
+  -- want null inventory_id to mean "house-scoped task" unambiguously,
+  -- not "orphaned task whose item was deleted." Cascade preserves
+  -- that semantic.
   inventory_id uuid
-    references hearth.inventory(id) on delete set null,
+    references hearth.inventory(id) on delete cascade,
 
   -- Source pipeline that created this row. Determines whether a
   -- synthesis rebuild may supersede it.
