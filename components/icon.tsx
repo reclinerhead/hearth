@@ -395,6 +395,7 @@ type IconProps = {
   size?: number;
   className?: string;
   strokeWidth?: number;
+  style?: SVGProps<SVGSVGElement>["style"];
   "aria-label"?: string;
 };
 
@@ -403,6 +404,7 @@ export function Icon({
   size = 20,
   className,
   strokeWidth,
+  style,
   "aria-label": ariaLabel,
 }: IconProps) {
   const decorative = !ariaLabel;
@@ -413,6 +415,7 @@ export function Icon({
       height={size}
       strokeWidth={strokeWidth ?? base.strokeWidth}
       className={className}
+      style={style}
       aria-hidden={decorative}
       aria-label={ariaLabel}
       role={decorative ? undefined : "img"}

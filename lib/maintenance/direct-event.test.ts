@@ -201,6 +201,9 @@ describe("processDirectEventTaskFromDocument — happy path", () => {
       { label: "1 year", interval_months: 12 },
       { label: "2 years", interval_months: 24 },
     ]);
+    expect(captured.insertPayload?.renewal_url).toBe(
+      "https://services2.sos.state.mi.us/serviceshome/",
+    );
     expect(captured.insertPayload?.reasoning).toMatchObject({
       source_kind: "document_expiration",
       anchor: { kind: "document_expiration", document_id: "doc-1" },
@@ -377,6 +380,7 @@ describe("processDirectEventTaskFromDocument — classifier fallback", () => {
       cadence_interval_months: null,
       cadence_seasonal_anchor: null,
       renewal_options: null,
+      renewal_url: null,
     });
   });
 

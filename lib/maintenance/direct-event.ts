@@ -221,6 +221,11 @@ export async function processDirectEventTaskFromDocument(
         classification.renewal_options.length > 0
           ? classification.renewal_options
           : null,
+      // Persist the per-issuer renewal URL alongside the row (issue
+      // #137) so the task detail modal's "Renew now" link can render
+      // straight off the task without re-running the classifier. Null
+      // for issuers that don't have a portal (most insurance carriers).
+      renewal_url: classification.renewal_url_template,
       reasoning,
       predecessor_task_id: closed_task_id,
     })

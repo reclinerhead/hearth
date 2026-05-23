@@ -33,11 +33,11 @@ import {
 } from "@/lib/maintenance/tier-grouping";
 import { GoodStewardFooter } from "./good-steward-footer";
 import {
-  MaintenanceTaskRow,
   type MaintenanceTaskRowData,
   type RightLabelMode,
   type RowTone,
 } from "./maintenance-task-row";
+import { MaintenanceTaskTrigger } from "./maintenance-task-trigger";
 
 export type MaintenancePanelTask = MaintenanceTaskRowData & TierableTask;
 
@@ -279,7 +279,7 @@ function TierSection({
       </div>
       <div className="flex flex-col gap-2">
         {tasks.map((t) => (
-          <MaintenanceTaskRow
+          <MaintenanceTaskTrigger
             key={t.id}
             task={t}
             tone={tone}
