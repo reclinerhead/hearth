@@ -686,7 +686,7 @@ function headerTitleForStage(
     case "path-picker":
       return "What are you adding?";
     case "capture":
-      return "Photo of an appliance or system";
+      return "Photo of an appliance, system, or property";
     case "processing":
       return "Working on it…";
     case "duplicate":
