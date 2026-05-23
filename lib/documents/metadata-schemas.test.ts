@@ -12,6 +12,7 @@ describe("receiptMetadataSchema", () => {
       vendor_address: "1234 Main St, Kalamazoo, MI 49001",
       vendor_phone: "269-555-0123",
       transaction_date: "2024-11-15",
+      expiration_date: null,
       transaction_type: "service",
       subtotal_cents: 28000,
       tax_cents: 1960,
@@ -40,6 +41,7 @@ describe("receiptMetadataSchema", () => {
       vendor_address: null,
       vendor_phone: null,
       transaction_date: null,
+      expiration_date: null,
       transaction_type: null,
       subtotal_cents: null,
       tax_cents: null,
@@ -71,6 +73,42 @@ describe("receiptMetadataSchema", () => {
     };
     const result = receiptMetadataSchema.safeParse(value);
     expect(result.success).toBe(false);
+  });
+
+  describe("expiration_date (#124)", () => {
+    it("accepts a receipt with expiration_date populated (vehicle registration shape)", () => {
+      const value = {
+        ...emptyReceiptMetadata(),
+        vendor_name: "Michigan Secretary of State",
+        transaction_date: "2026-05-20",
+        expiration_date: "2028-05-24",
+        transaction_type: "other" as const,
+      };
+      const result = receiptMetadataSchema.safeParse(value);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.expiration_date).toBe("2028-05-24");
+      }
+    });
+
+    it("accepts a receipt with expiration_date explicitly null (service receipt shape)", () => {
+      const value = {
+        ...emptyReceiptMetadata(),
+        vendor_name: "Riverbend Heating & Cooling",
+        transaction_date: "2024-11-15",
+        expiration_date: null,
+        transaction_type: "service" as const,
+      };
+      const result = receiptMetadataSchema.safeParse(value);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.expiration_date).toBeNull();
+      }
+    });
+
+    it("emptyReceiptMetadata initializes expiration_date to null", () => {
+      expect(emptyReceiptMetadata().expiration_date).toBeNull();
+    });
   });
 
   it("rejects a line_item with a blank description", () => {
@@ -113,9 +151,21 @@ describe("parseReceiptMetadata", () => {
   it("returns an empty-but-complete shape on invalid input", () => {
     const parsed = parseReceiptMetadata({ garbage: true });
     expect(parsed.vendor_name).toBeNull();
+    expect(parsed.expiration_date).toBeNull();
     expect(parsed.line_items).toEqual([]);
     expect(parsed.referenced_serials).toEqual([]);
     expect(parsed.referenced_model_numbers).toEqual([]);
+  });
+
+  it("parses expiration_date through on a valid renewal-shape input (#124)", () => {
+    const parsed = parseReceiptMetadata({
+      ...emptyReceiptMetadata(),
+      vendor_name: "Progressive",
+      transaction_date: "2025-11-24",
+      expiration_date: "2026-05-24",
+      transaction_type: "other",
+    });
+    expect(parsed.expiration_date).toBe("2026-05-24");
   });
 
   it("returns an empty shape for null/undefined inputs (defensive)", () => {

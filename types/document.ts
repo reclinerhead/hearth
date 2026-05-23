@@ -169,6 +169,12 @@ export type ReceiptExtraction = {
   vendor_address: string | null;
   vendor_phone: string | null;
   transaction_date: string | null;
+  // ISO date when this time-bounded grant lapses (vehicle registration,
+  // insurance policy, warranty, permit, license). Null on service /
+  // purchase / inspection receipts where expiration isn't a meaningful
+  // concept. Seeded into hearth.documents.metadata.expiration_date and
+  // consumed downstream by the direct-event maintenance pipeline.
+  expiration_date: string | null;
   transaction_type: "service" | "purchase" | "inspection" | "other" | null;
   subtotal_cents: number | null;
   tax_cents: number | null;

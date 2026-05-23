@@ -155,6 +155,7 @@ Fields:
 - vendor_address: the full street address if printed (single string, multi-line addresses joined with commas)
 - vendor_phone: the phone number if printed
 - transaction_date: the date of the transaction, in YYYY-MM-DD form. If the receipt prints a date like "11/15/24" or "Nov 15 2024", convert to the ISO form. Use null if no date is visible.
+- expiration_date: the expiration / valid-through / policy-period-end date in YYYY-MM-DD form, populated only when the document is a time-bounded grant (registration, insurance policy, warranty, permit, license). See the renewal-document guidance below for when to populate vs. leave null.
 - transaction_type: classify the receipt as one of:
    - "service" — work performed on something (furnace tune-up, vehicle service, vet visit, plumber visit, contractor invoice)
    - "purchase" — items bought (hardware store, parts shop, retail)
@@ -188,6 +189,23 @@ Rules:
 - Do not include industry-internal codes (SKU numbers, factory codes) unless they are the only identifier of a line item.
 - For money fields, all values are integer cents. Never return a decimal — a printed "$X.YY" becomes (X * 100) + YY, and a whole-dollar "$X" becomes X * 100.
 - Empty arrays are the correct shape when there are no items / no serials / no model numbers — never return null for the array fields.
+
+Renewal documents and expiration_date:
+
+Populate expiration_date only when the document explicitly represents a time-bounded grant of something that will need to be renewed: a vehicle registration, an insurance policy, a warranty certificate, a permit, a professional license. In those cases, find the date the document gives as its expiration / valid-through / policy-period-end and emit it as an ISO date in expiration_date.
+
+Examples of when to populate it:
+- A vehicle registration card with "Expires <expiration date as printed>" → set expiration_date to that date in YYYY-MM-DD form.
+- An auto insurance declarations page with a policy period "<start date> to <end date>" → set expiration_date to the end of the policy period (the policy expires then).
+- A warranty certificate stating "Coverage through <date as printed>" → set expiration_date to that date.
+
+Examples of when to leave it null:
+- A service receipt from a furnace tune-up. Services are completed events, not time-bounded grants. Null.
+- A purchase receipt from a home-improvement store. A purchase is not a grant that expires. Null.
+- An inspection report. The inspection is a record of a moment in time, not a grant. Null.
+- A document where you cannot find an explicit expiration / valid-through / policy-period date. Don't guess. Null.
+
+The principle: expiration_date represents the date the user needs to renew or replace this document. If no such date is present and unambiguous on the page, leave it null. The downstream pipeline that consumes this field will create renewal reminders from it, so a wrong date is worse than a null.
 `;
 
 export function buildReceiptPrompt(): string {
