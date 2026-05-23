@@ -26,13 +26,17 @@
 import { revalidatePath } from "next/cache";
 import { researchSignificantFieldsChanged } from "@/lib/inventory/research-significant-fields";
 import { createClient } from "@/lib/supabase/server";
-import type { EquipmentType } from "@/types/document";
+import type { EquipmentType, InventorySubtype } from "@/types/document";
 
 export type UpdateInventoryItemInput = {
   inventoryId: string;
   fields: {
     name: string;
     type: EquipmentType;
+    // Only meaningful when type='property'; ignored on write for other
+    // types (always coerced to null) so the column stays semantically
+    // honest if the user toggles type from property → appliance.
+    subtype: InventorySubtype | null;
     room_id: string;
     manufacturer: string | null;
     model_number: string | null;
@@ -40,6 +44,15 @@ export type UpdateInventoryItemInput = {
     installed_on: string | null;
     last_serviced_on: string | null;
     next_service_due_on: string | null;
+    // Property-friendly columns (issue #23) — broadly meaningful but
+    // primarily populated for property. purchased_on is a DATE; the
+    // value column is bigint cents.
+    purchased_on: string | null;
+    estimated_value_cents: number | null;
+    // Subtype-specific bag — persisted verbatim. Pass undefined to
+    // leave the column untouched; pass an object to overwrite. The
+    // application layer validates via lib/inventory/metadata-schemas.
+    metadata?: Record<string, unknown>;
     notes: string | null;
     // YYYY-MM when set; null clears all six manufacture-date columns
     // in the same UPDATE. See "Manufacture date write contract" in
@@ -95,9 +108,15 @@ export async function updateInventoryItemAction(
 
   // Pull manufacture_date out of the spread — it's persisted across six
   // columns, not one, so the satellite columns need their own write
-  // alongside the user-entered date.
-  const { manufacture_date, ...restFields } = input.fields;
+  // alongside the user-entered date. Also pull subtype so we can
+  // coerce-to-null when type isn't 'property'.
+  const { manufacture_date, subtype, ...restFields } = input.fields;
   const update: Record<string, unknown> = { ...restFields };
+
+  // Defense in depth: stale UI state could send a subtype on a row the
+  // user just re-typed as appliance. Persist null in that case so the
+  // column stays semantically honest.
+  update.subtype = input.fields.type === "property" ? subtype : null;
 
   if (manufacture_date === null) {
     // User cleared the field — null every related column in the same

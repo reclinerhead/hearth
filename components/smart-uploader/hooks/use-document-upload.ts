@@ -164,10 +164,17 @@ export function useDocumentUpload(
 
         setState((s) => ({ ...s, phase: "creating-row" }));
 
+        // Kind tracks what the user is actually uploading. In target
+        // mode they're adding an additional photo of a known item —
+        // never a nameplate — so write 'photo' directly and skip the
+        // analysis-then-demote dance. In discovery mode we still write
+        // 'nameplate' optimistically and let analyze demote on
+        // appliance_photo classification.
+        const targetMode = Boolean(args.targetInventoryId);
         const created = await createPendingDocumentAction({
           documentId,
           houseId: args.houseId,
-          kind: "nameplate",
+          kind: targetMode ? "photo" : "nameplate",
           storagePath: optimizedPath,
           thumbnailPath,
           contentHash,
@@ -177,6 +184,36 @@ export function useDocumentUpload(
           inventoryId: args.targetInventoryId ?? null,
         });
         if (created.error !== null) throw new Error(created.error);
+
+        // Target mode short-circuit (load-bearing — see issue #23
+        // follow-up). The user opened the Smart Uploader from
+        // /inventory/[id], so they've already told us which item this
+        // photo belongs to. Running the Grok vision classify call
+        // here would burn ~30-45s of latency + Gateway credits for
+        // zero user benefit, and would route legitimate non-appliance
+        // photos (a car body, a pet) into the "couldn't identify"
+        // failure stage when they should just attach cleanly.
+        //
+        // Skip analysis entirely: just flip status from analyzing →
+        // attached and resolve to the terminal "attached" phase. The
+        // modal jumps straight to the success stage.
+        if (targetMode && args.targetInventoryId) {
+          setState((s) => ({ ...s, phase: "attaching" }));
+          const attached = await attachDocumentToInventoryAction({
+            documentId,
+            inventoryId: args.targetInventoryId,
+          });
+          if (attached.error !== null) throw new Error(attached.error);
+          setState({
+            phase: "attached",
+            documentId,
+            analysis: null,
+            matches: null,
+            duplicate: null,
+            error: null,
+          });
+          return;
+        }
 
         setState((s) => ({ ...s, phase: "analyzing" }));
 
@@ -191,10 +228,10 @@ export function useDocumentUpload(
           throw new Error("Analysis returned no extraction");
         }
 
-        // not_useful and delta both short-circuit matching regardless of
-        // entry point. Delta only ever fires from the inventory-detail
-        // entry once we wire that path; the typecheck still wants us to
-        // handle every branch here.
+        // not_useful and delta both short-circuit matching. Delta only
+        // ever fires from a future inventory-detail "compare this new
+        // photo to the existing record" entry that hasn't shipped; the
+        // typecheck still wants us to handle every branch here.
         if (
           aiExtraction.mode === "classification" &&
           aiExtraction.photo_kind === "not_useful"
@@ -211,40 +248,8 @@ export function useDocumentUpload(
         }
 
         if (aiExtraction.mode === "delta") {
-          // Delta has no classification name to match against; surface
-          // it without running findMatchingInventoryAction.
           setState({
             phase: "done",
-            documentId,
-            analysis: aiExtraction,
-            matches: null,
-            duplicate: null,
-            error: null,
-          });
-          return;
-        }
-
-        // Target mode (Smart Uploader opened from /inventory/[id]):
-        // skip matching, attach the document to the known target, and
-        // resolve to the terminal "attached" phase. acceptedFields is
-        // intentionally omitted — the user might be photographing a
-        // different angle that contradicts existing inventory fields,
-        // and we don't want a silent overwrite from this entry point.
-        // (A future "we noticed this photo says serial=X, update?"
-        // affordance can layer on later.)
-        if (args.targetInventoryId) {
-          setState((s) => ({
-            ...s,
-            phase: "attaching",
-            analysis: aiExtraction,
-          }));
-          const attached = await attachDocumentToInventoryAction({
-            documentId,
-            inventoryId: args.targetInventoryId,
-          });
-          if (attached.error !== null) throw new Error(attached.error);
-          setState({
-            phase: "attached",
             documentId,
             analysis: aiExtraction,
             matches: null,

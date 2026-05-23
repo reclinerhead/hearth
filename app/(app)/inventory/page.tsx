@@ -5,7 +5,9 @@ import { InventoryThumbnail } from "@/components/inventory-thumbnail";
 import { SectionHeader } from "@/components/ui";
 import { resolveActiveHouseId } from "@/lib/houses/active-house";
 import { displayModelNumber } from "@/lib/inventory/model-number";
+import { parseVehicleMetadata } from "@/lib/inventory/metadata-schemas";
 import { createClient } from "@/lib/supabase/server";
+import type { InventorySubtype } from "@/types/document";
 
 /**
  * Home inventory list — every appliance, system, and exterior item the
@@ -25,16 +27,18 @@ import { createClient } from "@/lib/supabase/server";
  * three tiles — the structure is itself part of the affordance.
  */
 
-type InventoryType = "appliance" | "system" | "exterior";
+type InventoryType = "appliance" | "system" | "exterior" | "property";
 
 type InventoryItem = {
   id: string;
   name: string;
   type: InventoryType;
+  subtype: InventorySubtype | null;
   roomName: string;
   manufacturer: string | null;
   modelNumber: string | null;
   installedOn: string | null;
+  metadata: Record<string, unknown> | null;
   thumbnailPath: string | null;
 };
 
@@ -42,6 +46,17 @@ const TYPE_FALLBACK_ICON: Record<InventoryType, IconName> = {
   appliance: "fridge",
   system: "flame-burner",
   exterior: "home",
+  property: "package",
+};
+
+// Subtype-specific fallback icons (issue #23). When a property row
+// carries a known subtype, the icon should hint at the kind of thing
+// (vehicle → car badge, pet → paw) before the user's photo loads. The
+// generic "package" stays for property/null — electronics, art, tools
+// don't share a single recognizable silhouette.
+const SUBTYPE_FALLBACK_ICON: Record<InventorySubtype, IconName> = {
+  vehicle: "car",
+  pet: "paw",
 };
 
 const SECTIONS: {
@@ -70,6 +85,13 @@ const SECTIONS: {
     title: "Exterior",
     emptyHint:
       "No exterior items yet — tap + Add in the top nav to capture one.",
+  },
+  {
+    type: "property",
+    eyebrow: "What you own",
+    title: "Property",
+    emptyHint:
+      "No property yet — tap + Add to capture a vehicle, pet, electronics, or other valuable.",
   },
 ];
 
@@ -142,7 +164,10 @@ function EmptySection({ hint }: { hint: string }) {
 }
 
 function InventoryListRow({ item }: { item: InventoryItem }) {
-  const fallbackIcon = TYPE_FALLBACK_ICON[item.type];
+  const fallbackIcon =
+    item.subtype && SUBTYPE_FALLBACK_ICON[item.subtype]
+      ? SUBTYPE_FALLBACK_ICON[item.subtype]
+      : TYPE_FALLBACK_ICON[item.type];
   const detailLine = buildDetailLine(item);
 
   // The dashboard's InventoryRow uses a 48×48 thumbnail in a half-width
@@ -217,6 +242,18 @@ function InventoryListRow({ item }: { item: InventoryItem }) {
 }
 
 function buildDetailLine(item: InventoryItem): string | null {
+  // Vehicles get a contextual detail line of `model_year · license_plate`
+  // when both are populated in metadata — that pair is far more useful
+  // at a glance than the manufacturer/model combo (which is already in
+  // the item name for vehicles, e.g. "Toyota Land Cruiser"). Fall through
+  // to the generic identifier line when neither is set.
+  if (item.type === "property" && item.subtype === "vehicle") {
+    const meta = parseVehicleMetadata(item.metadata);
+    const vehicleParts: string[] = [];
+    if (meta.model_year) vehicleParts.push(String(meta.model_year));
+    if (meta.license_plate) vehicleParts.push(meta.license_plate);
+    if (vehicleParts.length > 0) return vehicleParts.join(" · ");
+  }
   const parts: string[] = [];
   const model = displayModelNumber(item.modelNumber);
   if (item.manufacturer && model) {
@@ -248,6 +285,7 @@ function groupByType(items: InventoryItem[]): Record<InventoryType, InventoryIte
     appliance: [],
     system: [],
     exterior: [],
+    property: [],
   };
   for (const item of items) {
     groups[item.type].push(item);
@@ -272,9 +310,11 @@ async function loadInventory(houseId: string): Promise<InventoryItem[]> {
       id,
       name,
       type,
+      subtype,
       manufacturer,
       model_number,
       installed_on,
+      metadata,
       hero_document_id,
       created_at,
       room:rooms!inner(name)
@@ -289,9 +329,11 @@ async function loadInventory(houseId: string): Promise<InventoryItem[]> {
     id: string;
     name: string;
     type: InventoryType;
+    subtype: InventorySubtype | null;
     manufacturer: string | null;
     model_number: string | null;
     installed_on: string | null;
+    metadata: Record<string, unknown> | null;
     hero_document_id: string | null;
     created_at: string;
     room: { name: string } | { name: string }[] | null;
@@ -351,10 +393,12 @@ async function loadInventory(houseId: string): Promise<InventoryItem[]> {
       id: r.id,
       name: r.name,
       type: r.type,
+      subtype: r.subtype,
       roomName,
       manufacturer: r.manufacturer,
       modelNumber: r.model_number,
       installedOn: r.installed_on,
+      metadata: r.metadata,
       thumbnailPath:
         pinnedThumbByInventory.get(r.id) ?? heroByInventory.get(r.id) ?? null,
     };

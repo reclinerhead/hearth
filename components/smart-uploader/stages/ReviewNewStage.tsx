@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import type {
   AppliancePhotoExtraction,
   EquipmentType,
+  InventorySubtype,
   NameplateExtraction,
 } from "@/types/document";
 import { pickDefaultRoomId } from "../match-room";
@@ -46,6 +47,8 @@ export function ReviewNewStage({
 
   const defaultName = analysis?.classification?.name ?? "";
   const defaultType: EquipmentType = analysis?.classification?.type ?? "appliance";
+  const defaultSubtype: InventorySubtype | null =
+    analysis?.classification?.subtype ?? null;
   const roomSuggestion = analysis?.room_suggestion ?? null;
   const confidence = analysis?.classification?.confidence ?? null;
 
@@ -55,6 +58,9 @@ export function ReviewNewStage({
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [name, setName] = useState(defaultName);
   const [type, setType] = useState<EquipmentType>(defaultType);
+  const [subtype, setSubtype] = useState<InventorySubtype | null>(
+    defaultSubtype,
+  );
   const [manufacturer, setManufacturer] = useState(
     isNameplate ? (analysis as NameplateExtraction).extracted.manufacturer ?? "" : "",
   );
@@ -146,13 +152,25 @@ export function ReviewNewStage({
         documentId,
         name: name.trim(),
         type,
+        // subtype is only meaningful for property; server defends
+        // against stale UI state anyway, but we send the honest value
+        // here so the create path matches the edit path.
+        subtype: type === "property" ? subtype : null,
         roomId,
         fields: {
           manufacturer: emptyToNull(manufacturer),
           model_number: emptyToNull(modelNumber),
           serial_number: emptyToNull(serialNumber),
           installed_on: emptyToNull(installedOn),
+          // Smart Uploader doesn't ask for these at capture time — they
+          // sit at zero friction in the edit modal where the user can
+          // fill them in once they have the receipt or the appraisal.
+          purchased_on: null,
+          estimated_value_cents: null,
         },
+        // Empty metadata bag at create-time. The Edit modal is where
+        // vehicle plates, pet microchip numbers, etc. land.
+        metadata: {},
         notes: emptyToNull(notes),
       });
       if (result.error || !result.data) {
@@ -252,14 +270,41 @@ export function ReviewNewStage({
             <label className="label">Type</label>
             <select
               value={type}
-              onChange={(e) => setType(e.target.value as EquipmentType)}
+              onChange={(e) => {
+                const next = e.target.value as EquipmentType;
+                setType(next);
+                // Leaving property drops the subtype so we never write
+                // a "vehicle" tag onto an appliance row.
+                if (next !== "property") setSubtype(null);
+              }}
               className="input"
             >
               <option value="appliance">Appliance</option>
               <option value="system">System</option>
               <option value="exterior">Exterior</option>
+              <option value="property">Property</option>
             </select>
           </div>
+          {type === "property" ? (
+            <div>
+              <label className="label">Property kind</label>
+              <select
+                value={subtype ?? ""}
+                onChange={(e) =>
+                  setSubtype(
+                    e.target.value === ""
+                      ? null
+                      : (e.target.value as InventorySubtype),
+                  )
+                }
+                className="input"
+              >
+                <option value="">Other (electronics, art, etc.)</option>
+                <option value="vehicle">Vehicle</option>
+                <option value="pet">Pet</option>
+              </select>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -291,7 +336,11 @@ export function ReviewNewStage({
               placeholder="—"
             />
             <Field
-              label="Serial"
+              label={
+                type === "property" && subtype === "vehicle"
+                  ? "VIN"
+                  : "Serial"
+              }
               value={serialNumber}
               onChange={setSerialNumber}
               placeholder="—"

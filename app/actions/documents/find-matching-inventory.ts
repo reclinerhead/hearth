@@ -2,17 +2,18 @@
 
 import { inventoryNameMatches } from "@/lib/inventory/match-name";
 import { createClient } from "@/lib/supabase/server";
+import type { EquipmentType } from "@/types/document";
 
 export type FindMatchingInventoryInput = {
   houseId: string;
   inventoryName: string;
-  inventoryType: "appliance" | "system" | "exterior";
+  inventoryType: EquipmentType;
 };
 
 export type MatchingInventoryItem = {
   id: string;
   name: string;
-  type: "appliance" | "system" | "exterior";
+  type: EquipmentType;
   room_id: string;
 };
 

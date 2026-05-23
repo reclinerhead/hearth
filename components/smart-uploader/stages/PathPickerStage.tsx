@@ -44,13 +44,14 @@ export function PathPickerStage({
         </span>
         <div className="min-w-0 flex-1">
           <div style={{ fontSize: 14, fontWeight: 500 }}>
-            Photo of an appliance or system
+            Photo of an appliance, system, or property
           </div>
           <div
             className="text-small mt-0.5"
             style={{ color: "var(--color-text-tertiary)" }}
           >
-            Take a photo of a nameplate or the unit itself.
+            Take a photo of a nameplate, the unit itself, a vehicle, or
+            anything else you own.
           </div>
         </div>
         <span

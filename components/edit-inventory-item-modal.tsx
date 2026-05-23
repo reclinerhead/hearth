@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { deleteInventoryItemAction } from "@/app/actions/inventory/delete-item";
 import {
@@ -8,7 +8,11 @@ import {
   type UpdateInventoryItemInput,
 } from "@/app/actions/inventory/update-item";
 import { useCachedSignedUrl } from "@/lib/house-image/use-cached-signed-url";
-import type { EquipmentType } from "@/types/document";
+import {
+  parsePetMetadata,
+  parseVehicleMetadata,
+} from "@/lib/inventory/metadata-schemas";
+import type { EquipmentType, InventorySubtype } from "@/types/document";
 import { DatePicker } from "./date-picker";
 import { DeleteInventoryItemConfirmModal } from "./delete-inventory-item-confirm-modal";
 import { Icon } from "./icon";
@@ -53,6 +57,7 @@ export type EditableInventoryRow = {
   id: string;
   name: string;
   type: EquipmentType;
+  subtype: InventorySubtype | null;
   room_id: string;
   manufacturer: string | null;
   model_number: string | null;
@@ -60,6 +65,11 @@ export type EditableInventoryRow = {
   installed_on: string | null;
   last_serviced_on: string | null;
   next_service_due_on: string | null;
+  // Property-friendly columns (issue #23). Always present on the row;
+  // only edited when type='property' in the UI.
+  purchased_on: string | null;
+  estimated_value_cents: number | null;
+  metadata: Record<string, unknown>;
   notes: string | null;
   manufacture_date: string | null;
   hero_document_id: string | null;
@@ -95,6 +105,33 @@ function emptyToNull(s: string): string | null {
 function dateOrNull(s: string): string | null {
   const trimmed = s.trim();
   return trimmed === "" ? null : trimmed;
+}
+
+// Currency input helpers. We persist cents (bigint at the DB layer)
+// but show dollars in the input — so the user types "65,000" or
+// "$65000.50" and we coerce on save. Strip every character that
+// isn't a digit or decimal, keep at most two decimal places, and
+// multiply up. Empty / unparseable inputs become null.
+function dollarsFromCents(cents: number): string {
+  return (cents / 100).toFixed(2).replace(/\.00$/, "");
+}
+
+function centsFromDollarString(s: string): number | null {
+  const trimmed = s.trim();
+  if (trimmed === "") return null;
+  // Strip $, commas, whitespace. Allow a single decimal point.
+  const cleaned = trimmed.replace(/[^0-9.]/g, "");
+  if (cleaned === "") return null;
+  const parsed = Number.parseFloat(cleaned);
+  if (Number.isNaN(parsed) || parsed < 0) return null;
+  return Math.round(parsed * 100);
+}
+
+// Pet date inputs land in metadata as bare YYYY-MM-DD strings; reuse
+// the DatePicker's wire format so the same lenient prefill works.
+function isoDateOrUndefined(s: string): string | undefined {
+  const trimmed = s.trim();
+  return trimmed === "" ? undefined : trimmed;
 }
 
 export function EditInventoryItemModal({
@@ -141,10 +178,62 @@ export function EditInventoryItemModal({
 
   const [name, setName] = useState(item.name);
   const [type, setType] = useState<EquipmentType>(item.type);
+  const [subtype, setSubtype] = useState<InventorySubtype | null>(item.subtype);
   const [roomId, setRoomId] = useState(item.room_id);
   const [manufacturer, setManufacturer] = useState(item.manufacturer ?? "");
   const [modelNumber, setModelNumber] = useState(item.model_number ?? "");
   const [serialNumber, setSerialNumber] = useState(item.serial_number ?? "");
+  // Property fields.
+  const [purchasedOn, setPurchasedOn] = useState(
+    dateInputValue(item.purchased_on),
+  );
+  // We keep the user's "$" input as a string so a half-typed value
+  // ("3,") doesn't round to gibberish mid-edit. centsFromDollarString
+  // converts on save and tolerates the symbols a person actually types.
+  const [estimatedValueInput, setEstimatedValueInput] = useState(
+    item.estimated_value_cents !== null
+      ? dollarsFromCents(item.estimated_value_cents)
+      : "",
+  );
+
+  // Subtype-specific metadata fields. We use the parsed values as the
+  // initial state and write back through a single metadata object on
+  // save. Keeping each field as its own piece of state (rather than a
+  // big metadata bag) avoids cascading re-renders and lets each input
+  // own its keystroke cadence.
+  const initialVehicleMetadata = useMemo(
+    () => parseVehicleMetadata(item.metadata),
+    [item.metadata],
+  );
+  const initialPetMetadata = useMemo(
+    () => parsePetMetadata(item.metadata),
+    [item.metadata],
+  );
+  const [licensePlate, setLicensePlate] = useState(
+    initialVehicleMetadata.license_plate ?? "",
+  );
+  const [licensePlateState, setLicensePlateState] = useState(
+    initialVehicleMetadata.license_plate_state ?? "",
+  );
+  const [modelYear, setModelYear] = useState(
+    initialVehicleMetadata.model_year
+      ? String(initialVehicleMetadata.model_year)
+      : "",
+  );
+  const [purchasedFrom, setPurchasedFrom] = useState(
+    initialVehicleMetadata.purchased_from ?? "",
+  );
+  const [petSpecies, setPetSpecies] = useState(
+    initialPetMetadata.species ?? "",
+  );
+  const [petBreed, setPetBreed] = useState(initialPetMetadata.breed ?? "");
+  const [petMicrochip, setPetMicrochip] = useState(
+    initialPetMetadata.microchip_number ?? "",
+  );
+  const [petVet, setPetVet] = useState(initialPetMetadata.vet_name ?? "");
+  const [petAdoptedOn, setPetAdoptedOn] = useState(
+    initialPetMetadata.adopted_on ?? "",
+  );
   // MonthPicker is lenient about its initial value: `YYYY-MM` prefills
   // exact, `YYYY` (legacy decoded values) renders as January of that
   // year, and anything else (ISO week, malformed) falls through to no
@@ -253,11 +342,64 @@ export function EditInventoryItemModal({
 
     setSaving(true);
     try {
+      // Build the metadata bag based on the (possibly changed) type +
+      // subtype. Toggling property → appliance throws away the bag
+      // entirely; toggling between subtypes within property hands the
+      // unused side's metadata to oblivion as well. Both are intended:
+      // the data is meaningful only in the subtype it was captured for.
+      let metadata: Record<string, unknown> | undefined;
+      if (type === "property" && subtype === "vehicle") {
+        const vehicle: Record<string, unknown> = {};
+        const plate = emptyToNull(licensePlate);
+        if (plate) vehicle.license_plate = plate.toUpperCase();
+        const stateAbbr = emptyToNull(licensePlateState);
+        if (stateAbbr) vehicle.license_plate_state = stateAbbr.toUpperCase();
+        const yearParsed = modelYear.trim()
+          ? parseInt(modelYear.trim(), 10)
+          : null;
+        if (yearParsed && yearParsed >= 1900 && yearParsed <= 2100) {
+          vehicle.model_year = yearParsed;
+        }
+        const from = emptyToNull(purchasedFrom);
+        if (from) vehicle.purchased_from = from;
+        // Preserve any vin_decode payload the row already carries —
+        // it's read-only from the modal's perspective, owned by the
+        // /decode-vin route, and we shouldn't drop it on a regular save.
+        const existing = parseVehicleMetadata(item.metadata);
+        if (existing.vin_decode) vehicle.vin_decode = existing.vin_decode;
+        if (existing.purchase_price_cents)
+          vehicle.purchase_price_cents = existing.purchase_price_cents;
+        metadata = vehicle;
+      } else if (type === "property" && subtype === "pet") {
+        const pet: Record<string, unknown> = {};
+        const species = emptyToNull(petSpecies);
+        if (species) pet.species = species;
+        const breed = emptyToNull(petBreed);
+        if (breed) pet.breed = breed;
+        const microchip = emptyToNull(petMicrochip);
+        if (microchip) pet.microchip_number = microchip;
+        const vet = emptyToNull(petVet);
+        if (vet) pet.vet_name = vet;
+        const adopted = isoDateOrUndefined(petAdoptedOn);
+        if (adopted) pet.adopted_on = adopted;
+        metadata = pet;
+      } else if (type === "property") {
+        // subtype=null property: preserve any existing metadata as-is
+        // so a Phase-2 surface can light up without losing data.
+        metadata = item.metadata ?? {};
+      } else {
+        // Non-property: drop metadata entirely (DB column defaults to
+        // '{}'::jsonb on inserts and this clears any stale bag from a
+        // prior property classification).
+        metadata = {};
+      }
+
       const payload: UpdateInventoryItemInput = {
         inventoryId: item.id,
         fields: {
           name: trimmedName,
           type,
+          subtype: type === "property" ? subtype : null,
           room_id: roomId,
           manufacturer: emptyToNull(manufacturer),
           model_number: emptyToNull(modelNumber),
@@ -266,6 +408,9 @@ export function EditInventoryItemModal({
           installed_on: dateOrNull(installedOn),
           last_serviced_on: dateOrNull(lastServicedOn),
           next_service_due_on: dateOrNull(nextServiceDueOn),
+          purchased_on: dateOrNull(purchasedOn),
+          estimated_value_cents: centsFromDollarString(estimatedValueInput),
+          metadata,
           notes: emptyToNull(notes),
           hero_document_id: heroDocumentId,
         },
@@ -398,11 +543,21 @@ export function EditInventoryItemModal({
                 <FieldSelect
                   label="Type"
                   value={type}
-                  onChange={(v) => setType(v as EquipmentType)}
+                  onChange={(v) => {
+                    const next = v as EquipmentType;
+                    setType(next);
+                    // Drop the subtype when leaving property so the
+                    // form state stays semantically honest. Toggling
+                    // back to property leaves the user re-picking a
+                    // subtype, which matches the "no implicit default"
+                    // rule for discriminators.
+                    if (next !== "property") setSubtype(null);
+                  }}
                   options={[
                     { value: "appliance", label: "Appliance" },
                     { value: "system", label: "System" },
                     { value: "exterior", label: "Exterior" },
+                    { value: "property", label: "Property" },
                   ]}
                 />
                 <FieldSelect
@@ -413,29 +568,142 @@ export function EditInventoryItemModal({
                 />
               </div>
 
-              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <MonthPicker
-                  label="Manufactured"
-                  value={manufactureDate}
-                  onChange={setManufactureDate}
-                  placeholder="Pick a month"
-                />
-                <DatePicker
-                  label="Installed"
-                  value={installedOn}
-                  onChange={setInstalledOn}
-                />
-                <DatePicker
-                  label="Last serviced"
-                  value={lastServicedOn}
-                  onChange={setLastServicedOn}
-                />
-                <DatePicker
-                  label="Next due"
-                  value={nextServiceDueOn}
-                  onChange={setNextServiceDueOn}
-                />
-              </div>
+              {type === "property" ? (
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <FieldSelect
+                    label="Property kind"
+                    value={subtype ?? ""}
+                    onChange={(v) =>
+                      setSubtype(v === "" ? null : (v as InventorySubtype))
+                    }
+                    options={[
+                      { value: "", label: "Other (electronics, art, etc.)" },
+                      { value: "vehicle", label: "Vehicle" },
+                      { value: "pet", label: "Pet" },
+                    ]}
+                  />
+                </div>
+              ) : null}
+
+              {type === "property" ? (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <DatePicker
+                    label="Purchased"
+                    value={purchasedOn}
+                    onChange={setPurchasedOn}
+                  />
+                  <div>
+                    <label className="label">Estimated value</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={estimatedValueInput}
+                      onChange={(e) => setEstimatedValueInput(e.target.value)}
+                      className="input"
+                      placeholder="$0"
+                    />
+                  </div>
+                  <MonthPicker
+                    label="Manufactured"
+                    value={manufactureDate}
+                    onChange={setManufactureDate}
+                    placeholder="Pick a month"
+                  />
+                </div>
+              ) : (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <MonthPicker
+                    label="Manufactured"
+                    value={manufactureDate}
+                    onChange={setManufactureDate}
+                    placeholder="Pick a month"
+                  />
+                  <DatePicker
+                    label="Installed"
+                    value={installedOn}
+                    onChange={setInstalledOn}
+                  />
+                  <DatePicker
+                    label="Last serviced"
+                    value={lastServicedOn}
+                    onChange={setLastServicedOn}
+                  />
+                  <DatePicker
+                    label="Next due"
+                    value={nextServiceDueOn}
+                    onChange={setNextServiceDueOn}
+                  />
+                </div>
+              )}
+
+              {type === "property" && subtype === "vehicle" ? (
+                <div className="flex flex-col gap-3">
+                  <SectionHeading title="Vehicle details" />
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <FieldText
+                      label="Model year"
+                      value={modelYear}
+                      onChange={setModelYear}
+                      placeholder="e.g. 2018"
+                    />
+                    <FieldText
+                      label="License plate"
+                      value={licensePlate}
+                      onChange={setLicensePlate}
+                      placeholder="e.g. ABC-1234"
+                    />
+                    <FieldText
+                      label="Plate state"
+                      value={licensePlateState}
+                      onChange={(v) => setLicensePlateState(v.slice(0, 2))}
+                      placeholder="e.g. MI"
+                    />
+                    <FieldText
+                      label="Purchased from"
+                      value={purchasedFrom}
+                      onChange={setPurchasedFrom}
+                      placeholder="Dealer, seller, or marketplace"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {type === "property" && subtype === "pet" ? (
+                <div className="flex flex-col gap-3">
+                  <SectionHeading title="Pet details" />
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <FieldText
+                      label="Species"
+                      value={petSpecies}
+                      onChange={setPetSpecies}
+                      placeholder="Dog, cat, fish…"
+                    />
+                    <FieldText
+                      label="Breed"
+                      value={petBreed}
+                      onChange={setPetBreed}
+                      placeholder="Optional"
+                    />
+                    <DatePicker
+                      label="Adopted"
+                      value={petAdoptedOn}
+                      onChange={setPetAdoptedOn}
+                    />
+                    <FieldText
+                      label="Microchip number"
+                      value={petMicrochip}
+                      onChange={setPetMicrochip}
+                      placeholder="Optional"
+                    />
+                    <FieldText
+                      label="Vet name"
+                      value={petVet}
+                      onChange={setPetVet}
+                      placeholder="Optional"
+                    />
+                  </div>
+                </div>
+              ) : null}
 
               <SectionHeading title="Notes" />
               <div>

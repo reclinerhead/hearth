@@ -98,7 +98,16 @@ export function SmartUploader(props: SmartUploaderProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  const [stage, setStage] = useState<Stage>({ name: "path-picker" });
+  // Target-mode opens straight on capture — the path-picker's only
+  // active choice is "photo of an appliance or system" and the user has
+  // already implicitly picked it by clicking "Add photo" on a known
+  // inventory item. Discovery mode (top-nav + Add) still lands on the
+  // path-picker because future entries (Document/receipt, Emergency
+  // procedure video) will live there.
+  const initialStage: Stage = targetInventoryId
+    ? { name: "capture", path: "photo", file: null, previewUrl: null }
+    : { name: "path-picker" };
+  const [stage, setStage] = useState<Stage>(initialStage);
   const [rooms, setRooms] = useState<SeededRoomOption[] | null>(null);
   // Drag-to-dismiss: tracks the live downward translation of the sheet
   // during a touch drag on the chrome (handle + header). `null` means
@@ -133,13 +142,20 @@ export function SmartUploader(props: SmartUploaderProps) {
   // any stale state on the hook. The setState here is the legitimate
   // "synchronize with external trigger" use of useEffect (the trigger
   // is the `open` prop, owned by a parent), so we silence the rule.
+  //
+  // Same target-mode skip as the initial mount: target opens straight
+  // on capture, discovery opens on the path-picker.
   useEffect(() => {
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setStage({ name: "path-picker" });
+      setStage(
+        targetInventoryId
+          ? { name: "capture", path: "photo", file: null, previewUrl: null }
+          : { name: "path-picker" },
+      );
       resetUpload();
     }
-  }, [open, resetUpload]);
+  }, [open, resetUpload, targetInventoryId]);
 
   // Fetch rooms once per open. Server-side via the browser client is
   // fine here — RLS scopes the read to houses the user owns, and the
@@ -570,6 +586,7 @@ export function SmartUploader(props: SmartUploaderProps) {
               onRetake={retakeFromCapture}
               onBack={() => setStage({ name: "path-picker" })}
               onAnalyze={() => stage.file && startAnalysisFromCapture(stage.file)}
+              targetInventoryName={targetInventoryName ?? null}
             />
           ) : null}
 
@@ -669,7 +686,7 @@ function headerTitleForStage(
     case "path-picker":
       return "What are you adding?";
     case "capture":
-      return "Photo of an appliance or system";
+      return "Photo of an appliance, system, or property";
     case "processing":
       return "Working on it…";
     case "duplicate":

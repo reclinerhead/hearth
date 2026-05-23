@@ -18,11 +18,47 @@ describe("buildClassifyPrompt", () => {
     expect(prompt).toContain("not_useful");
   });
 
-  it("lists the three equipment-type categories", () => {
+  it("lists the four equipment-type categories", () => {
     const prompt = buildClassifyPrompt();
     expect(prompt).toContain('"appliance"');
     expect(prompt).toContain('"system"');
     expect(prompt).toContain('"exterior"');
+    expect(prompt).toContain('"property"');
+  });
+
+  describe("property type guidance (#23)", () => {
+    it("describes property as items the homeowner owns that aren't installed infrastructure", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/aren't installed infrastructure/i);
+    });
+
+    it("calls out vehicles, electronics, and pets as property examples", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/vehicle/i);
+      expect(prompt).toMatch(/television/i);
+      expect(prompt).toMatch(/pet/i);
+    });
+
+    it("instructs the model to set subtype='vehicle' for VIN plates", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/subtype="vehicle"/);
+      expect(prompt).toMatch(/VIN plate/);
+    });
+
+    it("instructs the model to set subtype='pet' for identifying pet documents", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/subtype="pet"/);
+    });
+
+    it("instructs the model to set subtype=null for non-property types", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/subtype=null/);
+    });
+
+    it("tells the model to place a VIN in serial_number", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/place the VIN in serial_number/i);
+    });
   });
 
   it("names every extractable field the model must populate on nameplate", () => {

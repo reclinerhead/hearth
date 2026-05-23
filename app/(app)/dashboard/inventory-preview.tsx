@@ -2,7 +2,9 @@ import Link from "next/link";
 import { Icon, type IconName } from "@/components/icon";
 import { InventoryThumbnail } from "@/components/inventory-thumbnail";
 import { displayModelNumber } from "@/lib/inventory/model-number";
+import { parseVehicleMetadata } from "@/lib/inventory/metadata-schemas";
 import { createClient } from "@/lib/supabase/server";
+import type { InventorySubtype } from "@/types/document";
 
 /**
  * Dashboard inventory preview — server component. Renders the
@@ -26,16 +28,18 @@ import { createClient } from "@/lib/supabase/server";
 
 const PREVIEW_LIMIT = 6;
 
-type InventoryType = "appliance" | "system" | "exterior";
+type InventoryType = "appliance" | "system" | "exterior" | "property";
 
 type InventoryPreviewItem = {
   id: string;
   name: string;
   type: InventoryType;
+  subtype: InventorySubtype | null;
   roomName: string;
   manufacturer: string | null;
   modelNumber: string | null;
   installedOn: string | null;
+  metadata: Record<string, unknown> | null;
   thumbnailPath: string | null;
 };
 
@@ -43,6 +47,12 @@ const TYPE_FALLBACK_ICON: Record<InventoryType, IconName> = {
   appliance: "fridge",
   system: "flame-burner",
   exterior: "home",
+  property: "package",
+};
+
+const SUBTYPE_FALLBACK_ICON: Record<InventorySubtype, IconName> = {
+  vehicle: "car",
+  pet: "paw",
 };
 
 export async function InventoryPreview({ houseId }: { houseId: string }) {
@@ -71,7 +81,10 @@ export async function InventoryPreview({ houseId }: { houseId: string }) {
 }
 
 function InventoryRow({ item }: { item: InventoryPreviewItem }) {
-  const fallbackIcon = TYPE_FALLBACK_ICON[item.type];
+  const fallbackIcon =
+    item.subtype && SUBTYPE_FALLBACK_ICON[item.subtype]
+      ? SUBTYPE_FALLBACK_ICON[item.subtype]
+      : TYPE_FALLBACK_ICON[item.type];
   const meta = buildMeta(item);
   return (
     <Link
@@ -134,6 +147,17 @@ function InventoryRow({ item }: { item: InventoryPreviewItem }) {
 }
 
 function buildMeta(item: InventoryPreviewItem): string | null {
+  // Vehicles prefer `model_year · license_plate` as the at-a-glance
+  // identifier — the manufacturer/model is already implied by the
+  // item name (e.g. "Toyota Land Cruiser") so repeating it here adds
+  // nothing.
+  if (item.type === "property" && item.subtype === "vehicle") {
+    const vmeta = parseVehicleMetadata(item.metadata);
+    const vehicleParts: string[] = [];
+    if (vmeta.model_year) vehicleParts.push(String(vmeta.model_year));
+    if (vmeta.license_plate) vehicleParts.push(vmeta.license_plate);
+    if (vehicleParts.length > 0) return vehicleParts.join(" · ");
+  }
   const parts: string[] = [];
   const model = displayModelNumber(item.modelNumber);
   if (item.manufacturer && model) {
@@ -172,9 +196,11 @@ async function loadPreviewItems(
       id,
       name,
       type,
+      subtype,
       manufacturer,
       model_number,
       installed_on,
+      metadata,
       hero_document_id,
       created_at,
       room:rooms!inner(name)
@@ -190,9 +216,11 @@ async function loadPreviewItems(
     id: string;
     name: string;
     type: InventoryType;
+    subtype: InventorySubtype | null;
     manufacturer: string | null;
     model_number: string | null;
     installed_on: string | null;
+    metadata: Record<string, unknown> | null;
     hero_document_id: string | null;
     created_at: string;
     room: { name: string } | { name: string }[] | null;
@@ -255,10 +283,12 @@ async function loadPreviewItems(
       id: r.id,
       name: r.name,
       type: r.type,
+      subtype: r.subtype,
       roomName,
       manufacturer: r.manufacturer,
       modelNumber: r.model_number,
       installedOn: r.installed_on,
+      metadata: r.metadata,
       thumbnailPath:
         pinnedThumbByInventory.get(r.id) ?? heroByInventory.get(r.id) ?? null,
     };
