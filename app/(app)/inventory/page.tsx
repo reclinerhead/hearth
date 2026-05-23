@@ -171,8 +171,15 @@ function InventoryListRow({ item }: { item: InventoryItem }) {
   const detailLine = buildDetailLine(item);
 
   // The dashboard's InventoryRow uses a 48×48 thumbnail in a half-width
-  // column. The list page has the full content column, so a 96×96 hero
-  // earns its space — the photo becomes legible at a glance.
+  // column. The list page has the full content column, so the desktop
+  // hero earns more space — a 192×192 thumb lets the user actually
+  // read a vehicle badge or a nameplate from a glance at the list.
+  // Mobile keeps its 80×80 size deliberately; the small-viewport tile
+  // is two-up at most so an oversized image would crowd the text.
+  //
+  // The 600px thumbnail asset stored at hearth.documents.thumbnail_path
+  // is what backs <InventoryThumbnail>, so even at 192px display we're
+  // well above 2x DPR — no need to bump to the 1920px storage_path here.
   //
   // Future: once the maintenance-log table lands, "Last serviced" / "Next
   // due" will slot into a second tertiary line below `detailLine`. The
@@ -190,7 +197,7 @@ function InventoryListRow({ item }: { item: InventoryItem }) {
       }}
     >
       <span
-        className="flex h-20 w-20 sm:h-24 sm:w-24 shrink-0 items-center justify-center rounded-md overflow-hidden"
+        className="flex h-20 w-20 sm:h-48 sm:w-48 shrink-0 items-center justify-center rounded-md overflow-hidden"
         style={{
           backgroundColor: "var(--color-bg-surface-raised)",
           color: "var(--color-text-secondary)",
