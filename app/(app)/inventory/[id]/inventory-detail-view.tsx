@@ -859,7 +859,16 @@ function PropertyDetailsBlock({
         { method: "POST" },
       );
       const body = (await response.json()) as
-        | { result: { raw: Record<string, string | null> } }
+        | {
+            result: { raw: Record<string, string | null> };
+            applied: {
+              name: string | null;
+              manufacturer: string | null;
+              model_number: string | null;
+              model_year: number | null;
+              manufacture_date: string | null;
+            };
+          }
         | { error: string };
       if (!response.ok || "error" in body) {
         setDecodeError(
@@ -869,13 +878,23 @@ function PropertyDetailsBlock({
         );
         return;
       }
-      const make = body.result.raw.Make;
-      const model = body.result.raw.Model;
-      const year = body.result.raw.ModelYear;
-      const summaryParts = [year, make, model].filter(Boolean);
+      // Prefer the server-applied name (already title-cased and
+      // year-prefixed) when the route rewrote it. Falls back to the
+      // raw NHTSA fields when the row's name was already personalized
+      // and we left it alone.
+      const applied = body.applied;
+      const summary =
+        applied.name ??
+        [
+          applied.model_year ? String(applied.model_year) : null,
+          applied.manufacturer ?? body.result.raw.Make,
+          applied.model_number ?? body.result.raw.Model,
+        ]
+          .filter(Boolean)
+          .join(" ");
       setDecodeToast(
-        summaryParts.length > 0
-          ? `We decoded your VIN: ${summaryParts.join(" ")}`
+        summary
+          ? `We decoded your VIN: ${summary}`
           : "We decoded your VIN.",
       );
       router.refresh();

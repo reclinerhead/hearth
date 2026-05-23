@@ -441,17 +441,28 @@ The inventory detail page at [`app/(app)/inventory/[id]/inventory-detail-view.ts
 
 ### VIN decode pipeline
 
-The "Decode VIN" action on a vehicle posts to [`/api/inventory/[id]/decode-vin`](../app/api/inventory/[id]/decode-vin/route.ts). The route is deterministic — no LLM, no API key, no model selection — it just calls NHTSA's free vDecoder endpoint at `https://vpic.nhtsa.dot.gov/api/vehicles/decodevin/{VIN}?format=json` and writes the trimmed result into the row.
+The "Decode VIN" action on a vehicle posts to [`/api/inventory/[id]/decode-vin`](../app/api/inventory/[id]/decode-vin/route.ts). The route is deterministic — no LLM, no API key, no model selection — it just calls NHTSA's free DecodeVinValues endpoint at `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/{VIN}?format=json` and writes the trimmed result into the row.
+
+**Endpoint choice is load-bearing.** NHTSA has two siblings: `/DecodeVin/` returns `Results: [{ Variable, Value }, ...]` where `Variable` is the human-readable label ("Model Year" with a space). `/DecodeVinValues/` returns `Results: [{ flat camelCase object }]` where keys are `ModelYear`, `EngineCylinders`, etc. Hearth uses the values endpoint so the field names are self-consistent end-to-end. The first cut of this code used the labelled endpoint with camelCase field names; Make and Model worked (single-word labels match either shape) but ModelYear silently fell through because the underlying Variable was "Model Year" with a space. Don't switch back.
 
 The module at [`lib/vin-decode/decode.ts`](../lib/vin-decode/decode.ts) owns the wire format and parsing:
 
 - `VIN_REGEX` and `isValidVinFormat()` enforce the 17-character VIN shape (alphanumeric, excludes I/O/Q to avoid ambiguity with 1/0). The route applies the same check the client used as a defense-in-depth gate.
 - `buildNhtsaDecodeUrl()` builds the endpoint URL — kept as a one-liner helper so a future swap (DecodeVinValuesExtended, a different API) is one line.
-- `extractVinFields()` cherry-picks the handful of NHTSA variables we surface (`Make`, `Model`, `ModelYear`, `BodyClass`, `VehicleType`, `EngineCylinders`, `FuelTypePrimary`, `DriveType`, `Manufacturer`, `ManufacturerId`, `PlantCity`, `PlantState`, `PlantCountry`) from the ~130 NHTSA returns per VIN, and collapses NHTSA's sentinel values (`""`, `"Not Applicable"`, `"0"`) to null so the renderer's "render only if present" rule doesn't paint stub strings as facts.
+- `extractVinFields()` cherry-picks the handful of NHTSA variables we surface (`Make`, `Model`, `ModelYear`, `BodyClass`, `VehicleType`, `EngineCylinders`, `FuelTypePrimary`, `DriveType`, `Manufacturer`, `ManufacturerId`, `PlantCity`, `PlantState`, `PlantCountry`) from the ~130 NHTSA returns per VIN, and collapses NHTSA's sentinel values (`""`, `"Not Applicable"`, `"Not Available"`, `"0"`) to null so the renderer's "render only if present" rule doesn't paint stub strings as facts.
 
-Persistence policy: the decoded payload always lands in `metadata.vin_decode` (carrying `source: "nhtsa_vdecoder"`, `decoded_at: <iso>`, and the trimmed `raw` map). When `manufacturer` / `model_number` are empty the route pre-populates them from NHTSA's Make / Model (title-cased — NHTSA returns SCREAMING CAPS); when `metadata.model_year` is empty it's pre-populated from NHTSA's ModelYear. **Anything the user already typed wins** — we never silently overwrite user input. The button toggles between "Decode VIN" and "Re-decode VIN" labels based on whether `metadata.vin_decode` is already present.
+**Persistence policy** (write only when empty, except where noted):
 
-A 10-second AbortSignal timeout guards against transient NHTSA outages. Failures (invalid VIN format, NHTSA unreachable, empty NHTSA response) surface inline as `decodeError` rather than blowing up the page.
+- `metadata.vin_decode` — **always overwrites** with the fresh payload (the user clicked decode; they want the latest read). Carries `source: "nhtsa_vdecoder"`, `decoded_at: <iso>`, and the trimmed `raw` map.
+- `manufacturer` — written from NHTSA's `Make` (title-cased — NHTSA returns SCREAMING CAPS) when the column is empty.
+- `model_number` — written from NHTSA's `Model` when the column is empty.
+- `metadata.model_year` — written from NHTSA's `ModelYear` when not already set.
+- `name` — **rewritten** to `"YYYY Make Model"` when the row's current name is empty or matches a small generic-vehicle vocabulary (`truck`, `car`, `vehicle`, `suv`, `van`, `motorcycle`, `my car`, etc. — see `GENERIC_VEHICLE_NAMES` in the route). A personalized name like "Beth's Car" or "Dad's Truck" is preserved. This is the one place we override user input by design; the rationale is that "Truck" carries no information the dashboard tile can use, and `2018 Toyota Land Cruiser` does.
+- **Manufacture-date columns** (`manufacture_date`, `manufacture_date_precision`, `manufacture_date_confidence`, `manufacture_date_decoded_at`, `manufacture_date_model`, `manufacture_date_reasoning`) — written with year precision, high confidence, and `model = 'vin-decode-nhtsa'` when `manufacture_date` is currently null. The row's model year doubles as a year-precision manufacture date (for most production runs the two coincide; VIN position 10 encodes only the model year letter). Same write contract as the serial-decode pipeline and the user-entered manufacture date, so the detail page's "Manufactured" tile fallback (in `pickFirstDateTile`) lights up for vehicles without any additional UI work. Existing manufacture-date values — from a prior serial decode or the user — are preserved.
+
+**Anything the user explicitly entered wins** for the structured columns, with the deliberate exception of the name rewrite documented above.
+
+A 10-second AbortSignal timeout guards against transient NHTSA outages. Failures (invalid VIN format, NHTSA unreachable, empty NHTSA response) surface inline as `decodeError` rather than blowing up the page. The route's JSON response carries both the raw decode and an `applied` block telling the client which structured fields were actually written, so the success toast can surface the canonical "YYYY Make Model" string rather than re-deriving it from the raw response.
 
 ### Deferred for the property type
 

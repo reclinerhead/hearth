@@ -1,4 +1,4 @@
-// VIN decode helper using NHTSA's free vDecoder API.
+// VIN decode helper using NHTSA's free vPIC API.
 //
 // This is deterministic and free — no LLM, no API key, no model
 // selection. The API speaks JSON and returns the manufacturer's
@@ -6,6 +6,17 @@
 // raw output minus the noise (NHTSA returns ~130 fields per VIN; we
 // promote only the handful that surface on the detail page) and store
 // the rest unparsed inside metadata.vin_decode for future use.
+//
+// **Endpoint choice (load-bearing).** We use `/DecodeVinValues/` which
+// returns `Results: [{ flat camelCase object }]`. The sibling
+// `/DecodeVin/` endpoint returns `Results: [{ Variable, Value }, ...]`
+// where Variable is the human-readable label ("Model Year" with a
+// space) — easy to mismatch against camelCase TS field names. We hit
+// that exact bug on this PR's first pass: Make and Model worked because
+// they're single-word variables that happen to match either shape, but
+// ModelYear silently dropped because the Variable was "Model Year".
+// Using the values endpoint makes the field names self-consistent end
+// to end.
 
 // Subset of NHTSA's response we actually surface on the detail page.
 // Field names match NHTSA's variable names verbatim so they read the
@@ -51,49 +62,53 @@ export function isValidVinFormat(raw: string | null | undefined): boolean {
   return VIN_REGEX.test(normalizeVin(raw));
 }
 
-// Build the NHTSA vDecoder URL. Public so tests don't have to hard-code
-// it and so any future swap (e.g. DecodeVinValuesExtended) becomes a
-// one-line change.
+// Build the NHTSA DecodeVinValues URL. Public so tests don't have to
+// hard-code it and so any future swap (e.g. DecodeVinValuesExtended)
+// becomes a one-line change.
 export function buildNhtsaDecodeUrl(vin: string): string {
   const normalized = normalizeVin(vin);
-  return `https://vpic.nhtsa.dot.gov/api/vehicles/decodevin/${encodeURIComponent(normalized)}?format=json`;
+  return `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/${encodeURIComponent(normalized)}?format=json`;
 }
 
-// NHTSA's response shape — the parts we care about.
-type NhtsaResultRow = {
-  Variable: string;
-  Value: string | null;
-};
+// NHTSA's response shape for DecodeVinValues. The endpoint returns a
+// `Results` array of length 1 containing a flat object whose keys are
+// the camelCase variable names. Every value is `string` (never null),
+// using empty strings or sentinels for absent fields.
+type NhtsaValuesRow = Record<string, string>;
 type NhtsaResponse = {
   Count?: number;
   Message?: string;
-  Results?: NhtsaResultRow[];
+  Results?: NhtsaValuesRow[];
 };
 
 /**
- * Pure helper: turn an NHTSA response body into our trimmed
- * `{ field: value }` record, dropping NHTSA's all-empty rows and the
- * fields we don't surface. Exposed so the test can exercise the
- * extraction without mocking the network.
+ * Pure helper: turn an NHTSA DecodeVinValues response body into our
+ * trimmed `{ field: value }` record, dropping NHTSA's sentinel values
+ * and the fields we don't surface. Exposed so the test can exercise
+ * the extraction without mocking the network.
+ *
+ * NHTSA fills absent fields with empty strings, `"Not Applicable"`,
+ * `"0"`, or `"Not Available"`. Collapse all of those to null so the
+ * renderer's "render only if present" rule doesn't surface stub
+ * strings as if they were real facts.
  */
 export function extractVinFields(body: NhtsaResponse): VinDecodeRaw {
-  const wanted = new Set<string>(VIN_DECODE_FIELDS);
+  const row = body.Results?.[0];
+  if (!row) return {};
   const out: VinDecodeRaw = {};
-  for (const row of body.Results ?? []) {
-    if (!wanted.has(row.Variable)) continue;
-    const value = row.Value;
-    // NHTSA returns "" or "Not Applicable" for unknown fields — collapse
-    // both to null so the detail page's "render only if present" rule
-    // doesn't surface stub strings as if they were real.
+  for (const field of VIN_DECODE_FIELDS) {
+    const value = row[field];
     if (
+      value === undefined ||
       value === null ||
       value === "" ||
       value === "Not Applicable" ||
+      value === "Not Available" ||
       value === "0"
     ) {
-      out[row.Variable as VinDecodeField] = null;
+      out[field] = null;
     } else {
-      out[row.Variable as VinDecodeField] = value;
+      out[field] = value;
     }
   }
   return out;

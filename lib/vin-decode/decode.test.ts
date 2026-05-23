@@ -68,10 +68,11 @@ describe("VIN_REGEX / isValidVinFormat", () => {
 });
 
 describe("buildNhtsaDecodeUrl", () => {
-  it("targets NHTSA's vDecoder endpoint and asks for JSON", () => {
+  it("targets NHTSA's DecodeVinValues endpoint and asks for JSON", () => {
     const url = buildNhtsaDecodeUrl("JTEZU17R868001234");
     expect(url).toContain("vpic.nhtsa.dot.gov");
-    expect(url).toContain("/decodevin/");
+    // DecodeVinValues (not DecodeVin) is load-bearing — see decode.ts.
+    expect(url).toMatch(/DecodeVinValues/i);
     expect(url).toContain("format=json");
   });
 
@@ -83,30 +84,30 @@ describe("buildNhtsaDecodeUrl", () => {
 });
 
 describe("extractVinFields", () => {
-  const baseRows = (overrides: Record<string, string | null>): Array<{ Variable: string; Value: string | null }> => {
-    const fields = {
-      Make: "TOYOTA",
-      Model: "Land Cruiser",
-      ModelYear: "2018",
-      BodyClass: "Sport Utility Vehicle (SUV)/Multi-Purpose Vehicle (MPV)",
-      VehicleType: "MULTIPURPOSE PASSENGER VEHICLE (MPV)",
-      EngineCylinders: "8",
-      FuelTypePrimary: "Gasoline",
-      DriveType: "AWD/All-Wheel Drive",
-      Manufacturer: "TOYOTA MOTOR MANUFACTURING, INC.",
-      ManufacturerId: "1006",
-      PlantCity: "TAHARA",
-      PlantState: null,
-      PlantCountry: "JAPAN",
-      "Some Irrelevant Field": "ignore me",
-      ABS: "Standard",
-      ...overrides,
-    };
-    return Object.entries(fields).map(([Variable, Value]) => ({ Variable, Value }));
-  };
+  // DecodeVinValues returns a single flat object inside Results[0]
+  // with camelCase keys. Test fixtures mirror that shape so we'd
+  // catch a regression to the old DecodeVin variable/value format.
+  const baseRow = (overrides: Record<string, string>): Record<string, string> => ({
+    Make: "TOYOTA",
+    Model: "Land Cruiser",
+    ModelYear: "2018",
+    BodyClass: "Sport Utility Vehicle (SUV)/Multi-Purpose Vehicle (MPV)",
+    VehicleType: "MULTIPURPOSE PASSENGER VEHICLE (MPV)",
+    EngineCylinders: "8",
+    FuelTypePrimary: "Gasoline",
+    DriveType: "AWD/All-Wheel Drive",
+    Manufacturer: "TOYOTA MOTOR MANUFACTURING, INC.",
+    ManufacturerId: "1006",
+    PlantCity: "TAHARA",
+    PlantState: "",
+    PlantCountry: "JAPAN",
+    SomeIrrelevantField: "ignore me",
+    ABS: "Standard",
+    ...overrides,
+  });
 
   it("extracts all promoted fields from a typical NHTSA response", () => {
-    const fields = extractVinFields({ Results: baseRows({}) });
+    const fields = extractVinFields({ Results: [baseRow({})] });
     expect(fields.Make).toBe("TOYOTA");
     expect(fields.Model).toBe("Land Cruiser");
     expect(fields.ModelYear).toBe("2018");
@@ -114,29 +115,36 @@ describe("extractVinFields", () => {
   });
 
   it("drops fields outside the promoted list", () => {
-    const fields = extractVinFields({ Results: baseRows({}) });
-    expect((fields as Record<string, unknown>)["Some Irrelevant Field"]).toBeUndefined();
+    const fields = extractVinFields({ Results: [baseRow({})] });
+    expect((fields as Record<string, unknown>).SomeIrrelevantField).toBeUndefined();
     expect((fields as Record<string, unknown>).ABS).toBeUndefined();
   });
 
-  it("collapses empty string / Not Applicable / 0 to null", () => {
+  it("collapses empty string / Not Applicable / Not Available / 0 to null", () => {
     const fields = extractVinFields({
-      Results: baseRows({
-        Make: "",
-        Model: "Not Applicable",
-        EngineCylinders: "0",
-      }),
+      Results: [
+        baseRow({
+          Make: "",
+          Model: "Not Applicable",
+          ModelYear: "Not Available",
+          EngineCylinders: "0",
+        }),
+      ],
     });
     expect(fields.Make).toBeNull();
     expect(fields.Model).toBeNull();
+    expect(fields.ModelYear).toBeNull();
     expect(fields.EngineCylinders).toBeNull();
   });
 
-  it("preserves null values verbatim", () => {
+  it("returns null for fields NHTSA omitted entirely from the row", () => {
+    // DecodeVinValues sometimes omits keys rather than returning them
+    // as empty strings — defend against the null-vs-empty difference.
     const fields = extractVinFields({
-      Results: baseRows({ PlantState: null }),
+      Results: [{ Make: "TOYOTA", Model: "Land Cruiser", ModelYear: "2018" }],
     });
     expect(fields.PlantState).toBeNull();
+    expect(fields.FuelTypePrimary).toBeNull();
   });
 
   it("returns an empty object when Results is missing", () => {

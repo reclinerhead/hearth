@@ -2,11 +2,22 @@
 //
 // Companion to /decode-serial, but for vehicle subtypes. Decoding is
 // deterministic — no LLM — so the route is straightforward: load the
-// row, validate VIN format, call NHTSA, write the result into
-// metadata.vin_decode plus the promoted fields the detail page reads
-// (manufacturer, model_number, metadata.model_year) when those are
-// empty. Pre-populating only-empty fields avoids overwriting anything
-// the user typed by hand.
+// row, validate VIN format, call NHTSA, write the result.
+//
+// Persistence policy:
+//   - `metadata.vin_decode` always overwrites with the fresh payload
+//     (the user clicked "Re-decode", so they explicitly want the
+//     latest read).
+//   - Structured columns (`manufacturer`, `model_number`, the row's
+//     `name`, `metadata.model_year`, and the six manufacture-date
+//     columns) are only filled when currently empty. User input
+//     always wins; the decode is an enrichment, not an override.
+//   - The `name` rewrite is the exception by user request (Todd, in
+//     the issue #23 follow-up): when the user has cleared or never
+//     personalized the name (e.g. it's still a generic "Truck" or
+//     matches the manufacturer / model pattern), we rewrite it to
+//     `YYYY Make Model` so the dashboard tile reads cleanly. A name
+//     the user clearly personalized (anything else) is preserved.
 //
 // Auth: standard RLS pattern — createClient() reads the user's Supabase
 // session, and the inventory SELECT/UPDATE both scope through
@@ -25,10 +36,12 @@ type InventoryRow = {
   id: string;
   type: string;
   subtype: string | null;
+  name: string;
   manufacturer: string | null;
   model_number: string | null;
   serial_number: string | null;
   metadata: Record<string, unknown> | null;
+  manufacture_date: string | null;
 };
 
 export async function POST(
@@ -40,7 +53,9 @@ export async function POST(
 
   const { data: item, error: loadError } = await supabase
     .from("inventory")
-    .select("id, type, subtype, manufacturer, model_number, serial_number, metadata")
+    .select(
+      "id, type, subtype, name, manufacturer, model_number, serial_number, metadata, manufacture_date",
+    )
     .eq("id", inventoryId)
     .single();
 
@@ -83,31 +98,72 @@ export async function POST(
   }
 
   const result = decoded.result;
+  const decodedMake = result.raw.Make ?? null;
+  const decodedModel = result.raw.Model ?? null;
+  const decodedYearStr = result.raw.ModelYear ?? null;
+  const decodedYear = parseModelYear(decodedYearStr);
 
-  // Promote NHTSA's Make / Model / ModelYear into the structured
-  // columns when those columns are empty. Anything the user already
-  // typed wins — we never silently overwrite user input.
   const updates: Record<string, unknown> = {};
-  if (!row.manufacturer && result.raw.Make) {
-    updates.manufacturer = toTitleCase(result.raw.Make);
+  const titleCasedMake = decodedMake ? toTitleCase(decodedMake) : null;
+
+  // Promote NHTSA's Make / Model into the structured columns when
+  // those columns are empty. Anything the user already typed wins —
+  // we never silently overwrite user input on these.
+  if (!row.manufacturer && titleCasedMake) {
+    updates.manufacturer = titleCasedMake;
   }
-  if (!row.model_number && result.raw.Model) {
-    updates.model_number = result.raw.Model;
+  if (!row.model_number && decodedModel) {
+    updates.model_number = decodedModel;
   }
 
+  // Update metadata: always overwrite vin_decode (the user clicked
+  // "decode" — they want the latest); only set model_year when empty.
   const nextMetadata: Record<string, unknown> = {
     ...(row.metadata ?? {}),
     vin_decode: result,
   };
   const existingModelYear =
     typeof nextMetadata.model_year === "number" ? nextMetadata.model_year : null;
-  if (!existingModelYear && result.raw.ModelYear) {
-    const year = parseInt(result.raw.ModelYear, 10);
-    if (!Number.isNaN(year) && year >= 1900 && year <= 2100) {
-      nextMetadata.model_year = year;
-    }
+  if (!existingModelYear && decodedYear !== null) {
+    nextMetadata.model_year = decodedYear;
   }
   updates.metadata = nextMetadata;
+
+  // Rewrite the row's `name` when it looks generic or empty, so the
+  // dashboard tile reads "2018 Toyota Land Cruiser" instead of
+  // "Truck". A clearly-personalized name (e.g. "Beth's Car") is
+  // preserved — see isGenericVehicleName for the heuristic.
+  const effectiveMake = titleCasedMake ?? row.manufacturer;
+  const effectiveModel = decodedModel ?? row.model_number;
+  const candidateName = composeVehicleName({
+    year: decodedYear,
+    make: effectiveMake,
+    model: effectiveModel,
+  });
+  if (
+    candidateName &&
+    isGenericVehicleName(row.name) &&
+    candidateName !== row.name
+  ) {
+    updates.name = candidateName;
+  }
+
+  // Write the model year into the manufacture-date columns when
+  // they're currently empty. Year precision, high confidence, model
+  // tag `vin-decode-nhtsa` so the source is traceable — same shape
+  // as the serial-decode pipeline so the detail page's "Manufactured"
+  // tile fallback in pickFirstDateTile lights up for vehicles too.
+  // Anything already in the manufacture-date columns (user-entered
+  // or decoded from a prior serial-decode run) is preserved.
+  if (!row.manufacture_date && decodedYear !== null) {
+    updates.manufacture_date = String(decodedYear);
+    updates.manufacture_date_precision = "year";
+    updates.manufacture_date_confidence = "high";
+    updates.manufacture_date_decoded_at = new Date().toISOString();
+    updates.manufacture_date_model = "vin-decode-nhtsa";
+    updates.manufacture_date_reasoning =
+      "Derived from VIN position 10 via NHTSA DecodeVinValues.";
+  }
 
   const { error: updateError } = await supabase
     .from("inventory")
@@ -124,13 +180,71 @@ export async function POST(
     {
       result,
       applied: {
-        manufacturer: updates.manufacturer ?? null,
-        model_number: updates.model_number ?? null,
+        manufacturer: (updates.manufacturer as string | undefined) ?? null,
+        model_number: (updates.model_number as string | undefined) ?? null,
         model_year: nextMetadata.model_year ?? null,
+        name: (updates.name as string | undefined) ?? null,
+        manufacture_date: (updates.manufacture_date as string | undefined) ?? null,
       },
     } satisfies { result: VinDecodeResult; applied: Record<string, unknown> },
     { status: 200 },
   );
+}
+
+// Parse NHTSA's ModelYear string. The endpoint returns it as a
+// numeric string ("2018") or null/empty when the year isn't encoded
+// (some pre-1981 VINs, some non-US vehicles).
+function parseModelYear(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const parsed = parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 1900 || parsed > 2100) return null;
+  return parsed;
+}
+
+// Compose a "YYYY Make Model" display name from the available fields.
+// Returns null when not enough is known — we won't rewrite the row's
+// name with a partial value like "Toyota" alone.
+function composeVehicleName(args: {
+  year: number | null;
+  make: string | null;
+  model: string | null;
+}): string | null {
+  const parts = [
+    args.year ? String(args.year) : null,
+    args.make ?? null,
+    args.model ?? null,
+  ].filter((p): p is string => Boolean(p && p.trim()));
+  if (parts.length < 2) return null;
+  return parts.join(" ");
+}
+
+// Heuristic: does the row's `name` look like a generic placeholder
+// the user would be happy to see replaced? The list covers the
+// vocabulary we've seen in practice plus the empty / whitespace
+// case. Anything else is treated as personalized — we don't touch
+// "Beth's Car" or "Dad's Truck" even though they're short, because
+// the user clearly meant something specific.
+const GENERIC_VEHICLE_NAMES = new Set([
+  "vehicle",
+  "car",
+  "truck",
+  "suv",
+  "van",
+  "minivan",
+  "motorcycle",
+  "bike",
+  "auto",
+  "automobile",
+  "my car",
+  "my truck",
+  "my vehicle",
+]);
+
+function isGenericVehicleName(name: string | null | undefined): boolean {
+  if (!name) return true;
+  const normalized = name.trim().toLowerCase();
+  if (normalized === "") return true;
+  return GENERIC_VEHICLE_NAMES.has(normalized);
 }
 
 // NHTSA returns Make / Manufacturer fields in SCREAMING CAPS. Match
