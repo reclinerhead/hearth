@@ -36,16 +36,16 @@ export async function MaintenancePanelItem({
   const supabase = await createClient();
 
   // Read uses the partial index maintenance_tasks_inventory_open_by_due_idx.
-  // Per-use rows (issue #135) render in the page's "Every time you use it"
-  // section, not this date-anchored panel — exclude them here.
+  // Per-use rows are folded into a dedicated "Every time you use it" tier
+  // inside the same panel (issue #135), so we select them here and let
+  // the panel partition them out of the date-anchored tiers.
   const { data: openTasksRaw } = await supabase
     .from("maintenance_tasks")
     .select(
-      "id, inventory_id, kind, title, subtitle, next_due_at, source",
+      "id, inventory_id, kind, title, subtitle, next_due_at, source, cadence_kind",
     )
     .eq("inventory_id", inventoryId)
     .eq("status", "open")
-    .neq("cadence_kind", "per_use")
     .order("next_due_at", { ascending: true });
 
   const yearStart = new Date(

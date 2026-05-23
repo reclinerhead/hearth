@@ -34,10 +34,10 @@ export async function MaintenancePanelDashboard({
   // bare task title — without the context, a glance at the dashboard
   // doesn't tell the user which appliance a task is for.
   // Per-use rows (issue #135 — "clean lint screen after every load",
-  // "check rinse aid before every cycle") live on the inventory detail
-  // page's "Every time you use it" section, not on this date-anchored
-  // panel. Their next_due_at is a placeholder; the cadence_kind filter
-  // is the canonical exclusion.
+  // "check rinse aid before every cycle") have no meaningful calendar
+  // date, so they're excluded from this date-anchored dashboard panel.
+  // They surface in the inventory detail page's panel as a dedicated
+  // "Every time you use it" tier alongside the date-anchored tiers.
   const { data: openTasksRaw } = await supabase
     .from("maintenance_tasks")
     .select(

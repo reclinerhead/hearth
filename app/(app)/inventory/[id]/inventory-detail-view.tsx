@@ -139,7 +139,6 @@ export function InventoryDetailView({
   receipts,
   historyEvents,
   maintenancePanelSlot,
-  perUsePracticesSlot,
 }: {
   item: InventoryDetailItem;
   rooms: RoomOption[];
@@ -150,16 +149,12 @@ export function InventoryDetailView({
    * Server-rendered maintenance panel for this inventory item. Rendered
    * from page.tsx so the panel keeps its own RLS-scoped Supabase server
    * client. Passed in as a slot rather than rendered here because this
-   * component is a client boundary.
+   * component is a client boundary. Per-use practices (issue #135) live
+   * inside this same panel as a dedicated "Every time you use it" tier —
+   * the wrapper selects per-use rows and the panel routes them to the
+   * tier directly, so this is the only maintenance slot the page needs.
    */
   maintenancePanelSlot: ReactNode;
-  /**
-   * Server-rendered "Every time you use it" section (issue #135).
-   * Sibling to maintenancePanelSlot for the same reason; the component
-   * returns null when the item has no per_use rows, which leaves this
-   * slot empty.
-   */
-  perUsePracticesSlot: ReactNode;
 }) {
   const isProperty = item.type === "property";
   const isVehicle = isProperty && item.subtype === "vehicle";
@@ -831,16 +826,11 @@ export function InventoryDetailView({
         (issue #133). Server-rendered slot — the panel runs its own
         RLS-scoped Supabase server client. Sits between the Research
         panel (above) and the Documents / Notes grid (below), matching
-        the layout decision documented in the issue.
+        the layout decision documented in the issue. Per-use practices
+        (issue #135) render as a dedicated "Every time you use it" tier
+        inside this same panel.
       */}
       <section>{maintenancePanelSlot}</section>
-
-      {/*
-        "Every time you use it" — per-use practices (issue #135). The
-        wrapped server component returns null when there are no per-use
-        rows, so this slot collapses cleanly on items without one.
-      */}
-      {perUsePracticesSlot}
 
       <section className="grid gap-4 md:grid-cols-2">
         <DocumentsPanel
