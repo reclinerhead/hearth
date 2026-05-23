@@ -1213,7 +1213,7 @@ The module uses the generic finding modal — no `getOverviewCards` or `renderDe
 
 ## Maintenance module
 
-Schema foundation landed in issue #122. The **synthesis pipeline** plus the **Build maintenance plan** button on the inventory detail page landed in issue #126. Still to ship against this schema: the direct-event pipeline that creates renewal tasks from document expirations (`metadata.expiration_date`), the dashboard "On your plate" panel, the inventory-detail panel, the task detail modal, the mark-renewed sheet, and the renamed History section.
+Schema foundation landed in issue #122. The **synthesis pipeline** plus the **Build maintenance plan** button on the inventory detail page landed in issue #126. The **direct-event pipeline** that auto-creates renewal tasks from documents carrying `metadata.expiration_date` landed in issue #131. Still to ship against this schema: the dashboard "On your plate" panel, the inventory-detail panel, the task detail modal, the mark-renewed sheet, the renamed History section, and the "renewed via document upload" toast.
 
 `hearth.maintenance_tasks` is an append-only event log: each row is one occurrence with its own `next_due_at`, `status` (`open` / `completed` / `superseded`), and frozen `reasoning` jsonb. Completion writes `completed_at` + optional `completed_by_document_id` and inserts a successor row whose `predecessor_task_id` points back at it — old rows are never mutated after a terminal status. The `source` discriminator (`direct_event` vs. `synthesis`) is load-bearing: rebuilding a plan supersedes only the open synthesis rows for an inventory item and never touches direct-event rows (so a user's vehicle-registration renewal survives a plan rebuild). Cadence is shaped by `cadence_kind` (`interval` / `seasonal` / `one_time`) with a check constraint enforcing the field combinations; `renewal_options` jsonb carries the term cards (1yr / 2yr, 6mo / 12mo) for the future mark-renewed sheet so each row is self-describing even as the per-issuer constants map drifts. RLS delegates to `hearth.houses.owner_id` through four policies (SELECT / INSERT / UPDATE / DELETE) and the `set_updated_at` trigger fires on UPDATE. Four indexes cover the read and rebuild paths: a partial on `(house_id, next_due_at) where status = 'open'` for the dashboard panel, a partial on `(inventory_id, next_due_at)` for the inventory-detail panel, a full `(inventory_id, created_at desc)` for the History view, and a narrow `(inventory_id) where source = 'synthesis' and status = 'open'` for the rebuild write path.
 
@@ -1268,9 +1268,39 @@ The synthesis pipeline + the Build/Rebuild button are issue #126's scope. The fo
 - The **dashboard "On your plate" panel.** (Issue #5.)
 - The **task detail modal** that shows per-task reasoning. (Issue #6.)
 - The **mark-renewed sheet** that drives task completion + successor-row insertion. (Issue #6.)
-- The **direct-event pipeline** that creates renewal tasks from documents with `metadata.expiration_date`. (Issue #4.)
 - **Auto-completion + warm-fuzzy toast** when a fresh service receipt closes an open task. (Issue #7.)
 - **Promoting workflow terminal errors** to non-retryable per the WDK pattern. Dev-time win; can ship later without affecting behavior.
+
+### Direct-event pipeline
+
+The direct-event pipeline is the deterministic, no-LLM half of maintenance task creation. When a receipt document is attached to an inventory item and its `metadata.expiration_date` is populated, the pipeline writes a `hearth.maintenance_tasks` row with `source='direct_event'` and `kind='renewal'`. Distinct from synthesis: direct-event rows survive a "Rebuild maintenance plan" (the supersede step only touches `source='synthesis'` rows), and they exist whether or not the user has ever clicked Build for the related item.
+
+**Hook point.** Lives inside [`app/actions/documents/save-receipt.ts`](../app/actions/documents/save-receipt.ts), called after the document UPDATE that writes `inventory_id` and flips status to `'attached'`. Awaited (not fire-and-forget) so the inventory detail page re-renders with the new task already visible, and so phase 7's "renewed via document upload" toast can consume the returned `{ created_task_id, closed_task_id }` shape off the same call. The pipeline runs against an attached document — abandoning the Smart Uploader's review stage leaves `inventory_id` null and the pipeline never fires. This is the right behavior; we shouldn't auto-create renewal tasks against documents the user hasn't confirmed are theirs.
+
+**Why save-receipt only, not the photo attach path.** Today only the receipt extraction schema carries `expiration_date`. The photo attach path ([`app/actions/documents/attach-document-to-inventory.ts`](../app/actions/documents/attach-document-to-inventory.ts)) has no source for the field, so wiring it there would be dead code. The pipeline's `kind === 'receipt'` gate is a defense-in-depth check rather than the primary mechanism; if a future kind grows expiration support, wire that action's attach point too.
+
+**Why a service-role client.** The work spans `documents → inventory → houses → maintenance_tasks` and `saveReceiptAction` has already RLS-verified ownership of the attached document. The service-role client avoids re-querying ownership at every step. Tests inject a mock client through the optional second parameter to drive the orchestration paths without a real DB.
+
+### Files
+
+- **[`lib/maintenance/renewal-terms.ts`](../lib/maintenance/renewal-terms.ts)** — `classifyRenewalDocument`, `classifyGenericRenewal`, `renderSubtitle`. Pure classification: takes vendor name + linked inventory item context (type / subtype / house state), returns the task title, subtitle template, and term cards for the future mark-renewed sheet. First-match-wins over an array of per-issuer classifier functions. Today's coverage: Michigan SOS vehicle registration (1yr / 2yr, with a `renewal_url_template` deep-link for phase 6's "Renew now" CTA), and major US auto-insurance carriers (6mo / 12mo). Unrecognized issuers fall through to the generic classifier, which produces a `one_time` cadence task with empty term cards — phase 6's mark-renewed sheet will fall back to a date picker for those. The classifiers are functions, not table data, so a future water-utility classifier can discriminate on an `installed_on` date if needed without restructuring the module.
+- **[`lib/maintenance/direct-event.ts`](../lib/maintenance/direct-event.ts)** — `processDirectEventTaskFromDocument(documentId, supabaseOverride?)`. The orchestrator. Gates on `kind === 'receipt'`, `metadata.expiration_date` (YYYY-MM-DD shape), `inventory_id` populated, and `status === 'attached'`. Loads the linked inventory + house in parallel, runs the classifier, checks for an existing open renewal on the same inventory item, closes it cleanly when present (with `completed_by_document_id` linking to the new document), then inserts the new task with `predecessor_task_id` chained back. Returns `{ created_task_id, closed_task_id }`. A failed close short-circuits the insert — proceeding would create the duplicate the idempotency check exists to prevent. A failed insert after a successful close is logged loudly but not retried inline; the user can re-trigger by re-attaching the document.
+
+### Cadence and term cards
+
+When the classifier returns `renewal_options` (Michigan registration's 1yr / 2yr, an insurance carrier's 6mo / 12mo), the pipeline writes the longest available term as `cadence_interval_months` with `cadence_kind='interval'` — the recurrence pattern between user-driven completions. Phase 6's mark-renewed sheet overrides per-occurrence when the user picks a shorter term. When the generic fallback applies (empty `renewal_options`), the task is `cadence_kind='one_time'` with both interval / anchor null. Both shapes satisfy the `maintenance_tasks_cadence_shape` CHECK constraint, and `renewal_options` is persisted per-row so each task is self-describing as the constants map drifts.
+
+### Reasoning shape
+
+Direct-event tasks populate the same `TaskReasoning` jsonb the synthesis pipeline writes, with `source_kind = 'document_expiration'` and an `anchor` of `{ kind: 'document_expiration', detail: 'Expires YYYY-MM-DD', document_id }`. `modifiers` is empty for now — phase 6 may pivot to richer reasoning when the user-visible expand surfaces it. Renderers can switch on `source_kind` to decide between synthesis-style "Why this task" copy and a simpler direct-event "Pulled from your registration" treatment.
+
+### Idempotency chain
+
+Re-uploading a fresh registration card (or any receipt with an `expiration_date` for an inventory item that already has an open renewal) closes the prior open task — `status='completed'`, `completed_at=now()`, `completed_by_document_id=<new document>`, `completion_notes='Renewed via document upload'` — and inserts a new task with `predecessor_task_id` pointing back. The `(inventory_id, kind, status='open')` lookup is naturally idempotent against double-save retries: the second save closes the just-created task and chains a fresh one. This is intentional but rare; the Smart Uploader's save flow runs once per user click.
+
+### Smoke-testing the pipeline
+
+The pipeline runs inside `saveReceiptAction`, so the smoke test is a normal receipt upload through the Smart Uploader against an inventory item whose house state and (for state-keyed classifiers) vendor name match a classifier. Verification is by Supabase dashboard inspection of `hearth.maintenance_tasks` — phase 5 will surface the row in the UI, but for this issue the row's existence + shape is the contract. The first Audi-registration upload writes a Michigan-SOS renewal task with `next_due_at` from the document's extracted expiration date; a second upload for the same vehicle closes that task and chains a successor.
 
 ---
 
