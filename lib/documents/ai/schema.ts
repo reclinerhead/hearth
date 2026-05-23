@@ -118,6 +118,13 @@ export const receiptExtractionSchema = z.object({
   vendor_phone: z.string().nullable(),
 
   transaction_date: z.string().nullable(),
+
+  // Expiration / valid-through / policy-period-end date for time-bounded
+  // grants — vehicle registrations, insurance policies, warranties,
+  // permits, licenses. Null on service / purchase / inspection
+  // receipts. Consumed by the direct-event maintenance pipeline.
+  expiration_date: z.string().nullable(),
+
   transaction_type: z
     .enum(["service", "purchase", "inspection", "other"])
     .nullable(),

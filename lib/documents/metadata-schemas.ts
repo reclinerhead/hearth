@@ -39,6 +39,24 @@ export const receiptMetadataSchema = z.object({
   // detail-page renderer skips a malformed value rather than crashing.
   transaction_date: z.string().nullable(),
 
+  // ISO date string. Populated when the document represents a
+  // time-bounded grant whose expiration matters for renewal purposes
+  // — vehicle registration, insurance policy, warranty, permit,
+  // license. The model is instructed to populate this only when the
+  // document explicitly states an expiration / valid-through /
+  // policy-period-end date, and to leave it null on service receipts,
+  // purchase receipts, and inspection reports where "expiration" is
+  // not a meaningful concept.
+  //
+  // Distinct from transaction_date: a registration card has a
+  // transaction_date of "when I paid the SOS" and an expiration_date
+  // of "when this registration lapses." Insurance policies often
+  // print both an effective date and an expiration date; we capture
+  // the expiration here and the effective date lands in
+  // transaction_date. Consumed by the direct-event maintenance
+  // pipeline (issue #4) to seed renewal tasks.
+  expiration_date: z.string().nullable(),
+
   // High-level transaction category, used for the future "service vs
   // purchase" filtering in the inventory documents list. The model is
   // instructed to pick from this set; unrecognized values fall back
@@ -91,6 +109,7 @@ export function emptyReceiptMetadata(): ReceiptMetadata {
     vendor_address: null,
     vendor_phone: null,
     transaction_date: null,
+    expiration_date: null,
     transaction_type: null,
     subtotal_cents: null,
     tax_cents: null,

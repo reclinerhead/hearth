@@ -342,6 +342,7 @@ describe("buildReceiptPrompt (#117)", () => {
       "vendor_address",
       "vendor_phone",
       "transaction_date",
+      "expiration_date",
       "transaction_type",
       "subtotal_cents",
       "tax_cents",
@@ -399,6 +400,70 @@ describe("buildReceiptPrompt (#117)", () => {
     const prompt = buildReceiptPrompt();
     expect(prompt).toMatch(/Empty arrays are the correct shape/i);
     expect(prompt).toMatch(/never return null for the array fields/i);
+  });
+
+  describe("expiration_date / renewal-document framing (#124)", () => {
+    // The maintenance module's tier-1 magic moment depends on Grok
+    // extracting renewal dates from registrations and policies but
+    // NOT inventing them on service receipts. These assertions pin the
+    // load-bearing pieces of the prompt that protect that contract.
+
+    it("names expiration_date as a populated field", () => {
+      const prompt = buildReceiptPrompt();
+      expect(prompt).toContain("expiration_date");
+    });
+
+    it("enumerates the renewal-document categories the model should populate for", () => {
+      const prompt = buildReceiptPrompt();
+      expect(prompt).toMatch(/vehicle registration/i);
+      expect(prompt).toMatch(/insurance policy/i);
+      expect(prompt).toMatch(/warranty/i);
+      expect(prompt).toMatch(/permit/i);
+      expect(prompt).toMatch(/license/i);
+    });
+
+    it("frames the field as a time-bounded grant the user will need to renew", () => {
+      const prompt = buildReceiptPrompt();
+      expect(prompt).toMatch(/time-bounded grant/i);
+    });
+
+    it("gives the model positive examples (registration, insurance, warranty)", () => {
+      const prompt = buildReceiptPrompt();
+      expect(prompt).toMatch(/vehicle registration card/i);
+      expect(prompt).toMatch(/declarations page/i);
+      expect(prompt).toMatch(/warranty certificate/i);
+    });
+
+    it("gives the model negative examples that should leave expiration_date null", () => {
+      const prompt = buildReceiptPrompt();
+      expect(prompt).toMatch(/service receipt/i);
+      expect(prompt).toMatch(/purchase receipt/i);
+      expect(prompt).toMatch(/inspection report/i);
+    });
+
+    it("tells the model not to guess when no explicit date is present", () => {
+      const prompt = buildReceiptPrompt();
+      expect(prompt).toMatch(/Don't guess/i);
+    });
+
+    it("names the consequence of a wrong extraction (renewal reminders)", () => {
+      // The "wrong is worse than null" framing is intentionally in the
+      // prompt because it improves calibration on edge cases by giving
+      // the model the downstream consequence.
+      const prompt = buildReceiptPrompt();
+      expect(prompt).toMatch(/renewal reminders/i);
+      expect(prompt).toMatch(/wrong date is worse than a null/i);
+    });
+
+    it("uses placeholder syntax (not literal dates) in the examples", () => {
+      // Same anti-leak discipline as the rest of the prompt — no
+      // specific-looking dates that Grok could echo verbatim.
+      const prompt = buildReceiptPrompt();
+      expect(prompt).not.toMatch(/05\/24\/2028/);
+      expect(prompt).not.toMatch(/2028-05-24/);
+      expect(prompt).not.toMatch(/March 1, 2030/);
+      expect(prompt).toMatch(/<expiration date as printed>/);
+    });
   });
 
   describe("anti-leak guard (#81 mirror)", () => {
