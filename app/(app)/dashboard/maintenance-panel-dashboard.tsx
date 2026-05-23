@@ -1,17 +1,25 @@
 // Dashboard-scoped data wrapper for the "On your plate" maintenance
-// panel (issue #133). House-scoped queries — every open task across the
-// house *due in the next 30 days* (or overdue), plus the calendar-year
-// completion summary for the Good Steward footer. Server component; the
-// shared <MaintenancePanel> is the client half that decides the look.
+// panel (issue #133). House-scoped queries — every open scheduled task
+// across the house plus the calendar-year completion summary for the
+// Good Steward footer. Server component; the shared <MaintenancePanel>
+// is the client half that decides the look.
 //
-// The 30-day cap is what keeps the panel a "what's on plate now"
-// surface instead of a complete task log — the full timeline lives at
-// /maintenance behind the View all link. Overdue rows always come
-// through (next_due_at <= today + 30 days includes any past date).
+// The dashboard panel surfaces every overdue row plus the next N
+// upcoming rows under a single "Coming up" tier (the panel's
+// comingUpLimit mode). This replaced the earlier 30-day window cap —
+// post-#135 the synthesis pipeline emits fewer scheduled tasks per
+// item, so a date window often left the panel sparse; a count cap
+// keeps it consistently informative without growing unbounded. The
+// full timeline lives at /maintenance behind the View all link.
 
 import { MaintenancePanel } from "@/components/maintenance/maintenance-panel";
 import type { MaintenancePanelTask } from "@/components/maintenance/maintenance-panel";
 import { createClient } from "@/lib/supabase/server";
+
+// Number of upcoming (non-overdue) tasks to show in the dashboard's
+// "Coming up" tier. The panel surfaces every overdue row regardless,
+// so the visible row count is `overdue + min(upcoming, this constant)`.
+const DASHBOARD_COMING_UP_LIMIT = 6;
 
 export async function MaintenancePanelDashboard({
   houseId,
@@ -20,24 +28,20 @@ export async function MaintenancePanelDashboard({
 }) {
   const supabase = await createClient();
 
-  // Compute the 30-day horizon cutoff as a YYYY-MM-DD string (matches
-  // the `date` column type and keeps the comparison calendar-day).
-  const todayPlus30 = formatDateOnly(addDays(new Date(), 30));
-
   // Open tasks across the house, ordered ascending by next_due_at — the
-  // tier-grouping helper re-buckets these into overdue / next30 / later
-  // and re-sorts within each tier. Read uses the partial index
-  // maintenance_tasks_house_open_by_due_idx.
+  // panel splits these into overdue + the next N upcoming. Read uses the
+  // partial index maintenance_tasks_house_open_by_due_idx.
   //
   // The inventory join surfaces the item name so each row can be
   // labelled "DISHWASHER · Check and refill rinse aid" rather than the
   // bare task title — without the context, a glance at the dashboard
   // doesn't tell the user which appliance a task is for.
+  //
   // Per-use rows (issue #135 — "clean lint screen after every load",
   // "check rinse aid before every cycle") have no meaningful calendar
   // date, so they're excluded from this date-anchored dashboard panel.
   // They surface in the inventory detail page's panel as a dedicated
-  // "Every time you use it" tier alongside the date-anchored tiers.
+  // "Every time you use it" tier.
   const { data: openTasksRaw } = await supabase
     .from("maintenance_tasks")
     .select(
@@ -49,7 +53,6 @@ export async function MaintenancePanelDashboard({
     .eq("house_id", houseId)
     .eq("status", "open")
     .neq("cadence_kind", "per_use")
-    .lte("next_due_at", todayPlus30)
     .order("next_due_at", { ascending: true });
 
   // count + select-most-recent need to be two queries: head:true counts
@@ -117,21 +120,7 @@ export async function MaintenancePanelDashboard({
             }
           : null
       }
+      comingUpLimit={DASHBOARD_COMING_UP_LIMIT}
     />
   );
-}
-
-function addDays(d: Date, days: number): Date {
-  const next = new Date(
-    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-  );
-  next.setUTCDate(next.getUTCDate() + days);
-  return next;
-}
-
-function formatDateOnly(d: Date): string {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
