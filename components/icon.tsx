@@ -53,7 +53,11 @@ export type IconName =
   | "edit"
   | "arrow-right"
   | "refresh-cw"
-  | "external-link";
+  | "external-link"
+  | "car"
+  | "paw"
+  | "package"
+  | "dollar-sign";
 
 const base: SVGProps<SVGSVGElement> = {
   width: 20,
@@ -350,6 +354,38 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M11 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-5" />
       <path d="M14 4h6v6" />
       <path d="m10 14 10-10" />
+    </>
+  ),
+  car: (
+    <>
+      <path d="M3 14h18" />
+      <path d="M5 14V9l2-4h10l2 4v5" />
+      <circle cx="7.5" cy="17" r="2" />
+      <circle cx="16.5" cy="17" r="2" />
+      <path d="M5 17h0.5" />
+      <path d="M19 17h-0.5" />
+    </>
+  ),
+  paw: (
+    <>
+      <circle cx="6" cy="11" r="1.6" />
+      <circle cx="10" cy="6.5" r="1.6" />
+      <circle cx="14" cy="6.5" r="1.6" />
+      <circle cx="18" cy="11" r="1.6" />
+      <path d="M8 19c-2.5 0-3.5-2-2.5-3.5C7 13 8.5 12 12 12s5 1 6.5 3.5C19.5 17 18.5 19 16 19c-1.5 0-2.5-1-4-1s-2.5 1-4 1z" />
+    </>
+  ),
+  package: (
+    <>
+      <path d="m21 8-9-5-9 5v8l9 5 9-5z" />
+      <path d="m3 8 9 5 9-5" />
+      <path d="M12 13v9" />
+    </>
+  ),
+  "dollar-sign": (
+    <>
+      <path d="M12 2v20" />
+      <path d="M17 6H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6" />
     </>
   ),
 };

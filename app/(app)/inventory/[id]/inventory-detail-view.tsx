@@ -39,6 +39,11 @@ import {
 } from "@/lib/inventory/first-date-tile";
 import type { DecodeSerialResult } from "@/lib/serial-decode/schema";
 import { displayModelNumber } from "@/lib/inventory/model-number";
+import {
+  parsePetMetadata,
+  parseVehicleMetadata,
+  type VehicleMetadata,
+} from "@/lib/inventory/metadata-schemas";
 import { insightsSchema } from "@/lib/inventory-insights/research";
 import { useCachedSignedUrl } from "@/lib/house-image/use-cached-signed-url";
 import { PhotoLightbox } from "./photo-lightbox";
@@ -70,22 +75,40 @@ type StreamingInsights = {
 };
 
 const TYPE_BREADCRUMB_LABEL: Record<
-  "appliance" | "system" | "exterior",
+  "appliance" | "system" | "exterior" | "property",
   string
 > = {
   appliance: "Appliances",
   system: "Systems",
   exterior: "Exterior",
+  property: "Property",
 };
 
 const TYPE_EYEBROW_LABEL: Record<
-  "appliance" | "system" | "exterior",
+  "appliance" | "system" | "exterior" | "property",
   string
 > = {
   appliance: "Appliance",
   system: "System",
   exterior: "Exterior",
+  property: "Property",
 };
+
+// Render-time helper for the "Research this model" panel's eyebrow.
+// "appliances like yours" / "systems like yours" reads naturally;
+// "propertys like yours" doesn't. The lowercase here is intentional —
+// it appears inline in a longer sentence ("What we know about X").
+function pluralizeTypeLabel(
+  type: "appliance" | "system" | "exterior" | "property",
+  subtype: string | null,
+): string {
+  if (type === "property") {
+    if (subtype === "vehicle") return "vehicles";
+    if (subtype === "pet") return "pets";
+    return "items";
+  }
+  return `${TYPE_EYEBROW_LABEL[type].toLowerCase()}s`;
+}
 
 export function InventoryDetailView({
   item,
@@ -96,13 +119,27 @@ export function InventoryDetailView({
   rooms: RoomOption[];
   linkedDocumentCount: number;
 }) {
+  const isProperty = item.type === "property";
+  const isVehicle = isProperty && item.subtype === "vehicle";
+  const isPet = isProperty && item.subtype === "pet";
+
   const displayModel = displayModelNumber(item.model_number);
-  const title =
-    item.manufacturer && displayModel
+  // Vehicles read more naturally with the item name as the headline
+  // ("Toyota Land Cruiser") than a synthesized Manufacturer + Model
+  // line — the manufacturer is already implied by the name and the
+  // model_number for a vehicle is usually the trim or "Land Cruiser",
+  // which would duplicate the name verbatim.
+  const title = isVehicle
+    ? item.name
+    : item.manufacturer && displayModel
       ? `${item.manufacturer} ${displayModel}`
       : item.name;
 
-  const eyebrow = `${TYPE_EYEBROW_LABEL[item.type].toUpperCase()} · ${item.roomName.toUpperCase()}`;
+  const subtypeWord = isVehicle ? "Vehicle" : isPet ? "Pet" : null;
+  const eyebrowLeft = subtypeWord
+    ? subtypeWord.toUpperCase()
+    : TYPE_EYEBROW_LABEL[item.type].toUpperCase();
+  const eyebrow = `${eyebrowLeft} · ${item.roomName.toUpperCase()}`;
 
   // Research lookup is owned at this level (not inside ResearchPanel) so
   // the edit-modal can trigger a re-run after the user saves changes to
@@ -254,6 +291,7 @@ export function InventoryDetailView({
     id: item.id,
     name: item.name,
     type: item.type,
+    subtype: item.subtype,
     room_id: item.room_id,
     manufacturer: item.manufacturer,
     model_number: item.model_number,
@@ -261,6 +299,9 @@ export function InventoryDetailView({
     installed_on: item.installed_on,
     last_serviced_on: item.last_serviced_on,
     next_service_due_on: item.next_service_due_on,
+    purchased_on: item.purchased_on,
+    estimated_value_cents: item.estimated_value_cents,
+    metadata: item.metadata,
     notes: item.notes,
     manufacture_date: item.manufacture_date,
     hero_document_id: item.hero_document_id,
@@ -398,6 +439,14 @@ export function InventoryDetailView({
 
           <PillCluster item={item} />
 
+          {isProperty ? (
+            <PropertyDetailsBlock
+              item={item}
+              isVehicle={isVehicle}
+              isPet={isPet}
+            />
+          ) : null}
+
           {decodedToast ? (
             <Toast
               message={decodedToast}
@@ -407,14 +456,28 @@ export function InventoryDetailView({
         </div>
       </section>
 
-      <ResearchPanel
-        item={item}
-        insights={displayInsights}
-        isPending={researchPending}
-        isRegenerating={isRegenerating}
-        error={researchError}
-        onResearch={handleResearch}
-      />
+      {isProperty ? (
+        // Property doesn't use the "Research this model" panel —
+        // it's tuned for appliances and systems (service life,
+        // maintenance, manufacturer-published spec sheets) and
+        // those questions don't apply to a Land Cruiser or a
+        // television. A future enhancement could swap this for a
+        // depreciation / replacement-value lookup tuned to the
+        // property category; tracked as out-of-scope follow-up.
+        <PropertyInsightsPlaceholder
+          isVehicle={isVehicle}
+          isPet={isPet}
+        />
+      ) : (
+        <ResearchPanel
+          item={item}
+          insights={displayInsights}
+          isPending={researchPending}
+          isRegenerating={isRegenerating}
+          error={researchError}
+          onResearch={handleResearch}
+        />
+      )}
 
       {/*
         Conditionally mount: every open is a fresh React mount so the
@@ -550,6 +613,55 @@ export function InventoryDetailView({
 }
 
 function StatTiles({ item }: { item: InventoryDetailItem }) {
+  // Property items don't have service schedules — the Last serviced /
+  // Next due slots get replaced with Purchased / Estimated value, both
+  // of which are user-entered and feed the insurance-inventory report.
+  // Vehicles also drop the "Manufactured" decode fallback (it doesn't
+  // apply — the model year is in metadata, not the manufacture-date
+  // pipeline), so the first tile is always Purchased for property.
+  const isProperty = item.type === "property";
+
+  if (isProperty) {
+    return (
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <MetricCard
+          eyebrow="Purchased"
+          value={
+            item.purchased_on ? (
+              formatYearMonth(item.purchased_on)
+            ) : (
+              <span style={{ color: "var(--color-text-tertiary)" }}>
+                Unknown
+              </span>
+            )
+          }
+          meta={item.purchased_on ? formatRelativeYears(item.purchased_on) : null}
+          icon="calendar"
+        />
+        <MetricCard
+          eyebrow="Estimated value"
+          value={
+            item.estimated_value_cents !== null ? (
+              formatUsd(item.estimated_value_cents)
+            ) : (
+              <span style={{ color: "var(--color-text-tertiary)" }}>
+                Unknown
+              </span>
+            )
+          }
+          meta={null}
+          icon="dollar-sign"
+        />
+        <MetricCard
+          eyebrow={item.subtype === "vehicle" ? "Model year" : "Acquired"}
+          value={renderPropertyThirdTile(item)}
+          meta={null}
+          icon={item.subtype === "vehicle" ? "car" : "package"}
+        />
+      </div>
+    );
+  }
+
   // Always render all three tiles. The first tile uses the
   // installed-vs-manufactured-vs-unknown selector (issue #77): when
   // installed_on is null AND a high-confidence manufacture date is
@@ -631,20 +743,76 @@ function StatTiles({ item }: { item: InventoryDetailItem }) {
   );
 }
 
+function renderPropertyThirdTile(item: InventoryDetailItem): ReactNode {
+  if (item.subtype === "vehicle") {
+    const vmeta = parseVehicleMetadata(item.metadata);
+    if (vmeta.model_year) return String(vmeta.model_year);
+    return (
+      <span style={{ color: "var(--color-text-tertiary)" }}>Unknown</span>
+    );
+  }
+  // For pets and generic property we fall back to "Acquired" as a
+  // distinct date from purchase — adoption date for pets, gifted
+  // date for inherited items. metadata.adopted_on is the pet-specific
+  // version; non-pet property uses purchased_on for both slots, but
+  // when adopted_on isn't present we lean on the value being Unknown
+  // rather than duplicating purchased_on across two tiles.
+  if (item.subtype === "pet") {
+    const pmeta = parsePetMetadata(item.metadata);
+    if (pmeta.adopted_on) return formatYearMonth(pmeta.adopted_on);
+  }
+  return <span style={{ color: "var(--color-text-tertiary)" }}>Unknown</span>;
+}
+
+// Format a cents-precision integer as a USD currency string. cents
+// stay in bigint at the DB layer; the application reads them as
+// JavaScript numbers, which is safe for any realistic household
+// inventory value (well inside Number.MAX_SAFE_INTEGER).
+function formatUsd(cents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(cents / 100);
+}
+
 function PillCluster({ item }: { item: InventoryDetailItem }) {
   const aiPills = item.ai_pills ?? [];
-  if (!item.serial_number && aiPills.length === 0) return null;
+  const isVehicle = item.type === "property" && item.subtype === "vehicle";
+  const vmeta = isVehicle ? parseVehicleMetadata(item.metadata) : null;
+  const hasVehiclePlate = Boolean(vmeta?.license_plate);
+
+  if (
+    !item.serial_number &&
+    aiPills.length === 0 &&
+    !hasVehiclePlate
+  ) {
+    return null;
+  }
 
   // Visual hierarchy: the serial number is the load-bearing identifier
   // (uniquely identifies this physical unit), so it gets the brighter
-  // accent treatment. The AI-extracted spec pills are reference facts
-  // and use the muted base chip so they don't compete with the SN for
-  // attention.
+  // accent treatment. For vehicles the same column carries the VIN,
+  // which is even more clearly "the identifier" — relabel the chip
+  // accordingly. The AI-extracted spec pills are reference facts and
+  // use the muted base chip so they don't compete with the SN for
+  // attention. License plate sits between the two — second-most-
+  // identifying for a vehicle, but not a unique-forever identity.
   return (
     <div className="flex flex-wrap gap-2 pt-1">
       {item.serial_number ? (
         <span className="chip chip-ai chip-mono">
-          SN {item.serial_number}
+          {isVehicle ? "VIN" : "SN"} {item.serial_number}
+        </span>
+      ) : null}
+      {isVehicle && vmeta?.license_plate ? (
+        <span className="chip chip-mono">
+          <span style={{ color: "var(--color-text-tertiary)" }}>
+            {vmeta.license_plate_state
+              ? `${vmeta.license_plate_state} Plate`
+              : "Plate"}
+          </span>
+          <span>{vmeta.license_plate}</span>
         </span>
       ) : null}
       {aiPills.map((pill, i) => (
@@ -653,6 +821,196 @@ function PillCluster({ item }: { item: InventoryDetailItem }) {
             {pill.label}
           </span>
           <span>{pill.value}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function PropertyDetailsBlock({
+  item,
+  isVehicle,
+  isPet,
+}: {
+  item: InventoryDetailItem;
+  isVehicle: boolean;
+  isPet: boolean;
+}) {
+  const router = useRouter();
+  const [decoding, setDecoding] = useState(false);
+  const [decodeError, setDecodeError] = useState<string | null>(null);
+  const [decodeToast, setDecodeToast] = useState<string | null>(null);
+
+  if (!isVehicle && !isPet) return null;
+
+  const vmeta: VehicleMetadata = isVehicle
+    ? parseVehicleMetadata(item.metadata)
+    : {};
+  const pmeta = isPet ? parsePetMetadata(item.metadata) : null;
+  const hasVinDecode = isVehicle && Boolean(vmeta.vin_decode);
+  const canDecodeVin = isVehicle && Boolean(item.serial_number);
+
+  async function handleDecodeVin() {
+    setDecodeError(null);
+    setDecoding(true);
+    try {
+      const response = await fetch(
+        `/api/inventory/${item.id}/decode-vin`,
+        { method: "POST" },
+      );
+      const body = (await response.json()) as
+        | { result: { raw: Record<string, string | null> } }
+        | { error: string };
+      if (!response.ok || "error" in body) {
+        setDecodeError(
+          "error" in body
+            ? body.error
+            : "Couldn't reach NHTSA. Try again in a moment.",
+        );
+        return;
+      }
+      const make = body.result.raw.Make;
+      const model = body.result.raw.Model;
+      const year = body.result.raw.ModelYear;
+      const summaryParts = [year, make, model].filter(Boolean);
+      setDecodeToast(
+        summaryParts.length > 0
+          ? `We decoded your VIN: ${summaryParts.join(" ")}`
+          : "We decoded your VIN.",
+      );
+      router.refresh();
+    } catch (err) {
+      setDecodeError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong decoding the VIN.",
+      );
+    } finally {
+      setDecoding(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 pt-1">
+      {isVehicle ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleDecodeVin}
+              disabled={!canDecodeVin || decoding}
+              className={hasVinDecode ? "btn btn-ghost" : "btn btn-primary"}
+              style={!canDecodeVin || decoding ? { opacity: 0.55 } : undefined}
+              aria-disabled={!canDecodeVin || decoding ? "true" : "false"}
+            >
+              <Icon name={hasVinDecode ? "refresh-cw" : "sparkles"} size={14} />
+              {decoding
+                ? "Decoding…"
+                : hasVinDecode
+                  ? "Re-decode VIN"
+                  : "Decode VIN"}
+            </button>
+            {!canDecodeVin ? (
+              <span
+                className="text-small"
+                style={{ color: "var(--color-text-tertiary)" }}
+              >
+                Add the VIN above to decode this vehicle.
+              </span>
+            ) : null}
+          </div>
+          {decodeError ? (
+            <p
+              className="text-small"
+              role="alert"
+              style={{ color: "var(--color-danger)" }}
+            >
+              {decodeError}
+            </p>
+          ) : null}
+          {hasVinDecode ? (
+            <VinDecodeFacts decode={vmeta.vin_decode!} />
+          ) : null}
+        </>
+      ) : null}
+
+      {isPet && pmeta ? <PetDetails meta={pmeta} /> : null}
+
+      {decodeToast ? (
+        <Toast
+          message={decodeToast}
+          onClose={() => setDecodeToast(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function VinDecodeFacts({
+  decode,
+}: {
+  decode: NonNullable<VehicleMetadata["vin_decode"]>;
+}) {
+  // Cherry-pick the fields a homeowner actually cares about. NHTSA
+  // returns ~130 variables per VIN, most of which are blank or
+  // industry-internal (NCSA body type code, trim-level data, etc.).
+  const rows: { label: string; value: string }[] = [];
+  const raw = decode.raw;
+  const pick = (key: string, label: string) => {
+    const v = raw[key];
+    if (v) rows.push({ label, value: v });
+  };
+  pick("BodyClass", "Body class");
+  pick("VehicleType", "Vehicle type");
+  pick("EngineCylinders", "Engine cylinders");
+  pick("FuelTypePrimary", "Fuel");
+  pick("DriveType", "Drive");
+  pick("PlantCountry", "Built in");
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {rows.map((r) => (
+        <span key={r.label} className="chip">
+          <span style={{ color: "var(--color-text-tertiary)" }}>
+            {r.label}
+          </span>
+          <span>{r.value}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function PetDetails({
+  meta,
+}: {
+  meta: ReturnType<typeof parsePetMetadata>;
+}) {
+  const rows: { label: string; value: string }[] = [];
+  if (meta.species) rows.push({ label: "Species", value: meta.species });
+  if (meta.breed) rows.push({ label: "Breed", value: meta.breed });
+  if (meta.color) rows.push({ label: "Color", value: meta.color });
+  if (meta.sex)
+    rows.push({
+      label: "Sex",
+      value: meta.sex.charAt(0).toUpperCase() + meta.sex.slice(1),
+    });
+  if (meta.microchip_number)
+    rows.push({ label: "Microchip", value: meta.microchip_number });
+  if (meta.vet_name) rows.push({ label: "Vet", value: meta.vet_name });
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {rows.map((r) => (
+        <span key={r.label} className="chip">
+          <span style={{ color: "var(--color-text-tertiary)" }}>
+            {r.label}
+          </span>
+          <span>{r.value}</span>
         </span>
       ))}
     </div>
@@ -671,6 +1029,42 @@ type PanelInsights = {
   found_specific_model?: boolean | undefined;
 };
 
+function PropertyInsightsPlaceholder({
+  isVehicle,
+  isPet,
+}: {
+  isVehicle: boolean;
+  isPet: boolean;
+}) {
+  const eyebrow = isVehicle
+    ? "What we'll surface for vehicles"
+    : isPet
+      ? "What we'll surface for pets"
+      : "What we'll surface for property";
+  const body = isVehicle
+    ? "Depreciation, replacement value, and recall lookups for this vehicle are on the roadmap. For now, capture the VIN, plate, and value above so we have what we need when those land."
+    : isPet
+      ? "A dedicated pet experience — vet records, vaccinations, microchip lookup — is a follow-up. Capture the basics above so we have a head start when it lands."
+      : "Depreciation and replacement-value lookups for property are on the roadmap. Capture purchase details and an estimated value above so we have what we need when those land.";
+
+  return (
+    <section className="surface-ai p-4 sm:p-5">
+      <div className="flex items-center gap-2 mb-2">
+        <span style={{ color: "var(--color-accent)" }}>
+          <Icon name="sparkles" size={14} />
+        </span>
+        <span className="eyebrow">{eyebrow}</span>
+      </div>
+      <p
+        className="text-small"
+        style={{ color: "var(--color-text-secondary)" }}
+      >
+        {body}
+      </p>
+    </section>
+  );
+}
+
 function ResearchPanel({
   item,
   insights,
@@ -688,12 +1082,13 @@ function ResearchPanel({
 }) {
   const canResearch = Boolean(item.manufacturer && item.model_number);
   const itemTypeLabel = TYPE_EYEBROW_LABEL[item.type].toLowerCase();
+  const itemTypePlural = pluralizeTypeLabel(item.type, item.subtype);
 
   // Always show the model's headline when insights are present, even
   // when found_specific_model is false — the headline is the model's
   // best one-line description of the category, and pairing it with the
   // category-level disclaimer below is more useful than burying it.
-  const eyebrow = `What we know about ${itemTypeLabel}s like yours`;
+  const eyebrow = `What we know about ${itemTypePlural} like yours`;
 
   // First-time run with nothing on screen: show the loading overlay
   // until the first chunk arrives. For regenerate-with-prior-insights,

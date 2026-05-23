@@ -12,7 +12,19 @@
 
 import { z } from "zod";
 
-const equipmentType = z.enum(["appliance", "system", "exterior"]);
+const equipmentType = z.enum([
+  "appliance",
+  "system",
+  "exterior",
+  "property",
+]);
+
+// Property subtype discriminator. Only meaningful when type='property';
+// for other types the model returns null. v1 recognizes 'vehicle' (VIN
+// plate / car badge) and 'pet' (vet record, microchip card, registration
+// document). Other property — TVs, computers, stereos, art — stays
+// subtype=null.
+const inventorySubtype = z.enum(["vehicle", "pet"]).nullable();
 
 // Bounded label/value lengths exist to prevent the model from returning
 // long blobs that would break the detail page's chip layout. 40 chars on
@@ -28,6 +40,7 @@ const nameplateBranch = z.object({
   classification: z.object({
     name: z.string().min(1),
     type: equipmentType,
+    subtype: inventorySubtype,
     confidence: z.number().min(0).max(1),
   }),
   extracted: z.object({
@@ -46,6 +59,7 @@ const appliancePhotoBranch = z.object({
   classification: z.object({
     name: z.string().min(1),
     type: equipmentType,
+    subtype: inventorySubtype,
     confidence: z.number().min(0).max(1),
   }),
   extracted: z.null(),

@@ -15,9 +15,10 @@ import type {
   ManufactureDatePrecision,
 } from "@/lib/inventory/first-date-tile";
 import { createClient } from "@/lib/supabase/server";
+import type { InventorySubtype } from "@/types/document";
 import { InventoryDetailView } from "./inventory-detail-view";
 
-type InventoryType = "appliance" | "system" | "exterior";
+type InventoryType = "appliance" | "system" | "exterior" | "property";
 
 // Hand-typed mirror of lib/inventory-insights/research.ts insightsSchema,
 // plus the persistence fields the server action adds (generated_at,
@@ -53,12 +54,20 @@ export type InventoryDetailItem = {
   room_id: string;
   name: string;
   type: InventoryType;
+  subtype: InventorySubtype | null;
   manufacturer: string | null;
   model_number: string | null;
   serial_number: string | null;
   installed_on: string | null;
   last_serviced_on: string | null;
   next_service_due_on: string | null;
+  // Property-friendly columns (issue #23). purchased_on is the
+  // acquisition date; estimated_value_cents is user-entered and feeds
+  // the future insurance-inventory report's value aggregation.
+  purchased_on: string | null;
+  estimated_value_cents: number | null;
+  // Subtype-specific bag. Parse via lib/inventory/metadata-schemas.
+  metadata: Record<string, unknown>;
   notes: string | null;
   roomName: string;
   // Every attached photo for this item, most-recent first — except
@@ -102,12 +111,16 @@ export default async function InventoryDetailPage({
       room_id,
       name,
       type,
+      subtype,
       manufacturer,
       model_number,
       serial_number,
       installed_on,
       last_serviced_on,
       next_service_due_on,
+      purchased_on,
+      estimated_value_cents,
+      metadata,
       notes,
       ai_pills,
       ai_insights,
@@ -131,12 +144,16 @@ export default async function InventoryDetailPage({
     room_id: string;
     name: string;
     type: InventoryType;
+    subtype: InventorySubtype | null;
     manufacturer: string | null;
     model_number: string | null;
     serial_number: string | null;
     installed_on: string | null;
     last_serviced_on: string | null;
     next_service_due_on: string | null;
+    purchased_on: string | null;
+    estimated_value_cents: number | null;
+    metadata: Record<string, unknown> | null;
     notes: string | null;
     ai_pills: { label: string; value: string }[] | null;
     ai_insights: InventoryInsights | null;
@@ -233,12 +250,16 @@ export default async function InventoryDetailPage({
     room_id: row.room_id,
     name: row.name,
     type: row.type,
+    subtype: row.subtype,
     manufacturer: row.manufacturer,
     model_number: row.model_number,
     serial_number: row.serial_number,
     installed_on: row.installed_on,
     last_serviced_on: row.last_serviced_on,
     next_service_due_on: row.next_service_due_on,
+    purchased_on: row.purchased_on,
+    estimated_value_cents: row.estimated_value_cents,
+    metadata: row.metadata ?? {},
     notes: row.notes,
     roomName,
     photos,

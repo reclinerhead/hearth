@@ -5,20 +5,32 @@ import { createClient } from "@/lib/supabase/server";
 import type {
   AiExtraction,
   DocumentRow,
+  EquipmentType,
+  InventorySubtype,
   NameplateExtractionPill,
 } from "@/types/document";
 
 export type CreateInventoryFromDocumentInput = {
   documentId: string;
   name: string;
-  type: "appliance" | "system" | "exterior";
+  type: EquipmentType;
+  // Only meaningful when type='property'. For other types the modal
+  // sends null. Ignored at write time when subtype is not 'vehicle'
+  // or 'pet'; future subtypes plug in via the InventorySubtype union.
+  subtype: InventorySubtype | null;
   roomId: string;
   fields: {
     manufacturer: string | null;
     model_number: string | null;
     serial_number: string | null;
     installed_on: string | null;
+    purchased_on: string | null;
+    estimated_value_cents: number | null;
   };
+  // Subtype-specific bag. Persisted verbatim into hearth.inventory.metadata.
+  // The application layer validates via lib/inventory/metadata-schemas; an
+  // empty object is fine and is what non-property items always write.
+  metadata: Record<string, unknown>;
   notes: string | null;
 };
 
@@ -62,17 +74,27 @@ export async function createInventoryFromDocumentAction(
 
   const aiPills = extractPills(doc.ai_extraction as AiExtraction | null);
 
+  // subtype only persists for type='property' — defending the column
+  // against accidental writes from a stale modal state where the user
+  // toggled property → appliance after the subtype was already set.
+  const persistedSubtype =
+    input.type === "property" ? input.subtype : null;
+
   const { data: inv, error: invError } = await supabase
     .from("inventory")
     .insert({
       house_id: doc.house_id,
       name: input.name,
       type: input.type,
+      subtype: persistedSubtype,
       room_id: input.roomId,
       manufacturer: input.fields.manufacturer,
       model_number: normalizeModelNumberForCreate(input.fields.model_number),
       serial_number: input.fields.serial_number,
       installed_on: input.fields.installed_on,
+      purchased_on: input.fields.purchased_on,
+      estimated_value_cents: input.fields.estimated_value_cents,
+      metadata: input.metadata,
       notes: input.notes,
       ai_pills: aiPills,
     })

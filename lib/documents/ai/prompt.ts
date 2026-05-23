@@ -51,8 +51,16 @@ B. Categorize the item:
    - "appliance" — kitchen/laundry equipment a homeowner would replace as a unit (refrigerator, dishwasher, dryer, washing machine, oven, microwave)
    - "system" — installed infrastructure tied to the building (furnace, water heater, HVAC, water softener, sump pump, well pump, septic equipment, electrical panel)
    - "exterior" — outdoor equipment (AC condenser, generator, EV charger when mounted outside, irrigation controller)
+   - "property" — items the homeowner owns that aren't installed infrastructure. Vehicles (photographed at the VIN plate or the badge on the body), televisions (back-panel label), computers (service tag), stereos and audio equipment, instruments, tools, art. These items have a manufacturer and a model but typically don't have an installation date or a service schedule. Pets — when the photo is clearly an identifying document (vet records, microchip card, rabies tag, registration) — also belong here.
+     - Set subtype="vehicle" when the photo is a VIN plate (17-character alphanumeric ending in a check digit, excludes the letters I/O/Q) or any unambiguous vehicle identification (door-jamb sticker, dashboard VIN, manufacturer badge on a car body). When subtype="vehicle", place the VIN in serial_number.
+     - Set subtype="pet" when the photo clearly identifies an animal — a vet record, rabies tag, microchip registration card, or kennel paperwork. The pet's name goes in "name"; the species/breed if visible goes in notes.
+     - Set subtype=null for all other property (a TV nameplate, a stereo back panel, jewelry, art, tools, instruments).
+
+   For every other type (appliance / system / exterior), set subtype=null.
 
 C. Suggest where in a home this item is typically located. Use natural room names like "Basement", "Kitchen", "Garage", "Utility Room", "Attic", "Laundry Room", "Exterior". This is a suggestion based on the equipment type, not a claim about this specific photo.
+
+   For property items the user usually keeps in a specific spot, pick the most likely room: vehicles → "Garage" or "Exterior"; pets → the room they sleep in if obvious, otherwise "Living Room"; electronics → "Living Room" or "Office".
 
 D. Provide a confidence score from 0.0 to 1.0 reflecting how certain you are about the classification (the type and name).
 

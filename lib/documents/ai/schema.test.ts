@@ -8,6 +8,7 @@ describe("classificationSchema", () => {
       classification: {
         name: "Furnace",
         type: "system" as const,
+        subtype: null,
         confidence: 0.92,
       },
       extracted: {
@@ -164,7 +165,7 @@ describe("classificationSchema", () => {
       const bad = {
         ...validNameplate,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        classification: { ...validNameplate.classification, type: "vehicle" as any },
+        classification: { ...validNameplate.classification, type: "vacation" as any },
       };
       expect(() => classificationSchema.parse(bad)).toThrow();
     });
@@ -189,6 +190,7 @@ describe("classificationSchema", () => {
       classification: {
         name: "Washing Machine",
         type: "appliance" as const,
+        subtype: null,
         confidence: 0.81,
       },
       extracted: null,
@@ -228,7 +230,82 @@ describe("classificationSchema", () => {
     it("rejects classification non-null on not_useful", () => {
       const bad = {
         ...valid,
-        classification: { name: "Cat", type: "appliance", confidence: 0.1 },
+        classification: {
+          name: "Cat",
+          type: "appliance",
+          subtype: null,
+          confidence: 0.1,
+        },
+      };
+      expect(() => classificationSchema.parse(bad)).toThrow();
+    });
+  });
+
+  describe("property branch", () => {
+    const validPropertyVehicle = {
+      photo_kind: "nameplate" as const,
+      classification: {
+        name: "Vehicle",
+        type: "property" as const,
+        subtype: "vehicle" as const,
+        confidence: 0.95,
+      },
+      extracted: {
+        manufacturer: "Toyota",
+        model_number: "Land Cruiser",
+        serial_number: "JTEZU17R868001234",
+        installed_on: null,
+        notes: null,
+        pills: [],
+      },
+      room_suggestion: "Garage",
+    };
+
+    it("parses a valid property/vehicle classification", () => {
+      const parsed = classificationSchema.parse(validPropertyVehicle);
+      if (parsed.photo_kind === "nameplate") {
+        expect(parsed.classification.type).toBe("property");
+        expect(parsed.classification.subtype).toBe("vehicle");
+        expect(parsed.extracted.serial_number).toBe("JTEZU17R868001234");
+      }
+    });
+
+    it("parses a property row with subtype=null (generic property)", () => {
+      const parsed = classificationSchema.parse({
+        ...validPropertyVehicle,
+        classification: {
+          ...validPropertyVehicle.classification,
+          subtype: null,
+        },
+      });
+      if (parsed.photo_kind === "nameplate") {
+        expect(parsed.classification.subtype).toBeNull();
+      }
+    });
+
+    it("parses a property/pet classification", () => {
+      const parsed = classificationSchema.parse({
+        ...validPropertyVehicle,
+        classification: {
+          name: "Pet",
+          type: "property",
+          subtype: "pet",
+          confidence: 0.88,
+        },
+      });
+      if (parsed.photo_kind === "nameplate") {
+        expect(parsed.classification.subtype).toBe("pet");
+      }
+    });
+
+    it("rejects an unknown subtype value", () => {
+      const bad = {
+        ...validPropertyVehicle,
+        classification: {
+          ...validPropertyVehicle.classification,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          subtype: "yacht" as any,
+        },
       };
       expect(() => classificationSchema.parse(bad)).toThrow();
     });

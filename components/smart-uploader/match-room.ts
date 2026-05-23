@@ -6,6 +6,11 @@ const FALLBACK_BY_TYPE: Record<EquipmentType, string> = {
   system: "Basement",
   appliance: "Kitchen",
   exterior: "Exterior",
+  // Property is the catch-all "stuff you own" type — vehicles and most
+  // home electronics live in the Garage or Living Room more often than
+  // anywhere else; Garage covers the vehicle case which is the most
+  // VIN-shaped photo a homeowner is likely to capture first.
+  property: "Garage",
 };
 
 /**

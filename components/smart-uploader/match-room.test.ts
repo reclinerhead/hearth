@@ -80,6 +80,16 @@ describe("pickDefaultRoomId", () => {
     ).toBe("r-basement");
   });
 
+  it("falls back to Garage when the suggestion misses for a property item", () => {
+    expect(
+      pickDefaultRoomId({
+        rooms: DEFAULT_ROOMS,
+        suggestion: null,
+        type: "property",
+      }),
+    ).toBe("r-garage");
+  });
+
   it("returns the first room when neither suggestion nor fallback matches", () => {
     const oddRooms: SeededRoom[] = [
       { id: "first", name: "Sunroom" },

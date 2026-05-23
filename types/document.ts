@@ -65,7 +65,24 @@ export type AiExtraction =
   | NotUsefulExtraction
   | DeltaExtraction;
 
-export type EquipmentType = "appliance" | "system" | "exterior";
+// The four inventory types backing the hearth.inventory.type CHECK
+// constraint. The name `EquipmentType` is historical — `property` is
+// not equipment, but renaming the union would churn every existing
+// import for little gain. Treat it as "the inventory.type discriminator".
+//
+// `property` covers things the homeowner *owns* that aren't part of
+// the house — vehicles, electronics, instruments, art, tools, jewelry,
+// pets. The conveyance line: appliance/system/exterior items convey at
+// sale; property leaves with the owner.
+export type EquipmentType = "appliance" | "system" | "exterior" | "property";
+
+// Subtype discriminator on hearth.inventory. Nullable; v1 recognizes
+// only the two property subtypes below. Other inventory types
+// (appliance, system, exterior) always carry subtype=null today.
+//
+// Future subtypes (electronics, instrument, etc.) extend this union and
+// the application-layer routing without requiring a database migration.
+export type InventorySubtype = "vehicle" | "pet";
 
 export type NameplateExtractionPill = {
   label: string;
@@ -78,11 +95,19 @@ export type NameplateExtraction = {
   classification: {
     name: string;
     type: EquipmentType;
+    // Only set when type='property'. The model returns 'vehicle' for a
+    // VIN plate / car badge, 'pet' when the photo is clearly an
+    // identifying document for an animal, and null otherwise.
+    subtype: InventorySubtype | null;
     confidence: number;
   };
   extracted: {
     manufacturer: string | null;
     model_number: string | null;
+    // VINs land here for type='property' / subtype='vehicle' — the
+    // Smart Uploader nameplate flow already lands a photographed VIN
+    // in this column with no special-case code. The detail page
+    // re-labels the field "VIN" when the row is a vehicle.
     serial_number: string | null;
     installed_on: string | null;
     notes: string | null;
@@ -97,6 +122,7 @@ export type AppliancePhotoExtraction = {
   classification: {
     name: string;
     type: EquipmentType;
+    subtype: InventorySubtype | null;
     confidence: number;
   };
   extracted: null;
