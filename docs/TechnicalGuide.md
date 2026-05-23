@@ -1207,6 +1207,18 @@ The module uses the generic finding modal — no `getOverviewCards` or `renderDe
 
 ---
 
+## Maintenance module
+
+Schema foundation landed in issue #122; the pipelines (direct-event task creation from document expirations, manual LLM-driven synthesis from `ai_insights.maintenance` + habitat findings + linked receipts) and UI surfaces (the dashboard "On your plate" panel, the inventory-detail panel, the task detail modal, the mark-renewed sheet, the renamed History section, the "Build maintenance plan" button) ship in follow-on issues against this schema.
+
+`hearth.maintenance_tasks` is an append-only event log: each row is one occurrence with its own `next_due_at`, `status` (`open` / `completed` / `superseded`), and frozen `reasoning` jsonb. Completion writes `completed_at` + optional `completed_by_document_id` and inserts a successor row whose `predecessor_task_id` points back at it — old rows are never mutated after a terminal status. The `source` discriminator (`direct_event` vs. `synthesis`) is load-bearing: rebuilding a plan supersedes only the open synthesis rows for an inventory item and never touches direct-event rows (so a user's vehicle-registration renewal survives a plan rebuild). Cadence is shaped by `cadence_kind` (`interval` / `seasonal` / `one_time`) with a check constraint enforcing the field combinations; `renewal_options` jsonb carries the term cards (1yr / 2yr, 6mo / 12mo) for the future mark-renewed sheet so each row is self-describing even as the per-issuer constants map drifts. RLS delegates to `hearth.houses.owner_id` through four policies (SELECT / INSERT / UPDATE / DELETE) and the `set_updated_at` trigger fires on UPDATE. Four indexes cover the read and rebuild paths: a partial on `(house_id, next_due_at) where status = 'open'` for the dashboard panel, a partial on `(inventory_id, next_due_at)` for the inventory-detail panel, a full `(inventory_id, created_at desc)` for the History view, and a narrow `(inventory_id) where source = 'synthesis' and status = 'open'` for the rebuild write path.
+
+`inventory_id` is `ON DELETE CASCADE` — deleting an inventory item removes its maintenance tasks atomically. The per-task `reasoning` jsonb embeds the manufacturer/model/serial at row-creation time, so each completed row is self-contained for history views without needing a dangling FK to the live inventory row. Cascade also preserves the cleaner semantic that `inventory_id = null` means "house-scoped task" (gutter cleaning, etc.) rather than "task whose item was deleted out from under it."
+
+`hearth.inventory.last_synthesis_run` (jsonb, nullable) holds the most recent synthesis run's step trace per item, mirroring `habitat_findings.activity_log`. Re-running synthesis overwrites this column; historical traces aren't preserved because the load-bearing decisions are captured in the per-task `reasoning` on each emitted `maintenance_tasks` row. Null means synthesis has never been run for that item — the future inventory-detail button reads it to decide between "Build" and "Rebuild" copy. The full TypeScript shape (`SynthesisRunLog`) is documented inline on the column comment and will live in `lib/maintenance/types.ts` when the synthesis pipeline ships.
+
+---
+
 ## What isn't built yet
 
 These appear in the schema or the dashboard mockup but are not real flows. Treat as roadmap, not as currently-working features:
