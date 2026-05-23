@@ -74,16 +74,17 @@ export function MaintenanceTaskRow({
       }}
       className="group w-full text-left rounded-[var(--radius-md)] transition-colors flex items-center gap-3 p-3 sm:p-4"
       style={{
+        // Row background: danger gets a red-tinted surface for the loud
+        // "take action now" cue. Everything else (caution = next 30 days,
+        // neutral = later this season + per-use) shares the same calm
+        // bg-surface so the three non-overdue tiers read as one visual
+        // family — the tier divider color, icon backdrop tint, and right-
+        // label color carry the per-tier nuance from there.
         backgroundColor:
           tone === "danger"
             ? "color-mix(in oklab, var(--color-danger) 8%, var(--color-bg-surface))"
-            : tone === "caution"
-              ? "var(--color-bg-surface)"
-              : "transparent",
-        border:
-          tone === "neutral"
-            ? "1px solid var(--color-border-subtle)"
-            : "1px solid transparent",
+            : "var(--color-bg-surface)",
+        border: "1px solid transparent",
         borderLeft:
           tone === "danger" ? `3px solid ${toneColor}` : undefined,
       }}
