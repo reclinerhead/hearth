@@ -300,8 +300,7 @@ export function InventoryDetailView({
   // can flip out of its in-flight state the moment the workflow
   // finishes. Same pattern as useHouseRealtime, but narrow enough that
   // inlining it here is simpler than extracting a generic hook for a
-  // single consumer. Realtime is the primary signal; the timeout-based
-  // safety hatch below covers the websocket-blocked path.
+  // single consumer.
   useEffect(() => {
     const supabase = createBrowserSupabaseClient();
     const channel = supabase
@@ -339,6 +338,67 @@ export function InventoryDetailView({
       supabase.removeChannel(channel);
     };
   }, [item.id]);
+
+  // Polling fallback for the in-flight state. Active only while a
+  // synthesis run is in flight, and torn down the moment we observe a
+  // completed trace. Defense-in-depth against (a) the hearth.inventory
+  // realtime publication not being live yet (the migration in this PR
+  // needs supabase db push to apply), and (b) browser extensions that
+  // block the realtime websocket — same gotcha documented for
+  // useHouseRealtime. Polling cadence matches the houses hook (2.5s).
+  //
+  // A 3-minute safety hatch flips the button back to a usable state if
+  // neither realtime nor polling has surfaced a result — the workflow
+  // is supposed to finish in 50-60s, so 3 min comfortably covers a slow
+  // model call. The button re-enables to a fresh "Build" click without
+  // claiming success; the user can retry if needed.
+  useEffect(() => {
+    if (!synthesisInFlight) return;
+
+    const supabase = createBrowserSupabaseClient();
+    let cancelled = false;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+
+    async function poll() {
+      if (cancelled) return;
+      const { data } = await supabase
+        .from("inventory")
+        .select("last_synthesis_run")
+        .eq("id", item.id)
+        .single();
+      if (cancelled || !data) return;
+      const next = data.last_synthesis_run as SynthesisRunLog | null;
+      if (next) {
+        setLiveSynthesisRun(next);
+        const baseline = synthesisBaselineRef.current;
+        if (!baseline || next.completed_at > baseline) {
+          setSynthesisInFlight(false);
+          if (next.error) setSynthesisError(next.error);
+          return;
+        }
+      }
+      pollTimer = setTimeout(poll, 2500);
+    }
+
+    pollTimer = setTimeout(poll, 2500);
+
+    const safetyTimer = setTimeout(
+      () => {
+        if (cancelled) return;
+        setSynthesisInFlight(false);
+        setSynthesisError(
+          "We didn't hear back from the synthesis run in time. Check the inventory dashboard — your plan may have been written even though this page didn't see it. If not, try again.",
+        );
+      },
+      3 * 60 * 1000,
+    );
+
+    return () => {
+      cancelled = true;
+      if (pollTimer) clearTimeout(pollTimer);
+      clearTimeout(safetyTimer);
+    };
+  }, [item.id, synthesisInFlight]);
 
   const handleBuildMaintenancePlan = useCallback(async () => {
     setSynthesisError(null);
