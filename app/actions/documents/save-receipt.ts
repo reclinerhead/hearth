@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { processDirectEventTaskFromDocument } from "@/lib/maintenance/direct-event";
 import type { DocumentRow } from "@/types/document";
 
 export type SaveReceiptInput = {
@@ -62,6 +63,15 @@ export async function saveReceiptAction(
       error: error?.message ?? "Failed to save receipt",
     };
   }
+
+  // Fire the direct-event maintenance pipeline now that the document is
+  // attached. Awaited (not fire-and-forget) so the inventory detail page
+  // re-renders with the new task already visible, and so the result is
+  // available for phase 7's "renewed via document upload" toast to
+  // consume off the returned value. The pipeline gates internally on
+  // expiration_date / inventory_id / status, so non-renewal receipts
+  // exit cheaply.
+  await processDirectEventTaskFromDocument(input.documentId);
 
   return { data: data as DocumentRow, error: null };
 }
