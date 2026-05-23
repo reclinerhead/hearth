@@ -94,23 +94,38 @@ export type TaskReasoningAnchor = {
   /**
    * Where the first occurrence is grounded. `receipt` / `install_date` /
    * `synthesis_default` are emitted by the synthesis pipeline.
-   * `document_expiration` is reserved for the direct-event pipeline (the
-   * issue's follow-on work) — the synthesis model will not emit it.
+   * `document_expiration` is written by the direct-event pipeline.
+   * `manual_completion` is written by the complete-task action when a
+   * successor task is inserted after the user manually marks an
+   * occurrence done (issue #137).
    */
-  kind: "receipt" | "install_date" | "synthesis_default" | "document_expiration";
+  kind:
+    | "receipt"
+    | "install_date"
+    | "synthesis_default"
+    | "document_expiration"
+    | "manual_completion";
   detail: string;
   /** hearth.documents.id when grounded in a specific document; null otherwise. */
   document_id: string | null;
 };
 
 export type TaskReasoning = {
+  /**
+   * The headline reasoning. Synthesis emits the first five values; the
+   * direct-event pipeline writes `document_expiration`; the complete-task
+   * action (issue #137) writes `manual_completion` on successor rows so
+   * the modal can distinguish "we generated this for you" from "you
+   * marked the prior one done, this is what's next."
+   */
   source_kind:
     | "manufacturer_guidance"
     | "class_default"
     | "habitat_modifier"
     | "installation_anchored"
     | "receipt_anchored"
-    | "document_expiration";
+    | "document_expiration"
+    | "manual_completion";
   cadence_basis: string;
   modifiers: TaskReasoningModifier[];
   anchor: TaskReasoningAnchor;

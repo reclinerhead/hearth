@@ -3,9 +3,13 @@
 // Single task row inside the "On your plate" panel (issue #133). The
 // whole row is a real <button> so keyboard focus, screen reader
 // semantics, and tap mechanics work without inventing custom roles.
-// Tapping logs a sentinel string today — phase 6 wires the task detail
-// modal in this same handler.
+// The row stays presentational — it forwards onClick + ref to the
+// MaintenanceTaskTrigger wrapper that owns modal state and return-focus
+// (issue #137). Keeping the visual treatment here separate from the
+// interaction lets the row be reused in non-modal contexts (history
+// lists, future reports) without dragging trigger state along.
 
+import { forwardRef } from "react";
 import { Icon, type IconName } from "@/components/icon";
 
 export type MaintenanceTaskRowData = {
@@ -50,28 +54,27 @@ const KIND_ICON: Record<MaintenanceTaskRowData["kind"], IconName> = {
   seasonal: "leaf",
 };
 
-export function MaintenanceTaskRow({
-  task,
-  tone,
-  relativeMode,
-}: {
+export type MaintenanceTaskRowProps = {
   task: MaintenanceTaskRowData;
   tone: RowTone;
   relativeMode: RightLabelMode;
-}) {
+  /** Open the task detail modal. Owned by MaintenanceTaskTrigger (issue #137). */
+  onClick?: () => void;
+};
+
+export const MaintenanceTaskRow = forwardRef<
+  HTMLButtonElement,
+  MaintenanceTaskRowProps
+>(function MaintenanceTaskRow({ task, tone, relativeMode, onClick }, ref) {
   const rightLabel = formatRightLabel(task.next_due_at, relativeMode);
   const accent = formatAccent(task.next_due_at, tone);
   const toneColor = toneAccentColor(tone);
 
   return (
     <button
+      ref={ref}
       type="button"
-      onClick={() => {
-        // Phase 6 swaps this for the task detail modal. The sentinel is
-        // documented in issue #133's acceptance criteria so the smoke
-        // test can confirm the row is wired without a UI affordance.
-        console.log("[maintenance-row] tapped task", task.id);
-      }}
+      onClick={onClick}
       className="group w-full text-left rounded-[var(--radius-md)] transition-colors flex items-center gap-3 p-3 sm:p-4"
       style={{
         // Row background: danger gets a red-tinted surface for the loud
@@ -191,7 +194,7 @@ export function MaintenanceTaskRow({
       )}
     </button>
   );
-}
+});
 
 function toneAccentColor(tone: RowTone): string {
   if (tone === "danger") return "var(--color-danger)";
