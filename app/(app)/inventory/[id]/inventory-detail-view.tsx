@@ -115,16 +115,43 @@ function pluralizeTypeLabel(
   return `${TYPE_EYEBROW_LABEL[type].toLowerCase()}s`;
 }
 
+export type HistoryEvent =
+  | {
+      id: string;
+      kind: "completed_task";
+      taskKind: "renewal" | "service" | "inspection" | "consumable" | "seasonal";
+      /** ISO timestamp for completed tasks, YYYY-MM-DD for milestones. */
+      date: string;
+      title: string;
+      detail: string | null;
+    }
+  | {
+      id: string;
+      kind: "milestone";
+      date: string;
+      title: string;
+    };
+
 export function InventoryDetailView({
   item,
   rooms,
   linkedDocumentCount,
   receipts,
+  historyEvents,
+  maintenancePanelSlot,
 }: {
   item: InventoryDetailItem;
   rooms: RoomOption[];
   linkedDocumentCount: number;
   receipts: InventoryReceipt[];
+  historyEvents: HistoryEvent[];
+  /**
+   * Server-rendered maintenance panel for this inventory item. Rendered
+   * from page.tsx so the panel keeps its own RLS-scoped Supabase server
+   * client. Passed in as a slot rather than rendered here because this
+   * component is a client boundary.
+   */
+  maintenancePanelSlot: ReactNode;
 }) {
   const isProperty = item.type === "property";
   const isVehicle = isProperty && item.subtype === "vehicle";
@@ -336,6 +363,13 @@ export function InventoryDetailView({
             setSynthesisInFlight(false);
             if (next.error) {
               setSynthesisError(next.error);
+            } else {
+              // The workflow writes maintenance_tasks rows before
+              // persisting the trace, so by the time this fires the new
+              // tasks are already in the DB. Re-run the server component
+              // so the maintenancePanelSlot picks them up without a
+              // manual reload (issue #133 follow-up).
+              router.refresh();
             }
           }
         },
@@ -345,7 +379,7 @@ export function InventoryDetailView({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [item.id]);
+  }, [item.id, router]);
 
   // Polling fallback for the in-flight state. Active only while a
   // synthesis run is in flight, and torn down the moment we observe a
@@ -380,7 +414,14 @@ export function InventoryDetailView({
         const baseline = synthesisBaselineRef.current;
         if (!baseline || next.completed_at > baseline) {
           setSynthesisInFlight(false);
-          if (next.error) setSynthesisError(next.error);
+          if (next.error) {
+            setSynthesisError(next.error);
+          } else {
+            // Same rationale as the realtime branch — the maintenance
+            // panel is server-rendered and won't reflect the new rows
+            // without a refresh.
+            router.refresh();
+          }
           return;
         }
       }
@@ -405,7 +446,7 @@ export function InventoryDetailView({
       if (pollTimer) clearTimeout(pollTimer);
       clearTimeout(safetyTimer);
     };
-  }, [item.id, synthesisInFlight]);
+  }, [item.id, synthesisInFlight, router]);
 
   const handleBuildMaintenancePlan = useCallback(async () => {
     setSynthesisError(null);
@@ -690,19 +731,15 @@ export function InventoryDetailView({
         </div>
       </section>
 
-      {isProperty ? (
-        // Property doesn't use the "Research this model" panel —
-        // it's tuned for appliances and systems (service life,
-        // maintenance, manufacturer-published spec sheets) and
-        // those questions don't apply to a Land Cruiser or a
-        // television. A future enhancement could swap this for a
-        // depreciation / replacement-value lookup tuned to the
-        // property category; tracked as out-of-scope follow-up.
-        <PropertyInsightsPlaceholder
-          isVehicle={isVehicle}
-          isPet={isPet}
-        />
-      ) : (
+      {isProperty ? null : (
+        // Property doesn't use the "Research this model" panel — it's
+        // tuned for appliances and systems (service life, maintenance,
+        // manufacturer-published spec sheets) and those questions don't
+        // apply to a Land Cruiser or a television. The slot is left
+        // empty until the property-side lookup module (depreciation /
+        // replacement-value / recall) ships; the earlier "What we'll
+        // surface for vehicles" placeholder was promising work that
+        // isn't queued, which read as filler rather than information.
         <ResearchPanel
           item={item}
           insights={displayInsights}
@@ -781,6 +818,15 @@ export function InventoryDetailView({
         />
       ) : null}
 
+      {/*
+        "On your plate" maintenance panel for this inventory item
+        (issue #133). Server-rendered slot — the panel runs its own
+        RLS-scoped Supabase server client. Sits between the Research
+        panel (above) and the Documents / Notes grid (below), matching
+        the layout decision documented in the issue.
+      */}
+      <section>{maintenancePanelSlot}</section>
+
       <section className="grid gap-4 md:grid-cols-2">
         <DocumentsPanel
           receipts={receipts}
@@ -811,38 +857,29 @@ export function InventoryDetailView({
       <section>
         <SectionHeader
           eyebrow="Everything that's happened"
-          title="Maintenance & history"
-          trailing={
-            <Tooltip
-              content="Maintenance logging is coming in a future update."
-              side="bottom"
-            >
-              <button
-                type="button"
-                disabled
-                className="btn btn-primary"
-                aria-disabled="true"
-                style={{ opacity: 0.55 }}
-              >
-                <Icon name="plus" size={16} />
-                Log maintenance
-              </button>
-            </Tooltip>
-          }
+          title="History"
         />
         <ol className="surface p-4 sm:p-5">
-          {item.installed_on ? (
-            <TimelineItem
-              icon="circle-dot"
-              title="Installed"
-              meta={formatLongDate(item.installed_on)}
-            />
-          ) : (
+          {historyEvents.length === 0 ? (
             <TimelineItem
               icon="info"
               title="No history yet"
-              detail="Service entries and maintenance reminders will appear here as you log them."
+              detail="Completed maintenance tasks, install dates, and other milestones will appear here as they're recorded."
             />
+          ) : (
+            historyEvents.map((event) => (
+              <TimelineItem
+                key={event.id}
+                icon={historyEventIcon(event)}
+                title={event.title}
+                meta={formatLongDate(event.date)}
+                detail={
+                  event.kind === "completed_task"
+                    ? event.detail ?? undefined
+                    : undefined
+                }
+              />
+            ))
           )}
         </ol>
       </section>
@@ -1287,42 +1324,6 @@ type PanelInsights = {
   source_urls?: string[] | undefined;
   found_specific_model?: boolean | undefined;
 };
-
-function PropertyInsightsPlaceholder({
-  isVehicle,
-  isPet,
-}: {
-  isVehicle: boolean;
-  isPet: boolean;
-}) {
-  const eyebrow = isVehicle
-    ? "What we'll surface for vehicles"
-    : isPet
-      ? "What we'll surface for pets"
-      : "What we'll surface for property";
-  const body = isVehicle
-    ? "Depreciation, replacement value, and recall lookups for this vehicle are on the roadmap. For now, capture the VIN, plate, and value above so we have what we need when those land."
-    : isPet
-      ? "A dedicated pet experience — vet records, vaccinations, microchip lookup — is a follow-up. Capture the basics above so we have a head start when it lands."
-      : "Depreciation and replacement-value lookups for property are on the roadmap. Capture purchase details and an estimated value above so we have what we need when those land.";
-
-  return (
-    <section className="surface-ai p-4 sm:p-5">
-      <div className="flex items-center gap-2 mb-2">
-        <span style={{ color: "var(--color-accent)" }}>
-          <Icon name="sparkles" size={14} />
-        </span>
-        <span className="eyebrow">{eyebrow}</span>
-      </div>
-      <p
-        className="text-small"
-        style={{ color: "var(--color-text-secondary)" }}
-      >
-        {body}
-      </p>
-    </section>
-  );
-}
 
 function ResearchPanel({
   item,
@@ -2175,6 +2176,26 @@ function formatLongDate(isoDate: string): string {
     day: "numeric",
     timeZone: "UTC",
   });
+}
+
+// Icon chosen so the History timeline reads at a glance: milestones use
+// a circle-dot (timeline anchor); completed tasks pick up the same
+// kind→icon mapping the maintenance panel rows use, but rendered through
+// the "done" timeline state so they all share the green circle treatment.
+const COMPLETED_TASK_ICON: Record<
+  "renewal" | "service" | "inspection" | "consumable" | "seasonal",
+  IconName
+> = {
+  renewal: "car",
+  service: "tool",
+  inspection: "search",
+  consumable: "refresh-cw",
+  seasonal: "leaf",
+};
+
+function historyEventIcon(event: HistoryEvent): IconName {
+  if (event.kind === "milestone") return "circle-dot";
+  return COMPLETED_TASK_ICON[event.taskKind];
 }
 
 function formatRelativeYears(isoDate: string): string {

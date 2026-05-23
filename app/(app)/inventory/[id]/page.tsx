@@ -17,7 +17,8 @@ import type {
 import type { SynthesisRunLog } from "@/lib/maintenance/types";
 import { createClient } from "@/lib/supabase/server";
 import type { InventorySubtype } from "@/types/document";
-import { InventoryDetailView } from "./inventory-detail-view";
+import { InventoryDetailView, type HistoryEvent } from "./inventory-detail-view";
+import { MaintenancePanelItem } from "./maintenance-panel-item";
 
 type InventoryType = "appliance" | "system" | "exterior" | "property";
 
@@ -207,8 +208,13 @@ export default async function InventoryDetailPage({
   //     selecting the metadata and page-1 thumbnail. Page counts come
   //     from a follow-up query against document_pages once we know
   //     which receipts exist.
-  const [roomsResult, docCountResult, heroDocsResult, receiptsResult] =
-    await Promise.all([
+  const [
+    roomsResult,
+    docCountResult,
+    heroDocsResult,
+    receiptsResult,
+    completedTasksResult,
+  ] = await Promise.all([
       supabase
         .from("rooms")
         .select("id, name")
@@ -235,6 +241,16 @@ export default async function InventoryDetailPage({
         .eq("status", "attached")
         .eq("kind", "receipt")
         .order("created_at", { ascending: false }),
+      // Real History feed (issue #133) — every completed maintenance task
+      // for this item, newest first. installed_on / purchased_on
+      // milestones are interleaved client-side. Read uses the partial
+      // index maintenance_tasks_inventory_history_idx.
+      supabase
+        .from("maintenance_tasks")
+        .select("id, title, subtitle, kind, completed_at, completion_notes")
+        .eq("inventory_id", row.id)
+        .eq("status", "completed")
+        .order("completed_at", { ascending: false }),
     ]);
 
   const roomOptions: RoomOption[] = (roomsResult.data ?? []).map((r) => ({
@@ -342,6 +358,59 @@ export default async function InventoryDetailPage({
     };
   });
 
+  // Build the history event list — completed maintenance tasks + the
+  // installed_on / purchased_on milestones, sorted by date descending.
+  // Trivial enough to inline; if the slate of milestone kinds grows
+  // (last_serviced_on, warranty registration, etc.) it'll earn a helper.
+  const completedTaskRows = (completedTasksResult.data ?? []) as Array<{
+    id: string;
+    title: string;
+    subtitle: string | null;
+    kind: "renewal" | "service" | "inspection" | "consumable" | "seasonal";
+    completed_at: string;
+    completion_notes: string | null;
+  }>;
+  const historyEvents: HistoryEvent[] = [];
+  for (const t of completedTaskRows) {
+    historyEvents.push({
+      id: `task:${t.id}`,
+      kind: "completed_task",
+      taskKind: t.kind,
+      date: t.completed_at,
+      title: t.title,
+      detail: t.completion_notes ?? t.subtitle,
+    });
+  }
+  if (row.installed_on) {
+    historyEvents.push({
+      id: "milestone:installed",
+      kind: "milestone",
+      date: row.installed_on,
+      title: "Installed",
+    });
+  }
+  if (row.purchased_on) {
+    historyEvents.push({
+      id: "milestone:purchased",
+      kind: "milestone",
+      date: row.purchased_on,
+      title: "Purchased",
+    });
+  }
+  historyEvents.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  // Discriminator for the maintenance panel's item-scoped empty state.
+  // `ai_insights.maintenance` populated → "build a plan" CTA; missing →
+  // "run Research first" message.
+  const insights = row.ai_insights;
+  const hasActionableInsights = !!(
+    insights &&
+    typeof insights === "object" &&
+    "maintenance" in insights &&
+    typeof (insights as { maintenance?: unknown }).maintenance === "string" &&
+    ((insights as { maintenance?: string }).maintenance ?? "").length > 0
+  );
+
   const detail: InventoryDetailItem = {
     id: row.id,
     house_id: row.house_id,
@@ -376,6 +445,15 @@ export default async function InventoryDetailPage({
       rooms={roomOptions}
       linkedDocumentCount={linkedDocumentCount}
       receipts={receipts}
+      historyEvents={historyEvents}
+      maintenancePanelSlot={
+        <MaintenancePanelItem
+          inventoryId={detail.id}
+          hasActionableInsights={hasActionableInsights}
+          itemType={detail.type}
+          itemSubtype={detail.subtype}
+        />
+      }
     />
   );
 }

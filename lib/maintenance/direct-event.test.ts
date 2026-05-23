@@ -31,6 +31,13 @@ function makeSupabaseMock(responses: Responses) {
     insertPayload?: Record<string, unknown>;
     updatePayload?: Record<string, unknown>;
     updatedId?: string;
+    /**
+     * Filters applied to the existing-open lookup. Tests assert on this
+     * to confirm the idempotency check is scoped narrowly enough that
+     * independent renewal streams (registration vs insurance) don't
+     * close each other (issue #133 follow-up).
+     */
+    existingOpenFilters?: Record<string, unknown>;
   } = {};
 
   const documentSingle = vi.fn().mockResolvedValue({
@@ -77,14 +84,26 @@ function makeSupabaseMock(responses: Responses) {
       };
     }
     if (table === "maintenance_tasks") {
+      // The existing-open lookup chains `.select(...).eq(...).eq(...)...
+      // .maybeSingle()`. We capture every `.eq()` arg so tests can
+      // assert the lookup is scoped to the right (inventory_id, kind,
+      // title, status) combination, then resolve to the canned response.
+      const existingOpenChain: {
+        eq: (col: string, value: unknown) => typeof existingOpenChain;
+        maybeSingle: typeof existingOpenMaybeSingle;
+      } = {
+        eq: (col, value) => {
+          captured.existingOpenFilters = {
+            ...(captured.existingOpenFilters ?? {}),
+            [col]: value,
+          };
+          return existingOpenChain;
+        },
+        maybeSingle: existingOpenMaybeSingle,
+      };
+
       return {
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              eq: () => ({ maybeSingle: existingOpenMaybeSingle }),
-            }),
-          }),
-        }),
+        select: () => existingOpenChain,
         update: (payload: Record<string, unknown>) => {
           captured.updatePayload = payload;
           return {
@@ -291,6 +310,23 @@ describe("processDirectEventTaskFromDocument — chaining", () => {
 
     expect(captured.insertPayload).toMatchObject({
       predecessor_task_id: "task-prior",
+    });
+  });
+
+  it("scopes the existing-open lookup by classifier title so independent renewal streams don't close each other", async () => {
+    // Regression for the bug where a vehicle's auto-insurance receipt
+    // would find the open vehicle-registration task (both kind='renewal'
+    // on the same inventory_id) and close it as if it were a renewal of
+    // the same stream. The fix narrows the lookup with the classifier-
+    // produced title — independent streams now coexist cleanly.
+    const { supabase, captured } = makeSupabaseMock(defaultResponses());
+    await processDirectEventTaskFromDocument("doc-1", supabase);
+
+    expect(captured.existingOpenFilters).toMatchObject({
+      inventory_id: audi.id,
+      kind: "renewal",
+      title: "Vehicle registration renewal",
+      status: "open",
     });
   });
 
