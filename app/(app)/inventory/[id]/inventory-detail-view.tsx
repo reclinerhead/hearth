@@ -363,6 +363,13 @@ export function InventoryDetailView({
             setSynthesisInFlight(false);
             if (next.error) {
               setSynthesisError(next.error);
+            } else {
+              // The workflow writes maintenance_tasks rows before
+              // persisting the trace, so by the time this fires the new
+              // tasks are already in the DB. Re-run the server component
+              // so the maintenancePanelSlot picks them up without a
+              // manual reload (issue #133 follow-up).
+              router.refresh();
             }
           }
         },
@@ -372,7 +379,7 @@ export function InventoryDetailView({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [item.id]);
+  }, [item.id, router]);
 
   // Polling fallback for the in-flight state. Active only while a
   // synthesis run is in flight, and torn down the moment we observe a
@@ -407,7 +414,14 @@ export function InventoryDetailView({
         const baseline = synthesisBaselineRef.current;
         if (!baseline || next.completed_at > baseline) {
           setSynthesisInFlight(false);
-          if (next.error) setSynthesisError(next.error);
+          if (next.error) {
+            setSynthesisError(next.error);
+          } else {
+            // Same rationale as the realtime branch — the maintenance
+            // panel is server-rendered and won't reflect the new rows
+            // without a refresh.
+            router.refresh();
+          }
           return;
         }
       }
@@ -432,7 +446,7 @@ export function InventoryDetailView({
       if (pollTimer) clearTimeout(pollTimer);
       clearTimeout(safetyTimer);
     };
-  }, [item.id, synthesisInFlight]);
+  }, [item.id, synthesisInFlight, router]);
 
   const handleBuildMaintenancePlan = useCallback(async () => {
     setSynthesisError(null);
