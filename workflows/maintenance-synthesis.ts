@@ -44,21 +44,29 @@ export async function runMaintenanceSynthesis(
 ): Promise<void> {
   "use workflow";
 
+  // Timing uses Date.now() rather than process.hrtime — the workflow
+  // function body runs in WDK's bundled context, which doesn't have
+  // Node's `process` available (steps do, since they execute in the
+  // Node runtime). Millisecond resolution is plenty for a workflow
+  // that measures end-to-end in tens of seconds.
   const startedAt = new Date();
-  const startNs = process.hrtime.bigint();
+  const startMs = Date.now();
   const steps: SynthesisRunStep[] = [];
 
-  const elapsed = () => Number(process.hrtime.bigint() - startNs) / 1_000_000;
+  const elapsed = () => Date.now() - startMs;
   const pushStep = (step: Omit<SynthesisRunStep, "step" | "at_ms">) => {
     steps.push({
       step: steps.length + 1,
-      at_ms: Math.round(elapsed() * 10) / 10,
+      at_ms: elapsed(),
       ...step,
     });
   };
 
   // Pre-resolve model name so trace + log always have it, even on
-  // errors that happen before the model call step runs.
+  // errors that happen before the model call step runs. process.env
+  // reads are inlined at build time so this works inside the workflow
+  // body; process.hrtime calls (a runtime Node API) do not, which is
+  // why the timing above uses Date.now() instead.
   const model = process.env.MAINTENANCE_SYNTHESIS_MODEL ?? "";
 
   let input: SynthesisInput | null = null;
@@ -357,15 +365,14 @@ async function callModel(input: SynthesisInput): Promise<{
   const systemPrompt = buildSynthesisSystemPrompt();
   const userMessage = buildSynthesisUserMessage(input);
 
-  const callStartNs = process.hrtime.bigint();
+  const callStartMs = Date.now();
   const result = await generateObject({
     model,
     schema: synthesisOutputShape,
     system: systemPrompt,
     messages: [{ role: "user", content: userMessage }],
   });
-  const durationMs =
-    Number(process.hrtime.bigint() - callStartNs) / 1_000_000;
+  const durationMs = Date.now() - callStartMs;
 
   return {
     output: result.object,
