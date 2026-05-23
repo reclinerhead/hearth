@@ -302,15 +302,15 @@ export function InventoryDetailView({
   // inlining it here is simpler than extracting a generic hook for a
   // single consumer.
   //
-  // TODO(remove-after-issue-126-debug): the [synth-realtime] console
-  // logging below is diagnostic for "realtime UPDATE never arrives"
-  // case we're investigating. Strip these logs once the source of the
-  // miss is identified and fixed.
+  // Realtime delivery for hearth.inventory is currently unreliable —
+  // the channel subscribes cleanly but UPDATE events don't reach the
+  // browser in some environments. Issue #128 tracks the investigation.
+  // The polling fallback below is what's actually flipping the button
+  // today; this subscription remains in place so we get the
+  // sub-second response time for free if/when realtime starts
+  // delivering.
   useEffect(() => {
     const supabase = createBrowserSupabaseClient();
-    console.log(
-      `[synth-realtime] subscribing to inventory:${item.id} for postgres_changes UPDATE`,
-    );
     const channel = supabase
       .channel(`inventory:${item.id}`)
       .on(
@@ -321,59 +321,18 @@ export function InventoryDetailView({
           table: "inventory",
           filter: `id=eq.${item.id}`,
         },
-        (payload: {
-          new: Record<string, unknown>;
-          old?: Record<string, unknown>;
-        }) => {
-          console.log("[synth-realtime] UPDATE payload received:", {
-            newKeys: Object.keys(payload.new),
-            hasLastSynthesisRun:
-              "last_synthesis_run" in payload.new,
-            lastSynthesisRunPreview:
-              typeof payload.new.last_synthesis_run === "object" &&
-              payload.new.last_synthesis_run !== null
-                ? {
-                    completed_at: (
-                      payload.new.last_synthesis_run as Record<
-                        string,
-                        unknown
-                      >
-                    ).completed_at,
-                    tasks_emitted: (
-                      payload.new.last_synthesis_run as Record<
-                        string,
-                        unknown
-                      >
-                    ).tasks_emitted,
-                  }
-                : payload.new.last_synthesis_run,
-            currentBaseline: synthesisBaselineRef.current,
-          });
+        (payload: { new: Record<string, unknown> }) => {
           const next = payload.new.last_synthesis_run as
             | SynthesisRunLog
             | null
             | undefined;
-          if (!next) {
-            console.log(
-              "[synth-realtime] no last_synthesis_run in payload — ignoring",
-            );
-            return;
-          }
+          if (!next) return;
           setLiveSynthesisRun(next);
           // The trace's completed_at is the load-bearing comparison —
           // if it advanced past our baseline, this is a fresh run
           // finishing and we should flip out of in-flight.
           const baseline = synthesisBaselineRef.current;
-          const advanced = !baseline || next.completed_at > baseline;
-          console.log("[synth-realtime] baseline comparison:", {
-            baseline,
-            incomingCompletedAt: next.completed_at,
-            advanced,
-          });
-          if (advanced) {
-            console.log(
-              "[synth-realtime] flipping out of in-flight via realtime",
-            );
+          if (!baseline || next.completed_at > baseline) {
             setSynthesisInFlight(false);
             if (next.error) {
               setSynthesisError(next.error);
@@ -381,25 +340,19 @@ export function InventoryDetailView({
           }
         },
       )
-      .subscribe((status: string, err?: unknown) => {
-        console.log("[synth-realtime] subscribe status:", status, err ?? "");
-      });
+      .subscribe();
 
     return () => {
-      console.log(
-        `[synth-realtime] removing channel inventory:${item.id}`,
-      );
       supabase.removeChannel(channel);
     };
   }, [item.id]);
 
   // Polling fallback for the in-flight state. Active only while a
   // synthesis run is in flight, and torn down the moment we observe a
-  // completed trace. Defense-in-depth against (a) the hearth.inventory
-  // realtime publication not being live yet (the migration in this PR
-  // needs supabase db push to apply), and (b) browser extensions that
-  // block the realtime websocket — same gotcha documented for
-  // useHouseRealtime. Polling cadence matches the houses hook (2.5s).
+  // completed trace. This is currently the primary in-flight detection
+  // path — see "Realtime delivery for hearth.inventory" comment on the
+  // subscription effect above and issue #128 for the open investigation.
+  // Polling cadence matches the houses hook (2.5s).
   //
   // A 3-minute safety hatch flips the button back to a usable state if
   // neither realtime nor polling has surfaced a result — the workflow
@@ -422,18 +375,10 @@ export function InventoryDetailView({
         .single();
       if (cancelled || !data) return;
       const next = data.last_synthesis_run as SynthesisRunLog | null;
-      console.log("[synth-realtime] poll tick:", {
-        hasTrace: next !== null,
-        incomingCompletedAt: next?.completed_at ?? null,
-        baseline: synthesisBaselineRef.current,
-      });
       if (next) {
         setLiveSynthesisRun(next);
         const baseline = synthesisBaselineRef.current;
         if (!baseline || next.completed_at > baseline) {
-          console.log(
-            "[synth-realtime] flipping out of in-flight via polling fallback",
-          );
           setSynthesisInFlight(false);
           if (next.error) setSynthesisError(next.error);
           return;
@@ -469,26 +414,15 @@ export function InventoryDetailView({
       liveSynthesisRun?.completed_at ??
       item.last_synthesis_run?.completed_at ??
       null;
-    console.log("[synth-realtime] click — captured baseline:", {
-      baseline: synthesisBaselineRef.current,
-      inventoryId: item.id,
-    });
     try {
       const result = await buildMaintenancePlanAction(item.id);
       if (!result.ok) {
-        console.log(
-          "[synth-realtime] action returned error:",
-          result.error,
-        );
         setSynthesisInFlight(false);
         setSynthesisError(result.error);
-      } else {
-        console.log(
-          "[synth-realtime] action ok — workflow started, waiting for completion",
-        );
       }
-      // On ok we leave in-flight true — the Realtime subscription
-      // above flips it back when last_synthesis_run lands.
+      // On ok we leave in-flight true — the polling fallback above
+      // flips it back when last_synthesis_run lands (and the realtime
+      // subscription will too, once issue #128 is resolved).
     } catch (err) {
       setSynthesisInFlight(false);
       setSynthesisError(
