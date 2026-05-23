@@ -115,16 +115,43 @@ function pluralizeTypeLabel(
   return `${TYPE_EYEBROW_LABEL[type].toLowerCase()}s`;
 }
 
+export type HistoryEvent =
+  | {
+      id: string;
+      kind: "completed_task";
+      taskKind: "renewal" | "service" | "inspection" | "consumable" | "seasonal";
+      /** ISO timestamp for completed tasks, YYYY-MM-DD for milestones. */
+      date: string;
+      title: string;
+      detail: string | null;
+    }
+  | {
+      id: string;
+      kind: "milestone";
+      date: string;
+      title: string;
+    };
+
 export function InventoryDetailView({
   item,
   rooms,
   linkedDocumentCount,
   receipts,
+  historyEvents,
+  maintenancePanelSlot,
 }: {
   item: InventoryDetailItem;
   rooms: RoomOption[];
   linkedDocumentCount: number;
   receipts: InventoryReceipt[];
+  historyEvents: HistoryEvent[];
+  /**
+   * Server-rendered maintenance panel for this inventory item. Rendered
+   * from page.tsx so the panel keeps its own RLS-scoped Supabase server
+   * client. Passed in as a slot rather than rendered here because this
+   * component is a client boundary.
+   */
+  maintenancePanelSlot: ReactNode;
 }) {
   const isProperty = item.type === "property";
   const isVehicle = isProperty && item.subtype === "vehicle";
@@ -781,6 +808,15 @@ export function InventoryDetailView({
         />
       ) : null}
 
+      {/*
+        "On your plate" maintenance panel for this inventory item
+        (issue #133). Server-rendered slot — the panel runs its own
+        RLS-scoped Supabase server client. Sits between the Research
+        panel (above) and the Documents / Notes grid (below), matching
+        the layout decision documented in the issue.
+      */}
+      <section>{maintenancePanelSlot}</section>
+
       <section className="grid gap-4 md:grid-cols-2">
         <DocumentsPanel
           receipts={receipts}
@@ -811,38 +847,29 @@ export function InventoryDetailView({
       <section>
         <SectionHeader
           eyebrow="Everything that's happened"
-          title="Maintenance & history"
-          trailing={
-            <Tooltip
-              content="Maintenance logging is coming in a future update."
-              side="bottom"
-            >
-              <button
-                type="button"
-                disabled
-                className="btn btn-primary"
-                aria-disabled="true"
-                style={{ opacity: 0.55 }}
-              >
-                <Icon name="plus" size={16} />
-                Log maintenance
-              </button>
-            </Tooltip>
-          }
+          title="History"
         />
         <ol className="surface p-4 sm:p-5">
-          {item.installed_on ? (
-            <TimelineItem
-              icon="circle-dot"
-              title="Installed"
-              meta={formatLongDate(item.installed_on)}
-            />
-          ) : (
+          {historyEvents.length === 0 ? (
             <TimelineItem
               icon="info"
               title="No history yet"
-              detail="Service entries and maintenance reminders will appear here as you log them."
+              detail="Completed maintenance tasks, install dates, and other milestones will appear here as they're recorded."
             />
+          ) : (
+            historyEvents.map((event) => (
+              <TimelineItem
+                key={event.id}
+                icon={historyEventIcon(event)}
+                title={event.title}
+                meta={formatLongDate(event.date)}
+                detail={
+                  event.kind === "completed_task"
+                    ? event.detail ?? undefined
+                    : undefined
+                }
+              />
+            ))
           )}
         </ol>
       </section>
@@ -2175,6 +2202,26 @@ function formatLongDate(isoDate: string): string {
     day: "numeric",
     timeZone: "UTC",
   });
+}
+
+// Icon chosen so the History timeline reads at a glance: milestones use
+// a circle-dot (timeline anchor); completed tasks pick up the same
+// kind→icon mapping the maintenance panel rows use, but rendered through
+// the "done" timeline state so they all share the green circle treatment.
+const COMPLETED_TASK_ICON: Record<
+  "renewal" | "service" | "inspection" | "consumable" | "seasonal",
+  IconName
+> = {
+  renewal: "car",
+  service: "tool",
+  inspection: "search",
+  consumable: "refresh-cw",
+  seasonal: "leaf",
+};
+
+function historyEventIcon(event: HistoryEvent): IconName {
+  if (event.kind === "milestone") return "circle-dot";
+  return COMPLETED_TASK_ICON[event.taskKind];
 }
 
 function formatRelativeYears(isoDate: string): string {

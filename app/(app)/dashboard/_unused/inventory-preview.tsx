@@ -1,3 +1,11 @@
+// Preserved from the dashboard's earlier appliance-tile design. The
+// dashboard's right column now hosts the maintenance panel
+// (`maintenance-panel-dashboard.tsx`, issue #133); this file is parked
+// here in case we want this preview surface elsewhere later — e.g. a
+// compact tile widget on the inventory list page. No imports reference
+// it from the active build; it's free to modify or delete if it becomes
+// clear we'll never reuse it. The `_unused/` segment leverages Next.js'
+// private-folder convention so this file is not part of the route tree.
 import Link from "next/link";
 import { Icon, type IconName } from "@/components/icon";
 import { InventoryThumbnail } from "@/components/inventory-thumbnail";

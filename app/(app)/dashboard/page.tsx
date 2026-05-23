@@ -1,22 +1,22 @@
 import { redirect } from "next/navigation";
 import { EmergencyTile, SectionHeader } from "@/components/ui";
-import { Icon, type IconName } from "@/components/icon";
+import type { IconName } from "@/components/icon";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import { resolveActiveHouseId } from "@/lib/houses/active-house";
 import { createClient } from "@/lib/supabase/server";
 import type { House } from "@/types/house";
 import { DashboardLive } from "./dashboard-live";
 import { HabitatPreviewPanel } from "./habitat-preview-panel";
-import { InventoryPreview } from "./inventory-preview";
+import { MaintenancePanelDashboard } from "./maintenance-panel-dashboard";
 
 // Emergencies remains a placeholder pending its own issue (#TBD: emergency
 // capture flow); the hardcoded copy keeps the dashboard layout populated
-// for day-one demos. Inventory ships live as of #51 — InventoryPreview
-// queries hearth.inventory for the current house and renders each item's
-// most-recent attached document as a hero thumbnail (with a type-based
-// fallback icon). `router.refresh()` from the Smart Uploader's onSaved
-// callback re-runs this server component so newly saved items appear
-// automatically.
+// for day-one demos. The right column hosts the maintenance "On your
+// plate" panel (issue #133), which queries hearth.maintenance_tasks for
+// the active house and surfaces overdue / next-30 / later tiers with a
+// Good Steward footer. The earlier InventoryPreview is parked under
+// `_unused/` — kept around in case we want it as a sidebar surface
+// elsewhere later.
 
 const EMERGENCIES: { icon: IconName; label: string; hint: string }[] = [
   { icon: "droplet", label: "Water shutoff", hint: "Basement, NE corner" },
@@ -132,21 +132,15 @@ export default async function DashboardPage() {
         </div>
 
         <div>
-          <SectionHeader
-            eyebrow="Things inside and outside your house"
-            title="Appliances"
-            trailing={
-              <a
-                href="/inventory"
-                className="text-small inline-flex items-center gap-1"
-                style={{ color: "var(--color-text-secondary)" }}
-              >
-                See all
-                <Icon name="chevron-right" size={14} />
-              </a>
-            }
-          />
-          <InventoryPreview houseId={data.id} />
+          {/*
+            MaintenancePanelDashboard renders its own SectionHeader so the
+            populated and empty-state branches stay consistent — the
+            populated header carries the overdue/total count chips, the
+            empty state stands alone. The "See all" link to /inventory
+            moves with the InventoryPreview component to `_unused/`; the
+            top nav already exposes Inventory.
+          */}
+          <MaintenancePanelDashboard houseId={data.id} />
         </div>
       </section>
     </div>
