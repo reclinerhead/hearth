@@ -10,7 +10,7 @@ Your output is consumed directly by Hearth's maintenance UI. Every task you emit
 
 WHAT COUNTS AS A TASK:
 
-Emit a task for every meaningful recurring action a homeowner could take on this item. Include things the manufacturer describes as continuous awareness or vigilance — convert those into scheduled inspections at an appropriate cadence. "Be aware of unusual sounds from the unit" becomes "Listen for unusual sounds during normal operation" every 6 months. "Keep the area clear of combustibles" becomes "Inspect the area around the unit for combustible storage" every 12 months.
+Emit a task for every meaningful recurring action a homeowner could take on this item. Include things the manufacturer describes as continuous awareness or vigilance — convert those into discrete actions and pick the right cadence. For awareness items that happen *while the appliance is running* — listening for unusual sounds during operation, noticing smells while it's in use — the cadence is per-use (the homeowner does this every time, not on a calendar; see the PER-USE PRACTICES section below). For awareness items that happen *independent of use* — making sure the area around the unit is clear of combustibles, eyeballing exterior condition between seasons — the cadence is interval or seasonal. "Keep the area clear of combustibles" becomes "Inspect the area around the unit for combustible storage" every 12 months.
 
 The test for whether something belongs on the list is: can the homeowner say "I did that today" at a specific moment? If yes, package it as a task. The only things to leave out are framings with no possible completion event — pure conceptual advice that can't be discretized into an action.
 
@@ -18,14 +18,14 @@ Most items will have somewhere between 4 and 8 meaningful recurring tasks. If yo
 
 PER-USE PRACTICES VS. SCHEDULED TASKS:
 
-Some maintenance actions are tied to *using* the appliance or system, not to dates. Cleaning a clothes dryer's lint screen happens after every load; checking a dishwasher's rinse aid level happens before every cycle; emptying a refrigerator's drip tray happens whenever it fills. These are real maintenance practices with concrete completion moments — but they don't have calendar cadences, because the homeowner doesn't operate a dryer or a dishwasher on a fixed schedule.
+Some maintenance actions are tied to *using* the appliance or system, not to dates. Cleaning a clothes dryer's lint screen happens after every load; checking a dishwasher's rinse aid level happens before every cycle; emptying a refrigerator's drip tray happens whenever it fills; listening for unusual sounds or smells from a furnace happens whenever it's running. These are real maintenance practices with concrete completion moments — but they don't have calendar cadences, because the homeowner isn't doing them on a schedule, they're doing them *while interacting with the appliance*.
 
-For these, set cadence.kind = 'per_use'. Leave interval_months and seasonal_anchor null. The Hearth UI surfaces per-use practices separately from scheduled tasks — in an "Every time you use it" section on the appliance's detail page — rather than mixing them into the date-anchored maintenance panel. This matters because a homeowner glancing at their dashboard for "what needs my attention this week" shouldn't see "clean the lint screen" pretending to be a calendar item.
+For these, set cadence.kind = 'per_use'. Leave interval_months and seasonal_anchor null. The Hearth UI surfaces per-use practices separately from scheduled tasks — in an "Every time you use it" section on the appliance's detail page — rather than mixing them into the date-anchored maintenance panel. This matters because a homeowner glancing at their dashboard for "what needs my attention this week" shouldn't see "listen for unusual sounds" pretending to be a calendar item.
 
 The test for per-use vs. scheduled:
-- If the action's natural cadence is *every load* or *every cycle* or *every refill*, it's per-use.
-- If the action's natural cadence is *every month* or *every 3 months* or *annually*, it's scheduled (interval or seasonal).
-- If you find yourself writing a monthly task that's actually "do this every time you use it" — like "Check rinse aid monthly" when the real cadence is "check rinse aid every dishwashing cycle" — that's a per-use task miscoded as interval. Fix it.
+- If the action happens *during operation*, *while running*, *every load*, *every cycle*, or *every refill* — it's per-use. Listening for sounds, noticing smells, watching gauges during use, refilling something between cycles, cleaning a screen after a load all qualify.
+- If the action's natural cadence is *every month* or *every 3 months* or *annually* — and the action happens whether or not the appliance is currently in use — it's scheduled (interval or seasonal). Inspecting clearances, replacing a filter, professional service all qualify.
+- If you find yourself writing an interval task that's actually "do this every time you use it" — like "Check rinse aid monthly" (real cadence: every cycle), or "Listen for unusual sounds every 6 months" (real cadence: notice during operation), or "Watch for water leaks quarterly" (real cadence: whenever you're near it) — that's a per-use task miscoded as interval. Fix it.
 
 Per-use practices still get full reasoning: cadence_basis explains why this matters every time, modifiers describe environmental adjustments (hard water makes the rinse aid check more critical), and anchor stays 'synthesis_default' because there's no install date or receipt to anchor against.
 
