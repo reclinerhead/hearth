@@ -1296,7 +1296,9 @@ Direct-event tasks populate the same `TaskReasoning` jsonb the synthesis pipelin
 
 ### Idempotency chain
 
-Re-uploading a fresh registration card (or any receipt with an `expiration_date` for an inventory item that already has an open renewal) closes the prior open task — `status='completed'`, `completed_at=now()`, `completed_by_document_id=<new document>`, `completion_notes='Renewed via document upload'` — and inserts a new task with `predecessor_task_id` pointing back. The `(inventory_id, kind, status='open')` lookup is naturally idempotent against double-save retries: the second save closes the just-created task and chains a fresh one. This is intentional but rare; the Smart Uploader's save flow runs once per user click.
+Re-uploading a fresh registration card (or any receipt with an `expiration_date` for an inventory item that already has an open renewal *of the same stream*) closes the prior open task — `status='completed'`, `completed_at=now()`, `completed_by_document_id=<new document>`, `completion_notes='Renewed via document upload'` — and inserts a new task with `predecessor_task_id` pointing back. The lookup is scoped by `(inventory_id, kind='renewal', title=<classifier-produced title>, status='open')`. The title scoping is load-bearing: a vehicle's auto-insurance and vehicle-registration tasks share `kind='renewal'` on the same `inventory_id`, and a `(inventory_id, kind, status)`-only check would close one when the other was uploaded — independent renewal streams must coexist. Same query is naturally idempotent against double-save retries: the second save closes the just-created task and chains a fresh one. This is intentional but rare; the Smart Uploader's save flow runs once per user click.
+
+The generic-fallback title ("Renewal", from `classifyGenericRenewal`) is the one stream where unrelated uploads could still collide — two different generic-renewal documents on the same item will chain to each other. That's a known limitation of the catch-all branch; the fix is for those issuers to earn their own classifier, not to add another column.
 
 ### Smoke-testing the pipeline
 

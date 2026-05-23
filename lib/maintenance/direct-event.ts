@@ -126,15 +126,26 @@ export async function processDirectEventTaskFromDocument(
     classifyRenewalDocument(classifierInput) ??
     classifyGenericRenewal(classifierInput);
 
-  // Idempotency: close any existing open renewal task for this
-  // inventory item before inserting the new one. The chain is what
-  // lets phase 7's toast say "we closed your prior reminder and
-  // scheduled the next one."
+  // Idempotency: close any existing open renewal task on the *same
+  // renewal stream* for this inventory item before inserting the new
+  // one. "Same stream" is the classifier-produced title — a vehicle has
+  // independent registration and insurance streams that share
+  // kind='renewal' but should never close each other. Scoping the
+  // lookup to `title = classification.task_title` keeps them separate
+  // while still chaining a re-upload of the same kind of document to
+  // its predecessor for phase 7's toast.
+  //
+  // The generic fallback ("Renewal") is the one stream where unrelated
+  // documents could still collide; that's a known limitation of the
+  // catch-all branch — a user uploading two unrelated generic-renewal
+  // receipts will see one chain to the other. The fix is for those
+  // issuers to earn their own classifier, not to add another column.
   const { data: existingOpen } = await supabase
     .from("maintenance_tasks")
     .select("id")
     .eq("inventory_id", inventory.id)
     .eq("kind", "renewal")
+    .eq("title", classification.task_title)
     .eq("status", "open")
     .maybeSingle();
 
