@@ -149,7 +149,10 @@ export function InventoryDetailView({
    * Server-rendered maintenance panel for this inventory item. Rendered
    * from page.tsx so the panel keeps its own RLS-scoped Supabase server
    * client. Passed in as a slot rather than rendered here because this
-   * component is a client boundary.
+   * component is a client boundary. Per-use practices (issue #135) live
+   * inside this same panel as a dedicated "Every time you use it" tier —
+   * the wrapper selects per-use rows and the panel routes them to the
+   * tier directly, so this is the only maintenance slot the page needs.
    */
   maintenancePanelSlot: ReactNode;
 }) {
@@ -823,7 +826,9 @@ export function InventoryDetailView({
         (issue #133). Server-rendered slot — the panel runs its own
         RLS-scoped Supabase server client. Sits between the Research
         panel (above) and the Documents / Notes grid (below), matching
-        the layout decision documented in the issue.
+        the layout decision documented in the issue. Per-use practices
+        (issue #135) render as a dedicated "Every time you use it" tier
+        inside this same panel.
       */}
       <section>{maintenancePanelSlot}</section>
 

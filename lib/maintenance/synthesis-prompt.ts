@@ -10,11 +10,24 @@ Your output is consumed directly by Hearth's maintenance UI. Every task you emit
 
 WHAT COUNTS AS A TASK:
 
-Emit a task for every meaningful recurring action a homeowner could take on this item. Include things the manufacturer describes as continuous awareness or vigilance — convert those into scheduled inspections at an appropriate cadence. "Be aware of unusual sounds from the unit" becomes "Listen for unusual sounds during normal operation" every 6 months. "Keep the area clear of combustibles" becomes "Inspect the area around the unit for combustible storage" every 12 months.
+Emit a task for every meaningful recurring action a homeowner could take on this item. Include things the manufacturer describes as continuous awareness or vigilance — convert those into discrete actions and pick the right cadence. For awareness items that happen *while the appliance is running* — listening for unusual sounds during operation, noticing smells while it's in use — the cadence is per-use (the homeowner does this every time, not on a calendar; see the PER-USE PRACTICES section below). For awareness items that happen *independent of use* — making sure the area around the unit is clear of combustibles, eyeballing exterior condition between seasons — the cadence is interval or seasonal. "Keep the area clear of combustibles" becomes "Inspect the area around the unit for combustible storage" every 12 months.
 
 The test for whether something belongs on the list is: can the homeowner say "I did that today" at a specific moment? If yes, package it as a task. The only things to leave out are framings with no possible completion event — pure conceptual advice that can't be discretized into an action.
 
 Most items will have somewhere between 4 and 8 meaningful recurring tasks. If you find yourself emitting more than 10, prioritize the highest-value ones. The hard ceiling is 20; output beyond that will be rejected.
+
+PER-USE PRACTICES VS. SCHEDULED TASKS:
+
+Some maintenance actions are tied to *using* the appliance or system, not to dates. Cleaning a clothes dryer's lint screen happens after every load; checking a dishwasher's rinse aid level happens before every cycle; emptying a refrigerator's drip tray happens whenever it fills; listening for unusual sounds or smells from a furnace happens whenever it's running. These are real maintenance practices with concrete completion moments — but they don't have calendar cadences, because the homeowner isn't doing them on a schedule, they're doing them *while interacting with the appliance*.
+
+For these, set cadence.kind = 'per_use'. Leave interval_months and seasonal_anchor null. The Hearth UI surfaces per-use practices separately from scheduled tasks — in an "Every time you use it" section on the appliance's detail page — rather than mixing them into the date-anchored maintenance panel. This matters because a homeowner glancing at their dashboard for "what needs my attention this week" shouldn't see "listen for unusual sounds" pretending to be a calendar item.
+
+The test for per-use vs. scheduled:
+- If the action happens *during operation*, *while running*, *every load*, *every cycle*, or *every refill* — it's per-use. Listening for sounds, noticing smells, watching gauges during use, refilling something between cycles, cleaning a screen after a load all qualify.
+- If the action's natural cadence is *every month* or *every 3 months* or *annually* — and the action happens whether or not the appliance is currently in use — it's scheduled (interval or seasonal). Inspecting clearances, replacing a filter, professional service all qualify.
+- If you find yourself writing an interval task that's actually "do this every time you use it" — like "Check rinse aid monthly" (real cadence: every cycle), or "Listen for unusual sounds every 6 months" (real cadence: notice during operation), or "Watch for water leaks quarterly" (real cadence: whenever you're near it) — that's a per-use task miscoded as interval. Fix it.
+
+Per-use practices still get full reasoning: cadence_basis explains why this matters every time, modifiers describe environmental adjustments (hard water makes the rinse aid check more critical), and anchor stays 'synthesis_default' because there's no install date or receipt to anchor against.
 
 CADENCE DISCIPLINE:
 
@@ -47,7 +60,19 @@ cadence_basis is the headline explanation in plain language. modifiers is the st
 
 OUTPUT:
 
-A single structured object with overall_notes (a brief summary, optional) and tasks (the array). Adhere to the schema strictly. Tasks that don't validate will be dropped.`;
+A single structured object with overall_notes (a brief summary, optional) and tasks (the array). Adhere to the schema strictly. Tasks that don't validate will be dropped.
+
+CONSOLIDATION PASS:
+
+Before finalizing your task list, reread it and ask: are any of these tasks things a homeowner would realistically do in a single session?
+
+Annual dryer safety work is the canonical example. Cleaning the blower housing, vacuuming the exhaust duct, and inspecting the flexible gas connector are three nominally separate actions, but a homeowner doing yearly dryer maintenance pulls the unit out, opens it up, and handles all three at once. They are one task: "Annual dryer safety inspection and deep clean," with a subtitle or reasoning that names the components ("Vacuum blower housing, clean exhaust duct, inspect gas connector").
+
+The test is operational: would the homeowner schedule one afternoon for these, or would they realistically pick up the work on separate occasions? One afternoon → one task. Separate occasions → separate tasks.
+
+Apply this pass before emitting your output. It's normal for the initial pass to produce 8 candidate tasks and the consolidated final pass to produce 5 — that's the right direction. A consolidated task with a richer reasoning block is more useful to the homeowner than three thin tasks with overlapping cadences.
+
+Don't over-consolidate. Two tasks with the same cadence are not automatically the same task — a furnace's annual professional service and the homeowner's annual filter-cabinet vacuum are both annual but live on different occasions (one is "the HVAC company visits," the other is "I open the cabinet myself"). The test stays: would the same person, in the same session, do both? If no, they're separate.`;
 }
 
 export type SynthesisInput = {

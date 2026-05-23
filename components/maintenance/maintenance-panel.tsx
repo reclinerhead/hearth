@@ -14,6 +14,12 @@
 //     not actionable. (House scope: capped to next-30 days, so this tier
 //     never appears — the dashboard is a "what's on plate now" surface
 //     and the full timeline lives at /maintenance.)
+//   - Every time you use it: per-use practices (issue #135). Same
+//     visual treatment as Later this season (neutral tone, transparent
+//     rows) but with the right-side date label suppressed since there
+//     is no meaningful due-date for these. Item-scope only; the
+//     dashboard wrapper filters per-use out at the query level since
+//     the dashboard is a date-anchored panel.
 // The Good Steward footer beneath everything turns the panel from a nag
 // into a daily-positive moment whenever the user has completed any tasks.
 
@@ -57,6 +63,16 @@ export type MaintenancePanelProps = {
   mostRecentCompletion: { title: string; completed_at: string } | null;
   /** Required when scope === "item"; tells the empty state which CTA to render. */
   itemEmptyState?: ItemEmptyState;
+  /**
+   * When set, switches the panel to a two-tier display: every overdue
+   * row, then the next N upcoming rows under a single "Coming up" tier
+   * (no Later this season / Every time you use it). The dashboard uses
+   * this to surface "all the things you owe + a few previews of what's
+   * coming" without the panel growing unbounded. Item scope leaves this
+   * unset and keeps the date-anchored 3-tier display plus the per-use
+   * tier so the inventory page is the full picture for that item.
+   */
+  comingUpLimit?: number;
 };
 
 export function MaintenancePanel({
@@ -65,11 +81,35 @@ export function MaintenancePanel({
   completedThisYear,
   mostRecentCompletion,
   itemEmptyState,
+  comingUpLimit,
 }: MaintenancePanelProps) {
+  // Partition per-use rows out of the date-anchored set before tier
+  // grouping (issue #135). Per-use placeholders have a real next_due_at
+  // value, so without this split they would fall into the next30 / later
+  // buckets and read as scheduled. The dashboard wrapper filters them
+  // out at the query level, so this split is only meaningful in item
+  // scope today — but it's cheap and keeps the panel honest if a future
+  // surface ever passes per-use rows through.
+  const perUse = tasks
+    .filter((t) => t.cadence_kind === "per_use")
+    .sort((a, b) =>
+      a.title.localeCompare(b.title, undefined, { sensitivity: "base" }),
+    );
+  const scheduled = tasks.filter((t) => t.cadence_kind !== "per_use");
+
   // Grouping runs on the client so the boundary updates if the user
   // leaves the tab open past midnight without re-fetching. The helper
   // is pure, so this is cheap to recompute on every render.
-  const { overdue, next30, later } = groupTasksByTier(tasks, new Date());
+  //
+  // In the dashboard's count-capped mode (comingUpLimit set), we collapse
+  // next30 + later into a single "Coming up" tier sliced to that limit —
+  // overdue is unaffected because every real-consequence item belongs in
+  // the user's face.
+  const { overdue, next30, later } = groupTasksByTier(scheduled, new Date());
+  const comingUp =
+    comingUpLimit !== undefined
+      ? [...next30, ...later].slice(0, comingUpLimit)
+      : null;
 
   const totalOpen = tasks.length;
   const overdueCount = overdue.length;
@@ -138,23 +178,45 @@ export function MaintenancePanel({
           />
         ) : null}
 
-        {next30.length > 0 ? (
-          <TierSection
-            label="Coming up · Next 30 days"
-            tone="caution"
-            tasks={next30}
-            relativeMode="date_pill"
-          />
-        ) : null}
+        {comingUp !== null ? (
+          comingUp.length > 0 ? (
+            <TierSection
+              label="Coming up"
+              tone="caution"
+              tasks={comingUp}
+              relativeMode="date_pill"
+            />
+          ) : null
+        ) : (
+          <>
+            {next30.length > 0 ? (
+              <TierSection
+                label="Coming up · Next 30 days"
+                tone="caution"
+                tasks={next30}
+                relativeMode="date_pill"
+              />
+            ) : null}
 
-        {later.length > 0 ? (
-          <TierSection
-            label="Later this season"
-            tone="neutral"
-            tasks={later}
-            relativeMode="relative_time"
-          />
-        ) : null}
+            {later.length > 0 ? (
+              <TierSection
+                label="Later this season"
+                tone="neutral"
+                tasks={later}
+                relativeMode="relative_time"
+              />
+            ) : null}
+
+            {perUse.length > 0 ? (
+              <TierSection
+                label="Every time you use it"
+                tone="neutral"
+                tasks={perUse}
+                relativeMode="none"
+              />
+            ) : null}
+          </>
+        )}
       </div>
 
       {hasAnyTasks ? (

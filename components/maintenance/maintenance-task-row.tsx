@@ -25,10 +25,22 @@ export type MaintenanceTaskRowData = {
    * page, so the context is implicit.
    */
   inventoryName: string | null;
+  /**
+   * Cadence kind, carried through so the panel can route per-use rows
+   * (issue #135) to their own tier inside the same panel rather than
+   * mixing them into the date-anchored tiers. Optional / nullable
+   * because legacy rows and the dashboard panel's pre-filtered query
+   * may not need it; the panel treats anything other than 'per_use' as
+   * a scheduled row.
+   */
+  cadence_kind?: "interval" | "seasonal" | "one_time" | "per_use" | null;
 };
 
 export type RowTone = "danger" | "caution" | "neutral";
-export type RightLabelMode = "overdue" | "date_pill" | "relative_time";
+// 'none' suppresses the right-side label and chevron for per-use rows
+// (issue #135) — those have no meaningful due-date to display, and
+// hiding both keeps the row visually clean inside the shared panel.
+export type RightLabelMode = "overdue" | "date_pill" | "relative_time" | "none";
 
 const KIND_ICON: Record<MaintenanceTaskRowData["kind"], IconName> = {
   renewal: "car",
@@ -62,16 +74,17 @@ export function MaintenanceTaskRow({
       }}
       className="group w-full text-left rounded-[var(--radius-md)] transition-colors flex items-center gap-3 p-3 sm:p-4"
       style={{
+        // Row background: danger gets a red-tinted surface for the loud
+        // "take action now" cue. Everything else (caution = next 30 days,
+        // neutral = later this season + per-use) shares the same calm
+        // bg-surface so the three non-overdue tiers read as one visual
+        // family — the tier divider color, icon backdrop tint, and right-
+        // label color carry the per-tier nuance from there.
         backgroundColor:
           tone === "danger"
             ? "color-mix(in oklab, var(--color-danger) 8%, var(--color-bg-surface))"
-            : tone === "caution"
-              ? "var(--color-bg-surface)"
-              : "transparent",
-        border:
-          tone === "neutral"
-            ? "1px solid var(--color-border-subtle)"
-            : "1px solid transparent",
+            : "var(--color-bg-surface)",
+        border: "1px solid transparent",
         borderLeft:
           tone === "danger" ? `3px solid ${toneColor}` : undefined,
       }}
@@ -158,22 +171,24 @@ export function MaintenanceTaskRow({
         ) : null}
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
-        <span
-          className="text-small"
-          style={{
-            color:
-              tone === "neutral"
-                ? "var(--color-text-tertiary)"
-                : "var(--color-text-secondary)",
-          }}
-        >
-          {rightLabel}
-        </span>
-        <span aria-hidden style={{ color: "var(--color-text-tertiary)" }}>
-          <Icon name="chevron-right" size={14} />
-        </span>
-      </div>
+      {relativeMode === "none" ? null : (
+        <div className="flex items-center gap-2 shrink-0">
+          <span
+            className="text-small"
+            style={{
+              color:
+                tone === "neutral"
+                  ? "var(--color-text-tertiary)"
+                  : "var(--color-text-secondary)",
+            }}
+          >
+            {rightLabel}
+          </span>
+          <span aria-hidden style={{ color: "var(--color-text-tertiary)" }}>
+            <Icon name="chevron-right" size={14} />
+          </span>
+        </div>
+      )}
     </button>
   );
 }
@@ -191,6 +206,7 @@ export function formatRightLabel(
   mode: RightLabelMode,
   reference: Date = new Date(),
 ): string {
+  if (mode === "none") return "";
   const due = parseDateOnly(nextDueAt);
   if (!due) return nextDueAt;
 

@@ -12,7 +12,7 @@ import { z } from "zod";
 
 const cadenceShape = z
   .object({
-    kind: z.enum(["interval", "seasonal", "one_time"]),
+    kind: z.enum(["interval", "seasonal", "one_time", "per_use"]),
     interval_months: z.number().int().min(1).max(120).nullable(),
     seasonal_anchor: z
       .enum([
@@ -26,6 +26,9 @@ const cadenceShape = z
   .refine(
     (c) =>
       (c.kind === "one_time" &&
+        c.interval_months === null &&
+        c.seasonal_anchor === null) ||
+      (c.kind === "per_use" &&
         c.interval_months === null &&
         c.seasonal_anchor === null) ||
       (c.kind === "interval" &&
