@@ -19,6 +19,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { InventorySubtype } from "@/types/document";
 import { InventoryDetailView, type HistoryEvent } from "./inventory-detail-view";
 import { MaintenancePanelItem } from "./maintenance-panel-item";
+import { PerUsePractices } from "./per-use-practices";
 
 type InventoryType = "appliance" | "system" | "exterior" | "property";
 
@@ -454,6 +455,7 @@ export default async function InventoryDetailPage({
           itemSubtype={detail.subtype}
         />
       }
+      perUsePracticesSlot={<PerUsePractices inventoryId={detail.id} />}
     />
   );
 }

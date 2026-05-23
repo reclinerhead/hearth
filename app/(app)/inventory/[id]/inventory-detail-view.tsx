@@ -139,6 +139,7 @@ export function InventoryDetailView({
   receipts,
   historyEvents,
   maintenancePanelSlot,
+  perUsePracticesSlot,
 }: {
   item: InventoryDetailItem;
   rooms: RoomOption[];
@@ -152,6 +153,13 @@ export function InventoryDetailView({
    * component is a client boundary.
    */
   maintenancePanelSlot: ReactNode;
+  /**
+   * Server-rendered "Every time you use it" section (issue #135).
+   * Sibling to maintenancePanelSlot for the same reason; the component
+   * returns null when the item has no per_use rows, which leaves this
+   * slot empty.
+   */
+  perUsePracticesSlot: ReactNode;
 }) {
   const isProperty = item.type === "property";
   const isVehicle = isProperty && item.subtype === "vehicle";
@@ -826,6 +834,13 @@ export function InventoryDetailView({
         the layout decision documented in the issue.
       */}
       <section>{maintenancePanelSlot}</section>
+
+      {/*
+        "Every time you use it" — per-use practices (issue #135). The
+        wrapped server component returns null when there are no per-use
+        rows, so this slot collapses cleanly on items without one.
+      */}
+      {perUsePracticesSlot}
 
       <section className="grid gap-4 md:grid-cols-2">
         <DocumentsPanel

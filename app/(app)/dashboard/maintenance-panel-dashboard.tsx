@@ -33,6 +33,11 @@ export async function MaintenancePanelDashboard({
   // labelled "DISHWASHER · Check and refill rinse aid" rather than the
   // bare task title — without the context, a glance at the dashboard
   // doesn't tell the user which appliance a task is for.
+  // Per-use rows (issue #135 — "clean lint screen after every load",
+  // "check rinse aid before every cycle") live on the inventory detail
+  // page's "Every time you use it" section, not on this date-anchored
+  // panel. Their next_due_at is a placeholder; the cadence_kind filter
+  // is the canonical exclusion.
   const { data: openTasksRaw } = await supabase
     .from("maintenance_tasks")
     .select(
@@ -43,6 +48,7 @@ export async function MaintenancePanelDashboard({
     )
     .eq("house_id", houseId)
     .eq("status", "open")
+    .neq("cadence_kind", "per_use")
     .lte("next_due_at", todayPlus30)
     .order("next_due_at", { ascending: true });
 

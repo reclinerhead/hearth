@@ -16,6 +16,19 @@ The test for whether something belongs on the list is: can the homeowner say "I 
 
 Most items will have somewhere between 4 and 8 meaningful recurring tasks. If you find yourself emitting more than 10, prioritize the highest-value ones. The hard ceiling is 20; output beyond that will be rejected.
 
+PER-USE PRACTICES VS. SCHEDULED TASKS:
+
+Some maintenance actions are tied to *using* the appliance or system, not to dates. Cleaning a clothes dryer's lint screen happens after every load; checking a dishwasher's rinse aid level happens before every cycle; emptying a refrigerator's drip tray happens whenever it fills. These are real maintenance practices with concrete completion moments — but they don't have calendar cadences, because the homeowner doesn't operate a dryer or a dishwasher on a fixed schedule.
+
+For these, set cadence.kind = 'per_use'. Leave interval_months and seasonal_anchor null. The Hearth UI surfaces per-use practices separately from scheduled tasks — in an "Every time you use it" section on the appliance's detail page — rather than mixing them into the date-anchored maintenance panel. This matters because a homeowner glancing at their dashboard for "what needs my attention this week" shouldn't see "clean the lint screen" pretending to be a calendar item.
+
+The test for per-use vs. scheduled:
+- If the action's natural cadence is *every load* or *every cycle* or *every refill*, it's per-use.
+- If the action's natural cadence is *every month* or *every 3 months* or *annually*, it's scheduled (interval or seasonal).
+- If you find yourself writing a monthly task that's actually "do this every time you use it" — like "Check rinse aid monthly" when the real cadence is "check rinse aid every dishwashing cycle" — that's a per-use task miscoded as interval. Fix it.
+
+Per-use practices still get full reasoning: cadence_basis explains why this matters every time, modifiers describe environmental adjustments (hard water makes the rinse aid check more critical), and anchor stays 'synthesis_default' because there's no install date or receipt to anchor against.
+
 CADENCE DISCIPLINE:
 
 For each task, choose the cadence shape that best fits:
@@ -47,7 +60,19 @@ cadence_basis is the headline explanation in plain language. modifiers is the st
 
 OUTPUT:
 
-A single structured object with overall_notes (a brief summary, optional) and tasks (the array). Adhere to the schema strictly. Tasks that don't validate will be dropped.`;
+A single structured object with overall_notes (a brief summary, optional) and tasks (the array). Adhere to the schema strictly. Tasks that don't validate will be dropped.
+
+CONSOLIDATION PASS:
+
+Before finalizing your task list, reread it and ask: are any of these tasks things a homeowner would realistically do in a single session?
+
+Annual dryer safety work is the canonical example. Cleaning the blower housing, vacuuming the exhaust duct, and inspecting the flexible gas connector are three nominally separate actions, but a homeowner doing yearly dryer maintenance pulls the unit out, opens it up, and handles all three at once. They are one task: "Annual dryer safety inspection and deep clean," with a subtitle or reasoning that names the components ("Vacuum blower housing, clean exhaust duct, inspect gas connector").
+
+The test is operational: would the homeowner schedule one afternoon for these, or would they realistically pick up the work on separate occasions? One afternoon → one task. Separate occasions → separate tasks.
+
+Apply this pass before emitting your output. It's normal for the initial pass to produce 8 candidate tasks and the consolidated final pass to produce 5 — that's the right direction. A consolidated task with a richer reasoning block is more useful to the homeowner than three thin tasks with overlapping cadences.
+
+Don't over-consolidate. Two tasks with the same cadence are not automatically the same task — a furnace's annual professional service and the homeowner's annual filter-cabinet vacuum are both annual but live on different occasions (one is "the HVAC company visits," the other is "I open the cabinet myself"). The test stays: would the same person, in the same session, do both? If no, they're separate.`;
 }
 
 export type SynthesisInput = {

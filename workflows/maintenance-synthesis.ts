@@ -401,12 +401,30 @@ async function writeTasks(
   const today = startOfUtcDay(new Date());
 
   const rows = output.tasks.map((task) => {
-    const dueDate = new Date(today);
-    dueDate.setUTCDate(dueDate.getUTCDate() + task.first_occurrence_days_out);
-
     const cadenceKind = task.cadence.kind;
+
+    // Per-use rows have no meaningful calendar due-date — they surface
+    // in the inventory page's "Every time you use it" section, which
+    // doesn't read this column. The dashboard panel filters them out
+    // via cadence_kind != 'per_use'. We still need a value because
+    // next_due_at is NOT NULL; today's UTC date is the placeholder
+    // (see migration note in 20260524000000_add_per_use_cadence.sql).
+    const dueDate =
+      cadenceKind === "per_use"
+        ? new Date(today)
+        : (() => {
+            const d = new Date(today);
+            d.setUTCDate(d.getUTCDate() + task.first_occurrence_days_out);
+            return d;
+          })();
+
+    // 'one_time' and 'per_use' both forbid interval_months / seasonal_anchor
+    // (the cross-field CHECK constraint encodes this). 'seasonal' is the
+    // only cadence that carries a seasonal anchor.
     const cadenceIntervalMonths =
-      cadenceKind === "one_time" ? null : task.cadence.interval_months;
+      cadenceKind === "one_time" || cadenceKind === "per_use"
+        ? null
+        : task.cadence.interval_months;
     const cadenceSeasonalAnchor =
       cadenceKind === "seasonal" ? task.cadence.seasonal_anchor : null;
 
