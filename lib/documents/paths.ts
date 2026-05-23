@@ -59,3 +59,38 @@ export function thumbnailObjectPath(args: DocumentPathArgs): string {
   assertPathArgs(args);
   return `${args.houseId}/${args.documentId}/${THUMBNAIL_FILENAME}`;
 }
+
+type PagePathArgs = DocumentPathArgs & { pageNumber: number };
+
+function assertPageNumber(pageNumber: number): void {
+  if (!Number.isInteger(pageNumber) || pageNumber < 2) {
+    throw new Error(
+      "documents/paths: pageNumber must be an integer >= 2 (page 1 lives on the parent row)",
+    );
+  }
+}
+
+/**
+ * Full object path for a multi-page document's optimized JPEG, pages 2+.
+ * Page 1 still uses optimizedObjectPath — only pages 2..N land here.
+ *
+ *   pageOptimizedObjectPath({ houseId, documentId, pageNumber: 2 })
+ *   → "{houseId}/{documentId}/page-2-optimized.jpg"
+ */
+export function pageOptimizedObjectPath(args: PagePathArgs): string {
+  assertPathArgs(args);
+  assertPageNumber(args.pageNumber);
+  return `${args.houseId}/${args.documentId}/page-${args.pageNumber}-optimized.jpg`;
+}
+
+/**
+ * Full object path for a multi-page document's thumbnail JPEG, pages 2+.
+ *
+ *   pageThumbnailObjectPath({ houseId, documentId, pageNumber: 2 })
+ *   → "{houseId}/{documentId}/page-2-thumb.jpg"
+ */
+export function pageThumbnailObjectPath(args: PagePathArgs): string {
+  assertPathArgs(args);
+  assertPageNumber(args.pageNumber);
+  return `${args.houseId}/${args.documentId}/page-${args.pageNumber}-thumb.jpg`;
+}

@@ -47,6 +47,7 @@ import {
 import { insightsSchema } from "@/lib/inventory-insights/research";
 import { useCachedSignedUrl } from "@/lib/house-image/use-cached-signed-url";
 import { PhotoLightbox } from "./photo-lightbox";
+import { ReceiptPageFlipModal } from "./receipt-page-flip-modal";
 import {
   Breadcrumb,
   MetricCard,
@@ -57,6 +58,7 @@ import {
 import type {
   InventoryDetailItem,
   InventoryInsights,
+  InventoryReceipt,
   RoomOption,
 } from "./page";
 
@@ -114,10 +116,12 @@ export function InventoryDetailView({
   item,
   rooms,
   linkedDocumentCount,
+  receipts,
 }: {
   item: InventoryDetailItem;
   rooms: RoomOption[];
   linkedDocumentCount: number;
+  receipts: InventoryReceipt[];
 }) {
   const isProperty = item.type === "property";
   const isVehicle = isProperty && item.subtype === "vehicle";
@@ -265,8 +269,18 @@ export function InventoryDetailView({
 
   const [editOpen, setEditOpen] = useState(false);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const [uploaderOpen, setUploaderOpen] = useState(false);
+  // The Smart Uploader can be opened in two target modes: photo (the
+  // existing "Add photo" button) or receipt (the new "Add document"
+  // button, issue #117). Tracking the kind alongside the open flag
+  // lets us reuse a single uploader instance instead of mounting two.
+  const [uploaderKind, setUploaderKind] = useState<"photo" | "receipt" | null>(
+    null,
+  );
   const addPhotoTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const addDocumentTriggerRef = useRef<HTMLButtonElement | null>(null);
+  // hearth.documents.id of the receipt whose pages are currently open
+  // in the page-flip modal. Null when no receipt is selected.
+  const [openReceiptId, setOpenReceiptId] = useState<string | null>(null);
 
   // The hero slot is 260px wide; the 600px thumbnail is plenty (2x+
   // DPR) and is the same asset already cached by dashboard tiles, so
@@ -405,12 +419,22 @@ export function InventoryDetailView({
           <button
             ref={addPhotoTriggerRef}
             type="button"
-            onClick={() => setUploaderOpen(true)}
+            onClick={() => setUploaderKind("photo")}
             className="btn btn-ghost w-full mt-2"
             aria-label={`Add another photo of ${item.name}`}
           >
             <Icon name="camera" size={16} />
             Add photo
+          </button>
+          <button
+            ref={addDocumentTriggerRef}
+            type="button"
+            onClick={() => setUploaderKind("receipt")}
+            className="btn btn-ghost w-full mt-2"
+            aria-label={`Add a document or receipt for ${item.name}`}
+          >
+            <Icon name="file-text" size={16} />
+            Add document
           </button>
         </div>
 
@@ -516,23 +540,29 @@ export function InventoryDetailView({
         Smart Uploader to this inventory item — matching is skipped and
         a successful analyze flows straight to the success stage.
       */}
-      {uploaderOpen ? (
+      {uploaderKind !== null ? (
         <SmartUploader
           open
           onOpenChange={(open) => {
             if (!open) {
-              setUploaderOpen(false);
-              // Return focus to the Add photo button so keyboard users
-              // pick up where they left off, matching the edit modal
-              // pattern below.
-              requestAnimationFrame(() =>
-                addPhotoTriggerRef.current?.focus(),
-              );
+              const previousKind = uploaderKind;
+              setUploaderKind(null);
+              // Return focus to whichever trigger opened the uploader
+              // so keyboard users pick up where they left off, matching
+              // the edit modal pattern below.
+              requestAnimationFrame(() => {
+                if (previousKind === "receipt") {
+                  addDocumentTriggerRef.current?.focus();
+                } else {
+                  addPhotoTriggerRef.current?.focus();
+                }
+              });
             }
           }}
           houseId={item.house_id}
           targetInventoryId={item.id}
           targetInventoryName={item.name}
+          targetKind={uploaderKind}
           onSaved={() => {
             // Pull the just-attached document into the photos array so
             // the hero / photo strip surfaces it on the next paint.
@@ -542,17 +572,10 @@ export function InventoryDetailView({
       ) : null}
 
       <section className="grid gap-4 md:grid-cols-2">
-        <PlaceholderPanel
-          title="Documents"
-          eyebrow="What we have on file"
-          emptyHint="Receipts, manuals, and permits will land here when you upload them."
-          rows={[
-            {
-              icon: "file-text",
-              title: "No documents yet",
-              meta: "Coming in a future update",
-            },
-          ]}
+        <DocumentsPanel
+          receipts={receipts}
+          itemName={item.name}
+          onOpenReceipt={setOpenReceiptId}
         />
         <PlaceholderPanel
           title="Notes & photos"
@@ -567,6 +590,13 @@ export function InventoryDetailView({
           ]}
         />
       </section>
+
+      <ReceiptPageFlipModal
+        open={openReceiptId !== null}
+        documentId={openReceiptId}
+        altPrefix={`${item.name} receipt`}
+        onClose={() => setOpenReceiptId(null)}
+      />
 
       <section>
         <SectionHeader
@@ -1666,6 +1696,173 @@ function PlaceholderPanel({
       </p>
     </section>
   );
+}
+
+function DocumentsPanel({
+  receipts,
+  itemName,
+  onOpenReceipt,
+}: {
+  receipts: InventoryReceipt[];
+  itemName: string;
+  onOpenReceipt: (documentId: string) => void;
+}) {
+  return (
+    <section className="surface p-4 sm:p-5">
+      <div className="flex items-end justify-between mb-3">
+        <div>
+          <div className="eyebrow">What we have on file</div>
+          <div className="h3 mt-0.5">Documents</div>
+        </div>
+      </div>
+      {receipts.length === 0 ? (
+        <p
+          className="text-small"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          No receipts attached yet. Tap <strong>Add document</strong>{" "}
+          above to capture one — a service receipt, invoice, or other
+          paperwork — and we&apos;ll read the details for you.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {receipts.map((r) => (
+            <li key={r.id}>
+              <ReceiptListRow
+                receipt={r}
+                itemName={itemName}
+                onOpen={() => onOpenReceipt(r.id)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function ReceiptListRow({
+  receipt,
+  itemName,
+  onOpen,
+}: {
+  receipt: InventoryReceipt;
+  itemName: string;
+  onOpen: () => void;
+}) {
+  // 96-thumb is plenty at the list row size; same sessionStorage-cached
+  // signed URL helper everything else uses.
+  const thumbUrl = useCachedSignedUrl(
+    "hearth-documents",
+    receipt.thumbnailPath,
+    null,
+  );
+  const title =
+    receipt.vendorName ??
+    receipt.transactionType
+      ?.replace(/\b\w/g, (c) => c.toUpperCase()) ??
+    "Receipt";
+  const dateLabel = receipt.transactionDate
+    ? formatReceiptDate(receipt.transactionDate)
+    : null;
+  const totalLabel = formatReceiptTotal(
+    receipt.totalCents,
+    receipt.currency,
+  );
+  const pageLabel =
+    receipt.pageCount > 1 ? `${receipt.pageCount} pages` : null;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`Open ${title} receipt for ${itemName}`}
+      className="flex w-full items-center gap-3 rounded-[var(--radius-md)] p-2 text-left transition-colors"
+      style={{
+        backgroundColor: "transparent",
+        border: "1px solid var(--color-border-subtle)",
+      }}
+    >
+      <span
+        className="shrink-0 overflow-hidden"
+        style={{
+          height: 56,
+          width: 42,
+          borderRadius: 6,
+          border: "1px solid var(--color-border-subtle)",
+          backgroundColor: "var(--color-bg-surface-raised)",
+        }}
+      >
+        {thumbUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={thumbUrl}
+            alt=""
+            className="h-full w-full object-cover"
+            aria-hidden
+          />
+        ) : (
+          <span className="block h-full w-full" aria-hidden />
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span
+          className="block truncate"
+          style={{ fontSize: 14, fontWeight: 500 }}
+        >
+          {title}
+        </span>
+        <span
+          className="block truncate text-small"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          {[dateLabel, pageLabel].filter(Boolean).join(" · ") ||
+            "Receipt"}
+        </span>
+      </span>
+      {totalLabel ? (
+        <span
+          className="shrink-0"
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            color: "var(--color-text-primary)",
+          }}
+        >
+          {totalLabel}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+function formatReceiptDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const [, y, m, d] = match;
+  const date = new Date(Number(y), Number(m) - 1, Number(d));
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatReceiptTotal(
+  cents: number | null,
+  currency: string | null,
+): string | null {
+  if (cents === null) return null;
+  const code = currency ?? "USD";
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: code,
+    }).format(cents / 100);
+  } catch {
+    return `$${(cents / 100).toFixed(2)}`;
+  }
 }
 
 function PanelRowStyles(): ReactNode {

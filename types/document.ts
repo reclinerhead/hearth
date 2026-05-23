@@ -63,7 +63,8 @@ export type AiExtraction =
   | NameplateExtraction
   | AppliancePhotoExtraction
   | NotUsefulExtraction
-  | DeltaExtraction;
+  | DeltaExtraction
+  | ReceiptExtraction;
 
 // The four inventory types backing the hearth.inventory.type CHECK
 // constraint. The name `EquipmentType` is historical — `property` is
@@ -147,4 +148,36 @@ export type DeltaExtraction = {
     }
   >;
   confidence: number;
+};
+
+// Receipt extraction (issue #117). Distinct mode from "classification"
+// because a receipt has none of the photo_kind branches; the schema is
+// a flat structured shape rather than a discriminated union. The raw
+// model output is persisted here for provenance; the application-
+// curated copy lives in hearth.documents.metadata (parsed via
+// receiptMetadataSchema in lib/documents/metadata-schemas.ts).
+export type ReceiptLineItem = {
+  description: string;
+  quantity: number | null;
+  unit_price_cents: number | null;
+  total_cents: number | null;
+};
+
+export type ReceiptExtraction = {
+  mode: "receipt";
+  vendor_name: string | null;
+  vendor_address: string | null;
+  vendor_phone: string | null;
+  transaction_date: string | null;
+  transaction_type: "service" | "purchase" | "inspection" | "other" | null;
+  subtotal_cents: number | null;
+  tax_cents: number | null;
+  total_cents: number | null;
+  currency: string | null;
+  payment_method: string | null;
+  line_items: ReceiptLineItem[];
+  referenced_serials: string[];
+  referenced_model_numbers: string[];
+  notes: string | null;
+  ai_confidence: number;
 };

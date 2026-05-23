@@ -16,6 +16,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   HEARTH_DOCUMENTS_BUCKET,
   optimizedObjectPath,
+  pageOptimizedObjectPath,
+  pageThumbnailObjectPath,
   thumbnailObjectPath,
 } from "./paths";
 
@@ -87,6 +89,82 @@ export async function uploadDocumentFiles(
   if (thumbnailOk) cleanupPaths.push(thumbnailPath);
   if (cleanupPaths.length > 0) {
     // Best-effort; swallow errors so we surface the original cause.
+    await bucket.remove(cleanupPaths).catch(() => undefined);
+  }
+
+  const firstError =
+    (optimizedResult.status === "fulfilled" && optimizedResult.value.error) ||
+    (thumbnailResult.status === "fulfilled" && thumbnailResult.value.error) ||
+    (optimizedResult.status === "rejected" && optimizedResult.reason) ||
+    (thumbnailResult.status === "rejected" && thumbnailResult.reason) ||
+    new Error("Upload failed for an unknown reason");
+
+  throw firstError;
+}
+
+export type UploadDocumentPageFilesArgs = {
+  supabase: SupabaseClient;
+  houseId: string;
+  documentId: string;
+  /** 1-indexed; page 1 uses uploadDocumentFiles instead. */
+  pageNumber: number;
+  optimized: File;
+  thumbnail: File;
+};
+
+export type UploadDocumentPageFilesResult = {
+  /** Path that should be written to hearth.document_pages.storage_path. */
+  optimizedPath: string;
+  /** Path that should be written to hearth.document_pages.thumbnail_path. */
+  thumbnailPath: string;
+};
+
+/**
+ * Uploads pages 2+ of a multi-page document. Same parallel-upload +
+ * partial-failure-cleanup contract as uploadDocumentFiles; the only
+ * difference is the path layout (page-{N}-optimized.jpg /
+ * page-{N}-thumb.jpg under the document's directory).
+ */
+export async function uploadDocumentPageFiles(
+  args: UploadDocumentPageFilesArgs,
+): Promise<UploadDocumentPageFilesResult> {
+  const optimizedPath = pageOptimizedObjectPath({
+    houseId: args.houseId,
+    documentId: args.documentId,
+    pageNumber: args.pageNumber,
+  });
+  const thumbnailPath = pageThumbnailObjectPath({
+    houseId: args.houseId,
+    documentId: args.documentId,
+    pageNumber: args.pageNumber,
+  });
+
+  const bucket = args.supabase.storage.from(HEARTH_DOCUMENTS_BUCKET);
+
+  const uploadOptions = {
+    upsert: false,
+    cacheControl: "31536000, immutable",
+    contentType: "image/jpeg",
+  } as const;
+
+  const [optimizedResult, thumbnailResult] = await Promise.allSettled([
+    bucket.upload(optimizedPath, args.optimized, uploadOptions),
+    bucket.upload(thumbnailPath, args.thumbnail, uploadOptions),
+  ]);
+
+  const optimizedOk =
+    optimizedResult.status === "fulfilled" && !optimizedResult.value.error;
+  const thumbnailOk =
+    thumbnailResult.status === "fulfilled" && !thumbnailResult.value.error;
+
+  if (optimizedOk && thumbnailOk) {
+    return { optimizedPath, thumbnailPath };
+  }
+
+  const cleanupPaths: string[] = [];
+  if (optimizedOk) cleanupPaths.push(optimizedPath);
+  if (thumbnailOk) cleanupPaths.push(thumbnailPath);
+  if (cleanupPaths.length > 0) {
     await bucket.remove(cleanupPaths).catch(() => undefined);
   }
 

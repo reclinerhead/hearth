@@ -3,8 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import {
   HEARTH_DOCUMENTS_BUCKET,
-  optimizedObjectPath,
-  thumbnailObjectPath,
+  documentDirectoryPath,
 } from "@/lib/documents/paths";
 
 export type CleanupDocumentInput = {
@@ -45,19 +44,28 @@ export async function cleanupDocumentAction(
     };
   }
 
-  const pathsToRemove = [
-    optimizedObjectPath({ houseId: doc.house_id, documentId: doc.id }),
-    thumbnailObjectPath({ houseId: doc.house_id, documentId: doc.id }),
-  ];
-
-  // Best-effort storage cleanup. We don't .list() the directory because
-  // we know exactly which two files were uploaded by Smart Uploader.
+  // Best-effort storage cleanup. List the document's directory and
+  // remove everything inside — this handles single-page documents (two
+  // files: optimized + thumb) and multi-page receipts (two per page,
+  // page 1 plus N-1 children) without the caller needing to know how
+  // many pages exist. The bucket's RLS scopes both list and remove to
+  // houses the user owns, same as elsewhere.
+  const directory = documentDirectoryPath({
+    houseId: doc.house_id,
+    documentId: doc.id,
+  });
   try {
-    await supabase.storage
+    const { data: files } = await supabase.storage
       .from(HEARTH_DOCUMENTS_BUCKET)
-      .remove(pathsToRemove);
+      .list(directory);
+    if (files && files.length > 0) {
+      await supabase.storage
+        .from(HEARTH_DOCUMENTS_BUCKET)
+        .remove(files.map((f) => `${directory}/${f.name}`));
+    }
   } catch {
-    // Swallow — the row delete below is the authoritative cleanup.
+    // Swallow — the row delete below is the authoritative cleanup, and
+    // the document_pages cascade catches the child rows too.
   }
 
   const { error: deleteError } = await supabase

@@ -5,6 +5,8 @@ import {
   THUMBNAIL_FILENAME,
   documentDirectoryPath,
   optimizedObjectPath,
+  pageOptimizedObjectPath,
+  pageThumbnailObjectPath,
   thumbnailObjectPath,
 } from "./paths";
 
@@ -91,6 +93,61 @@ describe("thumbnailObjectPath", () => {
     expect(() => thumbnailObjectPath({ houseId, documentId: "" })).toThrow(
       /documentId/,
     );
+  });
+});
+
+describe("pageOptimizedObjectPath (#117)", () => {
+  it("produces {houseId}/{documentId}/page-{N}-optimized.jpg", () => {
+    expect(
+      pageOptimizedObjectPath({ houseId, documentId, pageNumber: 2 }),
+    ).toBe(`${houseId}/${documentId}/page-2-optimized.jpg`);
+  });
+
+  it("supports higher page numbers", () => {
+    expect(
+      pageOptimizedObjectPath({ houseId, documentId, pageNumber: 5 }),
+    ).toBe(`${houseId}/${documentId}/page-5-optimized.jpg`);
+  });
+
+  it("rejects pageNumber=1 (page 1 lives on the parent row)", () => {
+    expect(() =>
+      pageOptimizedObjectPath({ houseId, documentId, pageNumber: 1 }),
+    ).toThrow(/pageNumber/);
+  });
+
+  it("rejects non-integer page numbers", () => {
+    expect(() =>
+      pageOptimizedObjectPath({ houseId, documentId, pageNumber: 2.5 }),
+    ).toThrow(/pageNumber/);
+  });
+
+  it("rejects empty houseId/documentId", () => {
+    expect(() =>
+      pageOptimizedObjectPath({ houseId: "", documentId, pageNumber: 2 }),
+    ).toThrow(/houseId/);
+    expect(() =>
+      pageOptimizedObjectPath({ houseId, documentId: "", pageNumber: 2 }),
+    ).toThrow(/documentId/);
+  });
+});
+
+describe("pageThumbnailObjectPath (#117)", () => {
+  it("produces {houseId}/{documentId}/page-{N}-thumb.jpg", () => {
+    expect(
+      pageThumbnailObjectPath({ houseId, documentId, pageNumber: 2 }),
+    ).toBe(`${houseId}/${documentId}/page-2-thumb.jpg`);
+  });
+
+  it("rejects pageNumber=1", () => {
+    expect(() =>
+      pageThumbnailObjectPath({ houseId, documentId, pageNumber: 1 }),
+    ).toThrow(/pageNumber/);
+  });
+
+  it("rejects non-integer page numbers", () => {
+    expect(() =>
+      pageThumbnailObjectPath({ houseId, documentId, pageNumber: 0 }),
+    ).toThrow(/pageNumber/);
   });
 });
 
