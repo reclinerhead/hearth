@@ -18,6 +18,7 @@
 // into a daily-positive moment whenever the user has completed any tasks.
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Icon } from "@/components/icon";
 import { SectionHeader } from "@/components/ui";
 import {
@@ -36,7 +37,18 @@ export type MaintenancePanelTask = MaintenanceTaskRowData & TierableTask;
 
 export type ItemEmptyState =
   | { kind: "no_plan_yet"; inventoryId: string }
-  | { kind: "needs_research" };
+  | { kind: "needs_research" }
+  /**
+   * Property items (vehicles, pets, generic property) don't have a
+   * Research / synthesis pipeline — their maintenance comes from
+   * documents the user uploads (registration cards, insurance policies,
+   * vet records) that carry an expiration date. The empty state points
+   * the user at the "Add document" button instead of Research. Copy
+   * branches on the property subtype so vehicles can call out
+   * registration / insurance by name while pets and other property get
+   * the right framing.
+   */
+  | { kind: "property_no_documents"; propertyKind: "vehicle" | "pet" | "other_property" };
 
 export type MaintenancePanelProps = {
   scope: "house" | "item";
@@ -257,21 +269,70 @@ function HouseEmptyState({
 function ItemEmptyStateBlock({ state }: { state: ItemEmptyState | undefined }) {
   if (!state || state.kind === "needs_research") {
     return (
-      <div className="flex flex-col gap-4">
-        <SectionHeader
-          eyebrow="On your plate"
-          title="Maintenance for this item"
-        />
-        <div className="surface p-5">
+      <EmptyStateShell>
+        <p
+          className="text-small"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          Run Research on this item first. Once Hearth knows what kind of
+          equipment this is, you can build a maintenance plan tuned to it.
+        </p>
+      </EmptyStateShell>
+    );
+  }
+
+  if (state.kind === "property_no_documents") {
+    // Property items don't have a Research / synthesis pipeline — their
+    // maintenance comes from documents with expiration dates. Point the
+    // user at the "Add document" button above instead of Build / Research.
+    return (
+      <EmptyStateShell>
+        {state.propertyKind === "vehicle" ? (
           <p
             className="text-small"
             style={{ color: "var(--color-text-secondary)" }}
           >
-            Run Research on this item first. Once Hearth knows what kind of
-            equipment this is, you can build a maintenance plan tuned to it.
+            Vehicle maintenance lives in your documents. Tap{" "}
+            <span
+              style={{ color: "var(--color-text-primary)", fontWeight: 500 }}
+            >
+              Add document
+            </span>{" "}
+            above to upload your registration card or insurance policy —
+            Hearth will pull the renewal date and remind you before it
+            lapses.
           </p>
-        </div>
-      </div>
+        ) : state.propertyKind === "pet" ? (
+          <p
+            className="text-small"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            Pet records live in your documents. Tap{" "}
+            <span
+              style={{ color: "var(--color-text-primary)", fontWeight: 500 }}
+            >
+              Add document
+            </span>{" "}
+            above to upload vet records or license renewals — Hearth will
+            track any expiration dates we find.
+          </p>
+        ) : (
+          <p
+            className="text-small"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            Maintenance for property items is driven by your documents.
+            Tap{" "}
+            <span
+              style={{ color: "var(--color-text-primary)", fontWeight: 500 }}
+            >
+              Add document
+            </span>{" "}
+            above to upload a receipt with a renewal or expiration date and
+            Hearth will keep an eye on it for you.
+          </p>
+        )}
+      </EmptyStateShell>
     );
   }
 
@@ -280,32 +341,36 @@ function ItemEmptyStateBlock({ state }: { state: ItemEmptyState | undefined }) {
   // truth for the action; this empty state just makes the panel a clear
   // call to action so the user notices it.
   return (
+    <EmptyStateShell>
+      <p
+        className="text-small"
+        style={{ color: "var(--color-text-secondary)" }}
+      >
+        No maintenance plan yet for this item. Build one based on what we
+        know about your equipment and the area around your home.
+      </p>
+      <p
+        className="text-small"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        Tap{" "}
+        <span style={{ color: "var(--color-text-primary)", fontWeight: 500 }}>
+          Build maintenance plan
+        </span>{" "}
+        above to get started.
+      </p>
+    </EmptyStateShell>
+  );
+}
+
+function EmptyStateShell({ children }: { children: ReactNode }) {
+  return (
     <div className="flex flex-col gap-4">
       <SectionHeader
         eyebrow="On your plate"
         title="Maintenance for this item"
       />
-      <div className="surface p-5 flex flex-col gap-3">
-        <p
-          className="text-small"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          No maintenance plan yet for this item. Build one based on what we
-          know about your equipment and the area around your home.
-        </p>
-        <p
-          className="text-small"
-          style={{ color: "var(--color-text-tertiary)" }}
-        >
-          Tap{" "}
-          <span
-            style={{ color: "var(--color-text-primary)", fontWeight: 500 }}
-          >
-            Build maintenance plan
-          </span>{" "}
-          above to get started.
-        </p>
-      </div>
+      <div className="surface p-5 flex flex-col gap-3">{children}</div>
     </div>
   );
 }

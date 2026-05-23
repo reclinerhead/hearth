@@ -450,6 +450,8 @@ export default async function InventoryDetailPage({
         <MaintenancePanelItem
           inventoryId={detail.id}
           hasActionableInsights={hasActionableInsights}
+          itemType={detail.type}
+          itemSubtype={detail.subtype}
         />
       }
     />

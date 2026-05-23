@@ -9,18 +9,29 @@ import type {
   MaintenancePanelTask,
 } from "@/components/maintenance/maintenance-panel";
 import { createClient } from "@/lib/supabase/server";
+import type { InventorySubtype } from "@/types/document";
 
 export async function MaintenancePanelItem({
   inventoryId,
   hasActionableInsights,
+  itemType,
+  itemSubtype,
 }: {
   inventoryId: string;
   /**
    * Whether `ai_insights.maintenance` is populated on the inventory row.
-   * Drives the discriminated empty state: insights present → "build a
-   * plan"; insights missing → "run Research first".
+   * Drives the discriminated empty state for non-property items.
    */
   hasActionableInsights: boolean;
+  /**
+   * Inventory item type. Property items skip the Research / synthesis
+   * empty-state branches entirely — their maintenance flows from
+   * uploaded documents (registration, insurance, vet records) via the
+   * direct-event pipeline, so the empty state points at "Add document"
+   * instead of "Run Research" / "Build maintenance plan".
+   */
+  itemType: "appliance" | "system" | "exterior" | "property";
+  itemSubtype: InventorySubtype | null;
 }) {
   const supabase = await createClient();
 
@@ -68,9 +79,20 @@ export async function MaintenancePanelItem({
   }));
   const completedThisYear = completedThisYearRaw ?? 0;
 
-  const itemEmptyState: ItemEmptyState = hasActionableInsights
-    ? { kind: "no_plan_yet", inventoryId }
-    : { kind: "needs_research" };
+  const itemEmptyState: ItemEmptyState =
+    itemType === "property"
+      ? {
+          kind: "property_no_documents",
+          propertyKind:
+            itemSubtype === "vehicle"
+              ? "vehicle"
+              : itemSubtype === "pet"
+                ? "pet"
+                : "other_property",
+        }
+      : hasActionableInsights
+        ? { kind: "no_plan_yet", inventoryId }
+        : { kind: "needs_research" };
 
   return (
     <MaintenancePanel
