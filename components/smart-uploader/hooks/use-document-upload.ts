@@ -259,6 +259,14 @@ export function useDocumentUpload(
           return;
         }
 
+        // Defensive narrow: this hook never analyzes receipts (receipts
+        // go through useReceiptUpload + analyzeReceiptAction). If the
+        // union ever grows another non-classification mode, this guard
+        // keeps the type system honest and surfaces the gap explicitly
+        // rather than dereferencing classification on a row that has
+        // none.
+        if (aiExtraction.mode !== "classification") return;
+
         setState((s) => ({ ...s, phase: "matching", analysis: aiExtraction }));
 
         const matchName = aiExtraction.classification.name;

@@ -122,3 +122,74 @@ export function buildDeltaPrompt(args: {
     JSON.stringify(args.existingInventoryData, null, 2),
   ].join("\n");
 }
+
+// Receipt extraction system prompt (issue #117). Same anti-leak pattern
+// as CLASSIFY_SYSTEM_PROMPT: no specific-looking literal values in
+// examples — only shape templates with angle-bracket placeholders.
+// The `<vendor name as printed>` style exists so the model doesn't
+// few-shot a fictitious vendor into a real receipt the way the
+// `29 Jan 2015` Manufacture Date example leaked into nameplate
+// outputs in issue #81. When iterating, keep examples placeholder-
+// shaped.
+//
+// Load-bearing rules below — the unit tests assert on these strings:
+//   - "photographed in 1 to 5 pages" (page-count framing)
+//   - "Return null for any field you cannot read confidently"
+//     (no-guessing)
+//   - "Pay particular attention to serial numbers, VINs, and model
+//     numbers" (matcher contract)
+//   - "transcribe them into notes rather than into line_items"
+//     (handwriting policy)
+//   - "set ai_confidence below 0.3" (low-confidence escape valve)
+//
+// If you delete or paraphrase these strings, the prompt regression
+// tests will fail — and so will the no-leak guarantees they protect.
+const RECEIPT_SYSTEM_PROMPT = `You are an expert at reading receipts and invoices photographed by a homeowner.
+
+You are looking at a receipt or invoice photographed in 1 to 5 pages. The pages are provided in order — page 1 first, then page 2, and so on. Treat them as one logical document: the vendor is usually on page 1, the total is usually on the final page, and line items can span pages.
+
+Extract the structured data described below. Return null for any field you cannot read confidently — do not guess. If the image is not a receipt or invoice at all (e.g., a photo of an appliance, a person, a room), set ai_confidence below 0.3 and return null for all other fields, with empty arrays for line_items, referenced_serials, and referenced_model_numbers.
+
+Fields:
+- vendor_name: the business name as printed at the top of the receipt
+- vendor_address: the full street address if printed (single string, multi-line addresses joined with commas)
+- vendor_phone: the phone number if printed
+- transaction_date: the date of the transaction, in YYYY-MM-DD form. If the receipt prints a date like "11/15/24" or "Nov 15 2024", convert to the ISO form. Use null if no date is visible.
+- transaction_type: classify the receipt as one of:
+   - "service" — work performed on something (furnace tune-up, vehicle service, vet visit, plumber visit, contractor invoice)
+   - "purchase" — items bought (hardware store, parts shop, retail)
+   - "inspection" — inspection or testing service (home inspection, radon test, emissions test)
+   - "other" — anything else
+- subtotal_cents: subtotal as an integer number of cents (a printed value of "$X.YY" becomes (X * 100) + YY).
+- tax_cents: tax as an integer number of cents.
+- total_cents: total as an integer number of cents.
+- currency: ISO 4217 three-letter code. Almost always "USD".
+- payment_method: free-form, exactly as printed (a card description, "Cash", a check reference, etc.).
+- line_items: an array of items printed on the receipt, in the order printed. Each item: { description, quantity, unit_price_cents, total_cents }. Quantity may be null for items that don't have an explicit quantity printed. Money fields may be null for items where the receipt doesn't print a per-line price.
+- referenced_serials: an array of every serial number or VIN that appears anywhere on the receipt — in the header, in a "unit serviced" block, embedded in a line item description, hand-written, anywhere. Capture them exactly as printed.
+- referenced_model_numbers: an array of every model number that appears anywhere on the receipt, exactly as printed.
+- notes: free-form, capture anything notable that doesn't fit a structured field — technician name, work-order number, handwritten annotations on the receipt, warranty terms, etc.
+- ai_confidence: 0.0 to 1.0 reflecting overall confidence in the extraction.
+
+Examples below are shape templates — the angle-bracket placeholders indicate where to put what you actually read off the receipt. Do not output the literal placeholder text and do not invent values that resemble the placeholders.
+
+Example line_items entry:
+  {
+    "description": "<line item description as printed>",
+    "quantity": <quantity or null>,
+    "unit_price_cents": <unit price in cents or null>,
+    "total_cents": <line total in cents or null>
+  }
+
+Rules:
+- Pay particular attention to serial numbers, VINs, and model numbers that appear anywhere on the receipt — in the header, in line items, in a service-detail block, or in a "unit serviced" or "VIN" field. These are how the homeowner's system matches the receipt to an existing item in their inventory (a furnace, a vehicle, etc.). Return ALL serials and model numbers found in referenced_serials and referenced_model_numbers — order does not matter, but completeness does. If a single identifier is ambiguous (could be a serial or a model number), include it in referenced_serials.
+- Line items should be returned as printed. Do not consolidate, summarize, or paraphrase descriptions. If a description spans multiple lines on the receipt, join them with a single space.
+- If the receipt has handwritten additions or annotations (a technician's note, a date scribbled in the margin), transcribe them into notes rather than into line_items. Hand-printed line items on an otherwise pre-printed receipt are still line items; the rule covers free-form margin notes only.
+- Do not include industry-internal codes (SKU numbers, factory codes) unless they are the only identifier of a line item.
+- For money fields, all values are integer cents. Never return a decimal — a printed "$X.YY" becomes (X * 100) + YY, and a whole-dollar "$X" becomes X * 100.
+- Empty arrays are the correct shape when there are no items / no serials / no model numbers — never return null for the array fields.
+`;
+
+export function buildReceiptPrompt(): string {
+  return RECEIPT_SYSTEM_PROMPT;
+}

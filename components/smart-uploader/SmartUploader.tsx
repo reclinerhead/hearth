@@ -11,9 +11,11 @@ import type {
   NameplateExtraction,
 } from "@/types/document";
 import { useDocumentUpload } from "./hooks/use-document-upload";
+import { useReceiptUpload } from "./hooks/use-receipt-upload";
 import { AnalysisFailedStage } from "./stages/AnalysisFailedStage";
 import { CaptureStage } from "./stages/CaptureStage";
 import { DuplicateStage } from "./stages/DuplicateStage";
+import { MultiPageCaptureStage } from "./stages/MultiPageCaptureStage";
 import { NotUsefulStage } from "./stages/NotUsefulStage";
 import { PathPickerStage } from "./stages/PathPickerStage";
 import { ProcessingStage } from "./stages/ProcessingStage";
@@ -21,6 +23,7 @@ import {
   ReviewNewStage,
   type SeededRoomOption,
 } from "./stages/ReviewNewStage";
+import { ReviewReceiptStage } from "./stages/ReviewReceiptStage";
 
 /**
  * Smart Uploader — top-level modal for the photo-capture flow. Owns
@@ -61,6 +64,17 @@ export type SmartUploaderProps = {
    */
   targetInventoryName?: string;
   /**
+   * In target mode, which uploader path to land on. Defaults to
+   * 'photo' — the original "Add photo" button on the inventory detail
+   * page. 'receipt' is the entry point from the "Add document" button
+   * (issue #117) that bypasses the path picker and opens the
+   * multi-page receipt capture directly.
+   *
+   * Ignored when targetInventoryId is unset (the discovery flow always
+   * lands on the path picker so the user picks the path explicitly).
+   */
+  targetKind?: "photo" | "receipt";
+  /**
    * Fires after a successful save (create-from-document or
    * attach-to-existing). The parent uses this to trigger the
    * dashboard refresh — Smart Uploader doesn't know which refresh
@@ -72,6 +86,10 @@ export type SmartUploaderProps = {
 type Stage =
   | { name: "path-picker" }
   | { name: "capture"; path: "photo"; file: File | null; previewUrl: string | null }
+  | { name: "receipt-capture" }
+  | { name: "receipt-processing" }
+  | { name: "receipt-review" }
+  | { name: "receipt-failed"; message: string }
   | { name: "processing" }
   | { name: "duplicate"; existingDocument: DocumentRow }
   | {
@@ -92,20 +110,22 @@ export function SmartUploader(props: SmartUploaderProps) {
     houseId,
     targetInventoryId,
     targetInventoryName,
+    targetKind,
     onSaved,
   } = props;
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  // Target-mode opens straight on capture — the path-picker's only
-  // active choice is "photo of an appliance or system" and the user has
-  // already implicitly picked it by clicking "Add photo" on a known
-  // inventory item. Discovery mode (top-nav + Add) still lands on the
-  // path-picker because future entries (Document/receipt, Emergency
-  // procedure video) will live there.
+  // Target-mode opens straight on the matching capture stage — the
+  // user has already implicitly picked the path by clicking "Add
+  // photo" or "Add document" on a known inventory item. Discovery
+  // mode (top-nav + Add) still lands on the path-picker so the user
+  // picks photo / receipt / future entries explicitly.
   const initialStage: Stage = targetInventoryId
-    ? { name: "capture", path: "photo", file: null, previewUrl: null }
+    ? targetKind === "receipt"
+      ? { name: "receipt-capture" }
+      : { name: "capture", path: "photo", file: null, previewUrl: null }
     : { name: "path-picker" };
   const [stage, setStage] = useState<Stage>(initialStage);
   const [rooms, setRooms] = useState<SeededRoomOption[] | null>(null);
@@ -118,6 +138,14 @@ export function SmartUploader(props: SmartUploaderProps) {
 
   const { state: uploadState, start, reset: resetUpload } =
     useDocumentUpload({ houseId, targetInventoryId });
+
+  const {
+    state: receiptState,
+    addPage: addReceiptPage,
+    removePage: removeReceiptPage,
+    finalize: finalizeReceipt,
+    reset: resetReceipt,
+  } = useReceiptUpload({ houseId, targetInventoryId });
 
   // Latest-ref pattern for parent-supplied callbacks. The target-mode
   // success effect below transitions on `uploadState.phase` and would
@@ -150,12 +178,15 @@ export function SmartUploader(props: SmartUploaderProps) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStage(
         targetInventoryId
-          ? { name: "capture", path: "photo", file: null, previewUrl: null }
+          ? targetKind === "receipt"
+            ? { name: "receipt-capture" }
+            : { name: "capture", path: "photo", file: null, previewUrl: null }
           : { name: "path-picker" },
       );
       resetUpload();
+      resetReceipt();
     }
-  }, [open, resetUpload, targetInventoryId]);
+  }, [open, resetUpload, resetReceipt, targetInventoryId, targetKind]);
 
   // Fetch rooms once per open. Server-side via the browser client is
   // fine here — RLS scopes the read to houses the user owns, and the
@@ -221,7 +252,12 @@ export function SmartUploader(props: SmartUploaderProps) {
       }
       const analysis = uploadState.analysis;
       if (!analysis || !uploadState.documentId) return;
-      if (analysis.mode === "delta") return; // not reachable from navbar entry
+      // delta and receipt modes never come out of the photo hook in the
+      // flows wired here — delta is reserved for a future entry, and
+      // receipts go through useReceiptUpload. The narrows keep the
+      // type system honest and surface gaps explicitly instead of
+      // dereferencing photo_kind on a row that doesn't have it.
+      if (analysis.mode !== "classification") return;
       if (analysis.photo_kind === "not_useful") {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setStage({ name: "not-useful", documentId: uploadState.documentId });
@@ -267,10 +303,43 @@ export function SmartUploader(props: SmartUploaderProps) {
   });
   useEffect(() => {
     cleanupRef.current = {
-      documentId: stageDocumentId(stage) ?? uploadState.documentId,
+      documentId:
+        stageDocumentId(stage) ??
+        uploadState.documentId ??
+        receiptState.documentId,
       stage: stage.name,
     };
-  }, [stage, uploadState.documentId]);
+  }, [stage, uploadState.documentId, receiptState.documentId]);
+
+  // Mirror the receipt hook's phases into the user-facing stage state,
+  // same pattern as the photo hook above. The capture stage owns the
+  // intermediate "adding-page" loop; we only transition the modal on
+  // the terminal phases ("processing" / "done" / "error").
+  useEffect(() => {
+    if (receiptState.phase === "processing") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStage({ name: "receipt-processing" });
+      return;
+    }
+    if (receiptState.phase === "done" && receiptState.extraction) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStage({ name: "receipt-review" });
+      return;
+    }
+    if (receiptState.phase === "error" && receiptState.error) {
+      // Only surface as a terminal failure stage when we're no longer
+      // in the capture loop. Per-page upload errors stay inline on the
+      // capture stage so the user doesn't lose their captured pages.
+      if (stage.name === "receipt-processing") {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setStage({ name: "receipt-failed", message: receiptState.error });
+      }
+    }
+    // stage intentionally omitted — the error-handling branch reads it
+    // as a defensive guard for "are we past the capture loop?", and
+    // including it would re-run this effect on every stage tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receiptState.phase, receiptState.extraction, receiptState.error]);
 
   const cleanupCurrentDocument = useCallback(async () => {
     const docId = cleanupRef.current.documentId;
@@ -291,6 +360,10 @@ export function SmartUploader(props: SmartUploaderProps) {
       "not-useful",
       "analysis-failed",
       "duplicate",
+      "receipt-capture",
+      "receipt-processing",
+      "receipt-review",
+      "receipt-failed",
     ];
     // duplicate is a special case — we did create the dup row check but
     // never inserted a new row, so there's nothing of ours to clean up.
@@ -575,6 +648,7 @@ export function SmartUploader(props: SmartUploaderProps) {
                   previewUrl: null,
                 })
               }
+              onPickReceipt={() => setStage({ name: "receipt-capture" })}
             />
           ) : null}
 
@@ -645,6 +719,56 @@ export function SmartUploader(props: SmartUploaderProps) {
             />
           ) : null}
 
+          {stage.name === "receipt-capture" ? (
+            <MultiPageCaptureStage
+              pages={receiptState.pages}
+              phase={receiptState.phase}
+              error={receiptState.error}
+              targetInventoryName={targetInventoryName ?? null}
+              onAddPage={(file) => void addReceiptPage(file)}
+              onRemovePage={(n) => void removeReceiptPage(n)}
+              onFinalize={() => void finalizeReceipt()}
+              onBack={() => setStage({ name: "path-picker" })}
+            />
+          ) : null}
+
+          {stage.name === "receipt-processing" ? (
+            <ProcessingStage phase="analyzing" />
+          ) : null}
+
+          {stage.name === "receipt-review" && receiptState.extraction ? (
+            <ReviewReceiptStage
+              documentId={receiptState.documentId ?? ""}
+              houseId={houseId}
+              pages={receiptState.pages}
+              extraction={receiptState.extraction}
+              matches={
+                receiptState.matches ?? {
+                  strong_match: null,
+                  suggested_matches: [],
+                }
+              }
+              targetInventoryId={targetInventoryId}
+              targetInventoryName={targetInventoryName ?? null}
+              onSaved={handleSaved}
+              onCancel={handleClose}
+            />
+          ) : null}
+
+          {stage.name === "receipt-failed" ? (
+            <AnalysisFailedStage
+              message={stage.message}
+              secondaryLabel="Back to pages"
+              onTryAgain={() => {
+                // The captured pages are still intact server-side —
+                // returning to the capture stage lets the user retry
+                // extraction without losing any pages they captured.
+                void finalizeReceipt();
+              }}
+              onSecondaryAction={() => setStage({ name: "receipt-capture" })}
+            />
+          ) : null}
+
           {stage.name === "success" ? <SuccessStage /> : null}
         </div>
       </div>
@@ -666,6 +790,12 @@ function headerTitleForStage(
       case "capture":
       case "processing":
         return `Add photo of ${opts.targetInventoryName}`;
+      case "receipt-capture":
+      case "receipt-processing":
+      case "receipt-review":
+        return `Add document for ${opts.targetInventoryName}`;
+      case "receipt-failed":
+        return "Something went wrong";
       case "duplicate":
         return "Already in your library";
       case "review-new":
@@ -687,6 +817,14 @@ function headerTitleForStage(
       return "What are you adding?";
     case "capture":
       return "Photo of an appliance, system, or property";
+    case "receipt-capture":
+      return "Capture the receipt";
+    case "receipt-processing":
+      return "Reading your receipt…";
+    case "receipt-review":
+      return "Review and attach";
+    case "receipt-failed":
+      return "Something went wrong";
     case "processing":
       return "Working on it…";
     case "duplicate":
@@ -712,6 +850,9 @@ function stageDocumentId(stage: Stage): string | null {
       return stage.documentId;
     case "analysis-failed":
       return stage.documentId;
+    // Receipt stages don't carry the documentId on the stage tag —
+    // the receipt hook owns it. Callers fall through to
+    // receiptState.documentId at the cleanupRef effect.
     default:
       return null;
   }

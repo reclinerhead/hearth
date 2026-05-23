@@ -93,3 +93,58 @@ export const deltaSchema = z.object({
 });
 
 export type DeltaResult = z.infer<typeof deltaSchema>;
+
+// Receipt extraction (issue #117). Distinct from the classification
+// branch above: a receipt isn't a "photo of an appliance," and there's
+// no equivalent of `not_useful` worth modeling — a photo that isn't a
+// receipt at all should fall out as low ai_confidence with everything
+// null, not as a sibling kind.
+//
+// All structured fields are nullable so the model can be honest about
+// what it could not legibly read. Cents-based money matches
+// hearth.inventory.estimated_value_cents (bigint-safe in the column,
+// integer in this schema).
+
+const receiptLineItemSchema = z.object({
+  description: z.string().min(1).max(500),
+  quantity: z.number().nullable(),
+  unit_price_cents: z.number().int().nonnegative().nullable(),
+  total_cents: z.number().int().nonnegative().nullable(),
+});
+
+export const receiptExtractionSchema = z.object({
+  vendor_name: z.string().nullable(),
+  vendor_address: z.string().nullable(),
+  vendor_phone: z.string().nullable(),
+
+  transaction_date: z.string().nullable(),
+  transaction_type: z
+    .enum(["service", "purchase", "inspection", "other"])
+    .nullable(),
+
+  subtotal_cents: z.number().int().nonnegative().nullable(),
+  tax_cents: z.number().int().nonnegative().nullable(),
+  total_cents: z.number().int().nonnegative().nullable(),
+  currency: z.string().nullable(),
+
+  payment_method: z.string().nullable(),
+
+  line_items: z.array(receiptLineItemSchema),
+
+  // Serials / VINs / model numbers found anywhere on the receipt. The
+  // inventory matcher reads these; order doesn't matter, completeness
+  // does. Empty arrays are the normal case for receipts referencing no
+  // identifiers (a vet visit, a plumber service call).
+  referenced_serials: z.array(z.string()),
+  referenced_model_numbers: z.array(z.string()),
+
+  notes: z.string().nullable(),
+
+  // Overall confidence on the extraction. Below the receipt-specific
+  // threshold (NAMEPLATE_CONFIDENCE_THRESHOLD's receipt sibling, 0.5
+  // by default), the review stage shows a "we couldn't read that
+  // clearly" affordance rather than the standard fields.
+  ai_confidence: z.number().min(0).max(1),
+});
+
+export type ReceiptExtractionResult = z.infer<typeof receiptExtractionSchema>;

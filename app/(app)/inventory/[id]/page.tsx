@@ -48,6 +48,23 @@ export type InventoryPhoto = {
   thumbnailPath: string;
 };
 
+// Receipt rendered by the inventory detail page's Documents section.
+// Issue #117 — multi-page receipt attachment. The list view uses just
+// the page-1 thumbnail and a few high-value metadata fields; the
+// page-flip modal lazy-loads every page on demand.
+export type InventoryReceipt = {
+  id: string;
+  thumbnailPath: string;
+  createdAt: string;
+  vendorName: string | null;
+  transactionDate: string | null;
+  totalCents: number | null;
+  currency: string | null;
+  transactionType: string | null;
+  /** Total pages = 1 (parent storage_path) + N (document_pages rows). */
+  pageCount: number;
+};
+
 export type InventoryDetailItem = {
   id: string;
   house_id: string;
@@ -167,10 +184,10 @@ export default async function InventoryDetailPage({
   const roomEntry = Array.isArray(row.room) ? row.room[0] : row.room;
   const roomName = roomEntry?.name ?? "Unknown";
 
-  // Three independent follow-up queries against the same Supabase
-  // connection. All three only need `row.house_id` / `row.id`, which we
+  // Four independent follow-up queries against the same Supabase
+  // connection. All four only need `row.house_id` / `row.id`, which we
   // already have, so we run them in parallel rather than paying for
-  // three sequential round-trips on the user-visible first paint:
+  // four sequential round-trips on the user-visible first paint:
   //   - rooms list powers the "Room" select in the edit modal
   //   - document count drives the delete-confirm "Also delete N linked
   //     documents" copy (actual deletion still walks the rows server-side)
@@ -178,25 +195,39 @@ export default async function InventoryDetailPage({
   //     photos so receipts / manuals stay out), ordered by analyzed_at
   //     desc with created_at as the tiebreaker. photos[0] is the hero;
   //     the full set feeds the click-to-expand lightbox.
-  const [roomsResult, docCountResult, heroDocsResult] = await Promise.all([
-    supabase
-      .from("rooms")
-      .select("id, name")
-      .eq("house_id", row.house_id)
-      .order("sort_order", { ascending: true }),
-    supabase
-      .from("documents")
-      .select("id", { count: "exact", head: true })
-      .eq("inventory_id", row.id),
-    supabase
-      .from("documents")
-      .select("id, storage_path, thumbnail_path")
-      .eq("inventory_id", row.id)
-      .eq("status", "attached")
-      .in("kind", ["nameplate", "photo"])
-      .order("analyzed_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false }),
-  ]);
+  //   - attached receipts for the Documents section (issue #117),
+  //     selecting the metadata and page-1 thumbnail. Page counts come
+  //     from a follow-up query against document_pages once we know
+  //     which receipts exist.
+  const [roomsResult, docCountResult, heroDocsResult, receiptsResult] =
+    await Promise.all([
+      supabase
+        .from("rooms")
+        .select("id, name")
+        .eq("house_id", row.house_id)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("documents")
+        .select("id", { count: "exact", head: true })
+        .eq("inventory_id", row.id),
+      supabase
+        .from("documents")
+        .select("id, storage_path, thumbnail_path")
+        .eq("inventory_id", row.id)
+        .eq("status", "attached")
+        .in("kind", ["nameplate", "photo"])
+        .order("analyzed_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("documents")
+        .select(
+          "id, thumbnail_path, created_at, metadata",
+        )
+        .eq("inventory_id", row.id)
+        .eq("status", "attached")
+        .eq("kind", "receipt")
+        .order("created_at", { ascending: false }),
+    ]);
 
   const roomOptions: RoomOption[] = (roomsResult.data ?? []).map((r) => ({
     id: r.id,
@@ -244,6 +275,65 @@ export default async function InventoryDetailPage({
     thumbnailPath: d.thumbnail_path,
   }));
 
+  // Receipt page counts. One follow-up query against document_pages
+  // for all attached receipts at once, then we bucket by document_id
+  // in-process. Could be a SQL view; not worth it yet — N receipts per
+  // inventory item is small.
+  const receiptRows = (receiptsResult.data ?? []) as Array<{
+    id: string;
+    thumbnail_path: string;
+    created_at: string;
+    metadata: Record<string, unknown> | null;
+  }>;
+  const receiptIds = receiptRows.map((r) => r.id);
+  const pageCountByDocumentId = new Map<string, number>();
+  if (receiptIds.length > 0) {
+    const { data: pageRows } = await supabase
+      .from("document_pages")
+      .select("document_id")
+      .in("document_id", receiptIds);
+    for (const p of (pageRows ?? []) as { document_id: string }[]) {
+      pageCountByDocumentId.set(
+        p.document_id,
+        (pageCountByDocumentId.get(p.document_id) ?? 0) + 1,
+      );
+    }
+  }
+
+  const receipts: InventoryReceipt[] = receiptRows.map((r) => {
+    const md = (r.metadata ?? {}) as Record<string, unknown>;
+    const total =
+      typeof md.total_cents === "number"
+        ? md.total_cents
+        : null;
+    // Page 1 is implicit on the parent row, document_pages holds 2+,
+    // so the visible page count is 1 + N.
+    const extra = pageCountByDocumentId.get(r.id) ?? 0;
+    return {
+      id: r.id,
+      thumbnailPath: r.thumbnail_path,
+      createdAt: r.created_at,
+      vendorName:
+        typeof md.vendor_name === "string" && md.vendor_name.length > 0
+          ? md.vendor_name
+          : null,
+      transactionDate:
+        typeof md.transaction_date === "string" && md.transaction_date.length > 0
+          ? md.transaction_date
+          : null,
+      totalCents: total,
+      currency:
+        typeof md.currency === "string" && md.currency.length > 0
+          ? md.currency
+          : null,
+      transactionType:
+        typeof md.transaction_type === "string"
+          ? md.transaction_type
+          : null,
+      pageCount: 1 + extra,
+    };
+  });
+
   const detail: InventoryDetailItem = {
     id: row.id,
     house_id: row.house_id,
@@ -276,6 +366,7 @@ export default async function InventoryDetailPage({
       item={detail}
       rooms={roomOptions}
       linkedDocumentCount={linkedDocumentCount}
+      receipts={receipts}
     />
   );
 }
