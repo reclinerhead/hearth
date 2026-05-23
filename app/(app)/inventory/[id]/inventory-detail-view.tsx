@@ -301,8 +301,16 @@ export function InventoryDetailView({
   // finishes. Same pattern as useHouseRealtime, but narrow enough that
   // inlining it here is simpler than extracting a generic hook for a
   // single consumer.
+  //
+  // TODO(remove-after-issue-126-debug): the [synth-realtime] console
+  // logging below is diagnostic for "realtime UPDATE never arrives"
+  // case we're investigating. Strip these logs once the source of the
+  // miss is identified and fixed.
   useEffect(() => {
     const supabase = createBrowserSupabaseClient();
+    console.log(
+      `[synth-realtime] subscribing to inventory:${item.id} for postgres_changes UPDATE`,
+    );
     const channel = supabase
       .channel(`inventory:${item.id}`)
       .on(
@@ -313,18 +321,59 @@ export function InventoryDetailView({
           table: "inventory",
           filter: `id=eq.${item.id}`,
         },
-        (payload: { new: Record<string, unknown> }) => {
+        (payload: {
+          new: Record<string, unknown>;
+          old?: Record<string, unknown>;
+        }) => {
+          console.log("[synth-realtime] UPDATE payload received:", {
+            newKeys: Object.keys(payload.new),
+            hasLastSynthesisRun:
+              "last_synthesis_run" in payload.new,
+            lastSynthesisRunPreview:
+              typeof payload.new.last_synthesis_run === "object" &&
+              payload.new.last_synthesis_run !== null
+                ? {
+                    completed_at: (
+                      payload.new.last_synthesis_run as Record<
+                        string,
+                        unknown
+                      >
+                    ).completed_at,
+                    tasks_emitted: (
+                      payload.new.last_synthesis_run as Record<
+                        string,
+                        unknown
+                      >
+                    ).tasks_emitted,
+                  }
+                : payload.new.last_synthesis_run,
+            currentBaseline: synthesisBaselineRef.current,
+          });
           const next = payload.new.last_synthesis_run as
             | SynthesisRunLog
             | null
             | undefined;
-          if (!next) return;
+          if (!next) {
+            console.log(
+              "[synth-realtime] no last_synthesis_run in payload — ignoring",
+            );
+            return;
+          }
           setLiveSynthesisRun(next);
           // The trace's completed_at is the load-bearing comparison —
           // if it advanced past our baseline, this is a fresh run
           // finishing and we should flip out of in-flight.
           const baseline = synthesisBaselineRef.current;
-          if (!baseline || next.completed_at > baseline) {
+          const advanced = !baseline || next.completed_at > baseline;
+          console.log("[synth-realtime] baseline comparison:", {
+            baseline,
+            incomingCompletedAt: next.completed_at,
+            advanced,
+          });
+          if (advanced) {
+            console.log(
+              "[synth-realtime] flipping out of in-flight via realtime",
+            );
             setSynthesisInFlight(false);
             if (next.error) {
               setSynthesisError(next.error);
@@ -332,9 +381,14 @@ export function InventoryDetailView({
           }
         },
       )
-      .subscribe();
+      .subscribe((status: string, err?: unknown) => {
+        console.log("[synth-realtime] subscribe status:", status, err ?? "");
+      });
 
     return () => {
+      console.log(
+        `[synth-realtime] removing channel inventory:${item.id}`,
+      );
       supabase.removeChannel(channel);
     };
   }, [item.id]);
@@ -368,10 +422,18 @@ export function InventoryDetailView({
         .single();
       if (cancelled || !data) return;
       const next = data.last_synthesis_run as SynthesisRunLog | null;
+      console.log("[synth-realtime] poll tick:", {
+        hasTrace: next !== null,
+        incomingCompletedAt: next?.completed_at ?? null,
+        baseline: synthesisBaselineRef.current,
+      });
       if (next) {
         setLiveSynthesisRun(next);
         const baseline = synthesisBaselineRef.current;
         if (!baseline || next.completed_at > baseline) {
+          console.log(
+            "[synth-realtime] flipping out of in-flight via polling fallback",
+          );
           setSynthesisInFlight(false);
           if (next.error) setSynthesisError(next.error);
           return;
@@ -407,11 +469,23 @@ export function InventoryDetailView({
       liveSynthesisRun?.completed_at ??
       item.last_synthesis_run?.completed_at ??
       null;
+    console.log("[synth-realtime] click — captured baseline:", {
+      baseline: synthesisBaselineRef.current,
+      inventoryId: item.id,
+    });
     try {
       const result = await buildMaintenancePlanAction(item.id);
       if (!result.ok) {
+        console.log(
+          "[synth-realtime] action returned error:",
+          result.error,
+        );
         setSynthesisInFlight(false);
         setSynthesisError(result.error);
+      } else {
+        console.log(
+          "[synth-realtime] action ok — workflow started, waiting for completion",
+        );
       }
       // On ok we leave in-flight true — the Realtime subscription
       // above flips it back when last_synthesis_run lands.
