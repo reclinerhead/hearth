@@ -43,19 +43,63 @@ export type GeneratedPortfolioSummary = {
   generated_at: string | null;
   /** Human-readable reason when text is null. Null on success. */
   error_reason: string | null;
+  /**
+   * Transient capture for the developer-time debug log (issue #158).
+   * Populated even on early-return / error paths so the log block can
+   * narrate what the call would have been if a model had been
+   * configured. Not persisted — stripped at the habitat workflow's
+   * step boundary before the row write.
+   */
+  debug: PortfolioSummaryDebugCapture;
+};
+
+/**
+ * Snapshot of the AI call's inputs, prompts, timing, and outcome.
+ * Forwarded by the Superfund module's check() onto
+ * `HabitatFinding.debug.portfolio_summary` and read by the habitat
+ * workflow's debug-log step (which lives in a "use step" boundary in
+ * `workflows/habitat.ts` so the node:fs/promises import in the helper
+ * file is reachable only inside the step bundle).
+ */
+export type PortfolioSummaryDebugCapture = {
+  startedAt: string;
+  durationMs: number;
+  model: string | null;
+  input: PortfolioSummaryInput;
+  /** Null when no model was configured (no prompt assembled). */
+  systemPrompt: string | null;
+  /** Null when no model was configured (no prompt assembled). */
+  userMessage: string | null;
+  /** Generated text on success, null on env-unset / model error. */
+  responseText: string | null;
+  /** Null on success; the same reason that lands in error_reason. */
+  error: string | null;
 };
 
 export async function generatePortfolioSummary(
   input: PortfolioSummaryInput,
 ): Promise<GeneratedPortfolioSummary> {
+  const startedAt = new Date();
+  const startMs = Date.now();
   const model = getPortfolioSummaryModel();
   if (!model) {
+    const reason =
+      "SUPERFUND_SUMMARY_MODEL (or BRIEFING_PRIMARY_MODEL) is not set";
     return {
       text: null,
       model: null,
       generated_at: null,
-      error_reason:
-        "SUPERFUND_SUMMARY_MODEL (or BRIEFING_PRIMARY_MODEL) is not set",
+      error_reason: reason,
+      debug: {
+        startedAt: startedAt.toISOString(),
+        durationMs: Date.now() - startMs,
+        model: null,
+        input,
+        systemPrompt: null,
+        userMessage: null,
+        responseText: null,
+        error: reason,
+      },
     };
   }
 
@@ -74,6 +118,16 @@ export async function generatePortfolioSummary(
       model,
       generated_at: new Date().toISOString(),
       error_reason: null,
+      debug: {
+        startedAt: startedAt.toISOString(),
+        durationMs: Date.now() - startMs,
+        model,
+        input,
+        systemPrompt,
+        userMessage,
+        responseText: result.object.summary,
+        error: null,
+      },
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -87,6 +141,16 @@ export async function generatePortfolioSummary(
       model,
       generated_at: null,
       error_reason: message,
+      debug: {
+        startedAt: startedAt.toISOString(),
+        durationMs: Date.now() - startMs,
+        model,
+        input,
+        systemPrompt,
+        userMessage,
+        responseText: null,
+        error: message,
+      },
     };
   }
 }

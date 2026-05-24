@@ -163,8 +163,10 @@ export async function POST(
 //
 // Mirrors the format the previous research.ts wrote — one block per call
 // to logs/ai-insights-prompts.log so Todd can compare prompts and models
-// during iteration. All errors are swallowed so a logging failure can
-// never break the user request. logs/ is gitignored.
+// during iteration. Gated on `NODE_ENV === "development"` (issue #158)
+// so preview / production builds skip the filesystem touch entirely.
+// All errors are swallowed so a logging failure can never break the
+// user request. logs/ is gitignored.
 
 type InsightsDebugLogEntry = {
   startedAt: Date;
@@ -178,6 +180,7 @@ type InsightsDebugLogEntry = {
 };
 
 async function writeInsightsDebugLog(entry: InsightsDebugLogEntry) {
+  if (process.env.NODE_ENV !== "development") return;
   try {
     const dir = path.join(process.cwd(), "logs");
     await mkdir(dir, { recursive: true });

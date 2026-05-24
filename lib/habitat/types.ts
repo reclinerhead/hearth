@@ -194,6 +194,27 @@ export interface HabitatFinding {
    * the column stays null on the row.
    */
   activityLog?: ActivityLog;
+  /**
+   * Transient debug capture for the dev-only file-based prompt logs
+   * (issue #158). Modules that wrap an AI call inside check() can
+   * populate keyed slots here; the habitat workflow's
+   * `writeModuleDebugLog` step reads `debug` after check() returns
+   * and dispatches each populated slot to the matching log helper
+   * via dynamic import (which keeps the helper's node:fs/promises
+   * dependency out of the static workflow bundle).
+   *
+   * **Never persisted.** The orchestrator's row-write pulls
+   * `finding.findings` / `actions` / `activityLog` / `sourceUrl`
+   * explicitly; `debug` is read separately for the log step and
+   * then dropped on the floor. Don't put anything in here that
+   * needs to survive the workflow.
+   *
+   * The slot map is open-ended (`Record<string, unknown>`) so future
+   * modules can add their own keys without changes here. The
+   * matching helper module lives next to the module that emits it
+   * (e.g. `lib/habitat/modules/epa-superfund-proximity/debug-log.ts`).
+   */
+  debug?: Record<string, unknown>;
 }
 
 /**
