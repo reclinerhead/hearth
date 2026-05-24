@@ -20,6 +20,15 @@ export type Phase =
   | { kind: "intro" }
   | { kind: "briefing-checking" }
   | { kind: "briefing-result" }
+  // Issue #142 — interstitial prompt for the two property-situation
+  // questions (water source, basement). Inserted between
+  // `briefing-result` and `module-checking` so the user sees the
+  // briefing result land first, then answers (or skips), and only
+  // then watches the habitat modules check in. No auto-advance:
+  // the user's Skip / Save click drives the next transition. Skipped
+  // on the briefing-failure path so a failed first step isn't
+  // immediately followed by a form prompt.
+  | { kind: "property-questions" }
   | { kind: "module-checking"; index: number }
   | { kind: "module-result"; index: number }
   | { kind: "done" };
@@ -76,6 +85,9 @@ export function buildRowList(
       text: "Checking public home records…",
     });
   } else {
+    // Every phase after briefing-checking — briefing-result,
+    // property-questions, module-checking, module-result, done —
+    // renders the briefing row as "done" with its result line.
     rows.push({
       id: "briefing",
       state: "done",
