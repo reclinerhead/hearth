@@ -7,8 +7,14 @@
  *   1. Site header — name + metadata pills
  *   2. Address card
  *   3. Precision caveat (when EPA's single point is a poor proxy)
- *   4. Contaminants list (enriched against contaminants/data.ts)
- *   5. "Why this severity" expandable disclosure
+ *   4. Site contact and documents (CIC + documents library link)
+ *   5. Contaminants list (enriched against contaminants/data.ts)
+ *
+ * Sites with deep contaminant lists (40+ entries at some Michigan
+ * NPL sites) push the contact + documents section off-screen if it
+ * lives below the list. Promoting the contact section above the long
+ * list lets a user triage and act without scrolling through chemistry
+ * first.
  *
  * No client hooks — the optional disclosure uses a native `<details>`
  * element so this component stays purely presentational and works
@@ -109,8 +115,8 @@ export function SiteDetail({
       {entry.context.precision_note ? (
         <PrecisionCaveat note={entry.context.precision_note} />
       ) : null}
+      <ContactAndDocumentsSection entry={entry} />
       <ContaminantsSection entry={entry} />
-      <WhyThisSeverity entry={entry} />
     </div>
   );
 }
@@ -487,49 +493,129 @@ function ContaminantItem({ row }: { row: ContaminantRow }) {
   );
 }
 
-function rangeLabel(tier: SiteEntry["context"]["tier"]): string {
-  if (tier === 1) return "0.5";
-  if (tier === 2) return "2";
-  return "5";
-}
+/**
+ * Issue #143 — "Site contact and documents" section. Surfaces the EPA
+ * Community Involvement Coordinator pulled from the Cumulis Contacts
+ * page (when one is published) and a direct deep link to the site's
+ * documents library. Documents URL is always present (constructed
+ * from the site_id); the CIC may be null when EPA hasn't designated
+ * one for this site or when the scrape failed — in either case we
+ * fall back to copy that names the absence honestly rather than
+ * hiding the section, so the user knows the lookup was attempted.
+ *
+ * Rows persisted before #143 do not carry these fields. Documents
+ * URL is missing on those rows (we treat the absence as "skip the
+ * link" rather than back-deriving the URL in the render layer);
+ * CIC is missing too. The whole section is suppressed in that case
+ * so legacy rows render exactly like they did before #143 landed.
+ * Yearly cadence backfills the fields on the next run.
+ */
+function ContactAndDocumentsSection({ entry }: { entry: SiteEntry }) {
+  const { site } = entry;
+  const cic = site.community_involvement_coordinator;
+  const documentsUrl = site.documents_url;
+  const cicLookupAttempted = cic !== undefined;
 
-function WhyThisSeverity({ entry }: { entry: SiteEntry }) {
-  const { context, site } = entry;
-  const range = rangeLabel(context.tier);
-  const severityWord = SEVERITY_WORD[context.severity];
+  // Legacy row that predates #143: both fields absent. Suppress
+  // entirely rather than render an empty section.
+  if (!documentsUrl && !cicLookupAttempted) return null;
+
   return (
-    <details
-      className="rounded-md"
-      style={{
-        border: "1px solid var(--color-border-subtle)",
-        padding: "var(--space-3)",
-      }}
-    >
-      <summary
-        className="text-small"
+    <section>
+      <div className="eyebrow mb-2">Site contact and documents</div>
+      <div
+        className="rounded-md flex flex-col gap-3"
         style={{
-          color: "var(--color-text-secondary)",
-          fontWeight: 500,
-          listStyle: "none",
+          border: "1px solid var(--color-border-subtle)",
+          padding: "var(--space-3)",
         }}
       >
-        Why this severity
-      </summary>
-      <div className="text-small mt-2" style={{ color: "var(--color-text-secondary)" }}>
-        <p style={{ margin: 0 }}>
-          This site qualified as Tier {context.tier} (within {range} mi of your
-          home). Combined with an NPL status of {site.npl_status.label}, that
-          maps to a {severityWord.toLowerCase()} finding.
-        </p>
-        <p style={{ margin: 0, marginTop: 8 }}>
-          <a
-            href="/how-it-works#superfund"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            More about Hearth&rsquo;s classification
-          </a>
-        </p>
+        {cicLookupAttempted ? (
+          <CommunityInvolvementCoordinatorBlock cic={cic} />
+        ) : null}
+        {documentsUrl ? (
+          <div>
+            <div className="eyebrow">Documents library</div>
+            <div className="text-small mt-1">
+              <a
+                href={documentsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                <span>View EPA&rsquo;s document library for this site</span>
+                <Icon name="external-link" size={14} />
+              </a>
+            </div>
+          </div>
+        ) : null}
       </div>
-    </details>
+    </section>
   );
 }
+
+/**
+ * Inner block for the CIC entry. Handles three render states:
+ *   - `cic` populated → name + email (mailto) + phone (tel)
+ *   - `cic` is null → honest "no CIC published" copy
+ *   - `cic` undefined → caller suppresses (legacy row case)
+ */
+function CommunityInvolvementCoordinatorBlock({
+  cic,
+}: {
+  // Accepts null (lookup attempted, no CIC published) in addition to the
+  // populated shape. Caller only mounts this when the lookup was
+  // attempted; undefined (legacy row, never enriched) is filtered upstream.
+  cic: SiteEntry["site"]["community_involvement_coordinator"];
+}) {
+  if (!cic) {
+    return (
+      <div>
+        <div className="eyebrow">Community Involvement Coordinator</div>
+        <p
+          className="text-small"
+          style={{ color: "var(--color-text-secondary)", margin: 0, marginTop: 4 }}
+        >
+          EPA hasn&rsquo;t designated a Community Involvement Coordinator
+          for this site. The site&rsquo;s page on EPA may still list a
+          Remedial Project Manager for technical-cleanup questions.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="eyebrow">Community Involvement Coordinator</div>
+      <div
+        className="text-small mt-1 flex flex-col gap-0.5"
+        style={{ color: "var(--color-text-secondary)" }}
+      >
+        {cic.name ? (
+          <div style={{ color: "var(--color-text-primary)" }}>{cic.name}</div>
+        ) : null}
+        {cic.email ? (
+          <div>
+            <a
+              href={`mailto:${cic.email}`}
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              {cic.email}
+            </a>
+          </div>
+        ) : null}
+        {cic.phone ? (
+          <div>
+            <a
+              href={`tel:${cic.phone.replace(/[^\d+]/g, "")}`}
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              {cic.phone}
+            </a>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+

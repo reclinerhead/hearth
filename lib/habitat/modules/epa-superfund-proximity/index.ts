@@ -74,10 +74,15 @@ import type {
 } from "@/lib/habitat/types";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import {
+  fetchSiteContacts,
+  siteDocumentsUrl,
+  siteProfileUrl,
+  type CommunityInvolvementCoordinator,
+} from "./cumulis";
+import {
   buildNplSitesUrl,
   fetchNplSitesInState,
   parseSiteCoordinates,
-  siteProfileUrl,
   type NplSite,
 } from "./fetch";
 import {
@@ -214,6 +219,12 @@ function buildSiteEntry(
       archived_date: raw.archived_date ?? null,
       epa_region_code: raw.fk_ref_region_code ?? null,
       profile_url: siteProfileUrl(raw.site_id),
+      documents_url: siteDocumentsUrl(raw.site_id),
+      // CIC is enriched in a separate post-filter pass — see
+      // enrichQualifyingSitesWithCic() in check() below. The field is
+      // omitted here so the type's `?` is honored when the enrichment
+      // hasn't been merged in yet (e.g. inside unit tests that exercise
+      // buildSiteEntry directly).
     },
     context,
   };
@@ -518,6 +529,33 @@ const EpaSuperfundProximityModule: HabitatModule = {
       result_summary: tierStep.result_summary,
       source: HEARTH_TIER_RULE_SOURCE,
     });
+
+    // Issue #143: enrich each qualifying site with its EPA Community
+    // Involvement Coordinator pulled from the Cumulis Contacts sub-page.
+    // Runs in parallel across the (small, post-distance-filter) set of
+    // qualifying sites — at single-digit n the wall-clock cost is
+    // ~1s in the worst case. Soft-fail at every step: a network /
+    // parse miss for one site leaves that site's CIC null and does
+    // not affect the others. Skipped on the no-hits path below
+    // because there are no sites to enrich.
+    if (qualifying.length > 0) {
+      const cics = await Promise.all(
+        qualifying.map((s) => fetchSiteContacts(s.site.sems_site_id)),
+      );
+      let cicHits = 0;
+      for (let i = 0; i < qualifying.length; i++) {
+        const cic = cics[i];
+        qualifying[i].site.community_involvement_coordinator = cic;
+        if (cic) cicHits++;
+      }
+      log.step({
+        kind: "compute",
+        narration:
+          "I looked up the EPA Community Involvement Coordinator for each nearby site so you have a direct contact for questions.",
+        detail: `GET ${qualifying.length} Cumulis contact page${qualifying.length === 1 ? "" : "s"} in parallel; ${cicHits} site${cicHits === 1 ? "" : "s"} had a CIC published`,
+        result_summary: `${cicHits} of ${qualifying.length} sites have a CIC`,
+      });
+    }
 
     if (qualifying.length === 0) {
       const decideStep = noSitesDecideNarration({

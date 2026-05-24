@@ -831,7 +831,7 @@ export default function HowItWorksPage() {
                 href: "https://www.epa.gov/superfund/superfund-national-priorities-list-npl",
               },
             ]}
-            lastUpdated="May 23, 2026"
+            lastUpdated="May 24, 2026"
           >
             <div
               style={{
@@ -1011,6 +1011,44 @@ export default function HowItWorksPage() {
                 detail pane shows a precision note. The Allied Paper /
                 Portage Creek / Kalamazoo River site is the canonical
                 example.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
+                Site contact and documents
+              </h3>
+              <p style={{ margin: 0 }}>
+                For each nearby site we surface a direct deep link to that
+                site&rsquo;s document library on EPA&rsquo;s Cumulis
+                profile (Reports &amp; Documents, Administrative Records),
+                so you can read the actual EPA filings rather than having
+                to navigate there yourself.
+              </p>
+              <p style={{ margin: 0 }}>
+                When EPA has designated a <strong>Community Involvement
+                Coordinator</strong> for the site, we surface their name,
+                email, and phone number too. The CIC is the EPA
+                contact assigned to answer community questions about the
+                site &mdash; distinct from the Remedial Project Manager,
+                who handles the technical cleanup. Some sites have a
+                designated CIC, some don&rsquo;t; we say so honestly
+                either way rather than hiding the section.
+              </p>
+              <p style={{ margin: 0 }}>
+                A small amount of additional site-level detail
+                (Five-Year Review history, more granular NPL cleanup
+                phase, mailing-list signup) lives only as unstructured
+                prose on EPA&rsquo;s site pages today and isn&rsquo;t
+                something Hearth ingests yet.
               </p>
             </div>
           </ModuleSection>

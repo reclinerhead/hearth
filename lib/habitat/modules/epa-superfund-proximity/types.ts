@@ -10,6 +10,7 @@
  * `renderDetail` slot reads back when the user drills into a site.
  */
 
+import type { CommunityInvolvementCoordinator } from "./cumulis";
 import type { SuperfundLabel } from "./label";
 import type { NplCode, Tier } from "./severity";
 
@@ -59,8 +60,32 @@ export type SiteEntry = {
      * and absent on rows persisted before this field landed.
      */
     epa_region_code: string | null;
-    /** Direct link to the site's EPA Cumulis profile. */
+    /** Direct link to the site's EPA Cumulis profile (overview page). */
     profile_url: string;
+    /**
+     * Direct link to the site's documents library on EPA's Cumulis
+     * page (Reports & Documents, Administrative Records). Issue #143.
+     * Always present — the URL is constructed from the site_id and
+     * does not require a separate HTTP lookup.
+     */
+    documents_url: string;
+    /**
+     * Community Involvement Coordinator pulled from EPA's Cumulis
+     * Contacts sub-page (issue #143). The CIC is the homeowner-facing
+     * EPA contact for the site — distinct from the Remedial Project
+     * Manager, which is the technical-cleanup contact and not
+     * surfaced here. Null when EPA hasn't designated a CIC for the
+     * site (Peerless Plating Co. is the canonical example in our test
+     * sample) or when the scrape failed (network error, page error,
+     * timeout — soft-fail by design). Each sub-field is independently
+     * nullable: most sites publish name + email; phone is occasionally
+     * absent.
+     *
+     * Optional on the contract because rows persisted before #143
+     * landed do not carry it; the field backfills on the next yearly
+     * cadence run.
+     */
+    community_involvement_coordinator?: CommunityInvolvementCoordinator | null;
   };
   context: {
     distance_miles: number;

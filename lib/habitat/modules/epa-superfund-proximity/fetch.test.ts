@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildNplSitesUrl, mergeContaminants, siteProfileUrl } from "./fetch";
+import { buildNplSitesUrl, mergeContaminants } from "./fetch";
 
 describe("buildNplSitesUrl", () => {
   it("includes the state code uppercased and the F,P,A,D filter", () => {
@@ -11,19 +11,9 @@ describe("buildNplSitesUrl", () => {
   });
 });
 
-describe("siteProfileUrl", () => {
-  it("strips leading zeros from the SEMS site_id", () => {
-    expect(siteProfileUrl("0502325")).toBe(
-      "https://cumulis.epa.gov/supercpad/cursites/csitinfo.cfm?id=502325",
-    );
-  });
-
-  it("falls back to the original site_id if stripping zeros leaves an empty string", () => {
-    expect(siteProfileUrl("0000000")).toBe(
-      "https://cumulis.epa.gov/supercpad/cursites/csitinfo.cfm?id=0000000",
-    );
-  });
-});
+// Note: `siteProfileUrl` moved to ./cumulis.ts alongside the other
+// per-site URL helpers (siteDocumentsUrl, siteContactsUrl) and the
+// CIC scraper. Coverage for the URL shape lives in cumulis.test.ts.
 
 describe("mergeContaminants", () => {
   it("reads the contaminant from preferred_contaminant_name (EPA's actual column)", () => {
