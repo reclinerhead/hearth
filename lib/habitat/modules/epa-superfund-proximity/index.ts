@@ -116,6 +116,7 @@ import {
   distanceStepNarration,
   fetchStepNarration,
   findingStepNarration,
+  noContaminantsSuppressionNarration,
   noSitesDecideNarration,
   precisionCaveatNarration,
   tierFilterNarration,
@@ -187,10 +188,20 @@ function buildSiteEntry(
   distance: number,
   bearing: string,
   tier: Tier,
+  labelContext: {
+    waterSource: HouseContext["waterSource"];
+    basementPresent: HouseContext["basementPresent"];
+  },
 ): SiteEntry {
   const severity = tierAndStatusToSeverity(tier, nplCode);
   const contaminants = formatContaminants(raw.contaminants ?? []);
-  const label = computeSiteLabel({ tier, nplCode, contaminants });
+  const label = computeSiteLabel({
+    tier,
+    nplCode,
+    contaminants,
+    waterSource: labelContext.waterSource,
+    basementPresent: labelContext.basementPresent,
+  });
   const context: SiteEntry["context"] = {
     distance_miles: roundMiles(distance),
     bearing,
@@ -502,17 +513,55 @@ const EpaSuperfundProximityModule: HabitatModule = {
       detail: distanceStep.detail,
     });
 
+    // Issue #154: suppress qualifying sites for which EPA hasn't published
+    // any contaminants. Without an inventory the modal has nothing
+    // actionable to render and the EPA profile URL frequently 404s for
+    // these rollup entries (Georgia-Pacific is the canonical example).
+    // Filter happens at qualification time so everything downstream
+    // (cic enrichment, label rollup, summary, recommended-actions,
+    // headline / summary copy, ordering) automatically reflects only
+    // the useful sites — no special-casing in any of those layers.
+    //
+    // The tier step's count still reports sites that passed the tier
+    // filter (pre-suppression); the conditional suppression step that
+    // follows reports the drop. Keeping the rule step honest about
+    // tier-pass count and giving suppression its own beat lets a reader
+    // trace the math without conflating two distinct filters.
     const qualifying: SiteEntry[] = [];
+    const droppedNoContaminants: SiteEntry[] = [];
     const tierCounts = { 1: 0, 2: 0, 3: 0 } as { 1: number; 2: number; 3: number };
+    // Issue #149: per-site label now factors in the homeowner's water
+    // source and basement presence. Pass them once through buildSiteEntry
+    // so the label-computation call site keeps the rule in one place.
+    const labelContext = {
+      waterSource: house.waterSource ?? null,
+      basementPresent: house.basementPresent ?? null,
+    };
     for (const { site, distance, bearing } of withDistance) {
       const nplCode = narrowNplCode(site.npl_status_code);
       if (!nplCode) continue;
       const tier = applyTier(distance, nplCode);
       if (tier === null) continue;
       tierCounts[tier]++;
-      qualifying.push(buildSiteEntry(site, nplCode, distance, bearing, tier));
+      const entry = buildSiteEntry(
+        site,
+        nplCode,
+        distance,
+        bearing,
+        tier,
+        labelContext,
+      );
+      if (entry.site.contaminants.length === 0) {
+        droppedNoContaminants.push(entry);
+        continue;
+      }
+      qualifying.push(entry);
     }
     qualifying.sort(compareEntries);
+    // tierCounts above includes the suppressed sites — they passed the
+    // tier filter, which is the rule step's narrative. tierPassedCount
+    // is the value the rule step reports.
+    const tierPassedCount = qualifying.length + droppedNoContaminants.length;
 
     // Conditional compute step: when at least one qualifying site carries
     // the multi-location precision caveat, surface it in the activity log
@@ -531,7 +580,7 @@ const EpaSuperfundProximityModule: HabitatModule = {
       });
     }
 
-    const tierStep = tierFilterNarration(qualifying.length, tierCounts);
+    const tierStep = tierFilterNarration(tierPassedCount, tierCounts);
     log.step({
       kind: "rule",
       narration: tierStep.narration,
@@ -539,6 +588,24 @@ const EpaSuperfundProximityModule: HabitatModule = {
       result_summary: tierStep.result_summary,
       source: HEARTH_TIER_RULE_SOURCE,
     });
+
+    // Issue #154: conditional suppression step. Emitted only when at
+    // least one tier-qualifying site was dropped for having no
+    // contaminant inventory. Names the dropped sites in the detail so a
+    // homeowner who notices the count discrepancy can see what was
+    // filtered.
+    if (droppedNoContaminants.length > 0) {
+      const suppression = noContaminantsSuppressionNarration(
+        droppedNoContaminants.map((s) => s.site.name_display),
+      );
+      log.step({
+        kind: "compute",
+        narration: suppression.narration,
+        detail: suppression.detail,
+        result_summary: suppression.result_summary,
+        source: HEARTH_CLASSIFICATION_SOURCE,
+      });
+    }
 
     // Issue #143: enrich each qualifying site with its EPA Community
     // Involvement Coordinator pulled from the Cumulis Contacts sub-page.
@@ -583,11 +650,28 @@ const EpaSuperfundProximityModule: HabitatModule = {
       const headline = "No active EPA Superfund sites near your home";
       const stateName = state;
       const county = house.county ? `${house.county} County, ${stateName}` : stateName;
+      const suppressedCount = droppedNoContaminants.length;
+      // Issue #154: when the only tier-qualifying sites were dropped
+      // for missing contaminant inventories, acknowledge the
+      // suppression in the no-hits summary so the activity log and
+      // the headline copy tell a consistent story to a reader
+      // wondering why the count went to zero. Drops the qualifier
+      // when nothing was suppressed so the pure no-hits copy stays
+      // unchanged for the common case.
+      const matchedClause =
+        suppressedCount > 0 ? " with published contaminant data" : "";
+      const suppressionClause =
+        suppressedCount > 0
+          ? ` We checked ${suppressedCount} additional site${
+              suppressedCount === 1 ? "" : "s"
+            } that EPA's database knows about but for which it hasn't published a contaminant inventory; those aren't actionable for a homeowner, so we filtered them out.`
+          : "";
       const summary =
         `We checked EPA's Superfund database for sites within ${SEARCH_RADIUS_MILES} miles of your home in ${county} ` +
-        `and didn't find any. The ${allSites.length} site${
+        `and didn't find any${matchedClause}. The ${allSites.length} site${
           allSites.length === 1 ? "" : "s"
-        } in ${stateName} are all farther than that or have completed cleanup.`;
+        } in ${stateName} are all farther than that or have completed cleanup.` +
+        suppressionClause;
 
       const findingStep = findingStepNarration(0, headline);
       log.step({
@@ -657,6 +741,13 @@ const EpaSuperfundProximityModule: HabitatModule = {
       state,
       total_qualifying_sites: qualifying.length,
       portfolio_label: portfolioLabel,
+      // Issue #149: forward the homeowner's water source and basement
+      // presence so the model can mention pathway alignment where it
+      // materially changes the framing. Null / "unknown" values flow
+      // through verbatim — the prompt builder drops them so the model
+      // doesn't try to comment on missing context.
+      water_source: house.waterSource ?? null,
+      basement_present: house.basementPresent ?? null,
       sites: qualifying.map<PortfolioSummarySite>((s) => ({
         name: s.site.name_display,
         distance_miles: s.context.distance_miles,

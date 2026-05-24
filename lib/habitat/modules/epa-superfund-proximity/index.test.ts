@@ -322,6 +322,7 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
         archived_ind: "N",
         archived_date: null,
         fk_ref_region_code: "05",
+        preferred_contaminant_name: "LEAD",
       }),
       makeRow({
         site_id: "MID000B",
@@ -333,6 +334,7 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
         archived_ind: "Y",
         archived_date: "2024-01-15",
         fk_ref_region_code: "01",
+        preferred_contaminant_name: "LEAD",
       }),
     ]);
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
@@ -370,6 +372,7 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
         archived_ind: "N",
         archived_date: null,
         fk_ref_region_code: null,
+        preferred_contaminant_name: "LEAD",
       }),
     ]);
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
@@ -635,6 +638,9 @@ describe("EpaSuperfundProximityModule.check — tier filtering", () => {
   });
 
   it("includes status 'A' (part-of-NPL) sites inside the Tier 1 band as 'caution'", async () => {
+    // Issue #154: an 'A' site needs at least one contaminant to survive
+    // the post-tier suppression filter. The tier-banding rule is the
+    // assertion target; LEAD is a stand-in for a real inventory entry.
     stubFetchWithRows([
       makeRow({
         site_id: "A_TIER1",
@@ -642,6 +648,7 @@ describe("EpaSuperfundProximityModule.check — tier filtering", () => {
         primary_latitude_decimal_val: "42.267", // ~0.15 mi N
         primary_longitude_decimal_val: "-85.589",
         npl_status_code: "A",
+        preferred_contaminant_name: "LEAD",
       }),
     ]);
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
@@ -759,6 +766,8 @@ describe("EpaSuperfundProximityModule.check — issue #140 label + portfolio sum
   it("sorts qualifying sites by label-desc so worth_acting_on leads even when it isn't the closest", async () => {
     // Use a closer worth_knowing site and a farther worth_acting_on
     // site to prove label-desc beats distance-asc as the lead sort key.
+    // Both sites have a contaminant so the issue #154 suppression
+    // filter doesn't drop the worth_knowing entry.
     stubFetchWithRows([
       makeRow({
         site_id: "CLOSE_KNOWING",
@@ -766,6 +775,7 @@ describe("EpaSuperfundProximityModule.check — issue #140 label + portfolio sum
         primary_latitude_decimal_val: "42.267", // ~0.15 mi N → Tier 1
         primary_longitude_decimal_val: "-85.589",
         npl_status_code: "A", // Tier 1 + A → worth_knowing
+        preferred_contaminant_name: "LEAD",
       }),
       makeRow({
         site_id: "FAR_ACTING",
@@ -784,8 +794,15 @@ describe("EpaSuperfundProximityModule.check — issue #140 label + portfolio sum
     expect(sites[1].context.label).toBe("worth_knowing");
   });
 
-  it("suppresses portfolio_label (null) when every per-site label is suppressed", async () => {
-    // Tier 3 site with no contaminants → per-site label null → portfolio null.
+  it("filters Tier 3 sites with no published contaminants entirely via the issue #154 suppression filter (replaces the pre-#154 per-site label suppression path)", async () => {
+    // Tier 3 site with no contaminants. Pre-#154 this hit the
+    // computeSiteLabel suppression branch (`null` per-site label,
+    // `null` portfolio_label). After #154 the site is filtered before
+    // the label rollup ever runs and the module falls through to the
+    // favorable no-hits branch — that's the right behavior because the
+    // modal had nothing useful to render for the site anyway. The
+    // computeSiteLabel suppression branch remains as a defensive guard
+    // and is unit-tested in label.test.ts.
     stubFetchWithRows([
       makeRow({
         site_id: "TIER3_EMPTY",
@@ -798,8 +815,9 @@ describe("EpaSuperfundProximityModule.check — issue #140 label + portfolio sum
     ]);
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const findings = finding.findings as SuperfundFindings;
-    expect(findings.sites[0].context.label).toBeNull();
-    expect(findings.portfolio_label).toBeNull();
+    expect(finding.severity).toBe("favorable");
+    expect(findings.sites).toEqual([]);
+    expect(findings.portfolio_label).toBeUndefined();
   });
 
   it("persists a portfolio_summary with text=null and an env-unset error_reason when the AI call is not configured", async () => {
@@ -883,6 +901,9 @@ describe("EpaSuperfundProximityModule.check — issue #140 label + portfolio sum
 
 describe("EpaSuperfundProximityModule.check — issue #143 CIC enrichment + documents URL", () => {
   it("populates documents_url on every qualifying site (deterministic, no scraping)", async () => {
+    // Issue #154: qualifying sites need at least one contaminant or
+    // they get filtered out. Adding LEAD to the fixture keeps the site
+    // in the qualifying set so the documents_url assertion runs.
     stubFetchWithRows([
       makeRow({
         site_id: "0503011",
@@ -891,6 +912,7 @@ describe("EpaSuperfundProximityModule.check — issue #143 CIC enrichment + docu
         primary_latitude_decimal_val: "42.267",
         primary_longitude_decimal_val: "-85.589",
         npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
       }),
     ]);
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
@@ -918,6 +940,7 @@ describe("EpaSuperfundProximityModule.check — issue #143 CIC enrichment + docu
           primary_latitude_decimal_val: "42.267",
           primary_longitude_decimal_val: "-85.589",
           npl_status_code: "F",
+          preferred_contaminant_name: "LEAD",
         }),
       ],
       { cumulisContactsHtml: { "0503011": html } },
@@ -943,6 +966,7 @@ describe("EpaSuperfundProximityModule.check — issue #143 CIC enrichment + docu
         primary_latitude_decimal_val: "42.267",
         primary_longitude_decimal_val: "-85.589",
         npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
       }),
     ]);
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
@@ -969,6 +993,7 @@ describe("EpaSuperfundProximityModule.check — issue #143 CIC enrichment + docu
           primary_latitude_decimal_val: "42.267",
           primary_longitude_decimal_val: "-85.589",
           npl_status_code: "F",
+          preferred_contaminant_name: "LEAD",
         }),
         makeRow({
           site_id: "0502373",
@@ -977,6 +1002,7 @@ describe("EpaSuperfundProximityModule.check — issue #143 CIC enrichment + docu
           primary_latitude_decimal_val: "42.268",
           primary_longitude_decimal_val: "-85.589",
           npl_status_code: "F",
+          preferred_contaminant_name: "LEAD",
         }),
       ],
       { cumulisContactsHtml: { "0503011": html } },
@@ -1012,6 +1038,7 @@ describe("EpaSuperfundProximityModule.check — issue #143 CIC enrichment + docu
         primary_latitude_decimal_val: "42.267",
         primary_longitude_decimal_val: "-85.589",
         npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
       }),
     ]);
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
@@ -1151,6 +1178,253 @@ describe("EpaSuperfundProximityModule.check — issue #144 recommended actions",
     );
     expect(actionsStep?.result_summary).toBe("0 recommended actions");
     expect(actionsStep?.detail).toContain("no actions emitted");
+  });
+});
+
+describe("EpaSuperfundProximityModule.check — issue #149 pathway-aligned label escalation", () => {
+  it("escalates a Tier 2 active TCE site to worth_acting_on when the homeowner is on well water", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "TIER2_TCE",
+        epa_id: "MID000TCE",
+        name: "TIER2 TCE SITE",
+        primary_latitude_decimal_val: "42.2854", // ~1.4 mi N → Tier 2
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "TRICHLOROETHYLENE",
+      }),
+    ]);
+    // Same fixture, two different homeowner contexts. The well user
+    // gets the #149 escalation; the unknown user stays at the v1
+    // worth_knowing label.
+    const wellFinding = await EpaSuperfundProximityModule.check(
+      makeHouse({ waterSource: "well" }),
+    );
+    const unknownFinding = await EpaSuperfundProximityModule.check(
+      makeHouse({ waterSource: "unknown" }),
+    );
+    const wellLabel = (wellFinding.findings as SuperfundFindings).sites[0]
+      .context.label;
+    const unknownLabel = (unknownFinding.findings as SuperfundFindings).sites[0]
+      .context.label;
+    expect(wellLabel).toBe("worth_acting_on");
+    expect(unknownLabel).toBe("worth_knowing");
+  });
+
+  it("does not escalate the same fixture for a municipal-water homeowner", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "TIER2_TCE",
+        epa_id: "MID000TCE",
+        name: "TIER2 TCE SITE",
+        primary_latitude_decimal_val: "42.2854",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "TRICHLOROETHYLENE",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(
+      makeHouse({ waterSource: "municipal" }),
+    );
+    const label = (finding.findings as SuperfundFindings).sites[0].context
+      .label;
+    expect(label).toBe("worth_knowing");
+  });
+});
+
+describe("EpaSuperfundProximityModule.check — issue #154 suppress empty-contaminant sites", () => {
+  it("suppresses a single Tier 1 site with empty contaminants and falls through to favorable", async () => {
+    // Single qualifying site, empty contaminants → filter drops it →
+    // qualifying.length === 0 → favorable branch.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "EMPTY_TIER1",
+        epa_id: "MID000EMPTY",
+        name: "EMPTY ROLLUP SITE",
+        primary_latitude_decimal_val: "42.267", // ~0.15 mi N → Tier 1
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "A",
+        preferred_contaminant_name: null,
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const findings = finding.findings as SuperfundFindings;
+    expect(finding.severity).toBe("favorable");
+    expect(findings.sites).toEqual([]);
+  });
+
+  it("keeps Part-of-NPL (status 'A') sites that have at least one contaminant", async () => {
+    // The empty-contaminants signal is the filter, not NPL status. An
+    // 'A' Tier 1 site WITH contaminants should still appear.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "A_TIER1_WITH",
+        epa_id: "MID000ATIER1",
+        name: "PART OF NPL WITH LEAD",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "A",
+        preferred_contaminant_name: "LEAD",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const findings = finding.findings as SuperfundFindings;
+    expect(finding.severity).toBe("caution"); // Tier 1 + A → caution
+    expect(findings.sites).toHaveLength(1);
+    expect(findings.sites[0].site.sems_site_id).toBe("A_TIER1_WITH");
+  });
+
+  it("emits the suppression compute step naming the dropped sites when at least one was filtered", async () => {
+    // Two Tier 1 sites: one with Lead (kept), one with empty contaminants
+    // (dropped). Step order post-#154: fetch, compute(coords),
+    // compute(distance), rule, compute(suppression NEW), compute(cic),
+    // compute(labels), compute(summary), compute(actions), decide,
+    // finding = 11 steps total.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "KEPT",
+        epa_id: "MID000KEPT",
+        name: "KEEPER SITE",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
+      }),
+      makeRow({
+        site_id: "DROPPED",
+        epa_id: "MID000DROPPED",
+        name: "GEORGIA-PACIFIC CORPORATION",
+        primary_latitude_decimal_val: "42.268",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "A",
+        preferred_contaminant_name: null,
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const log = finding.activityLog!;
+    expect(log.steps.length).toBe(11);
+    const ruleIdx = log.steps.findIndex((s) => s.kind === "rule");
+    const suppressionStep = log.steps[ruleIdx + 1];
+    expect(suppressionStep.kind).toBe("compute");
+    expect(suppressionStep.narration).toMatch(/filtered out 1 site/i);
+    expect(suppressionStep.detail).toContain("Georgia-Pacific Corporation");
+  });
+
+  it("omits the suppression compute step when no sites were dropped", async () => {
+    // All qualifying sites have contaminants → suppression step skipped
+    // → log stays at the single-location 10-step shape.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "ONLY",
+        epa_id: "MID000ONLY",
+        name: "ONLY SITE WITH LEAD",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const log = finding.activityLog!;
+    expect(log.steps.length).toBe(10);
+    const suppressionStep = log.steps.find(
+      (s) => s.kind === "compute" && s.narration.includes("filtered out"),
+    );
+    expect(suppressionStep).toBeUndefined();
+  });
+
+  it("Norton Dr canonical case: 4 sites kept, Georgia-Pacific suppressed, summary tells the consistent story", async () => {
+    // Five tier-qualifying sites, one (Georgia-Pacific) with empty
+    // contaminants. After #154 the finding's sites list is the
+    // remaining 4 and the headline / summary reflect that count.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "ALLIED",
+        epa_id: "MID980794473",
+        name: "ALLIED PAPER, INC./PORTAGE CREEK/KALAMAZOO RIVER",
+        primary_latitude_decimal_val: "42.2795",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "POLYCHLORINATED BIPHENYLS",
+      }),
+      makeRow({
+        site_id: "AUTOION",
+        epa_id: "MID075021883",
+        name: "AUTO ION CHEMICALS, INC.",
+        primary_latitude_decimal_val: "42.2854",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "TCE",
+      }),
+      makeRow({
+        site_id: "CORK",
+        epa_id: "MID000CORK",
+        name: "CORK STREET LANDFILL",
+        primary_latitude_decimal_val: "42.288",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "ARSENIC",
+      }),
+      makeRow({
+        site_id: "VERONA",
+        epa_id: "MID000VERONA",
+        name: "VERONA WELL FIELD",
+        primary_latitude_decimal_val: "42.290",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "TRICHLOROETHYLENE",
+      }),
+      makeRow({
+        site_id: "GEORGIAPACIFIC",
+        epa_id: "MID000GP",
+        name: "GEORGIA-PACIFIC CORPORATION",
+        primary_latitude_decimal_val: "42.270", // ~0.35 mi N → Tier 1
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "A",
+        preferred_contaminant_name: null,
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const findings = finding.findings as SuperfundFindings;
+    expect(findings.sites).toHaveLength(4);
+    const names = findings.sites.map((s) => s.site.name_display);
+    expect(names).not.toContain("Georgia-Pacific Corporation");
+    expect(finding.headline).toBe(
+      "4 EPA Superfund sites are near your home",
+    );
+    expect(finding.summary).toMatch(/We detected 4 EPA Superfund sites/);
+    expect(finding.summary).not.toContain("Georgia-Pacific");
+  });
+
+  it("all-suppressed case: every tier-qualifying site dropped → favorable, summary acknowledges the filter", async () => {
+    // Two Tier 1 sites, both with empty contaminants. After
+    // suppression qualifying is empty, the module returns favorable,
+    // and the no-hits summary copy includes the acknowledgment clause
+    // so the headline and the activity log tell a consistent story.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "EMPTY_A",
+        name: "EMPTY ROLLUP A",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "A",
+        preferred_contaminant_name: null,
+      }),
+      makeRow({
+        site_id: "EMPTY_B",
+        name: "EMPTY ROLLUP B",
+        primary_latitude_decimal_val: "42.268",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "A",
+        preferred_contaminant_name: null,
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    expect(finding.severity).toBe("favorable");
+    expect(finding.summary).toMatch(
+      /2 additional sites that EPA's database knows about/i,
+    );
+    expect(finding.summary).toMatch(/published contaminant data/i);
   });
 });
 

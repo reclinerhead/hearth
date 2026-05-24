@@ -831,7 +831,7 @@ export default function HowItWorksPage() {
                 href: "https://www.epa.gov/superfund/superfund-national-priorities-list-npl",
               },
             ]}
-            lastUpdated="May 26, 2026"
+            lastUpdated="May 24, 2026"
           >
             <div
               style={{
@@ -915,14 +915,27 @@ export default function HowItWorksPage() {
                 There are three label tiers — <em>Worth acting on</em>,
                 {" "}<em>Worth knowing</em>, and <em>Informational</em> —
                 plus a fourth state, <em>suppressed</em>, when Hearth
-                can't characterize the site confidently from what EPA has
-                published. A suppressed label shows nothing rather than a
-                bare neutral word that could read as Hearth-endorsed
-                reassurance. Today the label uses distance, NPL status,
-                and the highest concern level among the site's published
-                contaminants; future iterations will incorporate
-                property-situation inputs (water source, basement) as
-                those land in the house profile.
+                can&rsquo;t characterize the site confidently from what
+                EPA has published. A suppressed label shows nothing
+                rather than a bare neutral word that could read as
+                Hearth-endorsed reassurance. The label factors in
+                distance, NPL status, the highest concern level among
+                the site&rsquo;s published contaminants, and (when you
+                shared them during onboarding) your home&rsquo;s water
+                source and whether you have a basement.
+              </p>
+              <p style={{ margin: 0 }}>
+                Pathway alignment is what tightens the label: a
+                chlorinated solvent at a Tier 2 active cleanup is
+                <em> Worth knowing</em> for most homeowners, but flips
+                to <em>Worth acting on</em> for a well user because
+                groundwater is the path that contaminant travels by. A
+                basement near a vapor-intrusion contaminant inside the
+                half-mile precautionary radius escalates the same way.
+                When the water source or basement information is unknown
+                Hearth holds the label at its conservative value rather
+                than guess — skipping onboarding never inflates a label
+                upward.
               </p>
             </div>
 
@@ -1115,6 +1128,81 @@ export default function HowItWorksPage() {
                 detail. If EPA hasn&rsquo;t published any contaminants
                 for a particular site, the summary is omitted rather
                 than showing an empty line.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
+                Sites we filter out
+              </h3>
+              <p style={{ margin: 0 }}>
+                Hearth only surfaces Superfund sites where EPA has
+                published a contaminant inventory. Some entries in
+                EPA&rsquo;s database are rollups under a parent NPL
+                listing &mdash; the parent record holds the
+                contamination details, and the child entries have
+                nothing for us to show you (the EPA profile URL
+                frequently 404s for these too). We filter those out
+                rather than surface a card with no actionable
+                information. The activity log on the finding panel
+                names anything we dropped, so if you&rsquo;re curious
+                what was filtered you can see it there.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
+                Inside a single site
+              </h3>
+              <p style={{ margin: 0 }}>
+                When you open one of the per-site cards, Hearth lays
+                out the site&rsquo;s page in a consistent shape: the
+                site name and metadata at the top; address and EPA
+                Region in a quick-facts card below that; the precision
+                caveat when the site spans multiple locations and
+                EPA&rsquo;s single point is a poor proxy for its
+                actual footprint; a short &ldquo;What&rsquo;s
+                distinct&rdquo; note when this site sets itself apart
+                from the rest of the nearby portfolio (closest,
+                only-active, only-with-PCBs, etc.); a collapsible
+                &ldquo;How contamination from this site typically
+                spreads&rdquo; section that translates the
+                contaminants into the pathways they travel by
+                (groundwater, vapor intrusion, etc.); a &ldquo;What
+                you can do&rdquo; block with the EPA contact and
+                document-library link; the full enriched contaminants
+                list; and a &ldquo;How we got here&rdquo; transparency
+                block at the bottom naming the upstream source and
+                date last checked.
+              </p>
+              <p style={{ margin: 0 }}>
+                The pathway explanations are static text written in
+                Hearth&rsquo;s voice once per pathway, not generated
+                per-site by a language model &mdash; the same wording
+                appears across every site that shares the same
+                pathway, so the framing stays consistent and we
+                don&rsquo;t pay per-site latency. Five-Year Review
+                history and the more granular cleanup milestones (the
+                third candidate for the per-site card) live only as
+                unstructured prose on EPA&rsquo;s pages today and
+                aren&rsquo;t ingested yet; that&rsquo;s a separate
+                follow-up.
               </p>
             </div>
           </ModuleSection>

@@ -13,12 +13,30 @@
  *                       rather than defaulting to a bare label that could
  *                       read as Hearth-endorsed reassurance.
  *
- * Issue #140 designs this label to incorporate property-situation inputs
- * (water source, basement, well/municipal). Those fields are not on the
- * house schema yet — this first slice computes the label from what IS
- * available today (distance tier, NPL status, contaminant concern levels,
- * count of qualifying sites). The follow-up that adds water_source and
- * basement_present will tighten these rules in place.
+ * Issue #140's first slice computed the label from distance tier, NPL
+ * status, and the highest contaminant concern level. Issue #149
+ * tightens those rules in place by adding pathway alignment against the
+ * homeowner's `waterSource` and `basementPresent` (now landed on
+ * HouseContext via #142). Two new escalation paths:
+ *
+ *   - Tier 1 or 2 active cleanup + well/shared water + at least one
+ *     high-concern groundwater-pathway contaminant → worth_acting_on
+ *     (a chlorinated solvent at a Tier 2 active site flips from
+ *     worth_knowing to worth_acting_on for a well user).
+ *   - Tier 1 active cleanup + basement present + at least one
+ *     high-concern vapor-intrusion-pathway contaminant → worth_acting_on
+ *     (the half-mile precautionary radius maps directly to Tier 1).
+ *
+ * The v1 rule (Tier 1 + F/P + any high-concern → worth_acting_on)
+ * remains, so heavy metals and PCBs at a Tier 1 active site keep
+ * escalating regardless of pathway alignment — persistent organics and
+ * heavy metals travel through multiple media and the homeowner's
+ * water source / basement doesn't materially change the framing.
+ *
+ * Suppression discipline: `waterSource ∈ {null, "unknown"}` and
+ * `basementPresent === null` disable the new pathway-aligned
+ * escalations. Users who skipped the onboarding questions get the v1
+ * rules only — no inflation based on guesses about their setup.
  *
  * Severity (the 6-stop HabitatSeverity scale) stays load-bearing for the
  * dashboard dot and module-level top severity. The label is a separate
@@ -26,6 +44,7 @@
  */
 
 import { findContaminantByAlias } from "@/lib/habitat/contaminants/lookup";
+import type { Contaminant } from "@/lib/habitat/contaminants/data";
 import type { NplCode, Tier } from "./severity";
 
 export type SuperfundLabel =
@@ -76,18 +95,57 @@ export type SiteLabelInputs = {
    * doesn't publish a contaminant inventory for every site.
    */
   contaminants: string[];
+  /**
+   * Homeowner's water source from HouseContext (#142). Issue #149's
+   * groundwater-pathway escalation only fires for `"well"` or
+   * `"shared"`; `null` and `"unknown"` disable the rule so users who
+   * skipped onboarding don't get inflated labels. Optional on the
+   * type so existing callers / tests that only care about the v1
+   * rules can keep their fixtures terse.
+   */
+  waterSource?: "well" | "municipal" | "shared" | "unknown" | null;
+  /**
+   * Homeowner's basement presence from HouseContext (#142). Issue
+   * #149's vapor-intrusion escalation only fires for `true`; `null`
+   * (crawl space, partial basement, or "not sure") disables the rule.
+   */
+  basementPresent?: boolean | null;
 };
+
+/**
+ * Returns true when at least one high-concern contaminant has the
+ * given pathway in its `pathways` list. Used by the issue #149
+ * escalation rules to decide whether the homeowner's situation
+ * (well-water user, basement) aligns with what's actually at the site.
+ */
+function hasHighConcernOnPathway(
+  enrichments: Contaminant[],
+  pathway: Contaminant["pathways"][number],
+): boolean {
+  return enrichments.some(
+    (e) => e.concern_level === "high" && e.pathways.includes(pathway),
+  );
+}
 
 /**
  * Per-site label. Returns null when EPA hasn't published a contaminants
  * inventory AND the site is distant enough that proximity alone can't
  * carry the framing — suppression beats a bare default that would read
  * as Hearth-endorsed reassurance.
+ *
+ * After issue #154 the upstream module filters out empty-contaminant
+ * sites before they reach this function in the production pipeline, so
+ * the suppression branch only fires in unit tests today. Kept here as a
+ * defensive guard — if the upstream filter is ever removed or bypassed,
+ * the bare-label-reads-as-reassurance risk comes back, and the
+ * suppression branch catches it.
  */
 export function computeSiteLabel(
   inputs: SiteLabelInputs,
 ): SuperfundLabel | null {
   const { tier, nplCode, contaminants } = inputs;
+  const waterSource = inputs.waterSource ?? null;
+  const basementPresent = inputs.basementPresent ?? null;
   const enrichments = contaminants
     .map((c) => findContaminantByAlias(c))
     .filter((c): c is NonNullable<typeof c> => c !== null);
@@ -101,22 +159,47 @@ export function computeSiteLabel(
   // we can't characterize whether this matters.
   if (noContaminantsKnown && tier === 3) return null;
 
-  // worth_acting_on: close active cleanup with at least one high-concern
-  // contaminant. The combination is the most pointed signal we can
-  // surface without the property-situation inputs.
+  const isActiveCleanup = nplCode === "F" || nplCode === "P";
+  const usesWell = waterSource === "well" || waterSource === "shared";
+  const hasBasement = basementPresent === true;
+
+  // worth_acting_on (v1): close active cleanup with at least one
+  // high-concern contaminant, regardless of water source or basement.
+  // Heavy metals and persistent organics travel through multiple media
+  // — the homeowner's situation doesn't materially change the framing.
+  if (tier === 1 && isActiveCleanup && hasHighConcern) {
+    return "worth_acting_on";
+  }
+
+  // worth_acting_on (#149): pathway-aligned escalation. Tier 1 or 2
+  // active cleanup with a well user and a high-concern groundwater
+  // contaminant — e.g. chlorinated solvents at a Tier 2 cleanup flip
+  // from worth_knowing to worth_acting_on once we know the user is on
+  // a well that shares the affected aquifer.
+  if (
+    (tier === 1 || tier === 2) &&
+    isActiveCleanup &&
+    usesWell &&
+    hasHighConcernOnPathway(enrichments, "groundwater")
+  ) {
+    return "worth_acting_on";
+  }
+
+  // worth_acting_on (#149): pathway-aligned escalation. Tier 1 (the
+  // "within half-mile" precautionary radius) active cleanup with a
+  // basement user and a high-concern vapor-intrusion contaminant.
   if (
     tier === 1 &&
-    (nplCode === "F" || nplCode === "P") &&
-    hasHighConcern
+    isActiveCleanup &&
+    hasBasement &&
+    hasHighConcernOnPathway(enrichments, "vapor_intrusion")
   ) {
     return "worth_acting_on";
   }
 
   // worth_knowing: middle-ground signals.
   if (tier === 1) return "worth_knowing";
-  if (tier === 2 && (nplCode === "F" || nplCode === "P")) {
-    return "worth_knowing";
-  }
+  if (tier === 2 && isActiveCleanup) return "worth_knowing";
   if (hasHighConcern) return "worth_knowing";
   if (hasModerateConcern && tier === 2) return "worth_knowing";
 

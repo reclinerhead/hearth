@@ -3,12 +3,35 @@
  * pane. Mounted via the Superfund module's `renderDetail` slot — see
  * `lib/habitat/modules/epa-superfund-proximity/index.ts`.
  *
- * Layout (top to bottom, after the shell's back affordance):
+ * Layout (top to bottom, after the shell's back affordance), per
+ * issue #146:
  *   1. Site header — name + metadata pills
  *   2. Address card
  *   3. Precision caveat (when EPA's single point is a poor proxy)
- *   4. Site contact and documents (CIC + documents library link)
- *   5. Contaminants list (enriched against contaminants/data.ts)
+ *   4. What's distinct about this site (1–2 facts that set this site
+ *      apart from the rest of the portfolio — suppressed entirely
+ *      when the portfolio is a single site or nothing distinguishes
+ *      this one)
+ *   5. How contamination from this site typically spreads (collapsible
+ *      <details>; one paragraph per pathway present at the site,
+ *      sourced from the static PATHWAY_EXPLANATIONS table — never
+ *      LLM-generated per site, so framing stays consistent across
+ *      the app and we don't pay per-site latency)
+ *   6. What you can do (CIC + documents library link — formerly
+ *      "Site contact and documents", renamed to read as actions
+ *      the homeowner can take)
+ *   7. Contaminants list (enriched against contaminants/data.ts —
+ *      the most concrete value the modal carries, kept directly
+ *      visible rather than collapsed)
+ *   8. How we got here / sources (transparency block — names EPA
+ *      SEMS as the upstream dataset and links to Hearth's
+ *      methodology page)
+ *
+ * The "Cleanup trajectory" section in the original #146 design
+ * (Five-Year Review status, milestones, next review date) is deferred
+ * to a follow-up alongside the FYR ingestion work. NPL status and
+ * archived state already appear in the Address card's quick-facts
+ * column, which carries the cleanup-stage signal we have today.
  *
  * Sites with deep contaminant lists (40+ entries at some Michigan
  * NPL sites) push the contact + documents section off-screen if it
@@ -26,10 +49,13 @@ import { SEVERITY_COLOR, SEVERITY_WORD } from "@/components/habitat-severity";
 import { Tooltip } from "@/components/tooltip";
 import {
   findContaminantByAlias,
+  getPathwayExplanation,
+  getPathwaysForContaminants,
 } from "@/lib/habitat/contaminants/lookup";
 import type {
   ConcernLevel,
   Contaminant,
+  Pathway,
 } from "@/lib/habitat/contaminants/data";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import { formatArchivedDate, formatEpaRegion } from "../format";
@@ -108,6 +134,14 @@ export function SiteDetail({
   const entry = findSite(row, cardId);
   if (!entry) return null;
 
+  // Issue #146: the Distinct section reasons about THIS site's place
+  // in the portfolio, so it needs the full sites list — not just the
+  // active entry. Suppressed entirely when there's only one site
+  // (nothing to distinguish from) or when nothing distinguishes this
+  // particular site from its peers.
+  const allEntries = readPortfolioSites(row);
+  const distinctFacts = computeDistinctFacts(entry, allEntries);
+
   return (
     <div className="space-y-5">
       <SiteHeader entry={entry} />
@@ -115,10 +149,25 @@ export function SiteDetail({
       {entry.context.precision_note ? (
         <PrecisionCaveat note={entry.context.precision_note} />
       ) : null}
-      <ContactAndDocumentsSection entry={entry} />
+      {distinctFacts.length > 0 ? (
+        <DistinctSection facts={distinctFacts} />
+      ) : null}
+      <ContaminationSpreadSection entry={entry} />
+      <WhatYouCanDoSection entry={entry} />
       <ContaminantsSection entry={entry} />
+      <SourcesSection row={row} />
     </div>
   );
+}
+
+/**
+ * Pull the portfolio's full sites list off the loosely-typed row.
+ * Returns [] when the row is missing findings or sites isn't an array.
+ */
+function readPortfolioSites(row: HabitatFindingRow): SiteEntry[] {
+  const findings = (row.findings ?? null) as SuperfundFindings | null;
+  if (!findings || !Array.isArray(findings.sites)) return [];
+  return findings.sites;
 }
 
 function Pill({
@@ -494,14 +543,21 @@ function ContaminantItem({ row }: { row: ContaminantRow }) {
 }
 
 /**
- * Issue #143 — "Site contact and documents" section. Surfaces the EPA
- * Community Involvement Coordinator pulled from the Cumulis Contacts
- * page (when one is published) and a direct deep link to the site's
- * documents library. Documents URL is always present (constructed
- * from the site_id); the CIC may be null when EPA hasn't designated
- * one for this site or when the scrape failed — in either case we
- * fall back to copy that names the absence honestly rather than
- * hiding the section, so the user knows the lookup was attempted.
+ * Issue #143 introduced this block as "Site contact and documents".
+ * Issue #146 renamed the eyebrow to "What you can do" so it reads as
+ * actions a homeowner can take on this specific site (email the EPA
+ * contact, open the EPA document library), distinct from the general
+ * portfolio-level "Recommended for your situation" section the modal
+ * renders above the per-site cards.
+ *
+ * Surfaces the EPA Community Involvement Coordinator pulled from the
+ * Cumulis Contacts page (when one is published) and a direct deep
+ * link to the site's documents library. Documents URL is always
+ * present (constructed from the site_id); the CIC may be null when
+ * EPA hasn't designated one for this site or when the scrape failed
+ * — in either case we fall back to copy that names the absence
+ * honestly rather than hiding the section, so the user knows the
+ * lookup was attempted.
  *
  * Rows persisted before #143 do not carry these fields. Documents
  * URL is missing on those rows (we treat the absence as "skip the
@@ -510,7 +566,7 @@ function ContaminantItem({ row }: { row: ContaminantRow }) {
  * so legacy rows render exactly like they did before #143 landed.
  * Yearly cadence backfills the fields on the next run.
  */
-function ContactAndDocumentsSection({ entry }: { entry: SiteEntry }) {
+function WhatYouCanDoSection({ entry }: { entry: SiteEntry }) {
   const { site } = entry;
   const cic = site.community_involvement_coordinator;
   const documentsUrl = site.documents_url;
@@ -522,7 +578,7 @@ function ContactAndDocumentsSection({ entry }: { entry: SiteEntry }) {
 
   return (
     <section>
-      <div className="eyebrow mb-2">Site contact and documents</div>
+      <div className="eyebrow mb-2">What you can do</div>
       <div
         className="rounded-md flex flex-col gap-3"
         style={{
@@ -617,5 +673,303 @@ function CommunityInvolvementCoordinatorBlock({
       </div>
     </div>
   );
+}
+
+/**
+ * Issue #146 — "What's distinct about this site" block. Renders a
+ * short bulleted list of facts that differentiate THIS site from the
+ * rest of the user's nearby-site portfolio: closest in the portfolio,
+ * only active cleanup, only one carrying a particular high-concern
+ * contaminant category, etc.
+ *
+ * Suppressed entirely (caller returns null) when the portfolio is a
+ * single site (nothing to compare against) or when no fact survives
+ * the comparison. Keeps the section honest: it appears only when it's
+ * actually saying something.
+ *
+ * Heuristic, not LLM-generated — keeps framing consistent across
+ * runs and avoids per-site latency.
+ */
+function DistinctSection({ facts }: { facts: string[] }) {
+  return (
+    <section>
+      <div className="eyebrow mb-2">What&rsquo;s distinct about this site</div>
+      <div
+        className="rounded-md"
+        style={{
+          border: "1px solid var(--color-border-subtle)",
+          padding: "var(--space-3)",
+        }}
+      >
+        <ul
+          className="text-small flex flex-col gap-1"
+          style={{ color: "var(--color-text-secondary)", margin: 0, paddingLeft: "1.25em" }}
+        >
+          {facts.map((f, i) => (
+            <li key={i}>{f}</li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Compute the "what's distinct" facts for a single site against the
+ * full portfolio. Returns up to three short sentences, ordered by
+ * how distinguishing each fact is. Empty array when the portfolio is
+ * a single site (no comparison possible) or when no fact
+ * distinguishes this site from its peers.
+ *
+ * Exported for the unit test suite — pure given the inputs.
+ */
+export function computeDistinctFacts(
+  thisEntry: SiteEntry,
+  allEntries: ReadonlyArray<SiteEntry>,
+): string[] {
+  if (allEntries.length <= 1) return [];
+  const facts: string[] = [];
+  const others = allEntries.filter(
+    (e) => e.site.epa_id !== thisEntry.site.epa_id,
+  );
+  if (others.length === 0) return [];
+
+  // Fact 1: closest in the portfolio. Strict less-than so a tie
+  // doesn't fire the fact for both sites.
+  const closestDistance = Math.min(
+    ...allEntries.map((e) => e.context.distance_miles),
+  );
+  if (
+    thisEntry.context.distance_miles === closestDistance &&
+    others.every(
+      (e) => e.context.distance_miles > thisEntry.context.distance_miles,
+    )
+  ) {
+    facts.push(
+      "This is the closest of the nearby sites to your home.",
+    );
+  }
+
+  // Fact 2: only active cleanup. Active = Final (F) or Proposed (P).
+  const thisActive =
+    thisEntry.site.npl_status.code === "F" ||
+    thisEntry.site.npl_status.code === "P";
+  const othersActive = others.filter(
+    (e) => e.site.npl_status.code === "F" || e.site.npl_status.code === "P",
+  );
+  if (thisActive && othersActive.length === 0) {
+    facts.push(
+      "This is the only nearby site currently in active EPA cleanup.",
+    );
+  }
+
+  // Fact 3: only one with a high-concern contaminant category. Names
+  // the category in plain language so a user can place it.
+  const thisCats = getHighConcernCategories(thisEntry.site.contaminants);
+  const otherCats = new Set<string>();
+  for (const o of others) {
+    for (const c of getHighConcernCategories(o.site.contaminants)) {
+      otherCats.add(c);
+    }
+  }
+  for (const cat of thisCats) {
+    if (!otherCats.has(cat)) {
+      facts.push(
+        `Only nearby site with documented ${DISTINCT_CATEGORY_PHRASE[cat] ?? cat} concerns.`,
+      );
+      break; // Lead with one distinct category; the rest land on the
+             // overview-card subheadings (issue #145) and the
+             // contaminants list below.
+    }
+  }
+
+  return facts.slice(0, 3);
+}
+
+/**
+ * Map a canonical-contaminants category to the plain-English phrase
+ * the Distinct block uses inside a sentence. Lowercase so it reads
+ * mid-sentence. Categories with no entry fall through to the raw key.
+ */
+const DISTINCT_CATEGORY_PHRASE: Partial<Record<string, string>> = {
+  heavy_metal: "heavy metal",
+  vocs: "volatile organic compound",
+  pcbs_dioxins: "PCB and dioxin",
+  pahs: "polycyclic aromatic hydrocarbon",
+  pesticides: "pesticide",
+  pfas: "PFAS",
+  industrial_chemical: "industrial chemical",
+  petroleum: "petroleum hydrocarbon",
+  radionuclide: "radionuclide",
+};
+
+/**
+ * Collect the set of `high`-concern contaminant categories present at
+ * a site, deduplicated and ordered by first occurrence. Unknown raw
+ * strings contribute nothing.
+ */
+function getHighConcernCategories(contaminants: string[]): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const raw of contaminants) {
+    const c = findContaminantByAlias(raw);
+    if (!c) continue;
+    if (c.concern_level !== "high") continue;
+    if (seen.has(c.category)) continue;
+    seen.add(c.category);
+    ordered.push(c.category);
+  }
+  return ordered;
+}
+
+/**
+ * Issue #146 — "How contamination from this site typically spreads"
+ * block. Renders a collapsible <details> element that holds one
+ * short paragraph per pathway present at THIS site's contaminants
+ * (sourced from the static `PATHWAY_EXPLANATIONS` table). Suppressed
+ * entirely when no pathway is resolved from the site's contaminants
+ * (e.g., empty inventory or only unknown EPA strings).
+ *
+ * Static lookup, not LLM — keeps the framing consistent across
+ * every site that has the same pathway profile.
+ */
+function ContaminationSpreadSection({ entry }: { entry: SiteEntry }) {
+  const pathways = getPathwaysForContaminants(entry.site.contaminants);
+  if (pathways.length === 0) return null;
+  return (
+    <section>
+      <details
+        className="rounded-md"
+        style={{
+          border: "1px solid var(--color-border-subtle)",
+        }}
+      >
+        <summary
+          className="cursor-pointer"
+          style={{
+            padding: "var(--space-3)",
+            color: "var(--color-text-secondary)",
+          }}
+        >
+          <span className="eyebrow">
+            How contamination from this site typically spreads
+          </span>
+        </summary>
+        <div
+          className="flex flex-col gap-3"
+          style={{
+            padding: "0 var(--space-3) var(--space-3) var(--space-3)",
+          }}
+        >
+          {pathways.map((p) => (
+            <div key={p}>
+              <div
+                className="text-small"
+                style={{
+                  color: "var(--color-text-primary)",
+                  fontWeight: 500,
+                  marginBottom: 2,
+                }}
+              >
+                {PATHWAY_LABEL[p]}
+              </div>
+              <p
+                className="text-small"
+                style={{
+                  color: "var(--color-text-secondary)",
+                  margin: 0,
+                }}
+              >
+                {getPathwayExplanation(p)}
+              </p>
+            </div>
+          ))}
+        </div>
+      </details>
+    </section>
+  );
+}
+
+/**
+ * Display labels for the contaminant-pathway enum. Mid-sentence
+ * capitalization (no trailing period) — the spread section renders
+ * them as one-line headings above each paragraph.
+ */
+const PATHWAY_LABEL: Record<Pathway, string> = {
+  groundwater: "Groundwater",
+  vapor_intrusion: "Vapor intrusion",
+  soil_exposure: "Soil exposure",
+  surface_water: "Surface water and fish",
+  airborne_particulate: "Airborne dust and fibers",
+};
+
+/**
+ * Issue #146 — "How we got here / sources" transparency block. Names
+ * EPA SEMS as the upstream dataset, the date the check ran, and
+ * links to Hearth's methodology page. Always renders — every finding
+ * has a source and a check date.
+ */
+function SourcesSection({ row }: { row: HabitatFindingRow }) {
+  const checkedAt = formatCheckedAt(row.checked_at);
+  return (
+    <section>
+      <div className="eyebrow mb-2">How we got here</div>
+      <div
+        className="rounded-md flex flex-col gap-2"
+        style={{
+          border: "1px solid var(--color-border-subtle)",
+          padding: "var(--space-3)",
+        }}
+      >
+        <div
+          className="text-small"
+          style={{ color: "var(--color-text-secondary)", margin: 0 }}
+        >
+          Source: EPA Envirofacts SEMS (Superfund Enterprise Management System).
+          Cleanup status and contaminant data are live — we re-fetch on the
+          yearly check cadence and reflect what EPA publishes at that time.
+        </div>
+        <div
+          className="text-small"
+          style={{ color: "var(--color-text-secondary)", margin: 0 }}
+        >
+          Hearth&rsquo;s three-tier proximity model and per-site risk-relevance
+          label are documented at{" "}
+          <a
+            href="/how-it-works#superfund"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            How it works → Superfund
+          </a>
+          .
+        </div>
+        {checkedAt ? (
+          <div
+            className="text-small"
+            style={{ color: "var(--color-text-tertiary)", margin: 0 }}
+          >
+            Last checked: {checkedAt}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Format the row's `checked_at` ISO timestamp as a short human date
+ * ("May 23, 2026") suitable for the sources block. Returns null when
+ * the timestamp is missing or unparseable so the caller can omit the
+ * line cleanly.
+ */
+function formatCheckedAt(raw: string | null): string | null {
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 

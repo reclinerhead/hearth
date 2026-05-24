@@ -184,4 +184,62 @@ describe("buildPortfolioSummaryUserMessage", () => {
     const msg = buildPortfolioSummaryUserMessage(makeInput());
     expect(msg).toMatch(/Do not assert the user's property is or isn't contaminated/);
   });
+
+  describe("issue #149 — homeowner property context", () => {
+    it("emits a Homeowner property context block when water_source is set", () => {
+      const msg = buildPortfolioSummaryUserMessage(
+        makeInput({ water_source: "well" }),
+      );
+      expect(msg).toMatch(/Homeowner property context:/);
+      expect(msg).toMatch(/Water source: well/);
+    });
+
+    it("emits a basement line when basement_present is true or false (not null)", () => {
+      const yes = buildPortfolioSummaryUserMessage(
+        makeInput({ basement_present: true }),
+      );
+      expect(yes).toMatch(/Basement present: yes/);
+      const no = buildPortfolioSummaryUserMessage(
+        makeInput({ basement_present: false }),
+      );
+      expect(no).toMatch(/Basement present: no/);
+    });
+
+    it("omits the property context block entirely when neither field is provided", () => {
+      // Existing fixtures shouldn't have grown a phantom new section.
+      const msg = buildPortfolioSummaryUserMessage(makeInput());
+      expect(msg).not.toMatch(/Homeowner property context/);
+    });
+
+    it("omits the property context block when both fields are null / unknown", () => {
+      // User skipped the onboarding questions — the prompt skips the
+      // context section so the model doesn't try to comment on
+      // pathway alignment with information it doesn't actually have.
+      const msg = buildPortfolioSummaryUserMessage(
+        makeInput({ water_source: null, basement_present: null }),
+      );
+      expect(msg).not.toMatch(/Homeowner property context/);
+    });
+
+    it("includes the water source when it's set but skips basement when basement is null", () => {
+      const msg = buildPortfolioSummaryUserMessage(
+        makeInput({ water_source: "municipal", basement_present: null }),
+      );
+      expect(msg).toMatch(/Water source: municipal/);
+      expect(msg).not.toMatch(/Basement present/);
+    });
+  });
+});
+
+describe("buildPortfolioSummarySystemPrompt — issue #149 pathway-alignment guidance", () => {
+  it("instructs the model to mention pathway alignment when context is provided and changes the framing", () => {
+    const prompt = buildPortfolioSummarySystemPrompt();
+    expect(prompt).toMatch(/pathway alignment/i);
+    expect(prompt).toMatch(/well user|private well|water source/i);
+  });
+
+  it("instructs the model not to invent context that wasn't provided", () => {
+    const prompt = buildPortfolioSummarySystemPrompt();
+    expect(prompt).toMatch(/do not invent context/i);
+  });
 });

@@ -166,6 +166,34 @@ export function noSitesDecideNarration(input: {
 }
 
 /**
+ * Narration for the conditional compute step inserted after the
+ * tier-filter rule step when at least one tier-qualifying site was
+ * dropped because EPA hasn't published any contaminants for it. Issue
+ * #154 — see [`/how-it-works#superfund`](../../app/(app)/how-it-works/page.tsx)
+ * for the user-facing rationale.
+ *
+ * Without a contaminant inventory the modal has nothing actionable to
+ * render and the EPA profile URL frequently 404s for these rollup
+ * entries (Georgia-Pacific is the canonical example). The activity log
+ * narrates the suppression honestly so a curious homeowner can see what
+ * was dropped — the names go in the detail line.
+ */
+export function noContaminantsSuppressionNarration(
+  droppedSiteNames: ReadonlyArray<string>,
+): { narration: string; detail: string; result_summary: string } {
+  const count = droppedSiteNames.length;
+  const namesList = droppedSiteNames.join(", ");
+  return {
+    narration:
+      `I filtered out ${count} site${count === 1 ? "" : "s"} where EPA ` +
+      `hasn't published contaminant data — those entries have nothing ` +
+      `useful for me to tell you about.`,
+    detail: `Suppressed: ${namesList}`,
+    result_summary: `${count} site${count === 1 ? "" : "s"} suppressed (no contaminant inventory)`,
+  };
+}
+
+/**
  * Per-site precision caveat copy. Set on a SiteEntry's context when
  * the site has a multi-location structure (currently inferred from a
  * `/` in `name_original` — Allied Paper, Inc./Portage Creek/Kalamazoo
