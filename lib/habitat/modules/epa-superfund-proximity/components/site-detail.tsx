@@ -8,14 +8,13 @@
  *   2. Address card
  *   3. Precision caveat (when EPA's single point is a poor proxy)
  *   4. Site contact and documents (CIC + documents library link)
- *   5. "Why this severity" expandable disclosure
- *   6. Contaminants list (enriched against contaminants/data.ts)
+ *   5. Contaminants list (enriched against contaminants/data.ts)
  *
  * Sites with deep contaminant lists (40+ entries at some Michigan
  * NPL sites) push the contact + documents section off-screen if it
- * lives below the list. Promoting the higher-leverage sections
- * (contact, severity explainer) above the long list lets a user
- * triage and act without scrolling through chemistry first.
+ * lives below the list. Promoting the contact section above the long
+ * list lets a user triage and act without scrolling through chemistry
+ * first.
  *
  * No client hooks — the optional disclosure uses a native `<details>`
  * element so this component stays purely presentational and works
@@ -117,7 +116,6 @@ export function SiteDetail({
         <PrecisionCaveat note={entry.context.precision_note} />
       ) : null}
       <ContactAndDocumentsSection entry={entry} />
-      <WhyThisSeverity entry={entry} />
       <ContaminantsSection entry={entry} />
     </div>
   );
@@ -621,49 +619,3 @@ function CommunityInvolvementCoordinatorBlock({
   );
 }
 
-function rangeLabel(tier: SiteEntry["context"]["tier"]): string {
-  if (tier === 1) return "0.5";
-  if (tier === 2) return "2";
-  return "5";
-}
-
-function WhyThisSeverity({ entry }: { entry: SiteEntry }) {
-  const { context, site } = entry;
-  const range = rangeLabel(context.tier);
-  const severityWord = SEVERITY_WORD[context.severity];
-  return (
-    <details
-      className="rounded-md"
-      style={{
-        border: "1px solid var(--color-border-subtle)",
-        padding: "var(--space-3)",
-      }}
-    >
-      <summary
-        className="text-small"
-        style={{
-          color: "var(--color-text-secondary)",
-          fontWeight: 500,
-          listStyle: "none",
-        }}
-      >
-        Why this severity
-      </summary>
-      <div className="text-small mt-2" style={{ color: "var(--color-text-secondary)" }}>
-        <p style={{ margin: 0 }}>
-          This site qualified as Tier {context.tier} (within {range} mi of your
-          home). Combined with an NPL status of {site.npl_status.label}, that
-          maps to a {severityWord.toLowerCase()} finding.
-        </p>
-        <p style={{ margin: 0, marginTop: 8 }}>
-          <a
-            href="/how-it-works#superfund"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            More about Hearth&rsquo;s classification
-          </a>
-        </p>
-      </div>
-    </details>
-  );
-}
