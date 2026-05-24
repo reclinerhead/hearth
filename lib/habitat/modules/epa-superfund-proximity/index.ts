@@ -80,6 +80,11 @@ import type {
 } from "@/lib/habitat/types";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import {
+  CACHE_TTL_DAYS,
+  createSupabaseEnvirofactsCacheStore,
+  fetchNplSitesInStateCached,
+} from "./cache";
+import {
   fetchSiteContacts,
   siteDocumentsUrl,
   siteProfileUrl,
@@ -87,7 +92,6 @@ import {
 } from "./cumulis";
 import {
   buildNplSitesUrl,
-  fetchNplSitesInState,
   parseSiteCoordinates,
   type NplSite,
 } from "./fetch";
@@ -470,14 +474,47 @@ const EpaSuperfundProximityModule: HabitatModule = {
     const state = house.state.trim().toUpperCase();
     const home = { latitude: house.latitude, longitude: house.longitude };
 
+    // Issue #160: run the EPA fetch through the per-state cache.
+    // Cache hits inside the 7-day TTL window skip the ~20s EPA call
+    // entirely. On a cache lookup error or expired entry we fall
+    // through to the same EPA call we made before #160 landed, and
+    // the upsert after the fetch warms the cache for the next user
+    // in the same state. The cache store soft-fails at every step
+    // — a Supabase outage never breaks the finding.
+    //
+    // Factory called inside check() (not at module load) so a
+    // missing Supabase env var in a test environment doesn't crash
+    // at import time. The factory itself never throws; its lookup
+    // and upsert methods catch any Supabase error and degrade to
+    // a cache miss / silent-no-op, so the EPA fallback always runs.
+    const cacheStore = createSupabaseEnvirofactsCacheStore();
+    const { sites: allSites, cache } = await fetchNplSitesInStateCached(
+      state,
+      cacheStore,
+    );
+
     log.step({
       kind: "fetch",
-      narration: fetchStepNarration(state),
-      detail: `GET ${buildNplSitesUrl(state)}`,
+      narration: fetchStepNarration(
+        state,
+        cache.kind === "hit"
+          ? {
+              ageDays: cache.ageDays,
+              ttlDays: CACHE_TTL_DAYS,
+              fetchedAt: cache.fetchedAt,
+            }
+          : undefined,
+      ),
+      detail:
+        cache.kind === "hit"
+          ? `Cache hit: state=${state}, fetched_at=${cache.fetchedAt.toISOString()}, age=${cache.ageDays}d, ttl=${CACHE_TTL_DAYS}d`
+          : `Cache ${cache.reason === "no-row" ? "miss (no row yet)" : cache.reason === "expired" ? "miss (expired, refetched + cache updated)" : "miss (lookup error, refetched)"}; GET ${buildNplSitesUrl(state)}`,
       source: EPA_ENVIROFACTS_SOURCE,
+      result_summary:
+        cache.kind === "hit"
+          ? `cache: hit (${cache.ageDays}d old)`
+          : `cache: miss (${cache.reason})`,
     });
-
-    const allSites = await fetchNplSitesInState(state);
 
     const geocoded: Array<{ site: NplSite; coords: { latitude: number; longitude: number } }> = [];
     let droppedNoCoords = 0;

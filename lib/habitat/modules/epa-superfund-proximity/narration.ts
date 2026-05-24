@@ -48,9 +48,26 @@ export const HEARTH_TIER_RULE_SOURCE: ActivitySource = {
 };
 
 /**
- * Narration for the initial EPA fetch step.
+ * Narration for the initial EPA fetch step. Issue #160 added the
+ * `cacheHit` parameter — when populated, the step describes a cache
+ * hit instead of a fresh fetch, naming the cached date and the TTL
+ * window so a reader can see why the call was fast.
  */
-export function fetchStepNarration(state: string): string {
+export function fetchStepNarration(
+  state: string,
+  cacheHit?: { ageDays: number; ttlDays: number; fetchedAt: Date },
+): string {
+  if (cacheHit) {
+    const ageWord =
+      cacheHit.ageDays === 0
+        ? "earlier today"
+        : `${cacheHit.ageDays} day${cacheHit.ageDays === 1 ? "" : "s"} ago`;
+    return (
+      `I had a cached EPA Superfund response for ${state} from ${ageWord} ` +
+      `(within the ${cacheHit.ttlDays}-day cache window), so I used that ` +
+      `instead of re-fetching.`
+    );
+  }
   return `I started by asking EPA's Superfund database what sites are in or near ${state}.`;
 }
 
