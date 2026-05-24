@@ -191,14 +191,22 @@ export function HabitatFindingModal({
   const hasCards = cards.length > 0;
   const overviewCardsHeader = habitatModule.overviewCardsHeader ?? "Details";
 
-  // Issue #140: optional module slot that replaces the severity word in
-  // the header eyebrow. When the slot is defined, the module owns the
-  // word fully — including suppression (returning null shows the
-  // severity dot + module name only). When undefined, the default
-  // severity-word treatment stays.
-  const moduleProvidesFindingLabel =
-    habitatModule.getFindingLabel !== undefined;
-  const findingLabel = habitatModule.getFindingLabel?.(row) ?? null;
+  // Issue #140: optional module slot that replaces the severity word
+  // in the header eyebrow. The slot return value disambiguates three
+  // cases:
+  //   - object → render that word in the eyebrow
+  //   - null   → explicit suppression (show nothing for the second
+  //              eyebrow word; the severity dot + module name stay)
+  //   - undefined (or slot not implemented) → fall back to the default
+  //              severity-word treatment so legacy rows persisted before
+  //              the module gained the slot keep rendering the severity
+  //              word until the next yearly cadence backfills
+  const findingLabelResult = habitatModule.getFindingLabel?.(row);
+  const findingLabelSuppressed = findingLabelResult === null;
+  const findingLabelObject =
+    findingLabelResult && findingLabelResult !== null ? findingLabelResult : null;
+  const showDefaultSeverityWord =
+    findingLabelResult === undefined && !findingLabelSuppressed;
 
   // Issue #140: optional banner above the overview cards. The Superfund
   // module returns its AI-generated portfolio summary here.
@@ -264,23 +272,21 @@ export function HabitatFindingModal({
             <div className="flex items-center gap-2 mb-1">
               <SeverityDot severity={severity} />
               <span className="eyebrow">{habitatModule.name}</span>
-              {moduleProvidesFindingLabel ? (
-                findingLabel ? (
-                  <span
-                    className="eyebrow"
-                    style={{ color: findingLabel.color }}
-                  >
-                    {findingLabel.word}
-                  </span>
-                ) : null
-              ) : (
+              {findingLabelObject ? (
+                <span
+                  className="eyebrow"
+                  style={{ color: findingLabelObject.color }}
+                >
+                  {findingLabelObject.word}
+                </span>
+              ) : showDefaultSeverityWord ? (
                 <span
                   className="eyebrow"
                   style={{ color: SEVERITY_COLOR[severity] }}
                 >
                   {SEVERITY_WORD[severity]}
                 </span>
-              )}
+              ) : null}
             </div>
             <h2 id={titleId} className="h2 mt-0.5">
               {headline}

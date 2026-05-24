@@ -335,20 +335,28 @@ export interface HabitatModule {
 
   /**
    * Optional. Replaces the severity word in the modal header with a
-   * module-computed label word + color. Returning `null` suppresses
-   * the header label entirely — the modal shows the severity dot and
-   * module name only, with no second eyebrow string.
+   * module-computed label word + color.
    *
-   * Modules that don't implement this function get the default
-   * behavior: severity word rendered in its severity color. Modules
-   * that do implement it own the header word fully — including the
-   * suppression case. Introduced by the Superfund module in issue #140;
-   * the "label" concept is parallel to severity and is suppressed
-   * when the module can't characterize the finding confidently.
+   * Three return values, three behaviors:
+   *   - `{ word, color }` — modal renders that word in the eyebrow.
+   *   - `null` — explicit suppression. Modal shows the severity dot
+   *     and module name only, deliberately omitting any second eyebrow
+   *     string. Used when the module computed the label and decided
+   *     it can't characterize the finding confidently (a bare label
+   *     would read as endorsed reassurance).
+   *   - `undefined` — "no opinion for this row." Modal falls back to
+   *     the default severity word, same as if the module didn't
+   *     implement the slot at all. Used for legacy rows persisted
+   *     before the label concept existed, so they keep rendering the
+   *     severity word until the yearly cadence backfills.
+   *
+   * Introduced by the Superfund module in issue #140; the "label"
+   * concept is parallel to severity and is suppressed when the module
+   * can't characterize the finding confidently.
    */
   getFindingLabel?: (
     row: HabitatFindingRow,
-  ) => { word: string; color: string } | null;
+  ) => { word: string; color: string } | null | undefined;
 
   /**
    * Optional. Renders a short banner paragraph at the top of the

@@ -730,19 +730,24 @@ const EpaSuperfundProximityModule: HabitatModule = {
 
   /**
    * Replaces the modal header's severity word with the issue #140
-   * computed finding label. Returns null when the portfolio label is
-   * suppressed — the header then shows the severity dot and module
-   * name only, deliberately omitting any second eyebrow word so a
-   * bare label can't read as Hearth-endorsed reassurance.
+   * computed finding label. Three return cases:
    *
-   * Rows persisted before #140 do not carry `portfolio_label`; in
-   * that case we fall through to undefined (no slot result), and the
-   * modal's default behavior is restored — same as every other module.
+   *   - `{ word, color }` — populated portfolio_label, rendered as the
+   *     header eyebrow word in the label's color.
+   *   - `null` — explicit suppression. The module computed the label
+   *     this run and decided it can't characterize confidently (e.g.
+   *     every per-site label suppressed because EPA didn't publish
+   *     contaminants). Modal shows no second eyebrow word — a bare
+   *     default could read as Hearth-endorsed reassurance.
+   *   - `undefined` — legacy row from before #140 landed, with no
+   *     `portfolio_label` field on `findings`. Modal falls back to
+   *     the default severity-word treatment, same as every other
+   *     module. These rows backfill on the next yearly cadence.
    */
   getFindingLabel(row: HabitatFindingRow) {
     const findings = (row.findings ?? null) as SuperfundFindings | null;
     if (!findings || findings.portfolio_label === undefined) {
-      return null;
+      return undefined;
     }
     const label = findings.portfolio_label;
     if (label === null) return null;

@@ -893,11 +893,16 @@ describe("EpaSuperfundProximityModule module slots (issue #140)", () => {
       expect(result).toBeNull();
     });
 
-    it("returns null when the row predates #140 (no portfolio_label field at all)", () => {
+    it("returns undefined when the row predates #140 (no portfolio_label field at all) — modal falls back to severity word", () => {
+      // Distinct from the explicit-null suppression case above. Legacy
+      // rows return undefined so the modal renders the default severity
+      // word instead of suppressing the eyebrow entirely. They'll
+      // backfill on the next yearly cadence and start returning
+      // populated labels.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const row = makeRow({}) as any;
       const result = EpaSuperfundProximityModule.getFindingLabel!(row);
-      expect(result).toBeNull();
+      expect(result).toBeUndefined();
     });
   });
 

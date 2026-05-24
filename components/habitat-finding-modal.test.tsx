@@ -586,4 +586,92 @@ describe("HabitatFindingModal", () => {
       expect(closes).toBe(1);
     });
   });
+
+  /**
+   * Issue #140: the `getFindingLabel` slot is three-state. The modal
+   * must distinguish:
+   *   - object returned → render that word
+   *   - null returned    → suppress entirely (no second eyebrow word)
+   *   - undefined returned (or slot not implemented) → fall back to
+   *     the default severity word
+   *
+   * The legacy fallback case is load-bearing: rows persisted before
+   * the slot was introduced return undefined, and they must keep
+   * rendering the severity word so they don't visually regress
+   * before the yearly cadence backfills them.
+   */
+  describe("getFindingLabel three-state semantics (issue #140)", () => {
+    function moduleWithFindingLabel(
+      ret: { word: string; color: string } | null | undefined,
+    ): HabitatModule {
+      return {
+        ...RADON_MODULE,
+        getFindingLabel: () => ret,
+      };
+    }
+
+    it("renders the slot's word + color when getFindingLabel returns an object", () => {
+      const mod = moduleWithFindingLabel({
+        word: "Worth acting on",
+        color: "rgb(123, 45, 67)",
+      });
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={mod}
+        />,
+      );
+      expect(document.body.textContent).toContain("Worth acting on");
+      // Default severity word must not also appear in the eyebrow.
+      const header = container.querySelector("header");
+      expect(header?.textContent).not.toContain("Concern");
+    });
+
+    it("suppresses the eyebrow word entirely when getFindingLabel returns null", () => {
+      const mod = moduleWithFindingLabel(null);
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={mod}
+        />,
+      );
+      const header = container.querySelector("header");
+      // No label word AND no severity-word fallback.
+      expect(header?.textContent).not.toContain("Concern");
+      expect(header?.textContent).not.toContain("Worth");
+    });
+
+    it("falls back to the default severity word when getFindingLabel returns undefined (legacy row)", () => {
+      const mod = moduleWithFindingLabel(undefined);
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={mod}
+        />,
+      );
+      const header = container.querySelector("header");
+      // Legacy contract — severity word still renders, same as a
+      // module that doesn't implement the slot at all.
+      expect(header?.textContent).toContain("Concern");
+    });
+
+    it("falls back to the default severity word when the slot is not implemented", () => {
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={RADON_MODULE}
+        />,
+      );
+      const header = container.querySelector("header");
+      expect(header?.textContent).toContain("Concern");
+    });
+  });
 });
