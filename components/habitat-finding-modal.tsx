@@ -8,7 +8,6 @@ import {
   SEVERITY_COLOR,
   SEVERITY_WORD,
   SeverityDot,
-  severityWeight,
 } from "./habitat-severity";
 import type { ActivityStep } from "@/lib/habitat/activity-log";
 import type {
@@ -69,15 +68,6 @@ function formatCheckedAt(iso: string | null): string | null {
 
 function isInternalUrl(url: string): boolean {
   return url.startsWith("/");
-}
-
-/**
- * Sort overview cards severity-desc, subtitle-asc. Stable, pure.
- */
-function compareOverviewCards(a: OverviewCard, b: OverviewCard): number {
-  const w = severityWeight(b.severity) - severityWeight(a.severity);
-  if (w !== 0) return w;
-  return a.subtitle.localeCompare(b.subtitle);
 }
 
 export function HabitatFindingModal({
@@ -192,10 +182,35 @@ export function HabitatFindingModal({
     activityLog && Array.isArray(activityLog.steps) ? activityLog.steps : null;
   const hasSteps = steps !== null && steps.length > 0;
 
-  const rawCards = habitatModule.getOverviewCards?.(row) ?? [];
-  const cards = [...rawCards].sort(compareOverviewCards);
+  // Issue #140: modules that implement getOverviewCards own the card
+  // order (Superfund sorts by label-desc → severity-desc → distance-asc
+  // in its module file). The modal renders cards in the order the
+  // module returns them — re-sorting here would silently override the
+  // module's preferred surfacing.
+  const cards: OverviewCard[] = habitatModule.getOverviewCards?.(row) ?? [];
   const hasCards = cards.length > 0;
   const overviewCardsHeader = habitatModule.overviewCardsHeader ?? "Details";
+
+  // Issue #140: optional module slot that replaces the severity word
+  // in the header eyebrow. The slot return value disambiguates three
+  // cases:
+  //   - object → render that word in the eyebrow
+  //   - null   → explicit suppression (show nothing for the second
+  //              eyebrow word; the severity dot + module name stay)
+  //   - undefined (or slot not implemented) → fall back to the default
+  //              severity-word treatment so legacy rows persisted before
+  //              the module gained the slot keep rendering the severity
+  //              word until the next yearly cadence backfills
+  const findingLabelResult = habitatModule.getFindingLabel?.(row);
+  const findingLabelSuppressed = findingLabelResult === null;
+  const findingLabelObject =
+    findingLabelResult && findingLabelResult !== null ? findingLabelResult : null;
+  const showDefaultSeverityWord =
+    findingLabelResult === undefined && !findingLabelSuppressed;
+
+  // Issue #140: optional banner above the overview cards. The Superfund
+  // module returns its AI-generated portfolio summary here.
+  const overviewBanner = habitatModule.getOverviewBanner?.(row) ?? null;
 
   const activeCard =
     activeCardId !== null
@@ -257,12 +272,21 @@ export function HabitatFindingModal({
             <div className="flex items-center gap-2 mb-1">
               <SeverityDot severity={severity} />
               <span className="eyebrow">{habitatModule.name}</span>
-              <span
-                className="eyebrow"
-                style={{ color: SEVERITY_COLOR[severity] }}
-              >
-                {SEVERITY_WORD[severity]}
-              </span>
+              {findingLabelObject ? (
+                <span
+                  className="eyebrow"
+                  style={{ color: findingLabelObject.color }}
+                >
+                  {findingLabelObject.word}
+                </span>
+              ) : showDefaultSeverityWord ? (
+                <span
+                  className="eyebrow"
+                  style={{ color: SEVERITY_COLOR[severity] }}
+                >
+                  {SEVERITY_WORD[severity]}
+                </span>
+              ) : null}
             </div>
             <h2 id={titleId} className="h2 mt-0.5">
               {headline}
@@ -295,6 +319,25 @@ export function HabitatFindingModal({
           </DetailPane>
         ) : (
           <div className="overflow-y-auto p-4 sm:p-5 space-y-5">
+            {overviewBanner ? (
+              <section aria-labelledby={`${titleId}-banner`}>
+                <div
+                  id={`${titleId}-banner`}
+                  className="rounded-md"
+                  style={{
+                    border: "1px solid var(--color-border-subtle)",
+                    backgroundColor: "var(--color-bg-surface-raised)",
+                    padding: "var(--space-4)",
+                    color: "var(--color-text-primary)",
+                    fontSize: 14,
+                    lineHeight: 1.55,
+                  }}
+                >
+                  {overviewBanner.text}
+                </div>
+              </section>
+            ) : null}
+
             {hasCards ? (
               <section aria-labelledby={`${titleId}-cards`}>
                 <div id={`${titleId}-cards`} className="eyebrow mb-2">

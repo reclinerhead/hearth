@@ -3,6 +3,11 @@ import type { HabitatFinding, HouseContext } from "@/lib/habitat/types";
 import EpaSuperfundProximityModule, {
   buildOnboardingMessage,
 } from "./index";
+import type {
+  PortfolioSummary,
+  SiteEntry,
+  SuperfundFindings,
+} from "./types";
 
 /**
  * Minimal HouseContext for tests. 604 Norton Dr, Kalamazoo MI per the
@@ -74,8 +79,30 @@ function stubFetchWithRows(rows: ReadonlyArray<Record<string, unknown>>): void {
   );
 }
 
+// Unset both env vars the portfolio-summary AI call reads so tests
+// never accidentally fire a real generateObject() call from a
+// developer's seeded local env. The summary helper soft-fails to
+// `text: null` when no model is configured; tests that exercise the
+// AI-success path (none today — the call would be non-deterministic)
+// should vi.mock the generator module instead.
+const ORIGINAL_ENV = {
+  SUPERFUND_SUMMARY_MODEL: process.env.SUPERFUND_SUMMARY_MODEL,
+  BRIEFING_PRIMARY_MODEL: process.env.BRIEFING_PRIMARY_MODEL,
+};
+
+beforeEach(() => {
+  delete process.env.SUPERFUND_SUMMARY_MODEL;
+  delete process.env.BRIEFING_PRIMARY_MODEL;
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  if (ORIGINAL_ENV.SUPERFUND_SUMMARY_MODEL !== undefined) {
+    process.env.SUPERFUND_SUMMARY_MODEL = ORIGINAL_ENV.SUPERFUND_SUMMARY_MODEL;
+  }
+  if (ORIGINAL_ENV.BRIEFING_PRIMARY_MODEL !== undefined) {
+    process.env.BRIEFING_PRIMARY_MODEL = ORIGINAL_ENV.BRIEFING_PRIMARY_MODEL;
+  }
 });
 
 describe("EpaSuperfundProximityModule metadata", () => {
@@ -202,7 +229,10 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
     expect(sites[0].site.name_display).toContain("Inc."); // INC. → Inc.
   });
 
-  it("sorts qualifying sites severity-desc then distance-asc", async () => {
+  it("sorts qualifying sites by label-desc, severity-desc, then distance-asc (issue #140)", async () => {
+    // Both Tier 2 sites in this fixture carry the same label tier
+    // (worth_knowing) and same severity (caution), so the sort falls
+    // through to distance-asc — the closer Allied Paper still leads.
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const sites = (
       finding.findings as { sites: Array<{ context: { distance_miles: number } }> }
@@ -321,19 +351,23 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
     expect(site.epa_region_code).toBeNull();
   });
 
-  it("emits a 7-step activity log when at least one qualifying site has multi-location structure", async () => {
+  it("emits a 9-step activity log when at least one qualifying site has multi-location structure", async () => {
     // Allied Paper's name contains "/" — Allied Paper, Inc./Portage
     // Creek/Kalamazoo River. That trips the precision-caveat compute
-    // step inserted between distance and tier-filter.
+    // step inserted between distance and tier-filter. Issue #140 adds
+    // two more compute steps between rule and decide for the label
+    // rollup and the portfolio-summary call.
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const log = finding.activityLog!;
-    expect(log.steps.length).toBe(7);
+    expect(log.steps.length).toBe(9);
     expect(log.steps.map((s) => s.kind)).toEqual([
       "fetch",
       "compute",
       "compute",
       "compute",
       "rule",
+      "compute",
+      "compute",
       "decide",
       "finding",
     ]);
@@ -511,12 +545,16 @@ describe("EpaSuperfundProximityModule.check — precision caveat", () => {
     ]);
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const log = finding.activityLog!;
-    expect(log.steps.length).toBe(6);
+    // Single-location hit path: fetch, compute(coords), compute(distance),
+    // rule, compute(labels), compute(summary), decide, finding = 8 steps.
+    expect(log.steps.length).toBe(8);
     expect(log.steps.map((s) => s.kind)).toEqual([
       "fetch",
       "compute",
       "compute",
       "rule",
+      "compute",
+      "compute",
       "decide",
       "finding",
     ]);
@@ -633,6 +671,335 @@ function makeFinding(overrides: Partial<HabitatFinding> = {}): HabitatFinding {
     ...overrides,
   };
 }
+
+describe("EpaSuperfundProximityModule.check — issue #140 label + portfolio summary", () => {
+  it("populates a per-site label inside each site's context", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "TIER1_F_HIGH",
+        name: "TIER1 SITE WITH LEAD",
+        primary_latitude_decimal_val: "42.267", // ~0.15 mi N → Tier 1
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const sites = (finding.findings as SuperfundFindings).sites;
+    expect(sites[0].context.label).toBe("worth_acting_on");
+  });
+
+  it("computes a portfolio_label as the max across per-site labels", async () => {
+    // Tier 1 + Final + Lead → worth_acting_on
+    // Tier 2 + Final + TCE → worth_knowing
+    // Portfolio rolls up to worth_acting_on.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "TIER1_F_HIGH",
+        name: "CLOSE LEAD SITE",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
+      }),
+      makeRow({
+        site_id: "TIER2_F",
+        name: "FARTHER TCE SITE",
+        primary_latitude_decimal_val: "42.285",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "TRICHLOROETHYLENE",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const findings = finding.findings as SuperfundFindings;
+    expect(findings.portfolio_label).toBe("worth_acting_on");
+  });
+
+  it("sorts qualifying sites by label-desc so worth_acting_on leads even when it isn't the closest", async () => {
+    // Use a closer worth_knowing site and a farther worth_acting_on
+    // site to prove label-desc beats distance-asc as the lead sort key.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "CLOSE_KNOWING",
+        name: "CLOSE PART OF NPL",
+        primary_latitude_decimal_val: "42.267", // ~0.15 mi N → Tier 1
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "A", // Tier 1 + A → worth_knowing
+      }),
+      makeRow({
+        site_id: "FAR_ACTING",
+        name: "FAR ACTIVE WITH LEAD",
+        primary_latitude_decimal_val: "42.270", // ~0.35 mi N → Tier 1
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F", // Tier 1 + F + high → worth_acting_on
+        preferred_contaminant_name: "LEAD",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const sites = (finding.findings as SuperfundFindings).sites;
+    expect(sites[0].site.sems_site_id).toBe("FAR_ACTING");
+    expect(sites[0].context.label).toBe("worth_acting_on");
+    expect(sites[1].site.sems_site_id).toBe("CLOSE_KNOWING");
+    expect(sites[1].context.label).toBe("worth_knowing");
+  });
+
+  it("suppresses portfolio_label (null) when every per-site label is suppressed", async () => {
+    // Tier 3 site with no contaminants → per-site label null → portfolio null.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "TIER3_EMPTY",
+        name: "DISTANT EMPTY SITE",
+        primary_latitude_decimal_val: "42.30", // ~2.5 mi N → Tier 3
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: null,
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const findings = finding.findings as SuperfundFindings;
+    expect(findings.sites[0].context.label).toBeNull();
+    expect(findings.portfolio_label).toBeNull();
+  });
+
+  it("persists a portfolio_summary with text=null and an env-unset error_reason when the AI call is not configured", async () => {
+    // beforeEach explicitly deletes both env vars so the summary call
+    // gracefully skips. The summary shape still lands on the finding —
+    // null text + populated error_reason — so the modal layer can
+    // render the banner or suppress consistently.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "TIER1_F_HIGH",
+        name: "ANY HIT",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const findings = finding.findings as SuperfundFindings;
+    const summary = findings.portfolio_summary as PortfolioSummary;
+    expect(summary).toBeDefined();
+    expect(summary.text).toBeNull();
+    expect(summary.model).toBeNull();
+    expect(summary.generated_at).toBeNull();
+    expect(summary.error_reason).toMatch(/SUPERFUND_SUMMARY_MODEL/);
+  });
+
+  it("does not generate a portfolio_summary on the no-hits path (it would have nothing to summarize)", async () => {
+    stubFetchWithRows([]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const findings = finding.findings as SuperfundFindings;
+    expect(findings.portfolio_label).toBeUndefined();
+    expect(findings.portfolio_summary).toBeUndefined();
+  });
+
+  it("appends the label-rollup compute step's source citation to /how-it-works#superfund", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "ANY",
+        name: "ANY SITE",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    // The label rollup is the first compute step AFTER the rule step.
+    const log = finding.activityLog!;
+    const ruleIdx = log.steps.findIndex((s) => s.kind === "rule");
+    const labelStep = log.steps[ruleIdx + 1];
+    expect(labelStep.kind).toBe("compute");
+    expect(labelStep.narration).toMatch(/labeled each qualifying site/i);
+    expect(labelStep.source?.url).toBe("/how-it-works#superfund");
+  });
+
+  it("labels the summary compute step 'skipped' when no AI model is configured", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "ANY",
+        name: "ANY SITE",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const log = finding.activityLog!;
+    const ruleIdx = log.steps.findIndex((s) => s.kind === "rule");
+    const summaryStep = log.steps[ruleIdx + 2];
+    expect(summaryStep.kind).toBe("compute");
+    expect(summaryStep.result_summary).toBe("summary: skipped");
+    expect(summaryStep.detail).toContain("error_reason");
+  });
+});
+
+/**
+ * The two module slots introduced for issue #140 — getFindingLabel and
+ * getOverviewBanner. Both read the persisted finding shape, so we
+ * exercise them with synthetic row payloads rather than re-running
+ * check() (we already cover the persistence path above).
+ */
+describe("EpaSuperfundProximityModule module slots (issue #140)", () => {
+  function makeRow(findings: Partial<SuperfundFindings>) {
+    return {
+      house_id: "h",
+      module_key: "epa_superfund_proximity",
+      status: "completed",
+      severity: "caution",
+      headline: "h",
+      summary: "s",
+      findings: {
+        search_radius_miles: 5,
+        search_state: "MI",
+        source_dataset: "EPA Envirofacts SEMS",
+        source_dataset_note: "",
+        total_npl_sites_in_state: 0,
+        total_sites_with_coordinates: 0,
+        total_qualifying_sites: 0,
+        sites: [] as SiteEntry[],
+        ...findings,
+      },
+      source_url: null,
+      actions: [],
+      activity_log: null,
+      checked_at: null,
+      category: "environmental",
+      next_check_due_at: null,
+      created_at: "",
+      updated_at: "",
+      severity_weight: 4,
+    };
+  }
+
+  describe("getFindingLabel", () => {
+    it("returns the LABEL_WORD + LABEL_COLOR for a populated portfolio_label", () => {
+      const result = EpaSuperfundProximityModule.getFindingLabel!(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        makeRow({ portfolio_label: "worth_acting_on" }) as any,
+      );
+      expect(result?.word).toBe("Worth acting on");
+      expect(result?.color).toMatch(/^var\(--/);
+    });
+
+    it("returns null when portfolio_label is explicitly null (suppressed)", () => {
+      const result = EpaSuperfundProximityModule.getFindingLabel!(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        makeRow({ portfolio_label: null }) as any,
+      );
+      expect(result).toBeNull();
+    });
+
+    it("returns undefined when the row predates #140 (no portfolio_label field at all) — modal falls back to severity word", () => {
+      // Distinct from the explicit-null suppression case above. Legacy
+      // rows return undefined so the modal renders the default severity
+      // word instead of suppressing the eyebrow entirely. They'll
+      // backfill on the next yearly cadence and start returning
+      // populated labels.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = makeRow({}) as any;
+      const result = EpaSuperfundProximityModule.getFindingLabel!(row);
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe("getOverviewBanner", () => {
+    it("returns the summary text when present", () => {
+      const result = EpaSuperfundProximityModule.getOverviewBanner!(
+        makeRow({
+          portfolio_summary: {
+            text: "Five sites are nearby. Two are active cleanups.",
+            model: "openai/gpt-5-mini",
+            generated_at: "2026-05-23T00:00:00Z",
+            error_reason: null,
+          },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
+      );
+      expect(result?.text).toMatch(/Five sites are nearby/);
+    });
+
+    it("returns null when text is null (AI failed or env unset)", () => {
+      const result = EpaSuperfundProximityModule.getOverviewBanner!(
+        makeRow({
+          portfolio_summary: {
+            text: null,
+            model: null,
+            generated_at: null,
+            error_reason: "env unset",
+          },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
+      );
+      expect(result).toBeNull();
+    });
+
+    it("returns null when the row predates #140", () => {
+      const result = EpaSuperfundProximityModule.getOverviewBanner!(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        makeRow({}) as any,
+      );
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("getOverviewCards — eyebrow restructure (issue #140)", () => {
+    function siteWithLabel(
+      label: "worth_acting_on" | "worth_knowing" | "informational" | null,
+    ): SiteEntry {
+      return {
+        site: {
+          epa_id: "X",
+          sems_site_id: "X",
+          name_display: "Test Site",
+          name_original: "TEST SITE",
+          address: {
+            street: "1 Main St",
+            city: "Kalamazoo",
+            county: "Kalamazoo",
+            state: "MI",
+            zip: "49006",
+          },
+          npl_status: { code: "F", label: "Final NPL" },
+          contaminants: [],
+          federal_facility: false,
+          archived: false,
+          archived_date: null,
+          epa_region_code: "05",
+          profile_url: "https://example.invalid/profile",
+        },
+        context: {
+          distance_miles: 1.2,
+          bearing: "N",
+          tier: 2,
+          severity: "caution",
+          label,
+        },
+      };
+    }
+
+    it("leads the eyebrow with the label word when the per-site label is populated", () => {
+      const cards = EpaSuperfundProximityModule.getOverviewCards!(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        makeRow({ sites: [siteWithLabel("worth_knowing")] }) as any,
+      );
+      expect(cards[0].eyebrow.startsWith("Worth knowing · ")).toBe(true);
+      expect(cards[0].eyebrow).toContain("1.2 mi N");
+      expect(cards[0].eyebrow).toContain("Tier 2");
+    });
+
+    it("falls back to the legacy Tier-led eyebrow when the per-site label is null (suppressed)", () => {
+      const cards = EpaSuperfundProximityModule.getOverviewCards!(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        makeRow({ sites: [siteWithLabel(null)] }) as any,
+      );
+      expect(cards[0].eyebrow.startsWith("Tier 2 · ")).toBe(true);
+    });
+  });
+});
 
 describe("buildOnboardingMessage", () => {
   it("opens with 'good news' on the zero-hits case", () => {

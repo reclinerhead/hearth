@@ -88,6 +88,14 @@ import {
 } from "./format";
 import { compassBearing, haversineMiles } from "./geo";
 import {
+  computePortfolioLabel,
+  computeSiteLabel,
+  LABEL_COLOR,
+  LABEL_WORD,
+  labelWeight,
+  type SuperfundLabel,
+} from "./label";
+import {
   EPA_ENVIROFACTS_SOURCE,
   HEARTH_CLASSIFICATION_SOURCE,
   HEARTH_TIER_RULE_SOURCE,
@@ -101,6 +109,8 @@ import {
   precisionCaveatNarration,
   tierFilterNarration,
 } from "./narration";
+import { generatePortfolioSummary } from "./portfolio-summary/generate";
+import type { PortfolioSummarySite } from "./portfolio-summary/prompt";
 import {
   applyTier,
   maxSeverity,
@@ -111,7 +121,11 @@ import {
   type Tier,
 } from "./severity";
 import { SiteDetail } from "./components/site-detail";
-import type { SiteEntry, SuperfundFindings } from "./types";
+import type {
+  PortfolioSummary,
+  SiteEntry,
+  SuperfundFindings,
+} from "./types";
 
 const MODULE_KEY = "epa_superfund_proximity";
 const SEARCH_RADIUS_MILES = 5;
@@ -160,6 +174,8 @@ function buildSiteEntry(
   tier: Tier,
 ): SiteEntry {
   const severity = tierAndStatusToSeverity(tier, nplCode);
+  const contaminants = formatContaminants(raw.contaminants ?? []);
+  const label = computeSiteLabel({ tier, nplCode, contaminants });
   const context: SiteEntry["context"] = {
     distance_miles: roundMiles(distance),
     bearing,
@@ -170,6 +186,7 @@ function buildSiteEntry(
       severity === "neutral"
         ? severity
         : "neutral",
+    label,
   };
   if (hasMultiLocationStructure(raw.name)) {
     context.precision_note = PRECISION_CAVEAT_TEXT;
@@ -191,7 +208,7 @@ function buildSiteEntry(
         code: nplCode,
         label: nplStatusLabel(nplCode),
       },
-      contaminants: formatContaminants(raw.contaminants ?? []),
+      contaminants,
       federal_facility: raw.federal_facility_ind === "Y",
       archived: raw.archived_ind === "Y",
       archived_date: raw.archived_date ?? null,
@@ -203,11 +220,21 @@ function buildSiteEntry(
 }
 
 /**
- * Sort entries severity-desc, then distance-asc — the order findings.sites
- * is serialized in and the order the dashboard surfaces them in.
+ * Sort entries by computed risk-relevance to the user's property
+ * (issue #140): label-desc first, then severity-desc, then distance-asc.
+ *
+ * The label is the issue's preferred visual anchor — worth_acting_on
+ * sites lead, worth_knowing next, informational last, with suppressed
+ * (null) labels at the bottom. Severity stays a secondary key so two
+ * sites at the same label tier still order by Hearth's classification
+ * weight. Distance is the final tie-break.
  */
 function compareEntries(a: SiteEntry, b: SiteEntry): number {
-  const sevDiff = severityWeight(b.context.severity) - severityWeight(a.context.severity);
+  const labelDiff =
+    labelWeight(b.context.label ?? null) - labelWeight(a.context.label ?? null);
+  if (labelDiff !== 0) return labelDiff;
+  const sevDiff =
+    severityWeight(b.context.severity) - severityWeight(a.context.severity);
   if (sevDiff !== 0) return sevDiff;
   return a.context.distance_miles - b.context.distance_miles;
 }
@@ -544,6 +571,66 @@ const EpaSuperfundProximityModule: HabitatModule = {
     const topSeverity = maxSeverity(qualifying.map((s) => s.context.severity));
     const closest = qualifying[0];
 
+    // Per-site labels were computed inside buildSiteEntry above; roll
+    // them up to a single portfolio label. Issue #140.
+    const portfolioLabel = computePortfolioLabel(
+      qualifying.map((s) => s.context.label ?? null),
+    );
+
+    {
+      const labelCounts = qualifying.reduce(
+        (acc, s) => {
+          const k = s.context.label ?? "suppressed";
+          acc[k] = (acc[k] ?? 0) + 1;
+          return acc;
+        },
+        {} as Record<string, number>,
+      );
+      const breakdown = Object.entries(labelCounts)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(", ");
+      log.step({
+        kind: "compute",
+        narration:
+          "I labeled each qualifying site by how relevant it is to a homeowner reasoning about whether to take action.",
+        detail: `per-site labels → portfolio label('${portfolioLabel ?? "suppressed"}'); breakdown: ${breakdown}`,
+        result_summary: portfolioLabel
+          ? `portfolio: ${portfolioLabel}`
+          : "portfolio: suppressed",
+        source: HEARTH_CLASSIFICATION_SOURCE,
+      });
+    }
+
+    // Portfolio summary generation. Soft-fail: if the env var is unset
+    // or the AI call throws, we persist a `text: null` summary and
+    // surface the reason in the activity log + debug log. The finding
+    // itself ships either way.
+    const portfolioSummary = await generatePortfolioSummary({
+      state,
+      total_qualifying_sites: qualifying.length,
+      portfolio_label: portfolioLabel,
+      sites: qualifying.map<PortfolioSummarySite>((s) => ({
+        name: s.site.name_display,
+        distance_miles: s.context.distance_miles,
+        bearing: s.context.bearing,
+        npl_status: s.site.npl_status.label,
+        site_label: s.context.label ?? null,
+        contaminants: s.site.contaminants,
+        archived: s.site.archived,
+      })),
+    });
+
+    log.step({
+      kind: "compute",
+      narration: portfolioSummary.text
+        ? "I drafted a portfolio summary so you can hold the whole picture in your head."
+        : "I couldn't draft a portfolio summary this run; the per-site cards still carry the details.",
+      detail: portfolioSummary.text
+        ? `model('${portfolioSummary.model}'); chars=${portfolioSummary.text.length}`
+        : `error_reason: ${portfolioSummary.error_reason}`,
+      result_summary: portfolioSummary.text ? "summary: ok" : "summary: skipped",
+    });
+
     const decideStep = decideStepNarration({
       closestName: closest.site.name_display,
       closestDistance: closest.context.distance_miles,
@@ -570,6 +657,13 @@ const EpaSuperfundProximityModule: HabitatModule = {
       result_summary: findingStep.result_summary,
     });
 
+    const persistedSummary: PortfolioSummary = {
+      text: portfolioSummary.text,
+      model: portfolioSummary.model,
+      generated_at: portfolioSummary.generated_at,
+      error_reason: portfolioSummary.error_reason,
+    };
+
     return {
       severity: topSeverity,
       headline,
@@ -583,6 +677,8 @@ const EpaSuperfundProximityModule: HabitatModule = {
         total_sites_with_coordinates: geocoded.length,
         total_qualifying_sites: qualifying.length,
         sites: qualifying,
+        portfolio_label: portfolioLabel,
+        portfolio_summary: persistedSummary,
       },
       actions: buildHitActions(),
       sourceUrl: closest.site.profile_url,
@@ -611,15 +707,64 @@ const EpaSuperfundProximityModule: HabitatModule = {
     return sites.map((s) => {
       const subtitleParts = [s.site.address.street, s.site.npl_status.label]
         .filter((p): p is string => typeof p === "string" && p.length > 0);
+      // Issue #140: lead the eyebrow with the computed label word, so
+      // the per-site list's visual anchor is risk-relevance to the
+      // user's situation rather than the raw Hearth tier number. Tier
+      // stays in the eyebrow as a secondary anchor; suppressed labels
+      // fall back to the prior `Tier N · ...` shape.
+      const labelKey = s.context.label ?? null;
+      const labelWord = labelKey ? LABEL_WORD[labelKey] : null;
+      const eyebrow = labelWord
+        ? `${labelWord} · ${s.context.distance_miles} mi ${s.context.bearing} · Tier ${s.context.tier}`
+        : `Tier ${s.context.tier} · ${s.context.distance_miles} mi ${s.context.bearing}`;
       return {
         id: s.site.epa_id,
-        eyebrow: `Tier ${s.context.tier} · ${s.context.distance_miles} mi ${s.context.bearing}`,
+        eyebrow,
         headline: s.site.name_display,
         subtitle: subtitleParts.join(" · "),
         severity: s.context.severity,
         sourceUrl: s.site.profile_url,
       };
     });
+  },
+
+  /**
+   * Replaces the modal header's severity word with the issue #140
+   * computed finding label. Three return cases:
+   *
+   *   - `{ word, color }` — populated portfolio_label, rendered as the
+   *     header eyebrow word in the label's color.
+   *   - `null` — explicit suppression. The module computed the label
+   *     this run and decided it can't characterize confidently (e.g.
+   *     every per-site label suppressed because EPA didn't publish
+   *     contaminants). Modal shows no second eyebrow word — a bare
+   *     default could read as Hearth-endorsed reassurance.
+   *   - `undefined` — legacy row from before #140 landed, with no
+   *     `portfolio_label` field on `findings`. Modal falls back to
+   *     the default severity-word treatment, same as every other
+   *     module. These rows backfill on the next yearly cadence.
+   */
+  getFindingLabel(row: HabitatFindingRow) {
+    const findings = (row.findings ?? null) as SuperfundFindings | null;
+    if (!findings || findings.portfolio_label === undefined) {
+      return undefined;
+    }
+    const label = findings.portfolio_label;
+    if (label === null) return null;
+    return { word: LABEL_WORD[label], color: LABEL_COLOR[label] };
+  },
+
+  /**
+   * Surfaces the AI-generated portfolio summary as a banner at the top
+   * of the modal's overview pane. Returns null when no summary was
+   * produced (env unset, AI error, or row persisted before #140) — the
+   * pane then falls back to its prior layout (cards → actions → log).
+   */
+  getOverviewBanner(row: HabitatFindingRow) {
+    const findings = (row.findings ?? null) as SuperfundFindings | null;
+    const text = findings?.portfolio_summary?.text ?? null;
+    if (!text) return null;
+    return { text };
   },
 
   /**

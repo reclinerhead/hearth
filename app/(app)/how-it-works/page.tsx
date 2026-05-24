@@ -831,7 +831,7 @@ export default function HowItWorksPage() {
                 href: "https://www.epa.gov/superfund/superfund-national-priorities-list-npl",
               },
             ]}
-            lastUpdated="May 18, 2026"
+            lastUpdated="May 23, 2026"
           >
             <div
               style={{
@@ -890,6 +890,76 @@ export default function HowItWorksPage() {
                 ],
               ]}
             />
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
+                How we label each site for your situation
+              </h3>
+              <p style={{ margin: 0 }}>
+                On top of the severity classification, Hearth also computes
+                a separate <strong>label</strong> for each qualifying site
+                and for the finding as a whole. Severity grades the
+                proximity-and-status combination on the dashboard; the
+                label grades how relevant the site is to a homeowner
+                thinking about whether to take a concrete next step.
+              </p>
+              <p style={{ margin: 0 }}>
+                There are three label tiers — <em>Worth acting on</em>,
+                {" "}<em>Worth knowing</em>, and <em>Informational</em> —
+                plus a fourth state, <em>suppressed</em>, when Hearth
+                can't characterize the site confidently from what EPA has
+                published. A suppressed label shows nothing rather than a
+                bare neutral word that could read as Hearth-endorsed
+                reassurance. Today the label uses distance, NPL status,
+                and the highest concern level among the site's published
+                contaminants; future iterations will incorporate
+                property-situation inputs (water source, basement) as
+                those land in the house profile.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
+                Portfolio summary
+              </h3>
+              <p style={{ margin: 0 }}>
+                When a finding lists one or more nearby sites, Hearth
+                generates a short portfolio summary that sits at the top
+                of the finding panel. It's written by a language model
+                given the structured facts about every qualifying site
+                (names, distances, NPL statuses, contaminant lists,
+                Hearth's labels) and instructed to produce 2–4 sentences
+                of synthesis — what's there, what stands out, and what
+                pattern (if any) recurs across sites. The model is
+                explicitly forbidden from asserting that your specific
+                property is or isn't contaminated; Hearth helps you
+                reason, but EPA, your water utility, and licensed
+                testers determine what's actually at your house.
+              </p>
+              <p style={{ margin: 0 }}>
+                The summary is generated once per check and stored on the
+                finding — not regenerated every time you open the panel.
+                If the language-model call fails or isn't configured,
+                Hearth skips the summary cleanly and the finding still
+                ships with the per-site detail.
+              </p>
+            </div>
 
             <div
               style={{

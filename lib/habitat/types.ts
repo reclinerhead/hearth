@@ -305,6 +305,13 @@ export interface HabitatModule {
    * and above the activity log. Clicking a card swaps the modal body
    * to the detail pane and invokes `renderDetail` with the card's id.
    *
+   * The **module owns the card order** — the modal renders cards in
+   * the order this function returns them. (Issue #140: Superfund's
+   * label-desc → severity-desc → distance-asc order can't be expressed
+   * in a generic modal-side compare because the modal doesn't know
+   * about the module-specific label concept.) Modules with no strong
+   * opinion on order should sort severity-desc themselves.
+   *
    * Return [] or omit the function entirely when no drill-down is
    * needed — the modal then falls back to its pre-slotted behavior.
    *
@@ -325,4 +332,45 @@ export interface HabitatModule {
    * shell provides one above whatever this renders.
    */
   renderDetail?: (row: HabitatFindingRow, cardId: string) => ReactNode;
+
+  /**
+   * Optional. Replaces the severity word in the modal header with a
+   * module-computed label word + color.
+   *
+   * Three return values, three behaviors:
+   *   - `{ word, color }` — modal renders that word in the eyebrow.
+   *   - `null` — explicit suppression. Modal shows the severity dot
+   *     and module name only, deliberately omitting any second eyebrow
+   *     string. Used when the module computed the label and decided
+   *     it can't characterize the finding confidently (a bare label
+   *     would read as endorsed reassurance).
+   *   - `undefined` — "no opinion for this row." Modal falls back to
+   *     the default severity word, same as if the module didn't
+   *     implement the slot at all. Used for legacy rows persisted
+   *     before the label concept existed, so they keep rendering the
+   *     severity word until the yearly cadence backfills.
+   *
+   * Introduced by the Superfund module in issue #140; the "label"
+   * concept is parallel to severity and is suppressed when the module
+   * can't characterize the finding confidently.
+   */
+  getFindingLabel?: (
+    row: HabitatFindingRow,
+  ) => { word: string; color: string } | null | undefined;
+
+  /**
+   * Optional. Renders a short banner paragraph at the top of the
+   * modal's overview pane, above the overview-cards list. Returning
+   * `null` suppresses the banner — the overview pane falls back to
+   * the cards + action shelf + activity log layout it had before.
+   *
+   * Introduced by the Superfund module in issue #140 for the
+   * AI-generated portfolio summary. The slot is deliberately narrow
+   * (plain text only) so module code stays free of JSX-runtime
+   * imports — the same discipline `renderDetail` uses by passing
+   * components through `createElement`.
+   */
+  getOverviewBanner?: (
+    row: HabitatFindingRow,
+  ) => { text: string } | null;
 }
