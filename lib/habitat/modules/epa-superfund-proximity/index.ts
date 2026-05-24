@@ -684,6 +684,7 @@ const EpaSuperfundProximityModule: HabitatModule = {
     const recommendedActions: RecommendedAction[] =
       computeRecommendedActions({
         qualifyingSites: qualifying,
+        houseState: house.state ?? null,
         houseCity: house.city ?? null,
         waterSource: house.waterSource ?? null,
         basementPresent: house.basementPresent ?? null,

@@ -72,6 +72,7 @@ function makeInput(
 ): ComputeRecommendedActionsInput {
   return {
     qualifyingSites: [],
+    houseState: "MI",
     houseCity: "Kalamazoo",
     waterSource: null,
     basementPresent: null,
@@ -137,6 +138,7 @@ describe("computeRecommendedActions — water-test branches", () => {
     const actions = computeRecommendedActions(
       makeInput({
         waterSource: "municipal",
+        houseState: "MI",
         houseCity: "Kalamazoo",
         qualifyingSites: [makeEntry({ contaminants: ["Lead"] })],
       }),
@@ -148,10 +150,29 @@ describe("computeRecommendedActions — water-test branches", () => {
     expect(a.link?.url).toContain("safewater");
   });
 
-  it("falls back to a city-less CCR phrasing when houseCity is null", () => {
+  it("pre-fills the CCR search form via APEX item URL pattern (state + city)", () => {
     const actions = computeRecommendedActions(
       makeInput({
         waterSource: "municipal",
+        houseState: "MI",
+        houseCity: "Kalamazoo",
+        qualifyingSites: [makeEntry({ contaminants: ["Lead"] })],
+      }),
+    );
+    // The form's APEX item names are P102_STATE and P102_CITY; the
+    // f?p=...:itemNames:itemValues convention lands the user on the
+    // search page with both fields populated and the dropdown
+    // pre-selected — they just have to click Search.
+    expect(actions[0]?.link?.url).toBe(
+      "https://ofmpub.epa.gov/apex/safewater/f?p=136:102:0::::P102_STATE,P102_CITY:MI,Kalamazoo",
+    );
+  });
+
+  it("falls back to a city-less CCR phrasing AND state-only URL pre-fill when houseCity is null", () => {
+    const actions = computeRecommendedActions(
+      makeInput({
+        waterSource: "municipal",
+        houseState: "MI",
         houseCity: null,
         qualifyingSites: [makeEntry({ contaminants: ["Lead"] })],
       }),
@@ -159,6 +180,55 @@ describe("computeRecommendedActions — water-test branches", () => {
     expect(actions[0]?.supporting_line).not.toContain("Kalamazoo");
     expect(actions[0]?.supporting_line).toContain(
       "Your utility's most recent",
+    );
+    expect(actions[0]?.link?.url).toBe(
+      "https://ofmpub.epa.gov/apex/safewater/f?p=136:102:0::::P102_STATE:MI",
+    );
+  });
+
+  it("falls back to the bare CCR landing URL when houseState is missing (state is form-required)", () => {
+    const actions = computeRecommendedActions(
+      makeInput({
+        waterSource: "municipal",
+        houseState: null,
+        houseCity: "Kalamazoo",
+        qualifyingSites: [makeEntry({ contaminants: ["Lead"] })],
+      }),
+    );
+    expect(actions[0]?.link?.url).toBe(
+      "https://ofmpub.epa.gov/apex/safewater/f?p=136:102",
+    );
+  });
+
+  it("URL-encodes city values with spaces (e.g. 'New York')", () => {
+    const actions = computeRecommendedActions(
+      makeInput({
+        waterSource: "municipal",
+        houseState: "NY",
+        houseCity: "New York",
+        qualifyingSites: [makeEntry({ contaminants: ["Lead"] })],
+      }),
+    );
+    expect(actions[0]?.link?.url).toBe(
+      "https://ofmpub.epa.gov/apex/safewater/f?p=136:102:0::::P102_STATE,P102_CITY:NY,New%20York",
+    );
+  });
+
+  it("skips the city pre-fill when the city name contains a comma (state still pre-fills)", () => {
+    // APEX uses comma as the item-values separator. A city with a
+    // comma in its name would corrupt the parse. Skip the city
+    // rather than implement the escape convention for a rare case;
+    // the state pre-fill is still worth keeping.
+    const actions = computeRecommendedActions(
+      makeInput({
+        waterSource: "municipal",
+        houseState: "MO",
+        houseCity: "St. Louis, MO",
+        qualifyingSites: [makeEntry({ contaminants: ["Lead"] })],
+      }),
+    );
+    expect(actions[0]?.link?.url).toBe(
+      "https://ofmpub.epa.gov/apex/safewater/f?p=136:102:0::::P102_STATE:MO",
     );
   });
 

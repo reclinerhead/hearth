@@ -60,7 +60,16 @@ export type RecommendedAction = {
 
 export type ComputeRecommendedActionsInput = {
   qualifyingSites: SiteEntry[];
-  /** From HouseContext — used to build the CCR search URL. */
+  /**
+   * From HouseContext — used to pre-fill EPA's CCR search form via
+   * its APEX P102_STATE item (a USPS 2-letter code). When null we
+   * fall back to the bare landing URL.
+   */
+  houseState: string | null;
+  /**
+   * From HouseContext — also pre-fills the CCR search form via the
+   * P102_CITY item. Optional; the form already requires the state.
+   */
   houseCity: string | null;
   /** From HouseContext.waterSource. */
   waterSource: "well" | "municipal" | "shared" | "unknown" | null;
@@ -191,13 +200,39 @@ function hasVaporIntrusionConcern(sites: SiteEntry[]): boolean {
 }
 
 /**
- * EPA's CCR (Consumer Confidence Report) search tool. The tool's URL
- * doesn't accept a structured query parameter for the city — it's a
- * search form. We link to the landing page and mention the user's
- * city in the supporting line so they know what to type in.
+ * EPA's CCR (Consumer Confidence Report) search tool. The underlying
+ * APEX form takes deep-link pre-fills via the
+ * `f?p=<app>:<page>:<session>::<debug>:<clear>:<itemNames>:<itemValues>`
+ * URL convention. The form's item names are `P102_STATE` and
+ * `P102_CITY` (verified by inspecting the rendered form HTML); the
+ * generated link arrives at the page with the state pre-selected
+ * and the city pre-typed, so the user only has to click Search.
+ *
+ * If we don't have a state (every real house does, but defensive),
+ * fall back to the bare landing URL — the form's state field is
+ * required, so pre-filling just city doesn't save the user a step.
+ *
+ * If the city contains a comma we skip it: APEX uses `,` as the item-
+ * values separator and we don't want to bother with the escape
+ * convention for the rare city-with-comma case. State pre-fill is
+ * still preserved.
  */
-const EPA_CCR_SEARCH_URL =
+const EPA_CCR_SEARCH_BASE =
   "https://ofmpub.epa.gov/apex/safewater/f?p=136:102";
+
+function buildCcrSearchUrl(
+  state: string | null,
+  city: string | null,
+): string {
+  if (!state) return EPA_CCR_SEARCH_BASE;
+  const items: string[] = ["P102_STATE"];
+  const values: string[] = [encodeURIComponent(state)];
+  if (city && !city.includes(",")) {
+    items.push("P102_CITY");
+    values.push(encodeURIComponent(city));
+  }
+  return `${EPA_CCR_SEARCH_BASE}:0::::${items.join(",")}:${values.join(",")}`;
+}
 
 /**
  * EPA's "find a state-certified drinking water laboratory" page.
@@ -275,7 +310,7 @@ export function computeRecommendedActions(
         `${cityPhrase} Consumer Confidence Report is the authoritative source for what's actually at your tap.`,
       link: {
         label: "Find your utility's Consumer Confidence Report",
-        url: EPA_CCR_SEARCH_URL,
+        url: buildCcrSearchUrl(input.houseState, input.houseCity),
       },
     });
   }
