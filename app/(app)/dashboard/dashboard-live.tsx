@@ -1440,5 +1440,7 @@ function toEditableHouseRow(house: House): EditableHouseRow {
     bedrooms: house.bedrooms,
     bathrooms: house.bathrooms,
     purchase_date: house.purchase_date,
+    water_source: house.water_source,
+    basement_present: house.basement_present,
   };
 }

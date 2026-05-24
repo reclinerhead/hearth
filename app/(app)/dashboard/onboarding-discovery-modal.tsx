@@ -58,6 +58,8 @@ function houseContextFromRow(house: House): HouseContext {
     latitude: house.latitude,
     longitude: house.longitude,
     parcelId: house.parcel_id,
+    waterSource: house.water_source,
+    basementPresent: house.basement_present,
   };
 }
 

@@ -50,6 +50,31 @@ export interface HouseContext {
   latitude: number | null;
   longitude: number | null;
   parcelId: string | null;
+
+  /**
+   * Issue #142 — property-situation inputs. Used today by the planned
+   * Superfund label-calibration and recommended-actions follow-ups
+   * (#144, #149); future water-system and radon-refinement modules
+   * will read the same fields.
+   *
+   * `waterSource`:
+   *   - `"well"`     — private well
+   *   - `"municipal"` — city / utility supply
+   *   - `"shared"`   — neighborhood well or shared private system
+   *   - `"unknown"`  — user explicitly said they don't know
+   *   - `null`       — never captured (legacy row, or onboarding skipped)
+   *
+   * `basementPresent`:
+   *   - `true`  — has a basement
+   *   - `false` — no basement
+   *   - `null`  — user picked "Not sure" OR never captured (crawl-space
+   *               and partial-basement cases land here)
+   *
+   * Modules should treat `null` and `"unknown"` as "we can't reason
+   * about this — suppress rather than guess."
+   */
+  waterSource: "well" | "municipal" | "shared" | "unknown" | null;
+  basementPresent: boolean | null;
 }
 
 /**

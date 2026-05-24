@@ -6,6 +6,16 @@ import { deleteHouseAction } from "@/app/actions/houses/delete-house";
 import { DatePicker } from "./date-picker";
 import { DeletePropertyConfirmModal } from "./delete-property-confirm-modal";
 import { Icon } from "./icon";
+import {
+  basementToChoice,
+  choiceToBasement,
+  choiceToWaterSource,
+  PropertySituationFields,
+  waterSourceToChoice,
+  type BasementChoice,
+  type RowWaterSource,
+  type WaterSourceChoice,
+} from "./property-situation-fields";
 import { dispatchHouseUpdated } from "@/lib/hooks/use-house-realtime";
 import { createClient } from "@/lib/supabase/client";
 
@@ -37,6 +47,15 @@ export type EditableHouseRow = {
   bedrooms: number | null;
   bathrooms: number | null;
   purchase_date: string | null;
+  // Issue #142 — property-situation fields surfaced as segmented
+  // controls in the form below. Null means "never captured"; the
+  // segmented controls' explicit "Not sure" option persists as
+  // `water_source: "unknown"` / `basement_present: null` respectively.
+  // Helpers + the control component live in
+  // `./property-situation-fields.tsx`, shared with the onboarding
+  // step that captures these for new houses.
+  water_source: RowWaterSource;
+  basement_present: boolean | null;
 };
 
 const FOCUSABLE_SELECTOR =
@@ -107,6 +126,12 @@ export function EditHomeDetailsModal({
   );
   const [purchaseDate, setPurchaseDate] = useState(
     dateInputValue(house.purchase_date),
+  );
+  const [waterSource, setWaterSource] = useState<WaterSourceChoice>(() =>
+    waterSourceToChoice(house.water_source),
+  );
+  const [basementPresent, setBasementPresent] = useState<BasementChoice>(() =>
+    basementToChoice(house.basement_present),
   );
 
   const [saving, setSaving] = useState(false);
@@ -187,6 +212,8 @@ export function EditHomeDetailsModal({
         bedrooms: toIntegerOrNull(bedrooms),
         bathrooms: toNumberOrNull(bathrooms),
         purchase_date: purchaseDate.trim() === "" ? null : purchaseDate,
+        water_source: choiceToWaterSource(waterSource),
+        basement_present: choiceToBasement(basementPresent),
       };
       const { error: updateError } = await supabase
         .from("houses")
@@ -390,6 +417,21 @@ export function EditHomeDetailsModal({
                 label="Ownership start"
                 value={purchaseDate}
                 onChange={setPurchaseDate}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <div
+                className="eyebrow"
+                style={{ color: "var(--color-text-tertiary)" }}
+              >
+                Property situation
+              </div>
+              <PropertySituationFields
+                waterSource={waterSource}
+                onWaterSourceChange={setWaterSource}
+                basementPresent={basementPresent}
+                onBasementChange={setBasementPresent}
               />
             </div>
 

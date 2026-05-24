@@ -103,5 +103,13 @@ export async function createHouseFromMapboxFeature(
   // shared layout above it keeps the prior data — the same staleness
   // /setActiveHouseAction guards against on every switch.
   revalidatePath("/", "layout");
-  redirect("/dashboard");
+  // Route the user through the property-details capture step (issue
+  // #142) before landing on the dashboard. The step asks two
+  // property-situation questions (water source, basement presence)
+  // that downstream environmental modules use to calibrate findings.
+  // Both the initial onboarding flow and the add-another-property
+  // (`/houses/new`) flow funnel through this redirect — the property-
+  // details page renders the same form either way and "Skip for now"
+  // falls through to `/dashboard`.
+  redirect("/onboarding/property-details");
 }
