@@ -20,6 +20,7 @@ import type { HabitatModule, HouseContext } from "@/lib/habitat/types";
 import { getBriefingMessage } from "@/lib/briefing/getBriefingMessage";
 import { createClient } from "@/lib/supabase/client";
 import type { House } from "@/types/house";
+import { triggerHabitatRecheck } from "./actions";
 import {
   buildRowList,
   fallbackOnboardingMessage,
@@ -126,8 +127,23 @@ export function OnboardingDiscoveryModal({
   }, [modules.length]);
 
   const handlePropertyQuestionsSkip = useCallback(() => {
+    // The habitat workflow no longer fires from the briefing's persist
+    // step on the new-onboarding path (see workflows/briefing.ts for
+    // the timing rationale). Skip needs to kick off habitat itself,
+    // otherwise the user dismisses the modal without ever getting
+    // habitat findings. Soft-fail: a recheck-start failure is logged
+    // and the phase still advances; "Refresh House Facts" provides
+    // manual recovery if it ever bites.
+    void triggerHabitatRecheck(house.id).then((result) => {
+      if (!result.ok) {
+        console.warn(
+          "[onboarding-discovery] habitat kickoff on skip failed:",
+          result.error,
+        );
+      }
+    });
     advancePastPropertyQuestions();
-  }, [advancePastPropertyQuestions]);
+  }, [advancePastPropertyQuestions, house.id]);
 
   const handlePropertyQuestionsSave = useCallback(async () => {
     setPropertyQuestionsError(null);
@@ -147,6 +163,32 @@ export function OnboardingDiscoveryModal({
             "We couldn't save those answers. Try again or skip for now.",
         );
         return;
+      }
+      // Issue #144: the briefing's persist step no longer fires
+      // habitat (see workflows/briefing.ts for the timing rationale).
+      // The Save / Skip handler is the single kickoff point on the
+      // new-onboarding path — so this call is what actually starts
+      // habitat for new users, not a "recheck" against an earlier
+      // run. The houses UPDATE above completed first, so when the
+      // workflow's loadHouseContext step runs it sees the user's
+      // freshly-saved water_source and basement_present. The modal
+      // immediately advances to module-checking, which waits on
+      // habitat findings to land — same end-user flow as before.
+      // Soft-fail: a start() failure is logged and the phase still
+      // advances; "Refresh House Facts" provides manual recovery.
+      try {
+        const result = await triggerHabitatRecheck(house.id);
+        if (!result.ok) {
+          console.warn(
+            "[onboarding-discovery] habitat kickoff on save failed:",
+            result.error,
+          );
+        }
+      } catch (recheckErr) {
+        console.warn(
+          "[onboarding-discovery] habitat kickoff on save threw:",
+          recheckErr,
+        );
       }
       advancePastPropertyQuestions();
     } catch (err) {

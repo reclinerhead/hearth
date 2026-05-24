@@ -3,9 +3,14 @@
 import { start } from "workflow/api";
 import { createClient } from "@/lib/supabase/server";
 import { runBriefing } from "@/workflows/briefing";
+import { runHabitatChecks } from "@/workflows/habitat";
 import { runHouseImage } from "@/workflows/house-image";
 
 export type RefreshBriefingResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export type TriggerHabitatRecheckResult =
   | { ok: true }
   | { ok: false; error: string };
 
@@ -21,6 +26,16 @@ export type RegenerateHouseImageResult =
  * overwriting them. The dashboard's Realtime subscription reacts to
  * briefing_status transitions automatically — this action just verifies
  * the caller and queues the workflow.
+ *
+ * Also fires the habitat workflow in parallel. The briefing workflow
+ * itself used to kick off habitat from its persist step, but that
+ * created a timing race during new-property onboarding (habitat ran
+ * before the user could answer the property-situation questions —
+ * see workflows/briefing.ts for the full reasoning). Habitat firing
+ * is now an explicit caller responsibility. For Refresh House Facts
+ * the call site is here; for new-property onboarding the discovery
+ * modal's property-questions Save/Skip handler fires habitat via
+ * `triggerHabitatRecheck` below.
  */
 export async function refreshBriefing(
   houseId: string,
@@ -61,6 +76,81 @@ export async function refreshBriefing(
     return {
       ok: false,
       error: "We couldn't start the refresh. Try again in a moment.",
+    };
+  }
+
+  // Independent kickoff: a habitat failure here doesn't unwind the
+  // briefing start above. Logged-not-thrown so the user still sees
+  // the briefing refresh succeed even if habitat had a transient
+  // issue queuing.
+  try {
+    await start(runHabitatChecks, [houseId]);
+  } catch (habitatError) {
+    console.error(
+      "refresh briefing: habitat workflow start failed",
+      habitatError,
+    );
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Re-run the habitat workflow for a house the signed-in user owns,
+ * WITHOUT touching the Zillow / briefing path.
+ *
+ * Use case (issue #144): when the discovery modal's property-questions
+ * Save handler updates `water_source` / `basement_present`, the
+ * Superfund module's recommended-actions logic now depends on those
+ * values. But the habitat workflow already fired at briefing-persist
+ * time with the prior (null/null) defaults — so the persisted finding
+ * shows zero actions until something re-runs it. This action is the
+ * "something."
+ *
+ * Soft race: the first habitat run may still be in flight when the
+ * second one fires. Last-write-wins on the habitat_findings upsert.
+ * The second run typically completes after the first because it
+ * started later, so the user-correct values land last. In the rare
+ * pathological case where the first run finishes after the second,
+ * the user can hit "Refresh House Facts" to fire a third run with
+ * the right data. Acceptable for v1; if it bites in practice we'd
+ * gate habitat firing behind a property-details-captured flag.
+ */
+export async function triggerHabitatRecheck(
+  houseId: string,
+): Promise<TriggerHabitatRecheckResult> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { ok: false, error: "You need to be signed in to do that." };
+  }
+
+  // RLS scopes SELECT to owner_id = auth.uid(); a missing row means
+  // either a bad houseId or someone else's row. Same shape as
+  // refreshBriefing's ownership check above.
+  const { data: house, error } = await supabase
+    .from("houses")
+    .select("id")
+    .eq("id", houseId)
+    .single();
+
+  if (error || !house) {
+    return { ok: false, error: "We couldn't find that house." };
+  }
+
+  try {
+    await start(runHabitatChecks, [houseId]);
+  } catch (workflowError) {
+    console.error(
+      "trigger habitat recheck workflow start failed",
+      workflowError,
+    );
+    return {
+      ok: false,
+      error: "We couldn't re-run the habitat checks. Try again in a moment.",
     };
   }
 

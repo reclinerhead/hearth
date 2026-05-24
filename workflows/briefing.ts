@@ -5,7 +5,6 @@ import {
 } from "@/lib/briefing/merge";
 import { lookupHouseOnZillow, type ZillowLookupResult } from "@/lib/briefing/zillow";
 import { createServiceClient } from "@/lib/supabase/service";
-import { runHabitatChecks } from "@/workflows/habitat";
 import { runHouseImage } from "@/workflows/house-image";
 
 type HouseAddress = {
@@ -138,17 +137,29 @@ async function persistBriefingSuccess(
     );
   }
 
-  // Fire-and-forget the habitat checks. Mirrors the briefing kickoff in
-  // onboarding/actions.ts — the briefing's success isn't contingent on
-  // habitat completing, and a start() failure shouldn't roll back the
-  // already-persisted Zillow facts.
-  try {
-    await start(runHabitatChecks, [houseId]);
-  } catch (habitatError) {
-    console.error("habitat workflow start failed", habitatError);
-  }
+  // Habitat-workflow kickoff moved up to the callers (issue #144 timing
+  // fix). The previous design fired habitat here, but for new
+  // properties that meant habitat ran with the still-null
+  // water_source / basement_present defaults — by the time the
+  // discovery modal's property-questions phase opened, habitat was
+  // already done and the Superfund recommended-actions logic had
+  // computed against the wrong inputs. Now:
+  //
+  //   - New onboarding (createHouseFromMapboxFeature) does NOT fire
+  //     habitat from the briefing. The discovery modal's Save/Skip
+  //     handler fires `triggerHabitatRecheck` once the user has
+  //     answered (or explicitly skipped) the property-situation
+  //     questions, so habitat runs exactly once with the right
+  //     inputs.
+  //   - Refresh House Facts (`refreshBriefing` in dashboard/actions.ts)
+  //     fires both briefing AND habitat in parallel as before —
+  //     returning users have their answers persisted, so the timing
+  //     hazard doesn't apply.
+  //
+  // Edge cases (user closes browser mid-modal, etc.) recover via the
+  // Refresh House Facts button.
 
-  // Same fire-and-forget pattern for the generated illustration. The
+  // Fire-and-forget the generated illustration. The
   // image step reads year_built / description from the freshly-written
   // row, so it has to run AFTER persist; the briefing itself is already
   // user-visible at this point so a missing illustration is the only
