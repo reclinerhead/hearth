@@ -877,6 +877,71 @@ describe("EpaSuperfundProximityModule.check — issue #140 label + portfolio sum
     expect(labelStep.source?.url).toBe("/how-it-works#superfund");
   });
 
+  it("emits a transient debug.portfolio_summary capture on the multi-site path (issue #158)", async () => {
+    // The orchestrator reads finding.debug for the dev-time log step
+    // and never persists it. Assert the slot is populated with the
+    // input + timing + (env-unset) error so the log block always has
+    // something useful to write.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "ANY",
+        name: "ANY SITE",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(
+      makeHouse({ waterSource: "well", basementPresent: true }),
+    );
+    expect(finding.debug).toBeDefined();
+    const capture = (
+      finding.debug as {
+        portfolio_summary?: {
+          startedAt: string;
+          durationMs: number;
+          model: string | null;
+          input: { state: string; water_source: string | null };
+          error: string | null;
+        };
+      }
+    ).portfolio_summary;
+    expect(capture).toBeDefined();
+    expect(capture?.input.state).toBe("MI");
+    expect(capture?.input.water_source).toBe("well");
+    expect(capture?.error).toMatch(/SUPERFUND_SUMMARY_MODEL/);
+    expect(typeof capture?.durationMs).toBe("number");
+  });
+
+  it("does not leak finding.debug into findings.portfolio_summary (debug stays transient)", async () => {
+    // The persisted portfolio_summary shape is { text, model, generated_at,
+    // error_reason }. The debug capture lives on finding.debug, not on
+    // findings.portfolio_summary, so the orchestrator's `findings:
+    // finding.findings` extract doesn't carry it into the DB row.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "ANY",
+        name: "ANY SITE",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const persistedSummary = (finding.findings as SuperfundFindings)
+      .portfolio_summary as PortfolioSummary & {
+      systemPrompt?: unknown;
+      userMessage?: unknown;
+      input?: unknown;
+    };
+    expect(persistedSummary).toBeDefined();
+    expect(persistedSummary.systemPrompt).toBeUndefined();
+    expect(persistedSummary.userMessage).toBeUndefined();
+    expect(persistedSummary.input).toBeUndefined();
+  });
+
   it("labels the summary compute step 'skipped' when no AI model is configured", async () => {
     stubFetchWithRows([
       makeRow({

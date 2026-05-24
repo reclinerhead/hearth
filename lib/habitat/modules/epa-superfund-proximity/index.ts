@@ -852,6 +852,10 @@ const EpaSuperfundProximityModule: HabitatModule = {
       actions: buildHitActions(),
       sourceUrl: closest.site.profile_url,
       activityLog: log.finalize(),
+      // Issue #158: transient debug capture for the developer-time
+      // file-based prompt log. Read by the habitat workflow's
+      // writeModuleDebugLog step, never persisted to the row.
+      debug: { portfolio_summary: portfolioSummary.debug },
     };
   },
 

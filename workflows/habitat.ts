@@ -160,6 +160,73 @@ async function runOneModule(
       `Could not persist habitat finding for ${module.key} on ${context.houseId}: ${completedError.message}`,
     );
   }
+
+  // Issue #158: dev-only file-based prompt log for any AI calls
+  // the module wrapped inside check(). Reads `finding.debug` (a
+  // transient field the orchestrator deliberately doesn't persist)
+  // and dispatches each populated slot to the matching dynamic-
+  // imported writer. The dynamic import has to live in this
+  // workflow file's "use step" boundary — the helper imports
+  // node:fs/promises, which the workflow bundler blocks anywhere
+  // it's reachable statically from workflow code.
+  //
+  // Soft-fail: the log step's own catch (inside the helper) swallows
+  // filesystem errors, and the step doesn't throw on missing slots.
+  // A logging miss never affects the finding-write that already
+  // happened above.
+  if (finding.debug && Object.keys(finding.debug).length > 0) {
+    await writeModuleDebugLog(module.key, finding.debug);
+  }
+}
+
+/**
+ * Issue #158 — dispatches each populated `finding.debug.<slot>` to
+ * the matching dev-time prompt-log writer via dynamic import.
+ *
+ * `"use step"` boundary: the helpers each import `node:fs/promises`
+ * and `node:path`. Dynamic import inside this step keeps those
+ * imports off the workflow bundle's static graph and on the step
+ * bundle (which has Node available). The maintenance-synthesis
+ * `logSynthesisDebug` step is the reference pattern.
+ *
+ * Today only the Superfund module emits a `portfolio_summary` slot;
+ * future modules can add their own keys to `finding.debug` and a
+ * matching `case` here without changes to the module contract or
+ * the step machinery.
+ */
+async function writeModuleDebugLog(
+  moduleKey: string,
+  debug: Record<string, unknown>,
+): Promise<void> {
+  "use step";
+
+  if (process.env.NODE_ENV !== "development") return;
+
+  try {
+    if (
+      moduleKey === "epa_superfund_proximity" &&
+      debug.portfolio_summary
+    ) {
+      const { writeSuperfundSummaryDebugLog } = await import(
+        "@/lib/habitat/modules/epa-superfund-proximity/debug-log"
+      );
+      // Cast from the open Record<string, unknown> back to the
+      // helper's input shape. The shape is owned by the module that
+      // emits it (PortfolioSummaryDebugCapture in
+      // portfolio-summary/generate.ts); the dispatcher trusts that
+      // the emitter and the helper agree.
+      await writeSuperfundSummaryDebugLog(
+        debug.portfolio_summary as Parameters<
+          typeof writeSuperfundSummaryDebugLog
+        >[0],
+      );
+    }
+  } catch (e) {
+    console.warn(
+      `[habitat-debug-log] dispatch failed for module ${moduleKey}:`,
+      e,
+    );
+  }
 }
 
 function cadenceToNextCheck(cadence: HabitatCadence): Date | null {

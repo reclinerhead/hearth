@@ -5,6 +5,12 @@
 // Supabase column. The /logs directory is gitignored, so this file is
 // safe to call from the workflow without leaking anything to git.
 //
+// Gated on `NODE_ENV === "development"` (issue #158) — preview and
+// production builds short-circuit before any filesystem touch. The
+// developer log is a dev-iteration tool; Vercel's function filesystem
+// is read-only-ish and any write attempt would just waste a few ms
+// per call and clutter logs with swallowed errors.
+//
 // All errors are swallowed; a logging failure can never break a
 // synthesis run.
 
@@ -32,6 +38,7 @@ type SynthesisDebugLogEntry = {
 export async function writeSynthesisDebugLog(
   entry: SynthesisDebugLogEntry,
 ): Promise<void> {
+  if (process.env.NODE_ENV !== "development") return;
   try {
     const dir = path.join(process.cwd(), "logs");
     await mkdir(dir, { recursive: true });
