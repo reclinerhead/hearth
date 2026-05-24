@@ -65,6 +65,12 @@
 
 import { createElement } from "react";
 import { createActivityLogger } from "@/lib/habitat/activity-log";
+import {
+  capitalizeCategoryPhrase,
+  summarizeContaminantCategories,
+} from "@/lib/habitat/contaminants/categories";
+import { findContaminantByAlias } from "@/lib/habitat/contaminants/lookup";
+import type { Contaminant } from "@/lib/habitat/contaminants/data";
 import type {
   FindingAction,
   HabitatFinding,
@@ -789,10 +795,26 @@ const EpaSuperfundProximityModule: HabitatModule = {
       const eyebrow = labelWord
         ? `${labelWord} · ${s.context.distance_miles} mi ${s.context.bearing} · Tier ${s.context.tier}`
         : `Tier ${s.context.tier} · ${s.context.distance_miles} mi ${s.context.bearing}`;
+      // Issue #145: plain-English contaminant-category summary
+      // rendered as a subheading below the site name, so a user can
+      // triage what's actually at each site without opening the
+      // detail pane. Suppressed (left undefined) when EPA hasn't
+      // published any contaminants for the site (Georgia-Pacific's
+      // empty inventory is the canonical example) — the modal then
+      // renders just headline + subtitle as before.
+      const enrichments: Contaminant[] = s.site.contaminants
+        .map((raw) => findContaminantByAlias(raw))
+        .filter((c): c is Contaminant => c !== null);
+      const lowerPhrase = summarizeContaminantCategories(enrichments);
+      const subheading =
+        lowerPhrase.length > 0
+          ? capitalizeCategoryPhrase(lowerPhrase)
+          : undefined;
       return {
         id: s.site.epa_id,
         eyebrow,
         headline: s.site.name_display,
+        subheading,
         subtitle: subtitleParts.join(" · "),
         severity: s.context.severity,
         sourceUrl: s.site.profile_url,

@@ -219,6 +219,18 @@ export type OverviewCard = {
   eyebrow: string;
   /** Primary line (e.g. the site name). */
   headline: string;
+  /**
+   * Optional. A second-line emphasis below the headline and above the
+   * subtitle, more prominent than the subtitle but less so than the
+   * headline. The Superfund module surfaces a plain-English
+   * contaminant-category summary here (issue #145) — e.g. "PCBs and
+   * dioxins, heavy metals" — so a triaging user can see what's
+   * actually at the site without opening the detail pane. When the
+   * module has nothing useful to put here (Georgia-Pacific's empty
+   * contaminants array case), leave it undefined and the modal
+   * suppresses the row cleanly.
+   */
+  subheading?: string;
   /** Supporting line, one line tall (e.g. "2426 King Hwy · Part of NPL site"). */
   subtitle: string;
   /** Severity weighting for sort and the severity dot. */

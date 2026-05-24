@@ -39,18 +39,18 @@ import {
  * data to land and paces the reveal so fast modules still get airtime.
  */
 
-// Held on the intro screen before we transition to "checking public home records".
-const PHASE_INTRO_HOLD_MS = 800;
-// Minimum time a result line is visible before moving to the next phase.
-// Load-bearing — without this, the radon module (sub-ms in-memory lookup)
-// would flash by before the user could read it. Tuned for "definitely
-// long enough to read", not "as short as feels right" — the first-run
-// experience earns its airtime by surfacing concrete findings, and
-// the modal is the moment we deliberately slow down.
-const RESULT_DISPLAY_MIN_MS = 3000;
-// Brief beat between the last result and enabling the dismissal button, so
-// the "All set" line gets a moment of its own.
-const ALL_DONE_HOLD_MS = 600;
+// Three small "let it land" beats between phase transitions. Together
+// they keep fast modules (radon is a sub-ms in-memory lookup) from
+// flashing past before the user registers them, while staying short
+// enough that the overall modal doesn't feel artificially padded.
+// Originally tuned higher (800/3000/600) — Todd dialed them down once
+// real timings landed: the AI portfolio summary call alone takes
+// 10-15 s, so the modal's total wall-clock is dominated by actual
+// work and the per-phase beats just need to be visible, not generous.
+// 500 ms is the cap.
+const PHASE_INTRO_HOLD_MS = 500;
+const RESULT_DISPLAY_MIN_MS = 500;
+const ALL_DONE_HOLD_MS = 500;
 
 const TERMINAL_FINDING_STATUSES = new Set([
   "completed",
@@ -434,8 +434,15 @@ export function OnboardingDiscoveryModal({
         backdropFilter: "blur(6px)",
       }}
     >
+      {/*
+        max-w-lg (512px) stays the mobile cap so the modal doesn't
+        crowd the viewport on phones; md:max-w-2xl (672px) gives
+        desktop enough room that the briefing result line
+        ("Found your home data — built in 1934, 2,210 sq ft" and
+        similar) doesn't wrap mid-sentence.
+      */}
       <div
-        className="surface-ai relative w-full max-w-lg overflow-hidden flex flex-col"
+        className="surface-ai relative w-full max-w-lg md:max-w-2xl overflow-hidden flex flex-col"
         style={{ borderRadius: "var(--radius-lg)" }}
       >
         <div className="flex flex-col gap-4 p-5 sm:p-7">
@@ -480,7 +487,7 @@ export function OnboardingDiscoveryModal({
             >
               {phase.kind === "property-questions"
                 ? "These help us calibrate environmental findings to your house. Both are optional."
-                : "This usually takes about 10 seconds."}
+                : "This typically takes 20 to 30 seconds."}
             </p>
           </div>
 

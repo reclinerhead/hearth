@@ -29,12 +29,12 @@
  * actions array. Easy to unit-test across every branch.
  */
 
+import { summarizeContaminantCategories } from "@/lib/habitat/contaminants/categories";
 import {
   findContaminantByAlias,
 } from "@/lib/habitat/contaminants/lookup";
 import type {
   Contaminant,
-  ContaminantCategory,
   Pathway,
 } from "@/lib/habitat/contaminants/data";
 import type { SiteEntry } from "./types";
@@ -78,49 +78,6 @@ export type ComputeRecommendedActionsInput = {
 };
 
 /**
- * Plain-English label per ContaminantCategory. Drives the
- * "panel covering ..." phrasing in the water-test action's supporting
- * line. Keeping the mapping flat (not per-pathway) lets the same
- * labels show up across action types as new ones land.
- */
-const CATEGORY_LABELS: Record<ContaminantCategory, string> = {
-  heavy_metal: "heavy metals",
-  vocs: "volatile organic compounds",
-  pcbs_dioxins: "PCBs and dioxins",
-  pahs: "polycyclic aromatic hydrocarbons",
-  pesticides: "legacy pesticides",
-  pfas: "PFAS",
-  industrial_chemical: "industrial chemicals",
-  petroleum: "petroleum hydrocarbons",
-  nutrient: "nutrients",
-  common_mineral: "common minerals",
-  radionuclide: "radionuclides",
-};
-
-/**
- * Editorial ordering for category-label phrasing. Higher-concern
- * families lead, so when we truncate the list to keep the supporting
- * line readable, the truncation drops the least-relevant categories
- * first. Mirrors the rank ordering used inside the canonical table
- * for individual chemicals.
- */
-const CATEGORY_PRIORITY: Record<ContaminantCategory, number> = {
-  vocs: 1,
-  heavy_metal: 2,
-  pcbs_dioxins: 3,
-  pahs: 4,
-  pfas: 5,
-  pesticides: 6,
-  petroleum: 7,
-  industrial_chemical: 8,
-  radionuclide: 9,
-  nutrient: 10,
-  common_mineral: 11,
-};
-
-const MAX_CATEGORY_LABELS_IN_LINE = 3;
-
-/**
  * Collect every enriched (canonical-table-known) contaminant across
  * the qualifying sites whose pathways include the given pathway and
  * whose concern_level is at least moderate. Returns a unique set
@@ -150,38 +107,6 @@ function collectRelevantContaminants(
     }
   }
   return Array.from(seen.values());
-}
-
-/**
- * Squash a set of contaminants down to a deduplicated list of
- * category labels, sorted by editorial priority and truncated to
- * `MAX_CATEGORY_LABELS_IN_LINE`. Trailing "and other contaminants"
- * is appended when there were more categories than the cap.
- */
-function categoryPhrase(contaminants: Contaminant[]): string {
-  const categories = Array.from(
-    new Set(contaminants.map((c) => c.category)),
-  ).sort((a, b) => CATEGORY_PRIORITY[a] - CATEGORY_PRIORITY[b]);
-
-  const truncated = categories.slice(0, MAX_CATEGORY_LABELS_IN_LINE);
-  const labels = truncated.map((c) => CATEGORY_LABELS[c]);
-
-  let phrase: string;
-  if (labels.length === 0) {
-    return "";
-  } else if (labels.length === 1) {
-    phrase = labels[0];
-  } else if (labels.length === 2) {
-    phrase = `${labels[0]} and ${labels[1]}`;
-  } else {
-    const lead = labels.slice(0, -1).join(", ");
-    phrase = `${lead}, and ${labels[labels.length - 1]}`;
-  }
-
-  if (categories.length > MAX_CATEGORY_LABELS_IN_LINE) {
-    phrase = `${phrase}, and other contaminants`;
-  }
-  return phrase;
 }
 
 /** Half-mile = Tier 1. The vapor-intrusion radius is the issue's
@@ -273,7 +198,7 @@ export function computeRecommendedActions(
     groundwaterContaminants.length > 0 &&
     (input.waterSource === "well" || input.waterSource === "shared")
   ) {
-    const phrase = categoryPhrase(groundwaterContaminants);
+    const phrase = summarizeContaminantCategories(groundwaterContaminants);
     actions.push({
       id: "test-your-well",
       icon: "droplet",
@@ -296,7 +221,7 @@ export function computeRecommendedActions(
     groundwaterContaminants.length > 0 &&
     input.waterSource === "municipal"
   ) {
-    const phrase = categoryPhrase(groundwaterContaminants);
+    const phrase = summarizeContaminantCategories(groundwaterContaminants);
     const cityPhrase = input.houseCity
       ? `Your utility serves ${input.houseCity}, and their most recent`
       : "Your utility's most recent";
