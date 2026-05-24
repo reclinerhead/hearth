@@ -215,15 +215,9 @@ export function parseSiteCoordinates(
   return { latitude: lat, longitude: lng };
 }
 
-/**
- * EPA's public profile URL for a SEMS site, derived from its SEMS
- * site_id. The site_id in the row arrives zero-padded (e.g.
- * "0100185"); the profile page accepts the integer form so we strip
- * leading zeros before constructing the URL.
- */
-export function siteProfileUrl(siteId: string): string {
-  const stripped = siteId.replace(/^0+/, "") || siteId;
-  return `https://cumulis.epa.gov/supercpad/cursites/csitinfo.cfm?id=${encodeURIComponent(
-    stripped,
-  )}`;
-}
+// The canonical EPA Cumulis profile URL helper lives in ./cumulis.ts.
+// The previous version of this function used a legacy URL path
+// (`/cursites/csitinfo.cfm`) AND stripped the zero-padded site_id —
+// the combination produced 404 URLs in production (the legacy path
+// requires the zero-padded form). Issue #143 fixed the helper and
+// moved it next to the other Cumulis-specific helpers.

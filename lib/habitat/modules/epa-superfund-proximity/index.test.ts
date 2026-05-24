@@ -62,20 +62,45 @@ function makeRow(overrides: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
- * Stub global fetch with a function that always returns the given rows.
- * The module's fetchNplSitesInState reads only Response.ok and
- * Response.json(), so we mock just those two.
+ * Stub global fetch with URL-aware routing:
+ *   - data.epa.gov (Envirofacts REST) → JSON rows the EPA call expects
+ *   - cumulis.epa.gov (Cumulis Contacts pages) → optional HTML map
+ *     keyed by site_id, with an empty fallback that the parser turns
+ *     into a null CIC
+ *
+ * Most tests only care about the Envirofacts response and let CIC
+ * fall through to null. Tests that exercise the CIC enrichment pass
+ * a `cumulisContactsHtml` map keyed by site_id.
  */
-function stubFetchWithRows(rows: ReadonlyArray<Record<string, unknown>>): void {
+function stubFetchWithRows(
+  rows: ReadonlyArray<Record<string, unknown>>,
+  options: { cumulisContactsHtml?: Record<string, string> } = {},
+): void {
+  const cumulisHtml = options.cumulisContactsHtml ?? {};
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      async json() {
-        return rows;
-      },
-    })) as unknown as typeof fetch,
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("cumulis.epa.gov")) {
+        const idMatch = url.match(/[?&]id=([^&]+)/);
+        const siteId = idMatch ? decodeURIComponent(idMatch[1]) : "";
+        const html = cumulisHtml[siteId] ?? "";
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return html;
+          },
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return rows;
+        },
+      };
+    }) as unknown as typeof fetch,
   );
 }
 
@@ -351,21 +376,24 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
     expect(site.epa_region_code).toBeNull();
   });
 
-  it("emits a 9-step activity log when at least one qualifying site has multi-location structure", async () => {
+  it("emits a 10-step activity log when at least one qualifying site has multi-location structure", async () => {
     // Allied Paper's name contains "/" — Allied Paper, Inc./Portage
     // Creek/Kalamazoo River. That trips the precision-caveat compute
-    // step inserted between distance and tier-filter. Issue #140 adds
-    // two more compute steps between rule and decide for the label
-    // rollup and the portfolio-summary call.
+    // step inserted between distance and tier-filter. Issue #140 added
+    // two compute steps between rule and decide for the label rollup
+    // and the portfolio-summary call. Issue #143 added one more
+    // compute step between rule and label rollup for the CIC
+    // enrichment.
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const log = finding.activityLog!;
-    expect(log.steps.length).toBe(9);
+    expect(log.steps.length).toBe(10);
     expect(log.steps.map((s) => s.kind)).toEqual([
       "fetch",
       "compute",
       "compute",
       "compute",
       "rule",
+      "compute",
       "compute",
       "compute",
       "decide",
@@ -545,14 +573,16 @@ describe("EpaSuperfundProximityModule.check — precision caveat", () => {
     ]);
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const log = finding.activityLog!;
-    // Single-location hit path: fetch, compute(coords), compute(distance),
-    // rule, compute(labels), compute(summary), decide, finding = 8 steps.
-    expect(log.steps.length).toBe(8);
+    // Single-location hit path post-#143: fetch, compute(coords),
+    // compute(distance), rule, compute(cic), compute(labels),
+    // compute(summary), decide, finding = 9 steps.
+    expect(log.steps.length).toBe(9);
     expect(log.steps.map((s) => s.kind)).toEqual([
       "fetch",
       "compute",
       "compute",
       "rule",
+      "compute",
       "compute",
       "compute",
       "decide",
@@ -807,10 +837,13 @@ describe("EpaSuperfundProximityModule.check — issue #140 label + portfolio sum
       }),
     ]);
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
-    // The label rollup is the first compute step AFTER the rule step.
+    // Post-#143: the order after the rule step is
+    //   ruleIdx + 1 → compute(cic enrichment)
+    //   ruleIdx + 2 → compute(label rollup)
+    //   ruleIdx + 3 → compute(summary)
     const log = finding.activityLog!;
     const ruleIdx = log.steps.findIndex((s) => s.kind === "rule");
-    const labelStep = log.steps[ruleIdx + 1];
+    const labelStep = log.steps[ruleIdx + 2];
     expect(labelStep.kind).toBe("compute");
     expect(labelStep.narration).toMatch(/labeled each qualifying site/i);
     expect(labelStep.source?.url).toBe("/how-it-works#superfund");
@@ -830,10 +863,156 @@ describe("EpaSuperfundProximityModule.check — issue #140 label + portfolio sum
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const log = finding.activityLog!;
     const ruleIdx = log.steps.findIndex((s) => s.kind === "rule");
-    const summaryStep = log.steps[ruleIdx + 2];
+    // Summary is at ruleIdx + 3 post-#143 (cic at +1, labels at +2).
+    const summaryStep = log.steps[ruleIdx + 3];
     expect(summaryStep.kind).toBe("compute");
     expect(summaryStep.result_summary).toBe("summary: skipped");
     expect(summaryStep.detail).toContain("error_reason");
+  });
+});
+
+describe("EpaSuperfundProximityModule.check — issue #143 CIC enrichment + documents URL", () => {
+  it("populates documents_url on every qualifying site (deterministic, no scraping)", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "0503011",
+        epa_id: "MID000503011",
+        name: "VERONA WELL FIELD",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const sites = (finding.findings as SuperfundFindings).sites;
+    expect(sites[0].site.documents_url).toBe(
+      "https://cumulis.epa.gov/supercpad/SiteProfiles/index.cfm?fuseaction=second.docdata&id=0503011",
+    );
+  });
+
+  it("populates community_involvement_coordinator from the Cumulis Contacts page when EPA publishes one", async () => {
+    const html = `
+      <b>Community Involvement Coordinator:</b><br>
+      <p>
+        Kirstin&nbsp;Safakas
+        <br><a href="mailto:Safakas.Kirstin@epa.gov">Safakas.Kirstin@epa.gov</a>
+        <br>(312) 886-6015
+      </p>
+    `;
+    stubFetchWithRows(
+      [
+        makeRow({
+          site_id: "0503011",
+          epa_id: "MID000503011",
+          name: "VERONA WELL FIELD",
+          primary_latitude_decimal_val: "42.267",
+          primary_longitude_decimal_val: "-85.589",
+          npl_status_code: "F",
+        }),
+      ],
+      { cumulisContactsHtml: { "0503011": html } },
+    );
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const cic = (finding.findings as SuperfundFindings).sites[0].site
+      .community_involvement_coordinator;
+    expect(cic).not.toBeNull();
+    expect(cic?.name).toBe("Kirstin Safakas");
+    expect(cic?.email).toBe("Safakas.Kirstin@epa.gov");
+    expect(cic?.phone).toBe("(312) 886-6015");
+  });
+
+  it("sets community_involvement_coordinator = null when the Contacts page has no CIC block (Peerless Plating case)", async () => {
+    // Page only lists a Remedial Project Manager — RPM is the
+    // technical contact, not the homeowner-facing one. Parser
+    // returns null and the field on the site entry is null.
+    stubFetchWithRows([
+      makeRow({
+        site_id: "0502373",
+        epa_id: "MID000502373",
+        name: "PEERLESS PLATING CO",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const site = (finding.findings as SuperfundFindings).sites[0].site;
+    // Field is explicitly null (lookup attempted, no CIC found) — not
+    // undefined (legacy row, lookup never ran).
+    expect(site.community_involvement_coordinator).toBeNull();
+  });
+
+  it("logs the CIC enrichment compute step with a hits-out-of-total result summary", async () => {
+    const html = `
+      <b>Community Involvement Coordinator:</b><br>
+      <p>
+        Diane&nbsp;Russell
+        <br><a href="mailto:russell.diane@epa.gov">russell.diane@epa.gov</a>
+      </p>
+    `;
+    stubFetchWithRows(
+      [
+        makeRow({
+          site_id: "0503011",
+          epa_id: "MID000503011",
+          name: "WITH CIC",
+          primary_latitude_decimal_val: "42.267",
+          primary_longitude_decimal_val: "-85.589",
+          npl_status_code: "F",
+        }),
+        makeRow({
+          site_id: "0502373",
+          epa_id: "MID000502373",
+          name: "WITHOUT CIC",
+          primary_latitude_decimal_val: "42.268",
+          primary_longitude_decimal_val: "-85.589",
+          npl_status_code: "F",
+        }),
+      ],
+      { cumulisContactsHtml: { "0503011": html } },
+    );
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const log = finding.activityLog!;
+    const ruleIdx = log.steps.findIndex((s) => s.kind === "rule");
+    const cicStep = log.steps[ruleIdx + 1];
+    expect(cicStep.kind).toBe("compute");
+    expect(cicStep.narration).toMatch(/Community Involvement Coordinator/i);
+    expect(cicStep.result_summary).toBe("1 of 2 sites have a CIC");
+  });
+
+  it("does not include the CIC enrichment step on the no-hits path", async () => {
+    stubFetchWithRows([]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const log = finding.activityLog!;
+    // No qualifying sites = nothing to enrich. The no-hits log shape
+    // stays unchanged (6 steps).
+    expect(log.steps.length).toBe(6);
+    const cicStep = log.steps.find((s) =>
+      s.narration.includes("Community Involvement Coordinator"),
+    );
+    expect(cicStep).toBeUndefined();
+  });
+
+  it("uses the canonical SiteProfiles URL for the per-site profile_url (issue #143 fix to the legacy URL bug)", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "0503011",
+        epa_id: "MID000503011",
+        name: "VERONA WELL FIELD",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const site = (finding.findings as SuperfundFindings).sites[0].site;
+    // The legacy cursites/csitinfo.cfm URL with the leading zero
+    // stripped returned a "No site is found" error page in production.
+    // The fix uses the canonical SiteProfiles path AND preserves the
+    // zero-padded site_id.
+    expect(site.profile_url).toBe(
+      "https://cumulis.epa.gov/supercpad/SiteProfiles/index.cfm?fuseaction=second.scs&id=0503011",
+    );
   });
 });
 

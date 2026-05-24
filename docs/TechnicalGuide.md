@@ -1198,6 +1198,26 @@ The module also implements the two new optional `HabitatModule` slots introduced
 
 The persisted per-site shape (`findings.sites[].site`) carries two SEMS fields that aren't surfaced anywhere else in the module: `archived_date` (the EPA-supplied ISO date string, present only when `archived` is true) and `epa_region_code` (the zero-padded region code, e.g. `"05"`). Both arrive from `SemsSiteRow` and are passed through verbatim; the display layer parses them via `formatArchivedDate` and `formatEpaRegion` in [`format.ts`](../lib/habitat/modules/epa-superfund-proximity/format.ts). Both fields are nullable on the row contract and absent on rows persisted before the quick-facts block landed — the display component renders gracefully in either case (Site status falls back to bare `"Archived"` without a date, and the EPA Region row is omitted entirely). Rows backfill naturally on the next yearly cadence run; no migration is needed.
 
+#### EPA contacts and documents (issue #143)
+
+The Envirofacts REST API exposes the base site record only — address, NPL status, archived flag, region, federal-facility indicator. The fields that make the per-site detail card actually useful for a homeowner (a contact to email with questions, a deep link into the documents library) live on the rendered Cumulis profile pages and aren't available through any sibling table in the SEMS schema. [`cumulis.ts`](../lib/habitat/modules/epa-superfund-proximity/cumulis.ts) carries the small per-site scrape that fills the gap.
+
+Two pieces:
+
+- **`siteDocumentsUrl(siteId)`** — deterministic URL build. No scraping, no HTTP. Constructed verbatim from the zero-padded site_id and the canonical `SiteProfiles/index.cfm?fuseaction=second.docdata` path. Lands on every qualifying site as `findings.sites[].site.documents_url`.
+- **`fetchSiteContacts(siteId)` + `parseCommunityInvolvementCoordinator(html)`** — GETs the Contacts sub-page and parses the CIC block. The CIC is the homeowner-facing EPA contact for the site — distinct from the Remedial Project Manager, which is the technical-cleanup contact and not surfaced here. Soft-fail at every step: a network / parse miss leaves `community_involvement_coordinator: null` on that site entry, and one failed lookup never affects the others.
+
+The enrichment fires inside `check()` after the tier filter, in parallel across the (small, post-distance-filter) set of qualifying sites — at single-digit n the wall-clock cost is ~1s in the worst case. The activity log gains a `compute` step between the tier rule and the label rollup that reports the hit ratio (`"2 of 3 sites have a CIC"`). The no-hits path skips the enrichment entirely (nothing to enrich) so its log shape is unchanged at 6 steps; multi-location hit path goes from 9 to 10 steps and single-location hit path from 8 to 9.
+
+The persisted CIC shape is three-state:
+- `community_involvement_coordinator: { name, email, phone }` — populated when EPA published a CIC and the parser pulled it cleanly. Each sub-field is independently nullable (most sites have name + email; phone is occasionally absent).
+- `community_involvement_coordinator: null` — lookup attempted, no CIC published. The display layer renders honest "EPA hasn't designated a Community Involvement Coordinator for this site" copy rather than hiding the section.
+- `community_involvement_coordinator: undefined` — legacy row from before #143 landed. The display layer suppresses the whole Site-Contact-and-Documents section in this case so legacy rows render exactly like they did before; yearly cadence backfills naturally.
+
+The fields the original issue spec also mentioned but that proved unworkable in this PR — Five-Year Review history with dates, NPL sub-stage decoding (`remedy in place` vs. `long-term monitoring`), mailing list / Community Advisory Group signup URLs — are deferred. The FYR + sub-stage data exists on the Cumulis cleanup page but only as unstructured prose ("Construction of the remedy took place between 1987 and 2010. Operation and maintenance activities are ongoing.") that would need an LLM extraction pipeline to make useful; that work is its own follow-up issue. Mailing list / CAG signup isn't consistently published anywhere on EPA's site templates.
+
+**Site profile URL bug fix.** While probing the Cumulis URL patterns for the #143 work, we discovered the existing `siteProfileUrl()` was producing 404 URLs in production. The old helper used the legacy `/cursites/csitinfo.cfm` path AND stripped leading zeros from the site_id; the combination resolved to a "No site is found" error page on every site. The fix (in [`cumulis.ts`](../lib/habitat/modules/epa-superfund-proximity/cumulis.ts)) pins to the canonical `/SiteProfiles/index.cfm?fuseaction=second.scs` path with the zero-padded id preserved. Same exported name (`siteProfileUrl`), same signature — call sites switched their import from `./fetch` to `./cumulis`.
+
 #### Finding label and portfolio summary (issue #140)
 
 Issue #140 introduced two parallel additions to the Superfund finding shape: a computed `label` axis (per-site and rolled up to a portfolio label) and an AI-generated `portfolio_summary` paragraph. Both live on the existing `findings` jsonb — no schema migration is needed, and rows persisted before #140 backfill on the next yearly cadence run.
