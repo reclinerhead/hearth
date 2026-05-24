@@ -51,6 +51,17 @@ export type PortfolioSummaryInput = {
     | "informational"
     | null;
   sites: PortfolioSummarySite[];
+  /**
+   * Issue #149: the homeowner's water source and basement presence.
+   * Forwarded to the model so it can mention pathway alignment in
+   * plain English when it actually changes the framing (e.g. "the
+   * groundwater pathway aligns with your private well", or "the
+   * basement makes vapor intrusion at the half-mile site worth
+   * looking at"). Null / unknown values mean "user skipped" — the
+   * model is instructed to skip pathway commentary rather than guess.
+   */
+  water_source?: "well" | "municipal" | "shared" | "unknown" | null;
+  basement_present?: boolean | null;
 };
 
 export function buildPortfolioSummarySystemPrompt(): string {
@@ -59,6 +70,8 @@ export function buildPortfolioSummarySystemPrompt(): string {
 The summary is the centerpiece of a panel that lists every Superfund site within 5 miles of the user's home. Per-site detail (address, contaminant list, cleanup status, "why this severity") lives in cards below your summary — do not repeat that detail. Your job is the portfolio-level mental model.
 
 In 2 to 4 sentences, give the homeowner a coherent picture: how many sites are nearby, what fraction are active cleanups vs. monitoring vs. deleted from the NPL, which one or two sites stand out and why (closer, more concerning chemistry, more active), and what contaminant pathways recur if any pattern is visible. If a site clearly carries the most weight, name it and say why in plain language.
+
+If the homeowner's property-situation context is provided (water source, basement presence) AND it materially changes the framing of a specific site — a well user near a groundwater-pathway contaminant, a basement user near a vapor-intrusion-pathway contaminant within half a mile — you may note that pathway alignment in plain language ("the groundwater pathway here aligns with your private well"). Do not invent context that wasn't provided, and do not mention pathway alignment when the user's input is unknown / skipped.
 
 Hard rules:
 
@@ -90,6 +103,23 @@ export function buildPortfolioSummaryUserMessage(
     `Write a portfolio summary for the ${input.total_qualifying_sites} EPA Superfund site${input.total_qualifying_sites === 1 ? "" : "s"} within 5 miles of a home in ${input.state}.`,
   );
   lines.push("");
+  // Issue #149: include the homeowner's property-situation context so
+  // the model can mention pathway alignment where it actually matters.
+  // Both fields are optional; we only emit them when they carry real
+  // values (not null / "unknown"), so the model can default to no
+  // pathway commentary when the user skipped onboarding.
+  const ws = input.water_source ?? null;
+  const bp = input.basement_present ?? null;
+  if (ws !== null || bp !== null) {
+    lines.push("Homeowner property context:");
+    if (ws !== null) {
+      lines.push(`  - Water source: ${ws}`);
+    }
+    if (bp !== null) {
+      lines.push(`  - Basement present: ${bp ? "yes" : "no"}`);
+    }
+    lines.push("");
+  }
   if (input.portfolio_label) {
     lines.push(
       `Hearth's computed portfolio label for this finding: ${input.portfolio_label}.`,
