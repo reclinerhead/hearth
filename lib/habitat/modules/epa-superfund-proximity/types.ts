@@ -10,6 +10,7 @@
  * `renderDetail` slot reads back when the user drills into a site.
  */
 
+import type { SuperfundLabel } from "./label";
 import type { NplCode, Tier } from "./severity";
 
 /**
@@ -68,6 +69,22 @@ export type SiteEntry = {
     tier: Tier;
     severity: "concern" | "caution" | "neutral";
     /**
+     * Per-site label computed by `label.ts` (issue #140). A parallel
+     * concept to `severity`: rates how relevant this site is to a
+     * homeowner reasoning about whether to take action, given
+     * distance, NPL status, and contaminant concern levels.
+     *
+     * Null means "suppressed — we can't characterize confidently"
+     * (e.g. Tier 3 site with no contaminants published). The display
+     * layer renders nothing rather than defaulting to a bare word
+     * that could read as Hearth-endorsed reassurance.
+     *
+     * Optional on the contract because rows persisted before #140
+     * landed do not carry it; they backfill on the next yearly
+     * cadence run.
+     */
+    label?: SuperfundLabel | null;
+    /**
      * Caveat attached when EPA's single representative point is known
      * to be a poor proxy for the actual site footprint (see index.ts
      * for the heuristic). Omitted when the site is single-location.
@@ -77,8 +94,29 @@ export type SiteEntry = {
 };
 
 /**
+ * Persisted shape of the AI-generated portfolio summary (issue #140).
+ * Generated once at check() time and overwritten on the next yearly
+ * cadence run — not regenerated per view. Soft-fail: when the model
+ * call can't run or returns an invalid shape, `text` is null and
+ * `error_reason` carries the explanation for the debug log.
+ */
+export type PortfolioSummary = {
+  text: string | null;
+  model: string | null;
+  /** ISO timestamp; null when no call ran (env unset, AI error). */
+  generated_at: string | null;
+  /** Null on success; a short reason string when text is null. */
+  error_reason: string | null;
+};
+
+/**
  * The full `findings` payload the Superfund module writes. The modal's
  * `renderDetail` slot casts `row.findings` to this shape.
+ *
+ * `portfolio_label` and `portfolio_summary` landed in issue #140; both
+ * are optional on the contract because rows persisted before that PR
+ * do not carry them. The display layer guards against absence and the
+ * yearly cadence backfills on its next run.
  */
 export type SuperfundFindings = {
   search_radius_miles: number;
@@ -89,4 +127,8 @@ export type SuperfundFindings = {
   total_sites_with_coordinates: number;
   total_qualifying_sites: number;
   sites: SiteEntry[];
+  /** Max of the non-null per-site labels; null when all are suppressed. */
+  portfolio_label?: SuperfundLabel | null;
+  /** AI-generated summary; populated only on the multi-site / single-site path. */
+  portfolio_summary?: PortfolioSummary;
 };

@@ -435,7 +435,13 @@ describe("HabitatFindingModal", () => {
       expect(document.body.textContent).toContain("Beta site");
     });
 
-    it("sorts cards by severity descending (concern before caution)", () => {
+    it("preserves the order the module returns from getOverviewCards (module owns the sort, per #140)", () => {
+      // The fixture returns Beta first, then Alpha. Prior to issue #140
+      // the modal re-sorted by severity-desc and surfaced Alpha
+      // (concern) before Beta (caution). Issue #140 hands the sort to
+      // the module so Superfund's label-desc order can be honored;
+      // every module is now expected to pre-sort. The modal renders
+      // cards verbatim in the order the slot returned them.
       render(
         <HabitatFindingModal
           open
@@ -449,7 +455,7 @@ describe("HabitatFindingModal", () => {
       const betaIdx = text.indexOf("Beta site");
       expect(alphaIdx).toBeGreaterThan(-1);
       expect(betaIdx).toBeGreaterThan(-1);
-      expect(alphaIdx).toBeLessThan(betaIdx);
+      expect(betaIdx).toBeLessThan(alphaIdx);
     });
 
     it("does not render the overview-cards section when getOverviewCards returns empty", () => {
