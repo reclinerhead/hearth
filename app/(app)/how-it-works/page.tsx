@@ -831,7 +831,7 @@ export default function HowItWorksPage() {
                 href: "https://www.epa.gov/superfund/superfund-national-priorities-list-npl",
               },
             ]}
-            lastUpdated="May 24, 2026"
+            lastUpdated="May 25, 2026"
           >
             <div
               style={{
@@ -1049,6 +1049,45 @@ export default function HowItWorksPage() {
                 phase, mailing-list signup) lives only as unstructured
                 prose on EPA&rsquo;s site pages today and isn&rsquo;t
                 something Hearth ingests yet.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
+                Recommended actions for your situation
+              </h3>
+              <p style={{ margin: 0 }}>
+                Below the portfolio summary, Hearth surfaces a short
+                list of concrete actions tailored to your specific
+                setup &mdash; your water source and whether your home
+                has a basement, combined with the contaminant pathways
+                documented at the nearby sites.
+              </p>
+              <p style={{ margin: 0 }}>
+                If you draw from a private well, you&rsquo;ll see a
+                prompt to test your well for the relevant contaminants;
+                if you&rsquo;re on a municipal water system, you&rsquo;ll
+                see a prompt to read your utility&rsquo;s Consumer
+                Confidence Report instead. If your home has a basement
+                and a Superfund site within half a mile has documented
+                volatile chemicals, you&rsquo;ll see an action about
+                checking for vapor intrusion.
+              </p>
+              <p style={{ margin: 0 }}>
+                When the water source or basement information
+                isn&rsquo;t known, Hearth suppresses the
+                situation-specific actions rather than guessing &mdash;
+                a recommendation that doesn&rsquo;t match the
+                household isn&rsquo;t a useful recommendation. You can
+                fill these in any time from the Home details page.
               </p>
             </div>
           </ModuleSection>
