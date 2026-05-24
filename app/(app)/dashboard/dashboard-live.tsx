@@ -1133,6 +1133,13 @@ export function DashboardLive({
     generatedAt: string | null;
   } | null>(null);
   const [summary, setSummary] = useState<RefreshSummary | null>(null);
+  // Click-time baseline for the refresh-mode discovery modal. Non-null
+  // when the modal should mount; cleared when the user dismisses or
+  // the refresh action errors. Holds the ISO timestamp captured
+  // immediately before the refreshBriefing call so the modal can gate
+  // its phase advances on the rows' timestamps exceeding this.
+  const [refreshModalSessionStartedAt, setRefreshModalSessionStartedAt] =
+    useState<string | null>(null);
 
   // Refresh is "in flight" while we're waiting for a new run to finish OR
   // the realtime row currently shows a non-terminal status. pendingRefresh
@@ -1143,7 +1150,17 @@ export function DashboardLive({
   const briefingInFlight =
     house?.briefing_status === "running" ||
     house?.briefing_status === "pending";
-  const refreshing = isPending || briefingInFlight || pendingRefresh !== null;
+  // The refresh modal is the user-facing "this is in progress" signal
+  // once it mounts — keep the button disabled while it's open so a
+  // double-click can't fire a second refresh on top of the first.
+  // Server-side already guards via the briefing_status === 'running'
+  // short-circuit in refreshBriefing, but this avoids the UI flicker
+  // entirely.
+  const refreshing =
+    isPending ||
+    briefingInFlight ||
+    pendingRefresh !== null ||
+    refreshModalSessionStartedAt !== null;
 
   function handleRefresh() {
     if (!house) return;
@@ -1153,12 +1170,22 @@ export function DashboardLive({
       snapshot: snapshotFacts(house),
       generatedAt: house.briefing_generated_at,
     });
+    // Capture the click timestamp BEFORE firing the action. The
+    // discovery modal in refresh mode uses this as its baseline to
+    // tell "this is the new run that just started" apart from "this
+    // is the previous run's still-terminal status." Without the
+    // baseline the modal would see the row currently shows
+    // briefing_status=completed (from the prior run) and skip the
+    // briefing-checking phase the moment it mounted.
+    setRefreshModalSessionStartedAt(new Date().toISOString());
     startTransition(async () => {
       const result = await refreshBriefing(houseId);
       if (!result.ok) {
         setRefreshError(result.error);
         // The workflow never started, so there's nothing to diff against.
         setPendingRefresh(null);
+        // Also tear down the modal — nothing for it to wait on.
+        setRefreshModalSessionStartedAt(null);
       }
     });
   }
@@ -1395,6 +1422,15 @@ export function DashboardLive({
         <OnboardingDiscoveryModal
           house={house}
           onDismiss={handleDiscoveryModalDismiss}
+        />
+      ) : null}
+
+      {refreshModalSessionStartedAt ? (
+        <OnboardingDiscoveryModal
+          house={house}
+          mode="refresh"
+          sessionStartedAt={refreshModalSessionStartedAt}
+          onDismiss={() => setRefreshModalSessionStartedAt(null)}
         />
       ) : null}
 

@@ -79,12 +79,48 @@ function modulesApplicableTo(house: House): HabitatModule[] {
   return HABITAT_MODULES.filter((m) => m.isApplicable(ctx));
 }
 
+/**
+ * The modal serves two surfaces — first-run onboarding (default) and
+ * the "Refresh House Facts" workflow. Both run through the same phase
+ * machine and reuse the same row renderer; the differences are:
+ *
+ *   - `mode === "refresh"` skips the `property-questions` phase (the
+ *     user's water source / basement answers were captured during their
+ *     original onboarding and don't need to be re-asked on refresh).
+ *   - `mode === "refresh"` gates each phase's advance on the row's
+ *     timestamps EXCEEDING `sessionStartedAt`. Without that, the modal
+ *     would see the previous run's terminal status the moment it
+ *     mounted and skip straight through.
+ *   - Copy and the dismiss-button text are swapped for the refresh
+ *     framing ("Refreshing your home" vs. "Setting up your home";
+ *     "Done" vs. "Start Managing my Home").
+ *
+ * In refresh mode the caller (dashboard-live's refresh-button click
+ * handler) records `sessionStartedAt = new Date().toISOString()` BEFORE
+ * the refresh server action fires, and passes that down. The workflow
+ * stamps `briefing_started_at` on its running-status upsert and
+ * `checked_at` on each habitat-finding upsert, so comparing those
+ * against `sessionStartedAt` is a clean "did the row update after
+ * this click?" gate.
+ */
+export type DiscoveryModalMode = "onboarding" | "refresh";
+
 export function OnboardingDiscoveryModal({
   house,
   onDismiss,
+  mode = "onboarding",
+  sessionStartedAt,
 }: {
   house: House;
   onDismiss: () => void;
+  mode?: DiscoveryModalMode;
+  /**
+   * ISO timestamp captured at refresh-click time. Required in
+   * `refresh` mode (used to gate phase advances on row timestamps
+   * exceeding it); ignored in `onboarding` mode (the rows are fresh,
+   * no prior state to compare against).
+   */
+  sessionStartedAt?: string;
 }) {
   const findings = useHabitatFindings(house.id);
   const modules = useMemo(() => modulesApplicableTo(house), [house]);
@@ -212,6 +248,23 @@ export function OnboardingDiscoveryModal({
   const briefingTerminal =
     briefingStatus === "completed" || briefingStatus === "failed";
 
+  /**
+   * In refresh mode, "ready" requires more than terminal status — the
+   * row's `briefing_started_at` must have advanced past
+   * `sessionStartedAt` so we know this is the NEW run that fired on
+   * the user's click and not the prior completed run. In onboarding
+   * mode the row is fresh so terminal status is enough.
+   */
+  const briefingReadyForPhase =
+    mode === "refresh"
+      ? briefingTerminal &&
+        Boolean(
+          sessionStartedAt &&
+            house.briefing_started_at &&
+            house.briefing_started_at > sessionStartedAt,
+        )
+      : briefingTerminal;
+
   // Intro hold → briefing-checking.
   useEffect(() => {
     if (phase.kind !== "intro") return;
@@ -227,14 +280,14 @@ export function OnboardingDiscoveryModal({
   // it's stable for the whole RESULT_DISPLAY_MIN_MS window.
   useEffect(() => {
     if (phase.kind !== "briefing-checking") return;
-    if (!briefingTerminal) return;
+    if (!briefingReadyForPhase) return;
     if (briefingStatus === "failed") {
       setBriefingLine("We couldn't find some details — that's OK, you can still get started.");
     } else {
       setBriefingLine(getBriefingMessage(house));
     }
     setPhase({ kind: "briefing-result" });
-  }, [phase.kind, briefingTerminal, briefingStatus, house]);
+  }, [phase.kind, briefingReadyForPhase, briefingStatus, house]);
 
   // briefing-result hold → property-questions (or straight to done if
   // briefing failed). On briefing failure the orchestrator never kicks
@@ -250,12 +303,22 @@ export function OnboardingDiscoveryModal({
     const t = setTimeout(() => {
       if (briefingFailed) {
         setPhase({ kind: "done" });
+      } else if (mode === "refresh") {
+        // Refresh path skips the property-questions phase — those
+        // values were captured during the user's original onboarding
+        // and don't need to be re-asked on every refresh. Go straight
+        // to module-checking (or done if no modules apply).
+        setPhase(
+          modules.length === 0
+            ? { kind: "done" }
+            : { kind: "module-checking", index: 0 },
+        );
       } else {
         setPhase({ kind: "property-questions" });
       }
     }, RESULT_DISPLAY_MIN_MS);
     return () => clearTimeout(t);
-  }, [phase.kind, briefingStatus]);
+  }, [phase.kind, briefingStatus, mode, modules.length]);
 
   // property-questions has no auto-advance — the user's Skip / Save
   // click is what drives the next transition. See the form section
@@ -263,6 +326,9 @@ export function OnboardingDiscoveryModal({
 
   // module-checking → module-result when that module's finding row hits a
   // terminal status. Same "compute once on transition" pattern as briefing.
+  // In refresh mode, also require the row's checked_at to have advanced
+  // past sessionStartedAt — otherwise we'd see the previous run's
+  // terminal status and skip past instantly.
   useEffect(() => {
     if (phase.kind !== "module-checking") return;
     const mod = modules[phase.index];
@@ -273,6 +339,13 @@ export function OnboardingDiscoveryModal({
     const finding = findingByKey.get(mod.key);
     if (!finding) return;
     if (!TERMINAL_FINDING_STATUSES.has(finding.status)) return;
+    if (
+      mode === "refresh" &&
+      sessionStartedAt &&
+      (!finding.checked_at || finding.checked_at <= sessionStartedAt)
+    ) {
+      return;
+    }
 
     let line: string;
     if (finding.status === "failed") {
@@ -300,7 +373,7 @@ export function OnboardingDiscoveryModal({
     const index = phase.index;
     setModuleLines((prev) => ({ ...prev, [index]: line }));
     setPhase({ kind: "module-result", index });
-  }, [phase, modules, findingByKey]);
+  }, [phase, modules, findingByKey, mode, sessionStartedAt]);
 
   // module-result hold → next module or done.
   useEffect(() => {
@@ -370,7 +443,9 @@ export function OnboardingDiscoveryModal({
             <span style={{ color: "var(--color-accent)" }}>
               <Icon name="sparkles" size={16} />
             </span>
-            <span className="eyebrow">Setting up your home</span>
+            <span className="eyebrow">
+              {mode === "refresh" ? "Refreshing your home" : "Setting up your home"}
+            </span>
           </div>
 
           <div>
@@ -380,10 +455,14 @@ export function OnboardingDiscoveryModal({
               style={{ marginTop: 0 }}
             >
               {phase.kind === "done"
-                ? "All set — your home is ready."
+                ? mode === "refresh"
+                  ? "All up to date."
+                  : "All set — your home is ready."
                 : phase.kind === "property-questions"
                   ? "Two quick questions about your home"
-                  : "We're looking up information about your home."}
+                  : mode === "refresh"
+                    ? "Refreshing what we know about your home."
+                    : "We're looking up information about your home."}
             </h2>
             {/*
               Always render the subtitle paragraph so its vertical space
@@ -435,7 +514,7 @@ export function OnboardingDiscoveryModal({
                   cursor: buttonEnabled ? "pointer" : "default",
                 }}
               >
-                Start Managing my Home
+                {mode === "refresh" ? "Done" : "Start Managing my Home"}
               </button>
             </div>
           )}
