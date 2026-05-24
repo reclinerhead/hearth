@@ -7,8 +7,15 @@
  *   1. Site header — name + metadata pills
  *   2. Address card
  *   3. Precision caveat (when EPA's single point is a poor proxy)
- *   4. Contaminants list (enriched against contaminants/data.ts)
+ *   4. Site contact and documents (CIC + documents library link)
  *   5. "Why this severity" expandable disclosure
+ *   6. Contaminants list (enriched against contaminants/data.ts)
+ *
+ * Sites with deep contaminant lists (40+ entries at some Michigan
+ * NPL sites) push the contact + documents section off-screen if it
+ * lives below the list. Promoting the higher-leverage sections
+ * (contact, severity explainer) above the long list lets a user
+ * triage and act without scrolling through chemistry first.
  *
  * No client hooks — the optional disclosure uses a native `<details>`
  * element so this component stays purely presentational and works
@@ -109,9 +116,9 @@ export function SiteDetail({
       {entry.context.precision_note ? (
         <PrecisionCaveat note={entry.context.precision_note} />
       ) : null}
-      <ContaminantsSection entry={entry} />
       <ContactAndDocumentsSection entry={entry} />
       <WhyThisSeverity entry={entry} />
+      <ContaminantsSection entry={entry} />
     </div>
   );
 }
