@@ -48,7 +48,7 @@ async function loadHouseContext(houseId: string): Promise<HouseContext> {
   const { data, error } = await supabase
     .from("houses")
     .select(
-      "id, address_line1, city, state, county, postal_code, latitude, longitude, parcel_id",
+      "id, address_line1, city, state, county, postal_code, latitude, longitude, parcel_id, water_source, basement_present",
     )
     .eq("id", houseId)
     .single();
@@ -69,6 +69,8 @@ async function loadHouseContext(houseId: string): Promise<HouseContext> {
     latitude: data.latitude,
     longitude: data.longitude,
     parcelId: data.parcel_id,
+    waterSource: data.water_source ?? null,
+    basementPresent: data.basement_present ?? null,
   };
 }
 

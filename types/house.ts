@@ -6,6 +6,14 @@
 
 export type BriefingStatus = "pending" | "running" | "completed" | "failed";
 
+/**
+ * Issue #142. Enum-shaped text column (CHECK constraint in SQL, not a
+ * Postgres ENUM type). Null means "we never asked"; `"unknown"` means
+ * "we asked and the user said they don't know" — distinct states the
+ * future "complete your profile" prompt cares about.
+ */
+export type WaterSource = "well" | "municipal" | "shared" | "unknown";
+
 export type House = {
   id: string;
   owner_id: string;
@@ -30,6 +38,14 @@ export type House = {
   heating_summary: string | null;
   cooling_summary: string | null;
   parcel_id: string | null;
+
+  // Issue #142 — property-situation inputs used by habitat modules
+  // (Superfund label / recommended actions, future water-system module).
+  // Both nullable; see the `WaterSource` JSDoc for the null vs.
+  // `"unknown"` distinction. `basement_present` is true / false / null
+  // (Yes / No / Not sure or never captured).
+  water_source: WaterSource | null;
+  basement_present: boolean | null;
 
   purchase_date: string | null;
   purchase_price_cents: number | null;

@@ -1,7 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
+import {
+  basementToChoice,
+  choiceToBasement,
+  choiceToWaterSource,
+  PropertySituationFields,
+  waterSourceToChoice,
+  type BasementChoice,
+  type WaterSourceChoice,
+} from "@/components/property-situation-fields";
 import {
   useHabitatFindings,
   type HabitatFindingRow,
@@ -9,6 +18,7 @@ import {
 import { HABITAT_MODULES } from "@/lib/habitat/registry";
 import type { HabitatModule, HouseContext } from "@/lib/habitat/types";
 import { getBriefingMessage } from "@/lib/briefing/getBriefingMessage";
+import { createClient } from "@/lib/supabase/client";
 import type { House } from "@/types/house";
 import {
   buildRowList,
@@ -58,6 +68,8 @@ function houseContextFromRow(house: House): HouseContext {
     latitude: house.latitude,
     longitude: house.longitude,
     parcelId: house.parcel_id,
+    waterSource: house.water_source,
+    basementPresent: house.basement_present,
   };
 }
 
@@ -86,6 +98,66 @@ export function OnboardingDiscoveryModal({
   // Module result lines are stored by index so navigating forward through
   // phases doesn't recompute (and never reads stale finding state).
   const [moduleLines, setModuleLines] = useState<Record<number, string>>({});
+
+  // Property-questions form state (issue #142). Initialized from the
+  // live house row so a user who navigates back to onboarding after
+  // already setting these somehow sees their existing choices, but
+  // for the first-run path both values are null on the fresh row.
+  const [waterSource, setWaterSource] = useState<WaterSourceChoice>(() =>
+    waterSourceToChoice(house.water_source),
+  );
+  const [basementPresent, setBasementPresent] = useState<BasementChoice>(() =>
+    basementToChoice(house.basement_present),
+  );
+  const [propertyQuestionsSaving, setPropertyQuestionsSaving] = useState(false);
+  const [propertyQuestionsError, setPropertyQuestionsError] = useState<string | null>(
+    null,
+  );
+
+  // Move from property-questions to the first habitat module (or done
+  // if no modules apply). Shared by the Save and Skip paths so the
+  // phase transition is identical either way.
+  const advancePastPropertyQuestions = useCallback(() => {
+    setPhase(
+      modules.length === 0
+        ? { kind: "done" }
+        : { kind: "module-checking", index: 0 },
+    );
+  }, [modules.length]);
+
+  const handlePropertyQuestionsSkip = useCallback(() => {
+    advancePastPropertyQuestions();
+  }, [advancePastPropertyQuestions]);
+
+  const handlePropertyQuestionsSave = useCallback(async () => {
+    setPropertyQuestionsError(null);
+    setPropertyQuestionsSaving(true);
+    try {
+      const supabase = createClient();
+      const { error: updateError } = await supabase
+        .from("houses")
+        .update({
+          water_source: choiceToWaterSource(waterSource),
+          basement_present: choiceToBasement(basementPresent),
+        })
+        .eq("id", house.id);
+      if (updateError) {
+        setPropertyQuestionsError(
+          updateError.message ||
+            "We couldn't save those answers. Try again or skip for now.",
+        );
+        return;
+      }
+      advancePastPropertyQuestions();
+    } catch (err) {
+      console.error("property-questions save failed", err);
+      setPropertyQuestionsError(
+        "Something went wrong saving. Try again or skip for now.",
+      );
+    } finally {
+      setPropertyQuestionsSaving(false);
+    }
+  }, [waterSource, basementPresent, house.id, advancePastPropertyQuestions]);
 
   // Map for fast lookups in effects.
   const findingByKey = useMemo(() => {
@@ -122,23 +194,30 @@ export function OnboardingDiscoveryModal({
     setPhase({ kind: "briefing-result" });
   }, [phase.kind, briefingTerminal, briefingStatus, house]);
 
-  // briefing-result hold → first module (or done if no applicable modules,
-  // or briefing failed). On briefing failure the orchestrator never kicks
+  // briefing-result hold → property-questions (or straight to done if
+  // briefing failed). On briefing failure the orchestrator never kicks
   // off habitat (see workflows/briefing.ts — persistBriefingSuccess is the
-  // step that calls start(runHabitatChecks)), so waiting on habitat rows
-  // would hang the modal forever. Skip straight to done in that case.
+  // step that calls start(runHabitatChecks)), so we skip both the
+  // property-questions prompt and the module-checking phases — the
+  // failure message is the last thing the user sees before the Start
+  // button enables. Users who skip the form here can fill water_source
+  // and basement_present in via the home-details edit modal later.
   useEffect(() => {
     if (phase.kind !== "briefing-result") return;
     const briefingFailed = briefingStatus === "failed";
     const t = setTimeout(() => {
-      if (modules.length === 0 || briefingFailed) {
+      if (briefingFailed) {
         setPhase({ kind: "done" });
       } else {
-        setPhase({ kind: "module-checking", index: 0 });
+        setPhase({ kind: "property-questions" });
       }
     }, RESULT_DISPLAY_MIN_MS);
     return () => clearTimeout(t);
-  }, [phase.kind, modules.length, briefingStatus]);
+  }, [phase.kind, briefingStatus]);
+
+  // property-questions has no auto-advance — the user's Skip / Save
+  // click is what drives the next transition. See the form section
+  // below for the Save / Skip handlers.
 
   // module-checking → module-result when that module's finding row hits a
   // terminal status. Same "compute once on transition" pattern as briefing.
@@ -260,7 +339,9 @@ export function OnboardingDiscoveryModal({
             >
               {phase.kind === "done"
                 ? "All set — your home is ready."
-                : "We're looking up information about your home."}
+                : phase.kind === "property-questions"
+                  ? "Two quick questions about your home"
+                  : "We're looking up information about your home."}
             </h2>
             {/*
               Always render the subtitle paragraph so its vertical space
@@ -276,7 +357,9 @@ export function OnboardingDiscoveryModal({
               }}
               aria-hidden={phase.kind === "done"}
             >
-              This usually takes about 10 seconds.
+              {phase.kind === "property-questions"
+                ? "These help us calibrate environmental findings to your house. Both are optional."
+                : "This usually takes about 10 seconds."}
             </p>
           </div>
 
@@ -286,22 +369,112 @@ export function OnboardingDiscoveryModal({
             ))}
           </ul>
 
-          <div className="mt-2">
-            <button
-              ref={buttonRef}
-              type="button"
-              onClick={onDismiss}
-              disabled={!buttonEnabled}
-              className="btn btn-primary w-full"
-              style={{
-                opacity: buttonEnabled ? 1 : 0.5,
-                cursor: buttonEnabled ? "pointer" : "default",
-              }}
-            >
-              Start Managing my Home
-            </button>
-          </div>
+          {phase.kind === "property-questions" ? (
+            <PropertyQuestionsSection
+              waterSource={waterSource}
+              onWaterSourceChange={setWaterSource}
+              basementPresent={basementPresent}
+              onBasementChange={setBasementPresent}
+              saving={propertyQuestionsSaving}
+              error={propertyQuestionsError}
+              onSave={handlePropertyQuestionsSave}
+              onSkip={handlePropertyQuestionsSkip}
+            />
+          ) : (
+            <div className="mt-2">
+              <button
+                ref={buttonRef}
+                type="button"
+                onClick={onDismiss}
+                disabled={!buttonEnabled}
+                className="btn btn-primary w-full"
+                style={{
+                  opacity: buttonEnabled ? 1 : 0.5,
+                  cursor: buttonEnabled ? "pointer" : "default",
+                }}
+              >
+                Start Managing my Home
+              </button>
+            </div>
+          )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Form region rendered inside the discovery modal during the
+ * `property-questions` phase (issue #142). Lifts the two segmented
+ * controls + the Skip / Save buttons out of the main component so
+ * the modal body's structure stays scannable. Save is awaitable —
+ * the parent owns the saving / error state and the phase transition.
+ */
+function PropertyQuestionsSection({
+  waterSource,
+  onWaterSourceChange,
+  basementPresent,
+  onBasementChange,
+  saving,
+  error,
+  onSave,
+  onSkip,
+}: {
+  waterSource: WaterSourceChoice;
+  onWaterSourceChange: (v: WaterSourceChoice) => void;
+  basementPresent: BasementChoice;
+  onBasementChange: (v: BasementChoice) => void;
+  saving: boolean;
+  error: string | null;
+  onSave: () => void;
+  onSkip: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4 mt-1">
+      <PropertySituationFields
+        waterSource={waterSource}
+        onWaterSourceChange={onWaterSourceChange}
+        basementPresent={basementPresent}
+        onBasementChange={onBasementChange}
+      />
+
+      {error ? (
+        <div
+          className="surface p-3 text-small"
+          role="alert"
+          style={{
+            backgroundColor:
+              "color-mix(in oklab, var(--color-danger) 12%, var(--color-bg-surface))",
+            borderColor:
+              "color-mix(in oklab, var(--color-danger) 30%, var(--color-border-subtle))",
+            color: "var(--color-text-primary)",
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
+
+      <div className="flex items-center justify-between gap-3 mt-1">
+        <button
+          type="button"
+          onClick={onSkip}
+          disabled={saving}
+          className="btn btn-ghost"
+        >
+          Skip for now
+        </button>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          className="btn btn-primary"
+          style={{
+            opacity: saving ? 0.6 : 1,
+            cursor: saving ? "not-allowed" : "pointer",
+          }}
+        >
+          {saving ? "Saving…" : "Save and continue"}
+        </button>
       </div>
     </div>
   );

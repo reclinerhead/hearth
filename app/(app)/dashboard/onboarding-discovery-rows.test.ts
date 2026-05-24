@@ -43,6 +43,7 @@ function phasesToCheck(): Phase[] {
     { kind: "intro" },
     { kind: "briefing-checking" },
     { kind: "briefing-result" },
+    { kind: "property-questions" },
     { kind: "module-checking", index: 0 },
     { kind: "module-result", index: 0 },
     { kind: "module-checking", index: 1 },
@@ -114,6 +115,24 @@ describe("buildRowList", () => {
       state: "done",
       text: BRIEFING_LINE,
     });
+    expect(rows.slice(1).every((r) => r.state === "idle")).toBe(true);
+  });
+
+  it("renders the same row state in property-questions as in briefing-result (briefing done, modules idle) — issue #142", () => {
+    const rows = buildRowList(
+      { kind: "property-questions" },
+      MODULES,
+      BRIEFING_LINE,
+      {},
+    );
+    expect(rows[0]).toEqual({
+      id: "briefing",
+      state: "done",
+      text: BRIEFING_LINE,
+    });
+    // Every module row stays idle while the user is answering the form;
+    // the habitat workflow has been running in parallel the whole time,
+    // but the visual reveal is paused on the prompt.
     expect(rows.slice(1).every((r) => r.state === "idle")).toBe(true);
   });
 
