@@ -398,4 +398,30 @@ export interface HabitatModule {
   getOverviewBanner?: (
     row: HabitatFindingRow,
   ) => { text: string } | null;
+
+  /**
+   * Optional. Returns a list of "what you can do next" cards
+   * rendered between the overview banner and the overview-cards
+   * list. Empty array suppresses the section entirely.
+   *
+   * Introduced by the Superfund module in issue #144 for the
+   * water-source-aware recommended-actions section. The slot is
+   * data-only (icon name + plain text + optional link) so module
+   * code stays free of React-runtime imports; the modal owns the
+   * actual rendering.
+   *
+   * The action data is precomputed at check() time (the
+   * compute call needs the full HouseContext, which isn't on the
+   * row), so the slot is a pure read off the persisted finding —
+   * the same pattern getFindingLabel and getOverviewBanner use.
+   */
+  getRecommendedActions?: (
+    row: HabitatFindingRow,
+  ) => Array<{
+    id: string;
+    icon: string;
+    headline: string;
+    supporting_line: string;
+    link?: { label: string; url: string };
+  }>;
 }

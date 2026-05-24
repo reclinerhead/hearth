@@ -117,6 +117,10 @@ import {
 import { generatePortfolioSummary } from "./portfolio-summary/generate";
 import type { PortfolioSummarySite } from "./portfolio-summary/prompt";
 import {
+  computeRecommendedActions,
+  type RecommendedAction,
+} from "./recommended-actions";
+import {
   applyTier,
   maxSeverity,
   nplStatusLabel,
@@ -669,6 +673,34 @@ const EpaSuperfundProximityModule: HabitatModule = {
       result_summary: portfolioSummary.text ? "summary: ok" : "summary: skipped",
     });
 
+    // Issue #144: compute recommended actions for THIS user's
+    // situation (water source + basement presence) given the
+    // contaminant pathway profile across qualifying sites.
+    // Deduplicated across sites by design — a single "test your
+    // well" action references the union of relevant contaminants,
+    // not one entry per site. Suppressed when no actions apply
+    // (e.g. user water_source unknown, or all sites have only
+    // contaminants whose pathways don't match the home's setup).
+    const recommendedActions: RecommendedAction[] =
+      computeRecommendedActions({
+        qualifyingSites: qualifying,
+        houseCity: house.city ?? null,
+        waterSource: house.waterSource ?? null,
+        basementPresent: house.basementPresent ?? null,
+      });
+    log.step({
+      kind: "compute",
+      narration:
+        recommendedActions.length === 0
+          ? "I checked which recommended actions apply to your situation; none fit your water source and basement setup for the sites we found, so I'm not surfacing any."
+          : "I built a short list of recommended actions tailored to your water source, basement, and the contaminants documented at nearby sites.",
+      detail:
+        recommendedActions.length === 0
+          ? `waterSource=${house.waterSource ?? "null"}, basementPresent=${house.basementPresent ?? "null"}; no actions emitted`
+          : `actions: ${recommendedActions.map((a) => a.id).join(", ")}`,
+      result_summary: `${recommendedActions.length} recommended action${recommendedActions.length === 1 ? "" : "s"}`,
+    });
+
     const decideStep = decideStepNarration({
       closestName: closest.site.name_display,
       closestDistance: closest.context.distance_miles,
@@ -717,6 +749,7 @@ const EpaSuperfundProximityModule: HabitatModule = {
         sites: qualifying,
         portfolio_label: portfolioLabel,
         portfolio_summary: persistedSummary,
+        recommended_actions: recommendedActions,
       },
       actions: buildHitActions(),
       sourceUrl: closest.site.profile_url,
@@ -803,6 +836,19 @@ const EpaSuperfundProximityModule: HabitatModule = {
     const text = findings?.portfolio_summary?.text ?? null;
     if (!text) return null;
     return { text };
+  },
+
+  /**
+   * Surfaces the issue #144 recommended-actions list. Returns the
+   * persisted actions verbatim — they were computed at check() time
+   * from the full HouseContext (which isn't on the row), and the
+   * slot is a pure read off the finding. Empty array when no actions
+   * applied for this portfolio × user situation, or when the row was
+   * persisted before #144 landed.
+   */
+  getRecommendedActions(row: HabitatFindingRow) {
+    const findings = (row.findings ?? null) as SuperfundFindings | null;
+    return findings?.recommended_actions ?? [];
   },
 
   /**

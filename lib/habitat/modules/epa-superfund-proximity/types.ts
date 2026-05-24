@@ -12,6 +12,7 @@
 
 import type { CommunityInvolvementCoordinator } from "./cumulis";
 import type { SuperfundLabel } from "./label";
+import type { RecommendedAction } from "./recommended-actions";
 import type { NplCode, Tier } from "./severity";
 
 /**
@@ -156,4 +157,13 @@ export type SuperfundFindings = {
   portfolio_label?: SuperfundLabel | null;
   /** AI-generated summary; populated only on the multi-site / single-site path. */
   portfolio_summary?: PortfolioSummary;
+  /**
+   * Computed at check() time from the qualifying site set plus the
+   * user's water source + basement presence (issue #144). Deduplicated
+   * across sites; ordered by leverage (water test first, then vapor
+   * intrusion). Empty array when no actions apply for this portfolio
+   * × user situation. Optional on the contract because rows persisted
+   * before #144 don't carry it.
+   */
+  recommended_actions?: RecommendedAction[];
 };

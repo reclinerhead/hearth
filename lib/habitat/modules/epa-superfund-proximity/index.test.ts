@@ -24,6 +24,14 @@ function makeHouse(overrides: Partial<HouseContext> = {}): HouseContext {
     latitude: 42.265,
     longitude: -85.589,
     parcelId: null,
+    // Default both #142 property-situation inputs to null so the
+    // existing fixtures keep producing the same suppression behavior
+    // they did before #142 landed (the Superfund label and #144
+    // recommended-actions logic both treat null as "we don't know,
+    // suppress rather than guess"). Tests that exercise the action
+    // branches override these explicitly.
+    waterSource: null,
+    basementPresent: null,
     ...overrides,
   };
 }
@@ -376,23 +384,23 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
     expect(site.epa_region_code).toBeNull();
   });
 
-  it("emits a 10-step activity log when at least one qualifying site has multi-location structure", async () => {
-    // Allied Paper's name contains "/" — Allied Paper, Inc./Portage
-    // Creek/Kalamazoo River. That trips the precision-caveat compute
-    // step inserted between distance and tier-filter. Issue #140 added
-    // two compute steps between rule and decide for the label rollup
-    // and the portfolio-summary call. Issue #143 added one more
-    // compute step between rule and label rollup for the CIC
-    // enrichment.
+  it("emits an 11-step activity log when at least one qualifying site has multi-location structure", async () => {
+    // Multi-location hit path post-#144:
+    //   fetch, compute(coords), compute(distance), compute(caveat),
+    //   rule, compute(cic), compute(labels), compute(summary),
+    //   compute(recommended-actions), decide, finding = 11 steps.
+    // Issue #143 added the cic step; issue #144 added the
+    // recommended-actions step.
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const log = finding.activityLog!;
-    expect(log.steps.length).toBe(10);
+    expect(log.steps.length).toBe(11);
     expect(log.steps.map((s) => s.kind)).toEqual([
       "fetch",
       "compute",
       "compute",
       "compute",
       "rule",
+      "compute",
       "compute",
       "compute",
       "compute",
@@ -573,15 +581,17 @@ describe("EpaSuperfundProximityModule.check — precision caveat", () => {
     ]);
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const log = finding.activityLog!;
-    // Single-location hit path post-#143: fetch, compute(coords),
+    // Single-location hit path post-#144: fetch, compute(coords),
     // compute(distance), rule, compute(cic), compute(labels),
-    // compute(summary), decide, finding = 9 steps.
-    expect(log.steps.length).toBe(9);
+    // compute(summary), compute(recommended-actions), decide,
+    // finding = 10 steps.
+    expect(log.steps.length).toBe(10);
     expect(log.steps.map((s) => s.kind)).toEqual([
       "fetch",
       "compute",
       "compute",
       "rule",
+      "compute",
       "compute",
       "compute",
       "compute",
@@ -1016,6 +1026,134 @@ describe("EpaSuperfundProximityModule.check — issue #143 CIC enrichment + docu
   });
 });
 
+describe("EpaSuperfundProximityModule.check — issue #144 recommended actions", () => {
+  it("persists recommended_actions on the findings jsonb when actions apply", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "TIER1_LEAD",
+        epa_id: "MID000TIER1",
+        name: "TIER1 LEAD SITE",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(
+      makeHouse({ waterSource: "well" }),
+    );
+    const findings = finding.findings as SuperfundFindings;
+    expect(findings.recommended_actions).toBeDefined();
+    expect(findings.recommended_actions?.map((a) => a.id)).toEqual([
+      "test-your-well",
+    ]);
+  });
+
+  it("persists an empty recommended_actions array when no actions apply (well water but only airborne contaminants)", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "TIER1_ASBESTOS",
+        epa_id: "MID000ASB",
+        name: "ASBESTOS SITE",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "ASBESTOS",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(
+      makeHouse({ waterSource: "well" }),
+    );
+    const findings = finding.findings as SuperfundFindings;
+    expect(findings.recommended_actions).toEqual([]);
+  });
+
+  it("omits recommended_actions on the no-hits path (nothing to recommend against)", async () => {
+    stubFetchWithRows([]);
+    const finding = await EpaSuperfundProximityModule.check(
+      makeHouse({ waterSource: "well", basementPresent: true }),
+    );
+    const findings = finding.findings as SuperfundFindings;
+    expect(findings.recommended_actions).toBeUndefined();
+  });
+
+  it("includes vapor-intrusion action for basement=true + Tier 1 VOC site (water test also fires for the same VOC's groundwater pathway)", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "TIER1_TCE",
+        epa_id: "MID000TCE",
+        name: "TCE SITE",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "TRICHLOROETHYLENE",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(
+      makeHouse({ waterSource: "well", basementPresent: true }),
+    );
+    const findings = finding.findings as SuperfundFindings;
+    expect(findings.recommended_actions?.map((a) => a.id)).toEqual([
+      "test-your-well",
+      "check-vapor-intrusion",
+    ]);
+  });
+
+  it("logs the recommended-actions compute step after the summary step with action ids in the detail field", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "TIER1_LEAD",
+        epa_id: "MID000TIER1",
+        name: "TIER1 LEAD SITE",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(
+      makeHouse({ waterSource: "well" }),
+    );
+    const log = finding.activityLog!;
+    const ruleIdx = log.steps.findIndex((s) => s.kind === "rule");
+    // recommended-actions is at ruleIdx + 4 post-#144:
+    //   +1 cic, +2 labels, +3 summary, +4 recommended-actions
+    const actionsStep = log.steps[ruleIdx + 4];
+    expect(actionsStep.kind).toBe("compute");
+    expect(actionsStep.narration).toMatch(/recommended actions/i);
+    expect(actionsStep.result_summary).toMatch(/1 recommended action/);
+    expect(actionsStep.detail).toContain("test-your-well");
+  });
+
+  it("logs the recommended-actions step with 'no actions emitted' when the user's situation produces none", async () => {
+    stubFetchWithRows([
+      makeRow({
+        site_id: "TIER1_LEAD",
+        epa_id: "MID000TIER1",
+        name: "TIER1 LEAD SITE",
+        primary_latitude_decimal_val: "42.267",
+        primary_longitude_decimal_val: "-85.589",
+        npl_status_code: "F",
+        preferred_contaminant_name: "LEAD",
+      }),
+    ]);
+    const finding = await EpaSuperfundProximityModule.check(
+      // Water source unknown → no water-test action; no basement → no
+      // vapor intrusion. Lead has groundwater pathway but we can't
+      // responsibly recommend the well or municipal variant without
+      // knowing the water source.
+      makeHouse({ waterSource: "unknown", basementPresent: false }),
+    );
+    const log = finding.activityLog!;
+    const actionsStep = log.steps.find(
+      (s) =>
+        s.kind === "compute" && s.narration.includes("recommended actions"),
+    );
+    expect(actionsStep?.result_summary).toBe("0 recommended actions");
+    expect(actionsStep?.detail).toContain("no actions emitted");
+  });
+});
+
 /**
  * The two module slots introduced for issue #140 — getFindingLabel and
  * getOverviewBanner. Both read the persisted finding shape, so we
@@ -1125,6 +1263,47 @@ describe("EpaSuperfundProximityModule module slots (issue #140)", () => {
     });
   });
 
+  describe("getRecommendedActions (issue #144)", () => {
+    it("returns the persisted recommended_actions verbatim", () => {
+      const result = EpaSuperfundProximityModule.getRecommendedActions!(
+        makeRow({
+          recommended_actions: [
+            {
+              id: "test-your-well",
+              icon: "droplet",
+              headline: "Test your well water",
+              supporting_line: "Lead has been documented at nearby sites.",
+              link: {
+                label: "Find a state-certified lab",
+                url: "https://example.invalid/labs",
+              },
+            },
+          ],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe("test-your-well");
+      expect(result[0].link?.url).toBe("https://example.invalid/labs");
+    });
+
+    it("returns [] when recommended_actions is explicitly empty (no actions applied for the user's situation)", () => {
+      const result = EpaSuperfundProximityModule.getRecommendedActions!(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        makeRow({ recommended_actions: [] }) as any,
+      );
+      expect(result).toEqual([]);
+    });
+
+    it("returns [] when the row predates #144 (recommended_actions field absent)", () => {
+      const result = EpaSuperfundProximityModule.getRecommendedActions!(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        makeRow({}) as any,
+      );
+      expect(result).toEqual([]);
+    });
+  });
+
   describe("getOverviewCards — eyebrow restructure (issue #140)", () => {
     function siteWithLabel(
       label: "worth_acting_on" | "worth_knowing" | "informational" | null,
@@ -1149,6 +1328,9 @@ describe("EpaSuperfundProximityModule module slots (issue #140)", () => {
           archived_date: null,
           epa_region_code: "05",
           profile_url: "https://example.invalid/profile",
+          // Required since #143; this synthetic fixture builds the
+          // shape by hand rather than going through buildSiteEntry.
+          documents_url: "https://example.invalid/docs",
         },
         context: {
           distance_miles: 1.2,

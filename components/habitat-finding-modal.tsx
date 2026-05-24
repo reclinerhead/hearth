@@ -212,6 +212,14 @@ export function HabitatFindingModal({
   // module returns its AI-generated portfolio summary here.
   const overviewBanner = habitatModule.getOverviewBanner?.(row) ?? null;
 
+  // Issue #144: optional "recommended actions" section rendered
+  // between the banner and the overview cards. Modules compute the
+  // cards from their own data (Superfund: water source × pathway
+  // profile); the modal owns the rendering. Empty array suppresses
+  // the section entirely.
+  const recommendedActions = habitatModule.getRecommendedActions?.(row) ?? [];
+  const hasRecommendedActions = recommendedActions.length > 0;
+
   const activeCard =
     activeCardId !== null
       ? (cards.find((c) => c.id === activeCardId) ?? null)
@@ -335,6 +343,24 @@ export function HabitatFindingModal({
                 >
                   {overviewBanner.text}
                 </div>
+              </section>
+            ) : null}
+
+            {hasRecommendedActions ? (
+              <section aria-labelledby={`${titleId}-recommended-actions`}>
+                <div
+                  id={`${titleId}-recommended-actions`}
+                  className="eyebrow mb-2"
+                >
+                  Recommended for your situation
+                </div>
+                <ul className="flex flex-col gap-2">
+                  {recommendedActions.map((action) => (
+                    <li key={action.id}>
+                      <RecommendedActionCard action={action} />
+                    </li>
+                  ))}
+                </ul>
               </section>
             ) : null}
 
@@ -660,5 +686,87 @@ function ActivityLogStep({ step }: { step: ActivityStep }) {
         ) : null}
       </div>
     </li>
+  );
+}
+
+/**
+ * Issue #144 recommended-action card. Renders one action as an
+ * icon + headline + supporting line + optional external link. The
+ * data shape is module-defined (see getRecommendedActions on
+ * HabitatModule); the modal owns the visual treatment so every
+ * future module that opts into recommended actions gets the same
+ * card chrome for free.
+ */
+function RecommendedActionCard({
+  action,
+}: {
+  action: {
+    id: string;
+    icon: string;
+    headline: string;
+    supporting_line: string;
+    link?: { label: string; url: string };
+  };
+}) {
+  return (
+    <div
+      className="rounded-md flex items-start gap-3"
+      style={{
+        border: "1px solid var(--color-border-subtle)",
+        padding: "var(--space-3)",
+        backgroundColor: "var(--color-bg-surface-raised)",
+      }}
+    >
+      <span
+        aria-hidden
+        className="shrink-0 flex items-center justify-center"
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: "var(--radius-md)",
+          backgroundColor:
+            "color-mix(in oklab, var(--color-accent) 14%, transparent)",
+          color: "var(--color-accent)",
+        }}
+      >
+        <Icon name={action.icon as never} size={16} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            color: "var(--color-text-primary)",
+          }}
+        >
+          {action.headline}
+        </div>
+        <p
+          className="text-small"
+          style={{
+            color: "var(--color-text-secondary)",
+            margin: 0,
+            marginTop: 4,
+            lineHeight: 1.55,
+          }}
+        >
+          {action.supporting_line}
+        </p>
+        {action.link ? (
+          <div className="text-small mt-2">
+            <a
+              href={action.link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1"
+              style={{ color: "var(--color-accent)" }}
+            >
+              <span>{action.link.label}</span>
+              <Icon name="external-link" size={14} />
+            </a>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
