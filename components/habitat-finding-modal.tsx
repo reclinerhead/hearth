@@ -361,6 +361,28 @@ export function HabitatFindingModal({
                     </li>
                   ))}
                 </ul>
+                {/*
+                  Section-level disclaimer. The action cards (today, all
+                  Superfund) link out to EPA directories — the CCR
+                  search tool, the certified-lab listing, the vapor-
+                  intrusion overview. Live testing surfaced that the
+                  CCR directory can list utility entries whose own
+                  "CCR website" links 404, and the directory's coverage
+                  isn't always current. Hardcoded here (rather than
+                  per-action) because every current action links to
+                  an EPA resource and the fallback advice is the same;
+                  if a future module ever returns actions that don't
+                  link to EPA, this becomes a slot-driven field.
+                */}
+                <p
+                  className="text-small mt-3"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  EPA&rsquo;s directories aren&rsquo;t always complete or
+                  current. If a link is broken or your utility isn&rsquo;t
+                  listed, your city or county water department is the
+                  most reliable next step.
+                </p>
               </section>
             ) : null}
 
