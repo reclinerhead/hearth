@@ -590,6 +590,24 @@ function OverviewCardButton({
         <div className="h3" style={{ marginBottom: 2 }}>
           {card.headline}
         </div>
+        {card.subheading ? (
+          // Issue #145: optional second-line emphasis between headline
+          // and subtitle. Primary text color but at small size — more
+          // present than the subtitle's secondary muted treatment,
+          // visually subordinate to the h3 headline above. Not
+          // line-clamped: the subheading is usually short (e.g. "Heavy
+          // metals and PCBs and dioxins") and a wrap on rare long
+          // phrases reads better than truncation.
+          <div
+            className="text-small"
+            style={{
+              color: "var(--color-text-primary)",
+              marginBottom: 2,
+            }}
+          >
+            {card.subheading}
+          </div>
+        ) : null}
         <div
           className="text-small"
           style={{

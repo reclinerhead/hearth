@@ -831,7 +831,7 @@ export default function HowItWorksPage() {
                 href: "https://www.epa.gov/superfund/superfund-national-priorities-list-npl",
               },
             ]}
-            lastUpdated="May 25, 2026"
+            lastUpdated="May 26, 2026"
           >
             <div
               style={{
@@ -1088,6 +1088,33 @@ export default function HowItWorksPage() {
                 a recommendation that doesn&rsquo;t match the
                 household isn&rsquo;t a useful recommendation. You can
                 fill these in any time from the Home details page.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
+                Contaminant summaries on each site card
+              </h3>
+              <p style={{ margin: 0 }}>
+                Each nearby site in the finding modal now carries a
+                plain-English summary of what EPA has documented at
+                that location &mdash; for example, &ldquo;Heavy metals&rdquo;
+                or &ldquo;PCBs and dioxins, heavy metals&rdquo; &mdash;
+                between the site name and the address. The summary
+                groups the actual chemicals into a handful of categories
+                we read consistently across the app, so you can triage
+                what&rsquo;s at each site without opening the per-site
+                detail. If EPA hasn&rsquo;t published any contaminants
+                for a particular site, the summary is omitted rather
+                than showing an empty line.
               </p>
             </div>
           </ModuleSection>

@@ -1360,6 +1360,122 @@ describe("EpaSuperfundProximityModule module slots (issue #140)", () => {
       expect(cards[0].eyebrow.startsWith("Tier 2 · ")).toBe(true);
     });
   });
+
+  describe("getOverviewCards — subheading (issue #145)", () => {
+    /** Variant of the synthetic fixture that lets the test set the
+     *  contaminants array directly so we can exercise the subheading
+     *  population without spinning up the full check() pipeline. */
+    function siteWithContaminants(contaminants: string[]): SiteEntry {
+      return {
+        site: {
+          epa_id: "X",
+          sems_site_id: "X",
+          name_display: "Test Site",
+          name_original: "TEST SITE",
+          address: {
+            street: "1 Main St",
+            city: "Kalamazoo",
+            county: "Kalamazoo",
+            state: "MI",
+            zip: "49006",
+          },
+          npl_status: { code: "F", label: "Final NPL" },
+          contaminants,
+          federal_facility: false,
+          archived: false,
+          archived_date: null,
+          epa_region_code: "05",
+          profile_url: "https://example.invalid/profile",
+          documents_url: "https://example.invalid/docs",
+        },
+        context: {
+          distance_miles: 1.2,
+          bearing: "N",
+          tier: 2,
+          severity: "caution",
+          label: "worth_knowing",
+        },
+      };
+    }
+
+    it("populates a sentence-case category subheading from the site's contaminants", () => {
+      // Lead + Arsenic resolve to heavy_metal; TCE resolves to vocs.
+      // Expected: "Volatile organic compounds and heavy metals"
+      const cards = EpaSuperfundProximityModule.getOverviewCards!(
+        makeRow({
+          sites: [
+            siteWithContaminants(["Lead", "Arsenic", "Trichloroethene"]),
+          ],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
+      );
+      expect(cards[0].subheading).toBe(
+        "Volatile organic compounds and heavy metals",
+      );
+    });
+
+    it("suppresses the subheading entirely when EPA hasn't published any contaminants (Georgia-Pacific case)", () => {
+      const cards = EpaSuperfundProximityModule.getOverviewCards!(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        makeRow({ sites: [siteWithContaminants([])] }) as any,
+      );
+      expect(cards[0].subheading).toBeUndefined();
+    });
+
+    it("suppresses the subheading when every contaminant string is unknown to the canonical table", () => {
+      // The site has contaminants on paper but none resolve via the
+      // alias map — so we have no categories to summarize, same
+      // outcome as the empty-array case.
+      const cards = EpaSuperfundProximityModule.getOverviewCards!(
+        makeRow({
+          sites: [
+            siteWithContaminants(["Phlogiston-42", "Elementum mysticum"]),
+          ],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
+      );
+      expect(cards[0].subheading).toBeUndefined();
+    });
+
+    it("renders the subheading sentence-case (first letter capitalized) for inline-form categories", () => {
+      // Lead alone → "heavy metals" inline → "Heavy metals" subheading.
+      const cards = EpaSuperfundProximityModule.getOverviewCards!(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        makeRow({ sites: [siteWithContaminants(["Lead"])] }) as any,
+      );
+      expect(cards[0].subheading).toBe("Heavy metals");
+    });
+
+    it("preserves already-capitalized labels (PFAS, PCBs) at the start of the subheading", () => {
+      // PFOA resolves to pfas → "PFAS" inline → capitalizeCategoryPhrase
+      // is a no-op since it's already capitalized.
+      const cards = EpaSuperfundProximityModule.getOverviewCards!(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        makeRow({ sites: [siteWithContaminants(["PFOA"])] }) as any,
+      );
+      expect(cards[0].subheading).toBe("PFAS");
+    });
+
+    it("truncates the subheading at three categories with 'and other contaminants' suffix", () => {
+      const cards = EpaSuperfundProximityModule.getOverviewCards!(
+        makeRow({
+          sites: [
+            siteWithContaminants([
+              "Trichloroethene", // vocs
+              "Lead", // heavy_metal
+              "Polychlorinated biphenyls", // pcbs_dioxins
+              "Benzo(a)pyrene", // pahs (would be 4th, gets dropped)
+              "PFOA", // pfas (5th, also dropped)
+            ]),
+          ],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
+      );
+      expect(cards[0].subheading).toBe(
+        "Volatile organic compounds, heavy metals, and PCBs and dioxins, and other contaminants",
+      );
+    });
+  });
 });
 
 describe("buildOnboardingMessage", () => {
