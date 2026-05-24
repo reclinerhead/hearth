@@ -446,6 +446,22 @@ describe("EpaSuperfundProximityModule.check — qualifying sites", () => {
     expect(fetchStep?.detail).toContain("MI");
   });
 
+  it("issue #160: narrates the cache outcome on the fetch step (miss in the test runner, where Supabase env is unset)", async () => {
+    // The test runner has no Supabase env vars, so the cache store's
+    // env gate trips and lookup returns a "lookup-error" miss. The
+    // fetch step's detail should narrate that miss honestly and the
+    // result_summary should label it as such — proves the cache
+    // path is wired through index.ts and degrades cleanly when the
+    // cache is unreachable.
+    const finding = await EpaSuperfundProximityModule.check(makeHouse());
+    const fetchStep = finding.activityLog!.steps.find((s) => s.kind === "fetch");
+    expect(fetchStep?.detail).toMatch(/Cache miss/);
+    expect(fetchStep?.result_summary).toMatch(/cache: miss/);
+    // Falls through to the existing EPA URL detail line so the
+    // citation chain still reads cleanly even on the miss path.
+    expect(fetchStep?.detail).toContain("data.epa.gov/efservice/");
+  });
+
   it("cites the Hearth classification page on the decide step", async () => {
     const finding = await EpaSuperfundProximityModule.check(makeHouse());
     const decideStep = finding.activityLog!.steps.find((s) => s.kind === "decide");
