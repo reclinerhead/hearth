@@ -22,7 +22,8 @@ const CACHE_PREFIX = "hearthSignedUrl";
 export type CachedSignedUrlBucket =
   | "house-images"
   | "house-photos"
-  | "hearth-documents";
+  | "hearth-documents"
+  | "hearth-emergency-videos";
 
 type CachedEntry = { url: string; expiresAt: number };
 

@@ -1,26 +1,20 @@
 import { redirect } from "next/navigation";
-import { EmergencyTile, SectionHeader } from "@/components/ui";
-import type { IconName } from "@/components/icon";
+import { SectionHeader } from "@/components/ui";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import { resolveActiveHouseId } from "@/lib/houses/active-house";
 import { createClient } from "@/lib/supabase/server";
 import type { House } from "@/types/house";
 import { DashboardLive } from "./dashboard-live";
+import { EmergencyReferencePanel } from "./emergency-reference-panel";
 import { HabitatPreviewPanel } from "./habitat-preview-panel";
 import { MaintenancePanelDashboard } from "./maintenance-panel-dashboard";
 
-// Emergencies remains a placeholder pending its own issue (#TBD: emergency
-// capture flow); the hardcoded copy keeps the dashboard layout populated
-// for day-one demos. The right column hosts the maintenance "On your
-// plate" panel (issue #133), which queries hearth.maintenance_tasks for
-// the active house and surfaces overdue / next-30 / later tiers with a
-// Good Steward footer. The earlier InventoryPreview is parked under
-// `_unused/` — kept around in case we want it as a sidebar surface
-// elsewhere later.
-
-const EMERGENCIES: { icon: IconName; label: string; hint: string }[] = [
-  { icon: "droplet", label: "Water shutoff", hint: "Basement, NE corner" },
-];
+// Issue #139 replaced the hardcoded EMERGENCIES placeholder with the
+// EmergencyReferencePanel, which fetches real hearth.documents rows of
+// kind='emergency_procedure_video' and renders icon-dominant tiles in
+// the four-category order (Water / Gas / Electrical / Other). The
+// right column hosts the maintenance "On your plate" panel (issue
+// #133). The earlier InventoryPreview is parked under `_unused/`.
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -92,31 +86,7 @@ export default async function DashboardPage() {
 
       <section className="grid gap-6 md:grid-cols-2">
         <div className="flex flex-col gap-4">
-          <div>
-            <SectionHeader
-              eyebrow="If something goes wrong"
-              title="Emergencies"
-              trailing={
-                <span
-                  className="text-small"
-                  style={{ color: "var(--color-text-tertiary)" }}
-                >
-                  1 saved
-                </span>
-              }
-            />
-            <div className="grid grid-cols-2 gap-3">
-              {EMERGENCIES.map((e) => (
-                <EmergencyTile key={e.label} {...e} />
-              ))}
-              <EmergencyTile
-                icon="plus"
-                label="Add an emergency"
-                hint="Pin a shutoff or hazard"
-                variant="add"
-              />
-            </div>
-          </div>
+          <EmergencyReferencePanel houseId={data.id} />
 
           <div>
             <SectionHeader

@@ -243,7 +243,57 @@ The object URL on the source file is revoked in a `finally` block. The video ele
 - **Pure logic** — `lib/documents/process-video.ts` (compression pipeline + validators + codec priority) and `lib/documents/emergency-video-rules.ts` (primary-flag + auto-promote rules). Both have sibling `*.test.ts` files covering the documented contract.
 - **Row type** — `types/document.ts` extends `DocumentRow` with the six new columns plus the `EmergencyCategory` and `DocumentStorageBucket` unions. Same hand-typed-until-`supabase gen types`-replaces-it pattern as the rest of the type file.
 
-The Smart Uploader stages (path picker entry, category picker, label, capture, compress, review), the orchestrating hook (`use-emergency-video-upload.ts`), the dashboard Emergency reference panel, the custom video player, and the four server actions (save / promote / update / delete) are deferred to the UX PR. The foundation deliberately ships independently so the migrations can be reviewed and pushed before any UI depends on them.
+### Smart Uploader flow
+
+The emergency-video path of the Smart Uploader is a five-stage state machine that lives alongside the photo and receipt paths in [SmartUploader.tsx](../components/smart-uploader/SmartUploader.tsx). Discovery-mode entry is the path-picker's "Emergency procedure video" option (red-toned chip to signal the emergency surface); pre-routed entry is the dashboard panel's "Add a {category} video" affordance, which passes an `initialEmergencyCategory` prop that bypasses both the path picker and the category stage and lands on the label stage with the category pinned.
+
+Stages in order:
+
+1. **Category** ([EmergencyCategoryStage.tsx](../components/smart-uploader/stages/EmergencyCategoryStage.tsx)) — a 2×2 grid of icon-dominant cards (Water / Gas / Electrical / Other). Tapping advances to the label stage. Skipped when `initialEmergencyCategory` is set.
+2. **Label** ([EmergencyLabelStage.tsx](../components/smart-uploader/stages/EmergencyLabelStage.tsx)) — optional name field for the three named categories ("Main shutoff in basement", "Outside faucets"); required for `'other'`. Pre-fills from prior navigation so a user retaking doesn't re-type.
+3. **Capture** ([EmergencyCaptureStage.tsx](../components/smart-uploader/stages/EmergencyCaptureStage.tsx)) — two parallel affordances: "Record now" calls `getUserMedia({ video: { facingMode: 'environment' }, audio: true })` and runs a `MediaRecorder` against the live stream until the user taps Stop (or the 2-minute auto-cap fires); "Upload existing video" opens a `video/*` file picker. Either path resolves to a `File` and advances to compression. Camera permission denial surfaces the upload fallback inline.
+4. **Compress** ([EmergencyCompressStage.tsx](../components/smart-uploader/stages/EmergencyCompressStage.tsx)) — spinner while the orchestrating hook runs `processVideo`. On `ProcessVideoError` the stage renders the error message and offers Retake / Cancel; the upstream stages are still intact in component state so Retake just clears the result and bounces back to capture.
+5. **Review** ([EmergencyReviewStage.tsx](../components/smart-uploader/stages/EmergencyReviewStage.tsx)) — embedded `<VideoPlayer>` with the just-compressed Blob and poster, optional multi-line notes (soft warning at 2000 chars), and Save / Retake / Cancel. Save invokes the orchestrating hook's `save()`, which uploads + inserts the row in the same call.
+
+The orchestrating hook is [use-emergency-video-upload.ts](../components/smart-uploader/hooks/use-emergency-video-upload.ts). Phases: `idle → compressing → compressed → saving → done`, with `error` reachable from compressing or saving. The hook owns the in-memory blob URLs for the preview, revoking them in its `reset()` so a closed-mid-flow uploader doesn't leak bytes. Unlike the photo / receipt flows there is no `hearth.documents` row written until the final save step — emergency videos skip the early-INSERT pattern because there's no AI analyze step that benefits from it, and the up-front row would have to carry storage paths before the compression even finishes.
+
+### Dashboard Emergency reference panel
+
+The panel at [emergency-reference-panel.tsx](../app/(app)/dashboard/emergency-reference-panel.tsx) replaces the hardcoded `EMERGENCIES` placeholder grid above habitat on the dashboard. Server component pattern: it fetches every `kind='emergency_procedure_video'` row for the active house in one query (sorted by `emergency_is_primary desc, created_at desc`, which is exactly what the partial index covers), groups them in memory by `emergency_category`, and hands the result to the [client panel](../app/(app)/dashboard/emergency-reference-panel.client.tsx) which renders four category rows in the fixed Water / Gas / Electrical / Other order.
+
+Per-category rendering:
+
+- **Empty category** — a thin dashed-border affordance row with the category icon at left and "Add a {label} video" text. Tapping mounts a SmartUploader instance pre-routed to that category.
+- **Populated category** — a primary tile in 16:10 aspect with the category icon as a full-bleed background, label and duration overlaid in the bottom scrim, plus a 52×52 white play affordance circle in the bottom-right. The icon-as-background treatment is deliberate per Todd's direction in issue #139: "make these images stand out so it's absolutely clear the user is seeing the emergency water icon." Secondary videos in the same category surface as a "+N more {label} videos" pill below the primary tile, which opens the modal with the primary playing first and a strip of all videos in the category.
+
+The panel mounts its own SmartUploader and EmergencyVideoModal instances; top-nav's existing SmartUploader for the general "+ Add" entry stays untouched. Two simultaneous SmartUploader instances are fine because they're conditionally mounted and only one can be open at a time given the modal's scroll-lock.
+
+### Custom video player
+
+[video-player.tsx](../components/video-player.tsx) is the gloves-friendly player shared between the Smart Uploader's review stage and the dashboard modal. Deliberately not `<video controls>` — the browser-default control bar offers volume / playback speed / forward / rewind / picture-in-picture, none of which serve the "2am with wet hands" reality. The custom controls are:
+
+- Centre play/pause overlay button (88×88, fades during playback with `prefers-reduced-motion` honored).
+- Full-width scrubber row (32pt minimum height) with native `<input type="range">` and `accent-color: white` for the thumb.
+- Time display (current / total) in monospace tabular numerals.
+- Fullscreen toggle (44×44 with a 20px maximize/minimize icon).
+- Tap anywhere on the video surface toggles play.
+
+No volume control, no rewind/forward, no playback-speed selector — by design. Controls auto-hide after 3 seconds of inactivity during playback and stay visible while paused. iOS Safari's `playsInline` is set so fullscreen on iPhone honors the system fullscreen pill.
+
+### Server actions
+
+Four actions under `app/actions/documents/`, all `"use server"` and returning the project's standard `{ data, error: null } | { data: null, error: string }` shape:
+
+- **`saveEmergencyVideoAction`** ([save-emergency-video.ts](../app/actions/documents/save-emergency-video.ts)) — final save. The Smart Uploader's hook has already uploaded the video + poster Blobs to the `hearth-emergency-videos` bucket. This action runs a head-count of existing rows in the same `(house_id, emergency_category)` to decide the primary flag (mirroring `shouldSaveAsPrimary`), inserts the row with `status='attached'` (no AI step → no analyzing phase), and calls `revalidatePath('/dashboard')` so the panel reflects the new video without a navigation. The cross-column CHECK constraints on the schema enforce that emergency-video rows write `storage_bucket='hearth-emergency-videos'` and carry a non-null `emergency_category` — this action sets both correctly, but a future writer that drifts will be caught at INSERT time rather than producing inconsistent rows.
+- **`promoteEmergencyVideoAction`** ([promote-emergency-video.ts](../app/actions/documents/promote-emergency-video.ts)) — promotes a secondary to primary. Two sequential UPDATEs (demote current primary by `(house_id, kind, category, is_primary=true)`; promote target by id), wrapped with defensive checks (target exists, is an emergency video, has a category). Already-primary input is a no-op success so callers don't need to special-case re-tap.
+- **`updateEmergencyVideoAction`** ([update-emergency-video.ts](../app/actions/documents/update-emergency-video.ts)) — edits label and/or notes. Server-side enforces the "label required when category is 'other'" rule before the UPDATE.
+- **`deleteEmergencyVideoAction`** ([delete-emergency-video.ts](../app/actions/documents/delete-emergency-video.ts)) — same best-effort-storage / authoritative-row pattern as `cleanupDocumentAction`. After the row delete, if the deleted row was the primary in its category, the action runs `pickPromotedSecondaryId` against the remaining rows and UPDATEs the winner to `emergency_is_primary=true`. The pure logic lives in [emergency-video-rules.ts](../lib/documents/emergency-video-rules.ts); the action just translates the survivor list into a single UPDATE.
+
+All four call `revalidatePath('/dashboard')` so dashboard surfaces (the panel and the SuggestedNext implicit-completion timestamp once that lands as a follow-up) re-render with the new state.
+
+### Signed URL caching
+
+The dashboard tiles use the static `/public/document_icons/*.jpg` images for the icon-as-background treatment — those are public assets, no signing needed. The video and poster bytes live in the private `hearth-emergency-videos` bucket and are accessed via [createCachedSignedUrl](../lib/house-image/signed-url.ts), the same helper the photo flows use. The bucket was added to the helper's `CachedSignedUrlBucket` union so emergency video URLs participate in the existing sessionStorage caching layer.
 
 ---
 
