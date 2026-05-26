@@ -2,19 +2,57 @@
  * Persisted findings shape for the Water Quality Awareness module.
  *
  * Lives on hearth.habitat_findings.findings (JSONB) under
- * module_key='water_quality_awareness'. Phase 1 ships only the Tier 1
- * surface (system identity + branch metadata); WQA-2 will populate
- * compliance status, WQA-3 will populate latest-CCR metadata, etc.
- * Optional fields exist in the type so later phases don't require a
- * payload version bump.
+ * module_key='water_quality_awareness'. Phase 1 (WQA-1) shipped the
+ * Tier 1 surface (system identity + branch metadata). Phase 2 (WQA-2)
+ * adds compliance status enrichment + the lead_copper_summary block,
+ * plus the PWSID-resolution-confidence axis for the nearest-polygon
+ * fallback. WQA-3 will populate latest-CCR metadata. Optional fields
+ * exist in the type so later phases don't require a payload version
+ * bump.
  */
 
+import type { LeadCopperSummary } from "./lcr";
+import type { RecentViolationsSummary } from "./compliance";
+
 /**
- * Which of the five branches the module's check() landed in. The UI
+ * How confidently the module identified the user's water utility.
+ * Travels alongside the branch decision through `check()` and lands
+ * on the persisted payload as `system_card.pwsid_confidence`.
+ *
+ *   verified — EPA's point-in-polygon query returned a match at the
+ *              user's exact coordinates. The PWSID is authoritative.
+ *   inferred — The direct query came up empty, but the nearest-polygon
+ *              fallback (~500m radius) found a single utility nearby.
+ *              SDWIS data fetches run against this PWSID with the
+ *              confidence flag carried alongside; future UI can render
+ *              an "is this right?" affordance.
+ *   unmapped — Neither the direct query nor the fallback resolved a
+ *              PWSID with confidence. Either zero polygons within the
+ *              radius or multiple competing utilities. No PWSID is
+ *              available for downstream SDWIS / CCR work.
+ */
+export type PwsidResolution =
+  | { confidence: "verified"; pwsid: string; pwsName: string | null }
+  | { confidence: "inferred"; pwsid: string; pwsName: string | null }
+  | { confidence: "unmapped" };
+
+/**
+ * Which of the six branches the module's check() landed in. The UI
  * uses this to pick between the variants of the system card, and the
  * activity log narrates the decision against it.
  *
- *   private_well   — no CWS polygon covers the house's coordinates.
+ *   private_well   — User declared `water_source = 'well'` (or 'shared')
+ *                    during onboarding, OR water_source is unknown/null
+ *                    AND no CWS polygon covers the house's coordinates.
+ *                    Trusted user input takes precedence over EPA mapping.
+ *   cws_unmapped   — User declared `water_source = 'municipal'` but
+ *                    EPA's national CWS service-area layer doesn't cover
+ *                    the house's exact coordinates. Common — EPA's map
+ *                    has roughly 6 of every 7 U.S. addresses, leaving
+ *                    rural fringes and recent annexations uncovered.
+ *                    We can't pull a PWSID without a polygon match, so
+ *                    SDWIS / CCR features are unavailable; the user can
+ *                    still upload a CCR manually in WQA-3+.
  *   stale          — PWSID resolved but Envirofacts has no record or
  *                    the system's activity_code != 'A'.
  *   non_community  — Active TNCWS or NTNCWS. CCR not federally required.
@@ -23,6 +61,7 @@
  */
 export type WqaBranch =
   | "private_well"
+  | "cws_unmapped"
   | "stale"
   | "non_community"
   | "cws_no_ccr"
@@ -46,14 +85,32 @@ export type WqaFindings = {
     description: string;
     source_type: "groundwater" | "surface" | "groundwater_under_surface" | "unknown";
     /**
-     * Phase 1 always sets this to "unknown". WQA-2 will fill it in
-     * once the SDWIS violation pull lands. The field exists in the
-     * schema so WQA-2 doesn't require a payload migration.
+     * Three-state sentinel set from EPA SDWIS violations (WQA-2). Stays
+     * "unknown" when the violations fetch failed in soft-fail mode, so
+     * the UI can distinguish "we tried and EPA was clean" from "we
+     * couldn't tell".
      */
     compliance_status_short:
       | "unknown"
       | "no_active_violations"
       | "active_violations";
+    /**
+     * How confidently the module resolved the PWSID for this finding.
+     * Present on cws_no_ccr / non_community / cws_with_ccr branches;
+     * absent on cws_unmapped, private_well, and stale (where no PWSID
+     * is available). Back-compat for payloads persisted before the
+     * nearest-polygon fallback shipped: a missing value should be
+     * treated as "verified" (the only behavior that existed pre-#169
+     * follow-up).
+     */
+    pwsid_confidence?: "verified" | "inferred";
+    /**
+     * Compact summary of compliance history over the last 5 years.
+     * Populated by WQA-2 when the violations fetch succeeded; absent
+     * when compliance_status_short is "unknown" (degraded mode) or
+     * when the branch doesn't fetch SDWIS data (private_well / stale).
+     */
+    recent_violations?: RecentViolationsSummary;
     /**
      * Phase 1 always sets this to "not_uploaded". WQA-3 will set it
      * to a year value when a CCR is available for the system. The
@@ -62,6 +119,14 @@ export type WqaFindings = {
     latest_ccr_status: "not_uploaded" | { year: number };
     source_water_protection_since: string | null;
   };
+
+  /**
+   * Lead and Copper Rule sample summary for the system. Discriminated
+   * union: "no_samples_on_file" / "unavailable" / "available". Populated
+   * by WQA-2 on CWS and non-community branches; absent on private_well
+   * and stale.
+   */
+  lead_copper_summary?: LeadCopperSummary;
 
   /**
    * Branch-specific metadata. Populated for every branch; the UI uses

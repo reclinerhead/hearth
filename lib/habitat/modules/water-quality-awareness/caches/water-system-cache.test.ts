@@ -5,8 +5,8 @@ import {
   rowToRecord,
   type WaterSystemCacheLookupResult,
   type WaterSystemCacheStore,
-} from "./cache";
-import type { EnvirofactsWaterSystemRecord } from "./sources/envirofacts";
+} from "./water-system-cache";
+import type { EnvirofactsWaterSystemRecord } from "../sources/envirofacts";
 
 function kalamazoo(
   overrides: Partial<EnvirofactsWaterSystemRecord> = {},

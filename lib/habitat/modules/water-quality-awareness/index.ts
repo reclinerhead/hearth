@@ -1,34 +1,45 @@
 /**
- * Water Quality Awareness (WQA) habitat module — Phase 1.
+ * Water Quality Awareness (WQA) habitat module.
  *
- * Resolves a house's coordinates to a PWSID via the EPA Community Water
- * System Service Areas layer, fetches the WATER_SYSTEM inventory record
- * from EPA Envirofacts (with a 90-day shared-cache window per PWSID),
- * decides which of five branches the house falls into, and surfaces a
- * habitat finding for the "Your water system" card in the dashboard.
+ * Phase 1 (issue #166): Resolves a house's coordinates to a PWSID via
+ * the EPA Community Water System Service Areas layer, fetches the
+ * WATER_SYSTEM inventory record from EPA Envirofacts (with a 90-day
+ * shared-cache window per PWSID), decides which of five branches the
+ * house falls into.
  *
- * No CCR work, no SDWIS violations, no UCMR data — those are WQA-2 / -3
- * / -8. Phase 1 is the architectural skeleton plus the system-identity
- * surface (Tier 1 data only).
+ * Phase 2 (issue #169): On the CWS / non-community branches, pulls
+ * SDWIS violation history and Lead and Copper Rule sample results
+ * (both with a 30-day shared cache), then derives a compliance status
+ * and lead/copper summary that feed both the persisted payload and
+ * the finding's severity. CCR work (Phase 3+) still pending.
  *
  * Branch logic lives in branch.ts. Payload assembly lives in payload.ts.
- * Activity-log narration lives in narration.ts. This file is the
- * orchestrator-facing entry point.
+ * SDWIS summarization lives in compliance.ts and lcr.ts. Activity-log
+ * narration lives in narration.ts. This file is the orchestrator-
+ * facing entry point.
  *
  * Feature flag: the module is exported as the default export but only
- * registered in lib/habitat/registry.ts when `WQA_ENABLED === "true"`.
- * That keeps the registry import path stable and lets the env var
- * toggle visibility without a code change.
+ * registered in lib/habitat/registry.ts when `NEXT_PUBLIC_WQA_ENABLED === "true"`.
  *
- * Activity-log narration arc:
+ * Activity-log narration arc on the happy CWS / non-community path:
  *
  *   1. fetch    — "I looked up your address against EPA's CWS Service Areas…"
  *   2. fetch    — "I pulled the utility's record from Envirofacts…" (or "cached hit")
- *                  (Omitted when the PWSID didn't resolve — no record to fetch.)
- *   3. decide   — "Branch decision based on what we found."
- *   4. finding  — "I put a short finding together for your dashboard."
+ *   3. decide   — branch decision
+ *   4. fetch    — "I pulled your utility's violation history from EPA…"
+ *                  (or "fetch failed" with a degraded-payload note)
+ *   5. fetch    — "I checked the most recent lead and copper samples…"
+ *                  (or "no samples on file" / "fetch failed")
+ *   6. compute  — "I looked across the violations to decide…"
+ *   7. finding  — "I put a short finding together…"
  *
- * 4 steps on the happy path; 3 on the private-well path.
+ * 7 steps on the CWS / non-community happy path; 4 on private_well;
+ * 5-6 on stale/degraded paths depending on which fetches ran.
+ *
+ * Violations and LCR samples are fetched in parallel — independent
+ * endpoints, independent failures. A failure on one degrades only its
+ * field; the other continues. The module never throws after the
+ * initial coordinate-validation guard.
  */
 
 import { createActivityLogger } from "@/lib/habitat/activity-log";
@@ -37,27 +48,62 @@ import type {
   HabitatModule,
   HouseContext,
 } from "@/lib/habitat/types";
-import { decideBranch } from "./branch";
+import { decideBranch, shouldSkipEpaLookups } from "./branch";
 import {
   CACHE_TTL_DAYS,
   createSupabaseWaterSystemCacheStore,
   resolveWaterSystem,
-} from "./cache";
+} from "./caches/water-system-cache";
 import {
+  createSupabaseLcrCacheStore,
+  resolveLcrSamples,
+  type LcrCacheLookupResult,
+} from "./caches/lcr-cache";
+import {
+  createSupabaseViolationsCacheStore,
+  resolveViolations,
+  type ViolationsCacheLookupResult,
+} from "./caches/violations-cache";
+import {
+  COMPLIANCE_RECENT_YEARS,
+  countUnmappedContaminants,
+  summarizeCompliance,
+  type ComplianceSummary,
+} from "./compliance";
+import { summarizeLcr, type LeadCopperSummary } from "./lcr";
+import {
+  buildCwsUnmappedPayload,
   buildPrivateWellPayload,
   buildStalePayload,
   buildSystemPayload,
+  type SdwisEnrichment,
 } from "./payload";
 import {
   branchDecideNarration,
+  complianceComputeNarration,
   EPA_CWS_SERVICE_AREAS_SOURCE,
   EPA_ENVIROFACTS_SOURCE,
+  EPA_SDWIS_LCR_SOURCE,
+  EPA_SDWIS_VIOLATIONS_SOURCE,
   envirofactsFetchNarration,
   findingStepNarration,
   HEARTH_BRANCH_SOURCE,
+  HEARTH_COMPLIANCE_RULE_SOURCE,
+  lcrFetchNarration,
+  nearestPwsidFetchNarration,
   pwsidFetchNarration,
+  trustedWaterSourceNarration,
+  violationsFetchNarration,
 } from "./narration";
-import { resolvePwsidAtPoint } from "./sources/cws-service-areas";
+import type { SdwisViolationRecord } from "./sources/sdwis-violations";
+import type { SdwisLcrSampleRecord } from "./sources/sdwis-lcr-samples";
+import {
+  NEAREST_POLYGON_FALLBACK_RADIUS_M,
+  resolveNearestPwsid,
+  resolvePwsidAtPoint,
+  type NearestPwsidResult,
+} from "./sources/cws-service-areas";
+import type { PwsidResolution, WqaBranch } from "./types";
 
 const MODULE_KEY = "water_quality_awareness";
 
@@ -65,24 +111,17 @@ const WaterQualityAwarenessModule: HabitatModule = {
   key: MODULE_KEY,
   name: "Water Quality Awareness",
   description:
-    "Identifies which public water system serves your home and prepares the surface for compliance history, contaminant findings, and your utility's annual Water Quality Report.",
+    "Identifies which public water system serves your home, reads its EPA compliance record, and prepares the surface for your utility's annual Water Quality Report.",
   category: "environmental",
-  // 'once' for Phase 1 — we resolve a PWSID and persist the system
-  // record, and that doesn't need to re-run on a schedule until later
-  // phases add compliance and CCR data. WQA-2 will likely bump this
-  // to 'yearly'.
-  cadence: "once",
-  // iconImage is intentionally omitted until the WQA hero asset
-  // ships under public/habitat_module_images/. The compact tile and
-  // the modal header both handle a missing icon gracefully — the
-  // tile drops the 72px hero column, the modal renders without the
-  // thumbnail. Tracked as a follow-up to the WQA-1 PR.
+  // WQA-2 (issue #169) bumps cadence from 'once' to 'yearly'. SDWIS
+  // submissions are quarterly; a yearly re-check window keeps
+  // findings fresh without being noisy. WQA-1 set this to 'once'
+  // because Tier 1 inventory data alone didn't earn a recurring
+  // re-check.
+  cadence: "yearly",
+  iconImage: "/habitat_module_images/WQA.jpg",
 
   isApplicable(house: HouseContext): boolean {
-    // Need lat/lng for the point-in-polygon query against CWS Service
-    // Areas. Anything else is downstream — even the private-well
-    // branch starts from a successful CWS lookup that returned zero
-    // features.
     return (
       house.latitude !== null &&
       house.longitude !== null &&
@@ -114,13 +153,81 @@ const WaterQualityAwarenessModule: HabitatModule = {
     const lat = house.latitude;
     const lng = house.longitude;
 
-    // Step 1 — resolve the PWSID via CWS Service Areas.
-    const pwsid = await resolvePwsidAtPoint(lat, lng);
+    // Short-circuit: when the user's onboarding answer is 'well' or
+    // 'shared', EPA has no useful data for this house — no PWSID, no
+    // SDWIS, no CCR. Trust the user, skip the lookups, and emit a
+    // 3-step log that narrates the trust path.
+    if (
+      house.waterSource === "well" ||
+      house.waterSource === "shared"
+    ) {
+      const trustedStep = trustedWaterSourceNarration({
+        waterSource: house.waterSource,
+      });
+      log.step({
+        kind: "compute",
+        narration: trustedStep.narration,
+        detail: trustedStep.detail,
+        result_summary: trustedStep.result_summary,
+      });
+      const decision = decideBranch({
+        waterSource: house.waterSource,
+        pwsidResolved: false,
+        record: null,
+      });
+      const decideStep = branchDecideNarration({
+        branch: decision.branch,
+        diagnostic: decision.diagnostic,
+        source: "user-declared",
+      });
+      log.step({
+        kind: "decide",
+        narration: decideStep.narration,
+        detail: decideStep.detail,
+        result_summary: decideStep.result_summary,
+        source: HEARTH_BRANCH_SOURCE,
+      });
+
+      const payload = buildPrivateWellPayload(
+        decision.diagnostic ?? "User declared a private/shared water source during onboarding.",
+        "user-declared",
+      );
+
+      const findStep = findingStepNarration(payload.headline);
+      log.step({
+        kind: "finding",
+        narration: findStep.narration,
+        result_summary: findStep.result_summary,
+      });
+
+      return {
+        severity: payload.severity,
+        headline: payload.headline,
+        summary: payload.summary,
+        findings: payload.findings as unknown as Record<string, unknown>,
+        sourceUrl: "https://www.epa.gov/ground-water-and-drinking-water",
+        activityLog: log.finalize(),
+      };
+    }
+
+    // Belt-and-suspenders for the shouldSkipEpaLookups helper. If this
+    // ever desyncs from the short-circuit above, the test suite will
+    // catch the divergence; the assertion keeps the invariant local.
+    if (shouldSkipEpaLookups(house.waterSource)) {
+      throw new Error(
+        "shouldSkipEpaLookups disagrees with the short-circuit logic above",
+      );
+    }
+
+    // Step 1 — direct point-in-polygon lookup.
+    const directMatch = await resolvePwsidAtPoint(lat, lng);
     const fetch1 = pwsidFetchNarration({
       lat,
       lng,
-      resolved: pwsid.match !== null,
-      totalFeatures: pwsid.totalFeatures,
+      resolved: directMatch.match !== null,
+      totalFeatures: directMatch.totalFeatures,
+      // Fallback always runs on a direct miss (post-WQA-2-followup).
+      willRunFallback: directMatch.match === null,
     });
     log.step({
       kind: "fetch",
@@ -130,19 +237,59 @@ const WaterQualityAwarenessModule: HabitatModule = {
       source: EPA_CWS_SERVICE_AREAS_SOURCE,
     });
 
-    // Step 2 — if the PWSID resolved, fetch the WATER_SYSTEM record
-    // through the shared cache.
+    // Step 1b — when the direct lookup missed, run the nearest-polygon
+    // fallback (~500m buffer). EPA's national polygon coverage has
+    // documented gaps (rural fringes, recent annexations, and pockets
+    // inside major cities — 604 Norton Dr in Kalamazoo is the
+    // canonical regression case). The fallback recovers the correct
+    // PWSID when every nearby polygon belongs to the same utility.
+    let resolution: PwsidResolution;
+    let nearbyOutcome: NearestPwsidResult | null = null;
+    if (directMatch.match) {
+      resolution = {
+        confidence: "verified",
+        pwsid: directMatch.match.pwsid,
+        pwsName: directMatch.match.pwsName,
+      };
+    } else {
+      nearbyOutcome = await resolveNearestPwsid(lat, lng);
+      const fallbackStep = nearestPwsidFetchNarration({
+        radiusMeters: NEAREST_POLYGON_FALLBACK_RADIUS_M,
+        outcome: nearbyOutcome,
+      });
+      log.step({
+        kind: "fetch",
+        narration: fallbackStep.narration,
+        detail: fallbackStep.detail,
+        result_summary: fallbackStep.result_summary,
+        source: EPA_CWS_SERVICE_AREAS_SOURCE,
+      });
+      if (nearbyOutcome.kind === "single-nearby") {
+        resolution = {
+          confidence: "inferred",
+          pwsid: nearbyOutcome.pwsid,
+          pwsName: nearbyOutcome.pwsName,
+        };
+      } else {
+        resolution = { confidence: "unmapped" };
+      }
+    }
+
+    // Step 2 — when we have a PWSID (verified OR inferred), fetch the
+    // WATER_SYSTEM inventory record. Inferred PWSIDs are treated as
+    // authoritative for data fetching; the confidence distinction
+    // surfaces only in payload + activity log.
     let record = null as Awaited<ReturnType<typeof resolveWaterSystem>>["record"];
-    if (pwsid.match) {
+    if (resolution.confidence !== "unmapped") {
       const store = createSupabaseWaterSystemCacheStore();
-      const resolved = await resolveWaterSystem(pwsid.match.pwsid, store);
+      const resolved = await resolveWaterSystem(resolution.pwsid, store);
       record = resolved.record;
       const fetch2 = envirofactsFetchNarration({
-        pwsid: pwsid.match.pwsid,
+        pwsid: resolution.pwsid,
         cacheKind: resolved.cache.kind,
         cacheDetail:
           resolved.cache.kind === "hit"
-            ? `Cache hit on hearth.water_systems for ${pwsid.match.pwsid}, refreshed_at=${resolved.cache.refreshedAt.toISOString()}, age=${resolved.cache.ageDays}d, ttl=${CACHE_TTL_DAYS}d`
+            ? `Cache hit on hearth.water_systems for ${resolution.pwsid}, refreshed_at=${resolved.cache.refreshedAt.toISOString()}, age=${resolved.cache.ageDays}d, ttl=${CACHE_TTL_DAYS}d`
             : `Cache ${resolved.cache.reason === "no-row" ? "miss (no row)" : resolved.cache.reason === "expired" ? "miss (expired, refetched + cache updated)" : "miss (lookup error, refetched)"}; GET ${resolved.sourceUrl}`,
         ageDays:
           resolved.cache.kind === "hit" ? resolved.cache.ageDays : undefined,
@@ -156,11 +303,32 @@ const WaterQualityAwarenessModule: HabitatModule = {
       });
     }
 
-    // Step 3 — branch decision.
-    const decision = decideBranch({
-      pwsidResolved: pwsid.match !== null,
-      record,
-    });
+    // Step 3 — branch decision. The competing-utilities-nearby case is
+    // special-cased here rather than in branch.ts: a user with
+    // waterSource=null who has multiple utilities within 500m is
+    // almost certainly on city water (we just can't pick which one),
+    // and the default branch.ts logic would route them to private_well
+    // — wrong answer. Route to cws_unmapped instead so the user sees
+    // the right framing.
+    let decision: { branch: WqaBranch; diagnostic?: string };
+    if (
+      resolution.confidence === "unmapped" &&
+      nearbyOutcome?.kind === "multiple-competing"
+    ) {
+      const list = nearbyOutcome.candidates
+        .map((c) => c.pwsid)
+        .join(", ");
+      decision = {
+        branch: "cws_unmapped",
+        diagnostic: `EPA's national map didn't directly match your address. Multiple utilities (${list}) have polygons within ${NEAREST_POLYGON_FALLBACK_RADIUS_M}m, so we can't pick one with confidence.`,
+      };
+    } else {
+      decision = decideBranch({
+        waterSource: house.waterSource,
+        pwsidResolved: resolution.confidence !== "unmapped",
+        record,
+      });
+    }
     const decideStep = branchDecideNarration({
       branch: decision.branch,
       diagnostic: decision.diagnostic,
@@ -173,12 +341,170 @@ const WaterQualityAwarenessModule: HabitatModule = {
       source: HEARTH_BRANCH_SOURCE,
     });
 
+    // Steps 4-6 — only on CWS / non-community paths where a record
+    // exists. Violations and LCR samples are fetched in parallel and
+    // soft-fail independently. The cws_unmapped and private_well
+    // branches don't have a PWSID to query, so SDWIS is skipped.
+    let enrichment: SdwisEnrichment | undefined;
+    const shouldFetchSdwis =
+      record !== null &&
+      (decision.branch === "cws_no_ccr" ||
+        decision.branch === "non_community" ||
+        decision.branch === "cws_with_ccr");
+
+    if (shouldFetchSdwis && resolution.confidence !== "unmapped") {
+      const resolutionPwsid = resolution.pwsid;
+      const violationsStore = createSupabaseViolationsCacheStore();
+      const lcrStore = createSupabaseLcrCacheStore();
+
+      // Run both fetches in parallel. Using Promise.allSettled so a
+      // failure on either doesn't short-circuit the other.
+      const [violationsOutcome, lcrOutcome] = await Promise.allSettled([
+        resolveViolations(resolutionPwsid, violationsStore),
+        resolveLcrSamples(resolutionPwsid, lcrStore),
+      ]);
+
+      // Violations fetch step
+      let violations: SdwisViolationRecord[] | null = null;
+      if (violationsOutcome.status === "fulfilled") {
+        violations = violationsOutcome.value.records;
+        const cache = violationsOutcome.value.cache;
+        const violationsRowCount = violations.length;
+        const violationsSourceUrl = violationsOutcome.value.sourceUrl;
+        const narr = violationsFetchNarration({
+          pwsid: resolutionPwsid,
+          outcome:
+            cache.kind === "hit"
+              ? {
+                  kind: "hit",
+                  ageDays: cache.ageDays,
+                  rowCount: violationsRowCount,
+                }
+              : {
+                  kind: "miss",
+                  reason: cache.reason,
+                  rowCount: violationsRowCount,
+                  sourceUrl: violationsSourceUrl,
+                },
+        });
+        log.step({
+          kind: "fetch",
+          narration: narr.narration,
+          detail: narr.detail,
+          result_summary: narr.result_summary,
+          source: EPA_SDWIS_VIOLATIONS_SOURCE,
+        });
+      } else {
+        const message =
+          violationsOutcome.reason instanceof Error
+            ? violationsOutcome.reason.message
+            : String(violationsOutcome.reason);
+        const narr = violationsFetchNarration({
+          pwsid: resolutionPwsid,
+          outcome: { kind: "failed", message },
+        });
+        log.step({
+          kind: "fetch",
+          narration: narr.narration,
+          detail: narr.detail,
+          result_summary: narr.result_summary,
+          source: EPA_SDWIS_VIOLATIONS_SOURCE,
+        });
+      }
+
+      // LCR fetch step
+      let lcrRecords: SdwisLcrSampleRecord[] | null = null;
+      let lcrOutcomeAvailable: boolean;
+      if (lcrOutcome.status === "fulfilled") {
+        lcrRecords = lcrOutcome.value.records;
+        lcrOutcomeAvailable = true;
+        const cache: LcrCacheLookupResult = lcrOutcome.value.cache;
+        const narr = lcrFetchNarration({
+          pwsid: resolutionPwsid,
+          outcome:
+            cache.kind === "hit"
+              ? {
+                  kind: "hit",
+                  ageDays: cache.ageDays,
+                  rowCount: lcrRecords.length,
+                }
+              : {
+                  kind: "miss",
+                  reason: cache.reason,
+                  rowCount: lcrRecords.length,
+                  sourceUrl: lcrOutcome.value.sourceUrl,
+                },
+        });
+        log.step({
+          kind: "fetch",
+          narration: narr.narration,
+          detail: narr.detail,
+          result_summary: narr.result_summary,
+          source: EPA_SDWIS_LCR_SOURCE,
+        });
+      } else {
+        lcrOutcomeAvailable = false;
+        const message =
+          lcrOutcome.reason instanceof Error
+            ? lcrOutcome.reason.message
+            : String(lcrOutcome.reason);
+        const narr = lcrFetchNarration({
+          pwsid: resolutionPwsid,
+          outcome: { kind: "failed", message },
+        });
+        log.step({
+          kind: "fetch",
+          narration: narr.narration,
+          detail: narr.detail,
+          result_summary: narr.result_summary,
+          source: EPA_SDWIS_LCR_SOURCE,
+        });
+      }
+
+      // Compute step — summarize compliance.
+      const compliance: ComplianceSummary | null = violations
+        ? summarizeCompliance(violations)
+        : null;
+      const leadCopper: LeadCopperSummary = lcrOutcomeAvailable
+        ? summarizeLcr(lcrRecords ?? [])
+        : { status: "unavailable" };
+
+      const computeNarr = complianceComputeNarration({
+        status: compliance?.status ?? "unknown",
+        recentTotal: compliance?.recent.total_in_last_5_years ?? 0,
+        recentHealth: compliance?.recent.health_based_in_last_5_years ?? 0,
+        recentYears: COMPLIANCE_RECENT_YEARS,
+        unmappedContaminantCount: violations
+          ? countUnmappedContaminants(violations)
+          : 0,
+      });
+      log.step({
+        kind: "compute",
+        narration: computeNarr.narration,
+        detail: computeNarr.detail,
+        result_summary: computeNarr.result_summary,
+        source: HEARTH_COMPLIANCE_RULE_SOURCE,
+      });
+
+      enrichment = { compliance, leadCopper };
+    }
+
     // Build the payload based on the branch.
     const payload = (() => {
       if (decision.branch === "private_well") {
         return buildPrivateWellPayload(
           decision.diagnostic ??
             "No EPA Community Water System polygon covers this address.",
+          // The user-declared private_well path is handled by the
+          // short-circuit at the top of check(). Any private_well
+          // we reach here came from the polygon-driven fallback.
+          "epa-inferred",
+        );
+      }
+      if (decision.branch === "cws_unmapped") {
+        return buildCwsUnmappedPayload(
+          decision.diagnostic ??
+            "User declared municipal water but EPA's polygon coverage didn't include this address.",
         );
       }
       if (decision.branch === "stale") {
@@ -191,17 +517,22 @@ const WaterQualityAwarenessModule: HabitatModule = {
         // 'stale'; if we land here something upstream is broken.
         return buildStalePayload("Internal: branch resolved but record is null.");
       }
-      // branch.ts never returns 'cws_with_ccr' in Phase 1 — that branch
-      // is decided one layer up against the shared CCR cache which
-      // doesn't exist until WQA-3. Map it defensively to 'cws_no_ccr'
-      // here so the payload builder's type stays narrow.
-      if (decision.branch === "cws_with_ccr") {
-        return buildSystemPayload("cws_no_ccr", record);
-      }
-      return buildSystemPayload(decision.branch, record);
+      // branch.ts never returns 'cws_with_ccr' until WQA-3 ships.
+      // Map it defensively to 'cws_no_ccr' here so the payload
+      // builder's type stays narrow.
+      const safeBranch =
+        decision.branch === "cws_with_ccr" ? "cws_no_ccr" : decision.branch;
+      // When we reach the buildSystemPayload path the resolution
+      // confidence is always "verified" or "inferred" — "unmapped"
+      // routes to cws_unmapped via the branches above. TypeScript
+      // can't narrow that across the IIFE boundary, so we read off
+      // the live resolution object directly.
+      const confidence =
+        resolution.confidence === "unmapped" ? "verified" : resolution.confidence;
+      return buildSystemPayload(safeBranch, record, enrichment, confidence);
     })();
 
-    // Step 4 — finding.
+    // Final step — finding.
     const findStep = findingStepNarration(payload.headline);
     log.step({
       kind: "finding",
@@ -220,18 +551,32 @@ const WaterQualityAwarenessModule: HabitatModule = {
   },
 
   getOnboardingMessage(finding): string {
-    const f = finding.findings as { branch?: string; system_card?: { pws_name?: string } };
+    const f = finding.findings as { branch?: string; system_card?: { pws_name?: string; compliance_status_short?: string } };
     if (f?.branch === "private_well") {
-      return "Your address looks like a private well — we'll add private-well guidance in an upcoming Hearth update.";
+      return "Your home is on a private water system — we'll add tailored guidance in an upcoming Hearth update.";
+    }
+    if (f?.branch === "cws_unmapped") {
+      return "You're on city water, but EPA's national map doesn't pinpoint your exact utility — you'll be able to upload your annual Water Quality Report manually in a future Hearth update.";
     }
     if (f?.branch === "stale") {
       return "I couldn't confirm your water system with EPA on this run — we'll try again next time.";
     }
     const name = f?.system_card?.pws_name;
+    const compliance = f?.system_card?.compliance_status_short;
     if (f?.branch === "non_community") {
       return name
         ? `Your address is served by ${name}, a non-community water system.`
         : "Your address is served by a non-community water system.";
+    }
+    if (compliance === "active_violations") {
+      return name
+        ? `Found your water utility — ${name} — and EPA shows an active compliance issue worth a closer look.`
+        : "Found your water utility on file with EPA, with an active compliance issue worth a closer look.";
+    }
+    if (compliance === "no_active_violations") {
+      return name
+        ? `Found your water utility — ${name} — and EPA shows no active compliance issues.`
+        : "Found your water utility on file with EPA, with no active compliance issues.";
     }
     return name
       ? `Found your water utility — ${name}.`
