@@ -123,7 +123,24 @@ export default async function InventoryPage() {
           <section key={section.type}>
             <SectionHeader
               eyebrow={section.eyebrow}
-              title={section.title}
+              // Bump the section title to the serif display face at a
+              // step above .h2 so it doesn't visually collide with the
+              // tile names (also 18px / 500). The serif + size jump
+              // gives the user a clear "this is a heading, those are
+              // items" hierarchy.
+              title={
+                <span
+                  style={{
+                    display: "block",
+                    fontFamily: "var(--font-serif)",
+                    fontSize: "clamp(22px, 3vw, 28px)",
+                    lineHeight: 1.2,
+                    letterSpacing: "-0.01em",
+                  }}
+                >
+                  {section.title}
+                </span>
+              }
               trailing={
                 sectionItems.length > 0 ? (
                   <span
@@ -139,7 +156,7 @@ export default async function InventoryPage() {
             {sectionItems.length === 0 ? (
               <EmptySection hint={section.emptyHint} />
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 mt-3">
                 {sectionItems.map((item) => (
                   <InventoryTile key={item.id} item={item} />
                 ))}
