@@ -54,9 +54,9 @@ const lcrAvailableBelow: LeadCopperSummary = {
   status: "available",
   sampling_period_count: 1,
   most_recent_sampling_period: {
-    sampling_end_date: "2024-06-30T00:00:00Z",
-    lead_90th_percentile: { value: 0.003, unit: "MG/L", sign: "=" },
-    copper_90th_percentile: { value: 0.2, unit: "MG/L", sign: "=" },
+    sampling_end_date: null,
+    lead_90th_percentile: { value: 0.003, unit: "MG/L", sign: "=", sample_id: "MI380000" },
+    copper_90th_percentile: { value: 0.2, unit: "MG/L", sign: "=", sample_id: "MI380001" },
   },
 };
 
@@ -64,8 +64,8 @@ const lcrAbove: LeadCopperSummary = {
   status: "available",
   sampling_period_count: 1,
   most_recent_sampling_period: {
-    sampling_end_date: "2024-06-30T00:00:00Z",
-    lead_90th_percentile: { value: 0.018, unit: "MG/L", sign: "=" },
+    sampling_end_date: null,
+    lead_90th_percentile: { value: 0.018, unit: "MG/L", sign: "=", sample_id: "MI380002" },
     copper_90th_percentile: null,
   },
 };
@@ -74,8 +74,8 @@ const lcrApproaching: LeadCopperSummary = {
   status: "available",
   sampling_period_count: 1,
   most_recent_sampling_period: {
-    sampling_end_date: "2024-06-30T00:00:00Z",
-    lead_90th_percentile: { value: 0.013, unit: "MG/L", sign: "=" },
+    sampling_end_date: null,
+    lead_90th_percentile: { value: 0.013, unit: "MG/L", sign: "=", sample_id: "MI380003" },
     copper_90th_percentile: null,
   },
 };

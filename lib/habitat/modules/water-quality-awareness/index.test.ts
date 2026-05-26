@@ -146,6 +146,45 @@ describe("WQA module check() — direct match (no fallback needed)", () => {
   });
 });
 
+/**
+ * Realistic LCR payload that mirrors EPA's actual response shape for
+ * MI0003520 (Kalamazoo): all PB90 (lead 90th-percentile), no copper,
+ * no sampling dates. The most recent sample_id is MI381874 at 0.0053
+ * mg/L — well below the 0.015 mg/L action level.
+ */
+function kalamazooLcrResponse() {
+  const rows = [
+    ["MI207485", 18387005, 0.004],
+    ["MI257263", 19262918, 0.013],
+    ["MI266401", 19454418, 0.015],
+    ["MI287028", 19823966, 0.013],
+    ["MI287029", 19823967, 0.015],
+    ["MI287030", 19823968, 0.0077],
+    ["MI287031", 19823969, 0.0045],
+    ["MI293204", 20174608, 0.0079],
+    ["MI303220", 20456661, 0.013],
+    ["MI310696", 20637276, 0.0073],
+    ["MI320570", 20824425, 0.0084],
+    ["MI329505", 21034793, 0.0073],
+    ["MI338908", 21257474, 0.0087],
+    ["MI347586", 21480232, 0.0063],
+    ["MI357717", 21991968, 0.009],
+    ["MI370412", 22449700, 0.003],
+    ["MI381874", 22828627, 0.0053],
+  ];
+  return rows.map(([sample_id, sar_id, sample_measure]) => ({
+    pwsid: "MI0003520",
+    sar_id,
+    sample_id,
+    epa_region: "05",
+    sample_measure,
+    unit_of_measure: "mg/L",
+    contaminant_code: "PB90",
+    result_sign_code: null,
+    primacy_agency_code: "MI",
+  }));
+}
+
 describe("WQA module check() — direct miss + single-nearby fallback", () => {
   it("recovers an inferred PWSID and runs SDWIS against it", async () => {
     const m = installFetchMock({
@@ -200,6 +239,43 @@ describe("WQA module check() — direct miss + single-nearby fallback", () => {
     const finding = await WqaModule.check(KALAMAZOO_HOUSE);
     const f = finding.findings as unknown as WqaFindings;
     expect(f.system_card?.compliance_status_short).toBe("no_active_violations");
+  });
+
+  it("regression: real Kalamazoo LCR response (17 PB90 rows, no copper, no dates) produces favorable severity", async () => {
+    installFetchMock({
+      "FeatureServer/0/query?": (url) => {
+        if (url.includes("distance=")) {
+          return fakeResponse({
+            features: [
+              { attributes: { PWSID: "MI0003520", PWS_Name: "KALAMAZOO" } },
+            ],
+          });
+        }
+        return fakeResponse({ features: [] });
+      },
+      "efservice/WATER_SYSTEM": () =>
+        fakeResponse(kalamazooWaterSystemResponse()),
+      "efservice/VIOLATION": () => fakeResponse([]),
+      "efservice/LCR_SAMPLE_RESULT": () => fakeResponse(kalamazooLcrResponse()),
+    });
+
+    const finding = await WqaModule.check(KALAMAZOO_HOUSE);
+    const f = finding.findings as unknown as WqaFindings;
+    // Most recent lead is 0.0053 mg/L — below the 0.015 action level.
+    // No active violations + below-action LCR → favorable.
+    expect(finding.severity).toBe("favorable");
+    expect(f.lead_copper_summary?.status).toBe("available");
+    if (f.lead_copper_summary?.status === "available") {
+      const lead =
+        f.lead_copper_summary.most_recent_sampling_period.lead_90th_percentile;
+      expect(lead?.value).toBe(0.0053);
+      expect(lead?.sample_id).toBe("MI381874");
+      expect(
+        f.lead_copper_summary.most_recent_sampling_period
+          .copper_90th_percentile,
+      ).toBeNull();
+      expect(f.lead_copper_summary.sampling_period_count).toBe(17);
+    }
   });
 });
 

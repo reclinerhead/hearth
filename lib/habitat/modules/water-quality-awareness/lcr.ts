@@ -18,8 +18,29 @@
  * EPA enforces compliance at the 90th-percentile *system rollup*
  * level — these are the samples we pull from LCR_SAMPLE_RESULT — but
  * the homeowner-meaningful framing is "is the measurement above the
- * federal action level?". The summarizer preserves the system-level
- * caveat in the activity-log narration without burying the headline.
+ * federal action level?". Each row in EPA's LCR_SAMPLE_RESULT table
+ * is one monitoring round's 90th-percentile rollup, not a single
+ * home's sample.
+ *
+ * -------------------------------------------------------------------
+ * Two things about EPA's LCR endpoint that the WQA-2 spec got wrong;
+ * surfaced by real Kalamazoo data:
+ *
+ * 1. **Contaminant codes are PB90 / CU90, not 5000 / 1022.** The
+ *    LCR_SAMPLE_RESULT table uses dataset-specific codes for the
+ *    90th-percentile rollup ("PB90" for lead, "CU90" for copper).
+ *    The general SDWIS contaminant codes (5000 for lead, 1022 for
+ *    copper) live in the VIOLATION table and don't apply here.
+ *
+ * 2. **EPA's JSON endpoint omits sampling_start_date and
+ *    sampling_end_date.** The full SDWIS schema has them, but the
+ *    `data.epa.gov/efservice/LCR_SAMPLE_RESULT` endpoint doesn't
+ *    return them in the JSON payload. Without dates we can't group
+ *    by "sampling period" — we order by sample_id instead. EPA's
+ *    sample_id is state-prefixed and ascending (e.g. MI207485 →
+ *    MI381874 for Kalamazoo), so an alphabetical sort within a
+ *    single PWSID equates to chronological order.
+ * -------------------------------------------------------------------
  */
 
 import type { SdwisLcrSampleRecord } from "./sources/sdwis-lcr-samples";
@@ -28,8 +49,12 @@ export const LEAD_ACTION_LEVEL_MG_L = 0.015;
 export const COPPER_ACTION_LEVEL_MG_L = 1.3;
 export const APPROACHING_THRESHOLD_RATIO = 0.8;
 
-export const LEAD_CONTAMINANT_CODE = "5000";
-export const COPPER_CONTAMINANT_CODE = "1022";
+/**
+ * EPA's LCR_SAMPLE_RESULT contaminant codes. NOT the same as the
+ * general SDWIS codes used in the VIOLATION table.
+ */
+export const LEAD_CONTAMINANT_CODE = "PB90";
+export const COPPER_CONTAMINANT_CODE = "CU90";
 
 export type LcrSign = "<" | "=" | ">";
 
@@ -37,15 +62,31 @@ export type LcrMeasurement = {
   value: number;
   unit: string;
   sign: LcrSign;
+  /**
+   * EPA's sample_id for this measurement — opaque string like
+   * "MI381874". Persisted on the payload so future UI can link back
+   * to the specific monitoring round (or just show users the EPA
+   * reference for the displayed value).
+   */
+  sample_id: string;
 };
 
 /**
- * One sampling-period summary on the payload — lead and copper
- * 90th-percentile values, or null when EPA's row for that contaminant
- * is missing in the period.
+ * Joint snapshot of the most-recent lead and copper measurements.
+ * Lead and copper are tracked independently from EPA's perspective
+ * (PB90 and CU90 are separate row streams, often submitted on
+ * different schedules), so this "period" isn't a true physical
+ * monitoring round — it's just "what we know right now for each
+ * contaminant." Either field can be null when EPA has no rows for
+ * that contaminant on this system.
+ *
+ * `sampling_end_date` is nullable because EPA's endpoint doesn't
+ * return dates today. The field stays in the schema so a future
+ * EPA-side fix (or a different endpoint) can populate it without a
+ * payload migration.
  */
 export type LcrSamplingPeriod = {
-  sampling_end_date: string; // ISO
+  sampling_end_date: string | null;
   lead_90th_percentile: LcrMeasurement | null;
   copper_90th_percentile: LcrMeasurement | null;
 };
@@ -53,6 +94,16 @@ export type LcrSamplingPeriod = {
 /**
  * Persisted shape — discriminated union so the UI can render
  * three distinct empty/loaded states without scattered null checks.
+ *
+ *   no_samples_on_file — EPA returned zero rows (rotating sampling
+ *                        schedule, or no LCR data for this system).
+ *   unavailable        — the LCR fetch failed in soft-fail mode.
+ *   available          — at least one PB90 or CU90 row found.
+ *                        most_recent_sampling_period carries the
+ *                        latest lead and copper values; either can
+ *                        be null if EPA has none of that contaminant.
+ *                        sampling_period_count is the total row count
+ *                        across both contaminants.
  */
 export type LeadCopperSummary =
   | { status: "no_samples_on_file" }
@@ -66,7 +117,8 @@ export type LeadCopperSummary =
 /**
  * Coerce EPA's result_sign_code to the three-state union the
  * payload uses. Anything other than '<' or '>' is treated as a
- * measured equality.
+ * measured equality. EPA returns null on most LCR rows, which lands
+ * here as "=" by design.
  *
  * Exported for the test suite.
  */
@@ -77,79 +129,73 @@ export function normalizeSign(raw: string | null | undefined): LcrSign {
 }
 
 /**
- * Group LCR records by sampling period (sampling_end_date). Each
- * group holds at most one row per contaminant (lead, copper). Records
- * without a sample_measure or sampling_end_date are dropped.
+ * Build a single measurement object from one EPA row. Returns null
+ * when the row is too incomplete to be useful — missing the numeric
+ * measure, the sample_id, or has no contaminant_code we recognize.
  *
  * Exported for the test suite.
  */
-export function groupLcrByPeriod(
-  records: SdwisLcrSampleRecord[],
-): Map<string, LcrSamplingPeriod> {
-  const periods = new Map<string, LcrSamplingPeriod>();
-
-  for (const r of records) {
-    if (typeof r.sampling_end_date !== "string") continue;
-    if (typeof r.sample_measure !== "number") continue;
-    if (typeof r.contaminant_code !== "string") continue;
-
-    const code = r.contaminant_code;
-    if (code !== LEAD_CONTAMINANT_CODE && code !== COPPER_CONTAMINANT_CODE) {
-      continue;
-    }
-    const periodKey = r.sampling_end_date;
-    const measurement: LcrMeasurement = {
-      value: r.sample_measure,
-      unit:
-        typeof r.unit_of_measure === "string" && r.unit_of_measure.length > 0
-          ? r.unit_of_measure
-          : "MG/L",
-      sign: normalizeSign(r.result_sign_code),
-    };
-    const existing = periods.get(periodKey);
-    if (existing) {
-      if (code === LEAD_CONTAMINANT_CODE) existing.lead_90th_percentile = measurement;
-      else existing.copper_90th_percentile = measurement;
-    } else {
-      periods.set(periodKey, {
-        sampling_end_date: periodKey,
-        lead_90th_percentile:
-          code === LEAD_CONTAMINANT_CODE ? measurement : null,
-        copper_90th_percentile:
-          code === COPPER_CONTAMINANT_CODE ? measurement : null,
-      });
-    }
-  }
-  return periods;
+export function toMeasurement(
+  r: SdwisLcrSampleRecord,
+): LcrMeasurement | null {
+  if (typeof r.sample_measure !== "number") return null;
+  if (typeof r.sample_id !== "string" || r.sample_id.length === 0) return null;
+  return {
+    value: r.sample_measure,
+    unit:
+      typeof r.unit_of_measure === "string" && r.unit_of_measure.length > 0
+        ? r.unit_of_measure
+        : "MG/L",
+    sign: normalizeSign(r.result_sign_code),
+    sample_id: r.sample_id,
+  };
 }
 
 /**
- * Pick the most recent sampling period from a grouped map. Ties on
- * date prefer the period with the most data populated (both lead and
- * copper > only one). Returns null when the map is empty.
+ * Find the most-recent PB90 (lead) and CU90 (copper) rows from a
+ * raw records array. Returns separate measurements rather than a
+ * jointly-grouped period because EPA's LCR endpoint doesn't expose
+ * which monitoring round each row came from — they're independent
+ * streams ordered by sample_id.
+ *
+ * Exported for the test suite.
  */
-export function mostRecentPeriod(
-  periods: Map<string, LcrSamplingPeriod>,
-): LcrSamplingPeriod | null {
-  let winner: LcrSamplingPeriod | null = null;
-  let winnerDate = Number.NEGATIVE_INFINITY;
-  for (const period of periods.values()) {
-    const t = new Date(period.sampling_end_date).getTime();
-    if (Number.isNaN(t)) continue;
-    if (t > winnerDate) {
-      winner = period;
-      winnerDate = t;
-    } else if (t === winnerDate && winner) {
-      const winnerCount =
-        (winner.lead_90th_percentile ? 1 : 0) +
-        (winner.copper_90th_percentile ? 1 : 0);
-      const candidateCount =
-        (period.lead_90th_percentile ? 1 : 0) +
-        (period.copper_90th_percentile ? 1 : 0);
-      if (candidateCount > winnerCount) winner = period;
+export function pickMostRecentMeasurements(
+  records: SdwisLcrSampleRecord[],
+): {
+  lead: LcrMeasurement | null;
+  copper: LcrMeasurement | null;
+  totalSampleCount: number;
+} {
+  let lead: { measurement: LcrMeasurement; sampleId: string } | null = null;
+  let copper: { measurement: LcrMeasurement; sampleId: string } | null = null;
+  let totalSampleCount = 0;
+
+  for (const r of records) {
+    if (typeof r.contaminant_code !== "string") continue;
+    if (
+      r.contaminant_code !== LEAD_CONTAMINANT_CODE &&
+      r.contaminant_code !== COPPER_CONTAMINANT_CODE
+    ) {
+      continue;
+    }
+    const m = toMeasurement(r);
+    if (!m) continue;
+    totalSampleCount += 1;
+
+    const slot = r.contaminant_code === LEAD_CONTAMINANT_CODE ? lead : copper;
+    if (!slot || m.sample_id > slot.sampleId) {
+      const next = { measurement: m, sampleId: m.sample_id };
+      if (r.contaminant_code === LEAD_CONTAMINANT_CODE) lead = next;
+      else copper = next;
     }
   }
-  return winner;
+
+  return {
+    lead: lead?.measurement ?? null,
+    copper: copper?.measurement ?? null,
+    totalSampleCount,
+  };
 }
 
 /**
@@ -158,27 +204,28 @@ export function mostRecentPeriod(
 export function summarizeLcr(
   records: SdwisLcrSampleRecord[],
 ): LeadCopperSummary {
-  const periods = groupLcrByPeriod(records);
-  if (periods.size === 0) {
-    return { status: "no_samples_on_file" };
-  }
-  const winner = mostRecentPeriod(periods);
-  if (!winner) {
-    // Defensive — groupLcrByPeriod only produces entries with a
-    // parseable sampling_end_date, but if every entry's date fails
-    // to parse we report no samples rather than crash.
+  const { lead, copper, totalSampleCount } = pickMostRecentMeasurements(records);
+  if (lead === null && copper === null) {
     return { status: "no_samples_on_file" };
   }
   return {
     status: "available",
-    most_recent_sampling_period: winner,
-    sampling_period_count: periods.size,
+    most_recent_sampling_period: {
+      // EPA's endpoint doesn't return sampling dates today. The field
+      // stays in the schema so a future EPA-side change (or a richer
+      // endpoint) can populate it without a payload migration.
+      sampling_end_date: null,
+      lead_90th_percentile: lead,
+      copper_90th_percentile: copper,
+    },
+    sampling_period_count: totalSampleCount,
   };
 }
 
 /**
- * Severity inputs derived from a sampling period. The three flags
- * payload.ts reads to decide between favorable / caution / concern.
+ * Severity inputs derived from the most-recent measurements. The
+ * three flags payload.ts reads to decide between favorable / caution
+ * / concern.
  *
  * - lead_above_action / copper_above_action: at-or-above the federal
  *   action level on a measured (sign='=' or '>') value. A below-
