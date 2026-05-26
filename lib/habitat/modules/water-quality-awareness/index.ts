@@ -110,9 +110,7 @@ const WaterQualityAwarenessModule: HabitatModule = {
   // because Tier 1 inventory data alone didn't earn a recurring
   // re-check.
   cadence: "yearly",
-  // iconImage is intentionally omitted until the WQA hero asset
-  // ships under public/habitat_module_images/. The compact tile and
-  // the modal header both handle a missing icon gracefully.
+  iconImage: "/habitat_module_images/WQA.jpg",
 
   isApplicable(house: HouseContext): boolean {
     return (
