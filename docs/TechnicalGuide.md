@@ -127,7 +127,7 @@ The hearth schema migration includes `create table if not exists public.profiles
 
 ## Documents and the `hearth-documents` bucket
 
-`hearth.documents` is the table-of-record for every user-captured asset attached to a house. The `hearth-documents` bucket is its storage counterpart. Together they back the Smart Uploader (photos today; PDFs and compressed videos in later phases) and any future Documents UI.
+`hearth.documents` is the table-of-record for every user-captured asset attached to a house. Photos, PDFs, and compressed videos all live as rows in this one table; the binary content sits in one of two storage buckets — `hearth-documents` for photos and PDFs, `hearth-emergency-videos` for the dedicated emergency-procedure-video corpus. The `storage_bucket` column on each row records which bucket the row's paths resolve against, so future bucket migrations only flip that column rather than rewriting every `storage_path`. Together they back the Smart Uploader and any future Documents UI.
 
 The bucket is **private** — `public = false` on `storage.buckets`. There is no permanent URL for an object; the Smart Uploader and future Documents UI derive a signed URL at render time, same pattern as `house-images` and `house-photos`.
 
@@ -144,7 +144,7 @@ Objects within the bucket follow:
 
 The `{document_id}` directory makes cleanup-on-retake trivial — one `.list()` + `.remove()` against the directory wipes every file for the doc regardless of how many pages it has. The first path segment is the `{house_id}` uuid, which is what storage RLS keys on. The path-builder helpers (`pageOptimizedObjectPath` / `pageThumbnailObjectPath`) reject `pageNumber < 2` so callers can't accidentally collide a page row with the parent's storage_path.
 
-Future video documents will store the compressed MP4 at `optimized` and a poster-frame JPEG at `thumb`. Future PDF documents will store the PDF at `optimized` and a page-1 raster at `thumb`, with the per-page rasters reusing the `page-{N}-*` shape. The two-path-per-page shape stays constant across kinds.
+Future PDF documents will store the PDF at `optimized` and a page-1 raster at `thumb`, with the per-page rasters reusing the `page-{N}-*` shape. The two-path-per-page shape stays constant across photo and PDF kinds. Emergency-procedure videos use a different path layout in a separate bucket — see "Emergency procedure videos" below.
 
 ### Storage RLS
 
@@ -166,6 +166,84 @@ The Smart Uploader composes four browser-only helpers that live in `lib/document
 - **`upload.ts`** — `uploadDocumentFiles({ supabase, houseId, documentId, optimized, thumbnail })` uploads both files to the `hearth-documents` bucket in parallel with `upsert: false` and `cacheControl: "31536000, immutable"`. On partial failure it best-effort-removes whichever upload succeeded so the bucket never accumulates orphaned bytes from a half-completed Smart Uploader flow, then re-throws the original error. Takes a browser Supabase client; storage RLS does the actual ownership enforcement. `uploadDocumentPageFiles` is the sibling for pages 2+ of multi-page receipts — same contract, different path layout (`page-{N}-optimized.jpg` / `page-{N}-thumb.jpg`).
 
 These helpers don't insert the `hearth.documents` row — that's a server action handled separately so the row insert can be a single atomic write with the storage paths already known. The `{document_id}` segment is generated client-side via `crypto.randomUUID()` before any storage round-trip, which is what makes the upload-then-insert ordering possible; the same UUID becomes the row's primary key. The trade-off is that an upload can succeed without a row existing — the Smart Uploader's `useEffect` cleanup handles "user closed the modal mid-flow", and a periodic sweep of orphaned bytes is deferred to a later phase.
+
+---
+
+## Emergency procedure videos and the `hearth-emergency-videos` bucket
+
+Emergency-procedure videos are the originating product thesis — a 20-second clip of past-you pointing at the water shutoff is dramatically more useful than text instructions at 2am with wet hands. The data model lives alongside photos in `hearth.documents` (so the table-of-record story stays single-tracked) but the binary content sits in a dedicated `hearth-emergency-videos` bucket and the per-row metadata splits along separate columns. Issue #139 ships the foundation; the Smart Uploader stages, dashboard panel, and custom player follow in the UX layer.
+
+### Why a separate bucket
+
+`hearth-emergency-videos` is a separate `storage.buckets` row from `hearth-documents` even though row-level metadata stays in the same `hearth.documents` table. The two corpora have different lifecycle expectations — videos are larger, fewer, and may pick up retention / migration policies (cold storage, regional pinning, format migration) that we'd never apply to the photo corpus. Splitting at the bucket boundary lets those policies diverge without partitioning the row table. The RLS chain is identical to `hearth-documents` — four policies on `storage.objects` keyed on `(storage.foldername(name))[1]` matching a `hearth.houses` row the user owns.
+
+### Path layout
+
+```
+{house_id}/{document_id}/video.webm      -- compressed video, Chrome/Firefox/Edge
+{house_id}/{document_id}/video.mp4       -- compressed video, Safari fallback
+{house_id}/{document_id}/poster.jpg      -- extracted poster frame (1s mark)
+```
+
+`{document_id}` is generated client-side before any storage round-trip, same pattern as the photo bucket. The container choice (`webm` vs `mp4`) is decided per-recording by [`pickVideoMimeType`](../lib/documents/process-video.ts) against `MediaRecorder.isTypeSupported` — only one of the two video files ever exists for a given document. The path builders `emergencyVideoObjectPath` and `emergencyVideoPosterObjectPath` in [`lib/documents/paths.ts`](../lib/documents/paths.ts) own the construction so the picker doesn't leak into surrounding code.
+
+### Schema additions on `hearth.documents`
+
+Migration `20260526120100_add_emergency_video_columns_to_documents.sql` adds six columns plus four CHECK constraints and one partial index:
+
+- **`duration_seconds integer`** — nullable; populated for video kinds, null on every other kind. Used by the dashboard tile to show clip length without re-reading the file.
+- **`emergency_category text`** — nullable; constrained to `'water' | 'gas' | 'electrical' | 'other'`. Tied to `kind` via an iff CHECK: present exactly when `kind = 'emergency_procedure_video'`.
+- **`emergency_label text`** — nullable; user-supplied disambiguator. Optional on the three named categories ("Main shutoff in basement", "Outside faucets"), required by the UI when `emergency_category = 'other'` so the row carries a useful name.
+- **`emergency_is_primary boolean not null default false`** — the per-category primary/secondary flag. NOT NULL because every emergency-video row has a defined state; CHECK pins it to false on non-emergency rows so the column has meaning only for the kind it applies to.
+- **`poster_storage_path text`** — nullable; path within `storage_bucket` to the extracted poster JPEG. Same bucket as the video, different filename.
+- **`storage_bucket text not null default 'hearth-documents'`** — forward-looking. Constrained to `'hearth-documents' | 'hearth-emergency-videos'` plus a cross-column CHECK pinning emergency-video rows to the emergency bucket and everything else to `hearth-documents`. Existing rows backfill via the default; new emergency-video rows write the emergency bucket explicitly. A future bucket migration flips this column rather than rewriting every `storage_path`.
+
+The check constraints are the load-bearing piece — they make the row's emergency-vs-non-emergency state internally consistent. A `kind='photo'` row physically cannot carry an `emergency_category`; a `kind='emergency_procedure_video'` row physically cannot omit one. The same applies to bucket placement.
+
+**Index:** `documents_house_emergency_category_idx` is a partial index on `(house_id, kind, emergency_category, emergency_is_primary desc, created_at desc) where kind = 'emergency_procedure_video'`. Covers the dashboard panel's primary read path — "every emergency video for this house, grouped by category, primary first, newest first" — without a sort step or a full-table scan. The partial predicate keeps the index small (only emergency-video rows are indexed).
+
+### Primary/secondary state and the pure rules
+
+A house may have multiple emergency videos per category — the main water shutoff in the basement and the outside-faucet shutoff are different surfaces of "water," both genuinely useful in different situations. The data model handles this with `emergency_is_primary`: one primary per (house, category), zero or more secondaries.
+
+[`lib/documents/emergency-video-rules.ts`](../lib/documents/emergency-video-rules.ts) holds the pure rules so they can be unit-tested independently of any database round-trip and reused by future surfaces (admin tooling, migrations) without re-derivation:
+
+- **`shouldSaveAsPrimary(existingInCategory)`** — returns true when the category has zero rows. A new save into an empty category becomes primary; a new save into a populated category becomes secondary. The rule doesn't look at the primary flag of the existing rows — even an all-secondary list (a data-integrity bug elsewhere) keeps a new save at secondary, because fixing the missing-primary state is the auto-promote path's job, not the save path's.
+- **`pickPromotedSecondaryId(remaining)`** — when the primary is deleted, the most recently created surviving secondary auto-promotes to primary. Tie-breaks on lexically larger id when timestamps collide, so repeated calls are deterministic. Returns null when no secondaries remain (the category is now empty and no promotion is needed).
+
+The "promote to primary" user action on the dashboard runs the same logical operation in the other direction — the chosen secondary flips to primary and the previous primary in the same category demotes, in a single transaction. That logic lives in a server action (UX-PR scope) but the rule is symmetric: at any moment, at most one row per (house, category) carries `emergency_is_primary = true`.
+
+### Compression pipeline (`lib/documents/process-video.ts`)
+
+The capture flow runs entirely in the user's browser. The pipeline is structured so the pure helpers are unit-testable in isolation; the orchestrating `processVideo(file)` is browser-only and gets exercised via manual testing in the Smart Uploader.
+
+**Targets:** 1280px max longest side preserving aspect ratio (never upscaling); ~2 Mbps video bitrate; 96 kbps audio bitrate. Poster JPEG at quality 0.85, max dimension 1280px, sampled at the 1.0s mark for normal clips or 50% of duration for clips under 2 seconds (so a 1.5s clip doesn't sample frame-from-the-end).
+
+**Codec priority:** VP9/Opus in WebM → VP8/Opus in WebM → H.264/AAC in MP4 → bare WebM → bare MP4. The first MIME from `VIDEO_MIME_PRIORITY` that `MediaRecorder.isTypeSupported` returns true for wins. Chrome/Firefox/Edge land on VP9; Safari lands on H.264 MP4; everything else falls through to whatever generic container the browser advertises. `pickVideoMimeType` is pure — it takes the predicate as an argument so tests can stub `isTypeSupported` without touching globals.
+
+**Validators:** Two pure functions — `validateVideoSize(sizeBytes)` enforces the 200 MB raw-input cap and `validateVideoDuration(durationSeconds)` enforces the 2-minute cap. Both accept the boundary exactly (200 MB and 2:00 pass) and reject anything strictly over. Size is checked before any object URL is created so the browser doesn't allocate against a multi-gigabyte upload; duration is checked after the `loadedmetadata` event since it can't be known synchronously.
+
+**The orchestration** in `processVideo` chains:
+1. Size validation against the raw file.
+2. MIME pick — if nothing in the priority list is supported, throw `ProcessVideoError("unsupported_codec", …)` and let the caller fall back to file-upload-only.
+3. Load source into a hidden `<video>` element, await `loadedmetadata`, validate duration.
+4. Compute target dimensions via `computeTargetDimensions` (rounds to even integers for codec friendliness — VP9 and H.264 both prefer even dimensions).
+5. Build a `MediaStream` combining `canvas.captureStream()` (downscaled video frames pumped via `requestVideoFrameCallback` or `requestAnimationFrame`) with the source's audio tracks via `video.captureStream()`.
+6. Start a `MediaRecorder` at the bitrate targets; play the source through; stop on `ended`.
+7. Sample the poster frame at the computed timestamp into a JPEG Blob via `canvas.toBlob`.
+
+The object URL on the source file is revoked in a `finally` block. The video element is detached (`removeAttribute("src")` + `load()`) so the source bytes don't hang around.
+
+**Error surface:** `ProcessVideoError.reason` is one of `'too_large' | 'too_long' | 'unsupported_codec' | 'decode_failed' | 'no_capture_stream' | 'recorder_failed'`. The Smart Uploader maps each to a user-readable copy block and offers the upload-existing path as a fallback for the codec / capture-stream branches.
+
+### What lives where
+
+- **Migration files** — `supabase/migrations/20260526120000_create_emergency_videos_bucket.sql` (bucket + RLS) and `20260526120100_add_emergency_video_columns_to_documents.sql` (columns + checks + index).
+- **Paths and bucket constants** — `lib/documents/paths.ts` exports `HEARTH_EMERGENCY_VIDEOS_BUCKET`, `EMERGENCY_VIDEO_WEBM_FILENAME`, `EMERGENCY_VIDEO_MP4_FILENAME`, `EMERGENCY_VIDEO_POSTER_FILENAME`, plus `emergencyVideoObjectPath` and `emergencyVideoPosterObjectPath` builders.
+- **Pure logic** — `lib/documents/process-video.ts` (compression pipeline + validators + codec priority) and `lib/documents/emergency-video-rules.ts` (primary-flag + auto-promote rules). Both have sibling `*.test.ts` files covering the documented contract.
+- **Row type** — `types/document.ts` extends `DocumentRow` with the six new columns plus the `EmergencyCategory` and `DocumentStorageBucket` unions. Same hand-typed-until-`supabase gen types`-replaces-it pattern as the rest of the type file.
+
+The Smart Uploader stages (path picker entry, category picker, label, capture, compress, review), the orchestrating hook (`use-emergency-video-upload.ts`), the dashboard Emergency reference panel, the custom video player, and the four server actions (save / promote / update / delete) are deferred to the UX PR. The foundation deliberately ships independently so the migrations can be reviewed and pushed before any UI depends on them.
 
 ---
 
