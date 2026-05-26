@@ -89,17 +89,22 @@ export type SmartUploaderProps = {
    */
   onSaved?: (result: { inventoryId: string }) => void;
   /**
-   * Pre-routes into the emergency-procedure-video flow with the
-   * given category already selected. Used by the dashboard's
-   * Emergency reference panel "Add a video" affordances so the user
-   * doesn't re-pick the category they just tapped. Bypasses both the
-   * path-picker and the category-picker — opens straight on the
-   * label stage with the category pinned.
+   * Pre-routes into the emergency-procedure-video flow. Two shapes:
+   *
+   *   - `"category-picker"` — skip the path-picker and land on the
+   *     four-icon category-picker stage. Used by the dashboard's
+   *     combined "Add another emergency video" affordance.
+   *   - `{ category: <one of four> }` — skip both the path-picker
+   *     and the category-picker; land on the label stage with the
+   *     category pinned. Reserved for future per-category prompts
+   *     (e.g. a SuggestedNext "you should add a Gas video" card).
    *
    * Ignored when targetInventoryId is set (emergency videos are
    * house-scoped only).
    */
-  initialEmergencyCategory?: EmergencyCategory;
+  initialEmergencyEntry?:
+    | "category-picker"
+    | { category: EmergencyCategory };
 };
 
 type Stage =
@@ -136,8 +141,18 @@ export function SmartUploader(props: SmartUploaderProps) {
     targetInventoryName,
     targetKind,
     onSaved,
-    initialEmergencyCategory,
+    initialEmergencyEntry,
   } = props;
+
+  // Narrow the polymorphic entry prop once; both initial-state and
+  // open-effect read these flags below.
+  const emergencyOpensOnPicker = initialEmergencyEntry === "category-picker";
+  const emergencyPreselectedCategory =
+    initialEmergencyEntry &&
+    typeof initialEmergencyEntry === "object" &&
+    "category" in initialEmergencyEntry
+      ? initialEmergencyEntry.category
+      : null;
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -146,16 +161,18 @@ export function SmartUploader(props: SmartUploaderProps) {
   // user has already implicitly picked the path by clicking "Add
   // photo" or "Add document" on a known inventory item. Discovery
   // mode (top-nav + Add) lands on the path-picker so the user picks
-  // photo / receipt / future entries explicitly. Emergency-pre-route
-  // skips both the path-picker and the category-picker and lands
-  // on the label stage with the category already selected.
+  // photo / receipt / future entries explicitly. Emergency entries
+  // bypass the path-picker — either to the category-picker stage
+  // (no pre-selection) or to the label stage (category pinned).
   const initialStage: Stage = targetInventoryId
     ? targetKind === "receipt"
       ? { name: "receipt-capture" }
       : { name: "capture", path: "photo", file: null, previewUrl: null }
-    : initialEmergencyCategory
+    : emergencyPreselectedCategory
       ? { name: "emergency-label" }
-      : { name: "path-picker" };
+      : emergencyOpensOnPicker
+        ? { name: "emergency-category" }
+        : { name: "path-picker" };
   const [stage, setStage] = useState<Stage>(initialStage);
   const [rooms, setRooms] = useState<SeededRoomOption[] | null>(null);
   // Drag-to-dismiss: tracks the live downward translation of the sheet
@@ -217,12 +234,12 @@ export function SmartUploader(props: SmartUploaderProps) {
       resetUpload();
       resetReceipt();
       resetEmergency();
-      if (initialEmergencyCategory && !targetInventoryId) {
+      if (emergencyPreselectedCategory && !targetInventoryId) {
         // Seed the emergency hook with the chosen category so the
         // label stage shows the right icon and the save flow knows
         // which category it's writing into. Reset above cleared it;
         // re-seed in the same paint.
-        setEmergencyCategory(initialEmergencyCategory);
+        setEmergencyCategory(emergencyPreselectedCategory);
       }
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStage(
@@ -230,9 +247,11 @@ export function SmartUploader(props: SmartUploaderProps) {
           ? targetKind === "receipt"
             ? { name: "receipt-capture" }
             : { name: "capture", path: "photo", file: null, previewUrl: null }
-          : initialEmergencyCategory
+          : emergencyPreselectedCategory
             ? { name: "emergency-label" }
-            : { name: "path-picker" },
+            : emergencyOpensOnPicker
+              ? { name: "emergency-category" }
+              : { name: "path-picker" },
       );
     }
   }, [
@@ -243,7 +262,8 @@ export function SmartUploader(props: SmartUploaderProps) {
     setEmergencyCategory,
     targetInventoryId,
     targetKind,
-    initialEmergencyCategory,
+    emergencyPreselectedCategory,
+    emergencyOpensOnPicker,
   ]);
 
   // Fetch rooms once per open. Server-side via the browser client is
@@ -778,7 +798,7 @@ export function SmartUploader(props: SmartUploaderProps) {
                 setStage({ name: "emergency-capture" });
               }}
               onBack={() =>
-                initialEmergencyCategory
+                emergencyPreselectedCategory
                   ? handleClose()
                   : setStage({ name: "emergency-category" })
               }

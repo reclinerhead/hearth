@@ -49,7 +49,7 @@ export type EmergencyReferenceCategoryGroup = {
 
 type OpenState =
   | { kind: "none" }
-  | { kind: "uploader"; category: EmergencyCategory }
+  | { kind: "uploader" }
   | { kind: "modal"; category: EmergencyCategory; initialVideoId: string };
 
 export function EmergencyReferencePanelClient({
@@ -63,23 +63,29 @@ export function EmergencyReferencePanelClient({
 
   const totalCount = groups.reduce((sum, g) => sum + g.videos.length, 0);
 
-  // Split into populated and empty groups so the layout can be density
-  // -tuned per surface — populated tiles run 1-up on mobile and 2-up on
-  // desktop (where the panel sits next to maintenance and the icon-
-  // dominant tile is otherwise too large), while empty "Add a {label}
-  // video" rows always stack full-width since they're already compact
-  // and reading them at half-width buys nothing. Order is preserved
-  // within each group so Water/Gas/Electrical/Other still surface in
-  // their fixed sequence across the two layers.
+  // Populated tiles run 1-up on mobile and 2-up on desktop (where the
+  // panel sits next to maintenance and the full-bleed icon tile is
+  // otherwise too large). Empty categories no longer get their own
+  // row — one combined "Add another emergency video" affordance opens
+  // the Smart Uploader at the category-picker stage instead, since
+  // four per-category rows are noisy when most categories are empty.
   const populated = groups.filter((g) => g.videos.length > 0);
-  const empty = groups.filter((g) => g.videos.length === 0);
 
-  function openUploader(category: EmergencyCategory) {
-    setOpen({ kind: "uploader", category });
+  function openUploader() {
+    setOpen({ kind: "uploader" });
   }
   function openVideo(category: EmergencyCategory, videoId: string) {
     setOpen({ kind: "modal", category, initialVideoId: videoId });
   }
+
+  // Icons shown on the combined affordance — three distinct images
+  // (Water / Gas / Electrical). The "Other" category's icon is currently
+  // a re-use of the electrical one, so we deduplicate visually.
+  const affordanceIcons = [
+    "/document_icons/emergency_water.jpg",
+    "/document_icons/emergency_gas_meter.jpg",
+    "/document_icons/emergency_electric.jpg",
+  ];
 
   return (
     <>
@@ -111,17 +117,11 @@ export function EmergencyReferencePanelClient({
               ))}
             </div>
           ) : null}
-          {empty.length > 0 ? (
-            <div className="flex flex-col gap-3">
-              {empty.map((group) => (
-                <EmptyCategoryAffordance
-                  key={group.category}
-                  group={group}
-                  onClick={() => openUploader(group.category)}
-                />
-              ))}
-            </div>
-          ) : null}
+          <AddAnotherAffordance
+            hasExisting={populated.length > 0}
+            iconSrcs={affordanceIcons}
+            onClick={openUploader}
+          />
         </div>
       </div>
 
@@ -132,7 +132,7 @@ export function EmergencyReferencePanelClient({
             if (!o) setOpen({ kind: "none" });
           }}
           houseId={houseId}
-          initialEmergencyCategory={open.category}
+          initialEmergencyEntry="category-picker"
         />
       ) : null}
 
@@ -193,13 +193,19 @@ function PopulatedCategoryCell({
   );
 }
 
-function EmptyCategoryAffordance({
-  group,
+function AddAnotherAffordance({
+  hasExisting,
+  iconSrcs,
   onClick,
 }: {
-  group: EmergencyReferenceCategoryGroup;
+  hasExisting: boolean;
+  iconSrcs: string[];
   onClick: () => void;
 }) {
+  // One combined affordance instead of per-category empty rows. Tapping
+  // opens the Smart Uploader directly at the emergency category-picker
+  // stage so the user picks Water / Gas / Electrical / Other in the
+  // modal — which already has the icon-dominant 2x2 grid they liked.
   return (
     <button
       type="button"
@@ -211,31 +217,41 @@ function EmptyCategoryAffordance({
       }}
     >
       <span
-        className="relative shrink-0 overflow-hidden rounded-md"
-        style={{
-          width: 44,
-          height: 44,
-          border: "1px solid var(--color-border-subtle)",
-          opacity: 0.55,
-        }}
+        className="flex shrink-0 items-center -space-x-2"
+        aria-hidden
       >
-        <Image
-          src={group.meta.iconSrc}
-          alt=""
-          fill
-          sizes="44px"
-          style={{ objectFit: "cover" }}
-        />
+        {iconSrcs.map((src, i) => (
+          <span
+            key={src + i}
+            className="relative overflow-hidden rounded-md"
+            style={{
+              width: 36,
+              height: 36,
+              border: "1px solid var(--color-border-subtle)",
+              backgroundColor: "var(--color-bg-surface-raised)",
+              zIndex: iconSrcs.length - i,
+            }}
+          >
+            <Image
+              src={src}
+              alt=""
+              fill
+              sizes="36px"
+              style={{ objectFit: "cover" }}
+            />
+          </span>
+        ))}
       </span>
       <div className="min-w-0 flex-1">
         <div style={{ fontSize: 14, fontWeight: 500 }}>
-          Add a {group.meta.label.toLowerCase()} video
+          {hasExisting ? "Add another emergency video" : "Add an emergency video"}
         </div>
         <div
           className="text-small mt-0.5"
           style={{ color: "var(--color-text-tertiary)" }}
         >
-          {group.meta.description}
+          Water shutoffs, gas meter, breaker panel, alarm panel, or anything else
+          future-you should know how to operate.
         </div>
       </div>
       <span
@@ -260,7 +276,9 @@ function PrimaryTile({
 }) {
   // The icon takes the full background of the tile — at-a-glance
   // category recognition matters more than peeking at the recorded
-  // frame. The bottom scrim carries label + duration + play affordance.
+  // frame. The bottom scrim carries the category eyebrow + label +
+  // duration. No separate play affordance — the duration line is the
+  // signal that this is a video.
   return (
     <button
       type="button"
@@ -290,8 +308,8 @@ function PrimaryTile({
             "linear-gradient(to top, color-mix(in oklab, #000 78%, transparent), transparent)",
         }}
       />
-      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 px-4 pb-3 pt-6">
-        <div className="min-w-0">
+      <div className="absolute inset-x-0 bottom-0 flex items-end gap-3 px-4 pb-3 pt-6">
+        <div className="min-w-0 flex-1">
           <div
             className="text-small"
             style={{
@@ -321,19 +339,6 @@ function PrimaryTile({
             </div>
           ) : null}
         </div>
-        <span
-          aria-hidden
-          className="flex shrink-0 items-center justify-center"
-          style={{
-            width: 52,
-            height: 52,
-            borderRadius: 9999,
-            backgroundColor: "color-mix(in oklab, #fff 92%, transparent)",
-            color: "var(--color-text-primary)",
-          }}
-        >
-          <Icon name="play" size={22} strokeWidth={1.5} />
-        </span>
       </div>
     </button>
   );
