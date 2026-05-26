@@ -20,6 +20,7 @@
  */
 
 import { Icon, type IconName } from "@/components/icon";
+import { Tooltip } from "@/components/tooltip";
 import { findWqaContaminantByAlias } from "@/lib/habitat/water-quality/contaminants/lookup";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import type { LcrMeasurement } from "../lcr";
@@ -348,7 +349,7 @@ function SystemCard({ findings }: { findings: WqaFindings }) {
     icon: IconName | null;
   } => {
     if (card.latest_ccr_status === "not_uploaded") {
-      return { label: "Not yet uploaded", tone: "neutral", icon: null };
+      return { label: "Not yet uploaded", tone: "info", icon: "file-text" };
     }
     return {
       label: `${card.latest_ccr_status.year} report on file`,
@@ -394,18 +395,21 @@ function SystemCard({ findings }: { findings: WqaFindings }) {
           value={compliance.label}
           tone={compliance.tone}
           icon={compliance.icon}
+          tooltip="EPA's SDWIS database tracks federally regulated contaminant violations — lead, copper, microbials, disinfection byproducts, and more. 'No active violations' means no open enforcement actions against your utility for the most recent reporting period."
         />
         <StatTile
           label="Latest CCR"
           value={ccr.label}
           tone={ccr.tone}
           icon={ccr.icon}
+          tooltip="A Consumer Confidence Report (CCR), also called an Annual Water Quality Report, is the federally-required annual disclosure of every regulated contaminant your utility tested for and detected last year. Utilities mail or email it by July 1 each year. Hearth will let you upload yours in an upcoming release."
         />
         <StatTile
           label="Source"
           value={sourceLabel}
           tone="info"
           icon="droplet"
+          tooltip="Where your tap water originates, per EPA's Envirofacts WATER_SYSTEM record. Groundwater systems pump from wells or aquifers; surface-water systems draw from rivers, lakes, or reservoirs; mixed systems use groundwater under the influence of surface water."
         />
       </div>
 
@@ -472,11 +476,13 @@ function StatTile({
   value,
   tone = "neutral",
   icon = null,
+  tooltip = null,
 }: {
   label: string;
   value: string;
   tone?: TileTone;
   icon?: IconName | null;
+  tooltip?: string | null;
 }) {
   const styles = TONE_STYLES[tone];
   return (
@@ -488,10 +494,27 @@ function StatTile({
       }}
     >
       <div
-        className="eyebrow"
-        style={{ marginBottom: 4 }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          marginBottom: 4,
+        }}
       >
-        {label}
+        <span className="eyebrow">{label}</span>
+        {tooltip ? (
+          <Tooltip content={tooltip}>
+            <Icon
+              name="info"
+              size={13}
+              aria-label={`What does ${label.toLowerCase()} mean?`}
+              style={{
+                color: "var(--color-text-tertiary)",
+                cursor: "help",
+              }}
+            />
+          </Tooltip>
+        ) : null}
       </div>
       <div
         style={{
