@@ -52,13 +52,8 @@ const ELECTRICAL: EmergencyCategoryMeta = {
 
 const OTHER: EmergencyCategoryMeta = {
   category: "other",
-  // The 'Other' category re-uses the electrical icon as a neutral
-  // emergency-coded visual until we have a dedicated asset. It's
-  // never the strongest visual on the panel — secondary by design —
-  // so a placeholder feels fine; revisit when we have a proper
-  // generic "emergency" image to drop in.
   label: "Other",
-  iconSrc: "/document_icons/emergency_electric.jpg",
+  iconSrc: "/document_icons/emergency_other.jpg",
   description: "Sump pump, alarm panel, sprinkler controller — anything else.",
   labelPlaceholder: "What is this?",
 };
