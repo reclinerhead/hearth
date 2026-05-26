@@ -92,9 +92,18 @@ import {
   lcrFetchNarration,
   nearestPwsidFetchNarration,
   pwsidFetchNarration,
+  recommendedActionsComputeNarration,
   trustedWaterSourceNarration,
   violationsFetchNarration,
 } from "./narration";
+import {
+  buildRecommendedActions,
+  type RecommendedActionsInputs,
+} from "./recommended-actions";
+import { formatAdminName, displaySystemName } from "./payload";
+import type { WqaRecommendedAction } from "./types";
+import { createElement } from "react";
+import { WqaOverviewBody } from "./components/overview-body";
 import type { SdwisViolationRecord } from "./sources/sdwis-violations";
 import type { SdwisLcrSampleRecord } from "./sources/sdwis-lcr-samples";
 import {
@@ -489,6 +498,37 @@ const WaterQualityAwarenessModule: HabitatModule = {
       enrichment = { compliance, leadCopper };
     }
 
+    // Compute the WQA-4 recommended-actions list before payload
+    // assembly. We compute here (not inside buildSystemPayload) so the
+    // activity log can narrate the emitted IDs without re-running the
+    // pure compute. Inputs come from `record` + `enrichment` (both in
+    // scope here); skipped entirely on private_well / stale /
+    // cws_unmapped — those branches don't surface action cards.
+    let recommendedActions: WqaRecommendedAction[] = [];
+    if (record && enrichment) {
+      const inputs: RecommendedActionsInputs = {
+        compliance: enrichment.compliance,
+        leadCopper: enrichment.leadCopper,
+        adminContact: {
+          name: formatAdminName(record.admin_name ?? record.org_name),
+          email: record.email_addr ?? null,
+          phone: record.phone_number ?? null,
+        },
+        systemName: displaySystemName(record),
+      };
+      recommendedActions = buildRecommendedActions(inputs);
+      const actionsStep = recommendedActionsComputeNarration({
+        emittedActionIds: recommendedActions.map((a) => a.id),
+      });
+      log.step({
+        kind: "compute",
+        narration: actionsStep.narration,
+        detail: actionsStep.detail,
+        result_summary: actionsStep.result_summary,
+        source: HEARTH_COMPLIANCE_RULE_SOURCE,
+      });
+    }
+
     // Build the payload based on the branch.
     const payload = (() => {
       if (decision.branch === "private_well") {
@@ -529,7 +569,13 @@ const WaterQualityAwarenessModule: HabitatModule = {
       // the live resolution object directly.
       const confidence =
         resolution.confidence === "unmapped" ? "verified" : resolution.confidence;
-      return buildSystemPayload(safeBranch, record, enrichment, confidence);
+      return buildSystemPayload(
+        safeBranch,
+        record,
+        enrichment,
+        confidence,
+        recommendedActions,
+      );
     })();
 
     // Final step — finding.
@@ -581,6 +627,21 @@ const WaterQualityAwarenessModule: HabitatModule = {
     return name
       ? `Found your water utility — ${name}.`
       : "Found your water utility on file with EPA.";
+  },
+
+  /**
+   * Issue #171 (WQA-4): WQA takes over the entire modal body between
+   * the header and the activity log. The overview-body component
+   * renders the five WQA sections (branch header, system card,
+   * recommended actions, detected-in-water, sources) reading purely
+   * off the persisted finding.
+   *
+   * Uses `createElement` rather than JSX so this file stays free of
+   * JSX-runtime imports — same discipline `renderDetail` uses for
+   * the Superfund site-detail card.
+   */
+  renderOverviewBody(row) {
+    return createElement(WqaOverviewBody, { row });
   },
 };
 

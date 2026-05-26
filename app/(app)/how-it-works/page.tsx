@@ -1324,6 +1324,196 @@ export default function HowItWorksPage() {
               </p>
             </div>
           </ModuleSection>
+
+          <ModuleSection
+            id="water-quality-awareness"
+            title="Water Quality Awareness"
+            thumbnail="/habitat_module_images/WQA.jpg"
+            thumbnailAlt="Glass of tap water"
+            overview={
+              <>
+                Hearth turns the federal drinking-water data your utility
+                already reports — service-area boundaries, compliance
+                history, and Lead and Copper Rule sample results — into a
+                personalized awareness layer about what&rsquo;s actually in
+                your tap water. Future phases will add your utility&rsquo;s
+                annual Consumer Confidence Report and a remediation matrix
+                that connects detected contaminants to specific filter
+                recommendations.
+              </>
+            }
+            table={
+              <ClassificationTable
+                headers={["Branch", "What it means", "Hearth severity"]}
+                rows={[
+                  [
+                    "private_well (you told us)",
+                    "You told us during onboarding that your home is on a private well or shared private system. EPA doesn't monitor these — testing is on you.",
+                    <Severity kind="neutral" key="s" />,
+                  ],
+                  [
+                    "cws_unmapped",
+                    "You said you're on city water, but EPA's national map doesn't cover your exact address. About 1 in 7 U.S. addresses falls into a coverage gap. Upload your Water Quality Report manually (coming in a future phase) and we'll personalize the findings.",
+                    <Severity kind="neutral" key="s" />,
+                  ],
+                  [
+                    "cws_no_ccr (clean compliance, low LCR)",
+                    "Your utility is on EPA's map, has no active health-based violations, and most-recent lead-and-copper samples are below the federal action level.",
+                    <Severity kind="favorable" key="s" />,
+                  ],
+                  [
+                    "cws_no_ccr (approaching LCR)",
+                    "Compliance is clean but the most-recent lead or copper measurement is at 80–100% of the federal action level — worth a closer look.",
+                    <Severity kind="caution" key="s" />,
+                  ],
+                  [
+                    "cws_no_ccr (active non-health violation)",
+                    "Active monitoring or reporting violations on file but no active health-based violations.",
+                    <Severity kind="caution" key="s" />,
+                  ],
+                  [
+                    "cws_no_ccr (active health violation OR over-action LCR)",
+                    "Active health-based violation OR a lead/copper measurement at or above the federal action level.",
+                    <Severity kind="concern" key="s" />,
+                  ],
+                  [
+                    "non_community",
+                    "Address served by a non-community system (school, campground, small business). No federally-required annual report; we lean on the compliance feed.",
+                    <Severity kind="neutral" key="s" />,
+                  ],
+                  [
+                    "stale",
+                    "EPA returned an unexpected or inactive record for your utility. We'll retry on the next refresh.",
+                    <Severity kind="neutral" key="s" />,
+                  ],
+                ]}
+              />
+            }
+            sources={[
+              {
+                label: "EPA Community Water System Service Areas",
+                href: "https://www.epa.gov/ground-water-and-drinking-water/public-water-system-service-areas",
+              },
+              {
+                label: "EPA Envirofacts (WATER_SYSTEM / VIOLATION / LCR_SAMPLE_RESULT)",
+                href: "https://www.epa.gov/enviro/envirofacts-data-service-api",
+              },
+              {
+                label: "EPA Lead and Copper Rule",
+                href: "https://www.epa.gov/dwreginfo/lead-and-copper-rule",
+              },
+              {
+                label: "EPA Consumer Confidence Reports",
+                href: "https://www.epa.gov/ccr",
+              },
+            ]}
+            lastUpdated="May 27, 2026"
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
+                Where we get our data — the four tiers
+              </h3>
+              <p style={{ margin: 0 }}>
+                The module is designed to degrade gracefully across four
+                tiers of public data. Tier 1 (system identity) and Tier 2
+                (compliance + LCR samples) are live today. Tier 3 (the
+                UCMR overlay for federally-tracked unregulated contaminants
+                like PFAS) and Tier 4 (your utility&rsquo;s annual
+                Consumer Confidence Report) ship in upcoming phases.
+              </p>
+              <p style={{ margin: 0 }}>
+                When higher tiers aren&rsquo;t available, the lower tiers
+                still produce a useful finding. When higher tiers arrive,
+                the findings get richer without breaking what was there.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
+                Why we trust your onboarding answer over EPA&rsquo;s map
+              </h3>
+              <p style={{ margin: 0 }}>
+                EPA&rsquo;s national public-water-system service-area map
+                has roughly six of every seven U.S. addresses covered.
+                The gap is mostly rural fringes, recent annexations, and
+                edge cases like township parcels served by a city utility
+                but mapped just outside the city polygon. When the
+                onboarding flow captured that you&rsquo;re on city water,
+                we trust that signal even when EPA&rsquo;s polygon comes
+                up empty — calling a verified city-water customer a
+                private well based on a known data gap would be the wrong
+                answer.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
+                The nearest-polygon fallback
+              </h3>
+              <p style={{ margin: 0 }}>
+                When the direct point-in-polygon query against EPA&rsquo;s
+                map comes up empty for your address, we run a second
+                query against a 500-meter buffer at the same point. If
+                every nearby utility within that radius belongs to the
+                same PWSID, we treat that as an inferred match — high
+                enough confidence to pull SDWIS compliance and Lead and
+                Copper data against. The system card flags inferred
+                matches as such, and a future UI will let you confirm or
+                correct the inference. If multiple utilities are nearby,
+                we don&rsquo;t pick one; the upload-your-CCR flow is the
+                right next step.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
+                How severity is decided
+              </h3>
+              <p style={{ margin: 0 }}>
+                Severity for Water Quality Awareness combines two axes:
+                the utility&rsquo;s compliance record and its most-recent
+                lead-and-copper sample. We mark a system favorable only
+                when both are clean — no active health-based violations
+                AND a lead or copper measurement below the federal action
+                level. We mark concern as soon as either axis goes red. A
+                clean compliance record with no LCR data on file stays
+                neutral — we don&rsquo;t celebrate before we have the
+                evidence.
+              </p>
+            </div>
+          </ModuleSection>
         </section>
 
         <section

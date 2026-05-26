@@ -129,6 +129,23 @@ export type WqaFindings = {
   lead_copper_summary?: LeadCopperSummary;
 
   /**
+   * "Recommended for your situation" cards, computed at check() time
+   * from the SDWIS data signals and persisted on the row so the UI
+   * (renderOverviewBody, see lib/habitat/modules/water-quality-
+   * awareness/components/overview-body.tsx) is a pure read.
+   *
+   * Shape mirrors the generic recommended-action shape used by
+   * Superfund's getRecommendedActions slot — same icon name + plain
+   * text + optional link contract so the modal renderers can share
+   * a card primitive in the future.
+   *
+   * Empty array suppresses the section entirely. Issue #171 (WQA-4)
+   * defines the three v1 action types (pitcher filter, free testing,
+   * maintenance bridge — the last suppressed until WQA-6).
+   */
+  recommended_actions?: WqaRecommendedAction[];
+
+  /**
    * Branch-specific metadata. Populated for every branch; the UI uses
    * it to drive copy choices and "find your CCR" surfaces.
    */
@@ -150,4 +167,20 @@ export type WqaFindings = {
      */
     diagnostic_note?: string;
   };
+};
+
+/**
+ * One "Recommended for your situation" card on the WQA payload. The
+ * three v1 action types — pitcher filter, free testing, and the
+ * (currently suppressed) maintenance bridge — all conform to this
+ * shape. The `id` is stable and human-readable so a future
+ * notifications layer can reference "the user already saw the
+ * filter recommendation, don't surface it again."
+ */
+export type WqaRecommendedAction = {
+  id: string;
+  icon: string;
+  headline: string;
+  supporting_line: string;
+  link?: { label: string; url: string };
 };

@@ -277,6 +277,71 @@ describe("WQA module check() — direct miss + single-nearby fallback", () => {
       expect(f.lead_copper_summary.sampling_period_count).toBe(17);
     }
   });
+
+  it("WQA-4: persists recommended_actions on the payload (free_testing fires for Kalamazoo)", async () => {
+    installFetchMock({
+      "FeatureServer/0/query?": (url) => {
+        if (url.includes("distance=")) {
+          return fakeResponse({
+            features: [
+              { attributes: { PWSID: "MI0003520", PWS_Name: "KALAMAZOO" } },
+            ],
+          });
+        }
+        return fakeResponse({ features: [] });
+      },
+      "efservice/WATER_SYSTEM": () =>
+        fakeResponse(kalamazooWaterSystemResponse()),
+      "efservice/VIOLATION": () => fakeResponse([]),
+      "efservice/LCR_SAMPLE_RESULT": () => fakeResponse(kalamazooLcrResponse()),
+    });
+
+    const finding = await WqaModule.check(KALAMAZOO_HOUSE);
+    const f = finding.findings as unknown as WqaFindings;
+    // Kalamazoo has admin contact with phone → free_testing fires.
+    // Compliance is clean and LCR is well below action → pitcher_filter
+    // does NOT fire.
+    expect(f.recommended_actions).toBeDefined();
+    expect(f.recommended_actions?.map((a) => a.id)).toEqual(["free_testing"]);
+    const card = f.recommended_actions![0];
+    expect(card.supporting_line).toContain("269-337-8768");
+    expect(card.supporting_line).toContain(
+      "Kalamazoo Public Water Supply",
+    );
+  });
+
+  it("WQA-4: emits an activity log step for the recommended-actions compute", async () => {
+    installFetchMock({
+      "FeatureServer/0/query?": (url) => {
+        if (url.includes("distance=")) {
+          return fakeResponse({
+            features: [
+              { attributes: { PWSID: "MI0003520", PWS_Name: "KALAMAZOO" } },
+            ],
+          });
+        }
+        return fakeResponse({ features: [] });
+      },
+      "efservice/WATER_SYSTEM": () =>
+        fakeResponse(kalamazooWaterSystemResponse()),
+      "efservice/VIOLATION": () => fakeResponse([]),
+      "efservice/LCR_SAMPLE_RESULT": () => fakeResponse(kalamazooLcrResponse()),
+    });
+
+    const finding = await WqaModule.check(KALAMAZOO_HOUSE);
+    const steps = finding.activityLog?.steps ?? [];
+    const computeSteps = steps.filter((s) => s.kind === "compute");
+    // Two compute steps: one for compliance summary, one for
+    // recommended-actions (WQA-4). The recommended-actions step
+    // carries the emitted IDs in its detail.
+    const recommendationsStep = computeSteps.find((s) =>
+      (s.detail ?? "").includes("actions: free_testing"),
+    );
+    expect(recommendationsStep).toBeDefined();
+    expect(recommendationsStep?.result_summary).toMatch(
+      /1 recommendation/i,
+    );
+  });
 });
 
 describe("WQA module check() — direct miss + multiple-competing fallback", () => {

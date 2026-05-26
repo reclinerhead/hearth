@@ -220,6 +220,14 @@ export function HabitatFindingModal({
   const recommendedActions = habitatModule.getRecommendedActions?.(row) ?? [];
   const hasRecommendedActions = recommendedActions.length > 0;
 
+  // Issue #171 (WQA-4): a module can take over the entire body
+  // between the header and the activity log. When present, the
+  // banner / recommended-actions / overview-cards / generic-actions
+  // sections are bypassed entirely — the module renders whatever it
+  // wants. Activity log + footer still come from the modal shell.
+  const overviewBody = habitatModule.renderOverviewBody?.(row) ?? null;
+  const hasCustomOverviewBody = overviewBody !== null;
+
   const activeCard =
     activeCardId !== null
       ? (cards.find((c) => c.id === activeCardId) ?? null)
@@ -327,102 +335,114 @@ export function HabitatFindingModal({
           </DetailPane>
         ) : (
           <div className="overflow-y-auto p-4 sm:p-5 space-y-5">
-            {overviewBanner ? (
-              <section aria-labelledby={`${titleId}-banner`}>
-                <div
-                  id={`${titleId}-banner`}
-                  className="rounded-md"
-                  style={{
-                    border: "1px solid var(--color-border-subtle)",
-                    backgroundColor: "var(--color-bg-surface-raised)",
-                    padding: "var(--space-4)",
-                    color: "var(--color-text-primary)",
-                    fontSize: 14,
-                    lineHeight: 1.55,
-                  }}
-                >
-                  {overviewBanner.text}
-                </div>
+            {hasCustomOverviewBody ? (
+              // Issue #171: module-owned body. Skip the default
+              // banner / recommended-actions / cards / actions
+              // sections — the module's renderOverviewBody is
+              // expected to include anything it needs from those.
+              <section aria-labelledby={`${titleId}-custom-body`}>
+                <div id={`${titleId}-custom-body`}>{overviewBody}</div>
               </section>
-            ) : null}
+            ) : (
+              <>
+                {overviewBanner ? (
+                  <section aria-labelledby={`${titleId}-banner`}>
+                    <div
+                      id={`${titleId}-banner`}
+                      className="rounded-md"
+                      style={{
+                        border: "1px solid var(--color-border-subtle)",
+                        backgroundColor: "var(--color-bg-surface-raised)",
+                        padding: "var(--space-4)",
+                        color: "var(--color-text-primary)",
+                        fontSize: 14,
+                        lineHeight: 1.55,
+                      }}
+                    >
+                      {overviewBanner.text}
+                    </div>
+                  </section>
+                ) : null}
 
-            {hasRecommendedActions ? (
-              <section aria-labelledby={`${titleId}-recommended-actions`}>
-                <div
-                  id={`${titleId}-recommended-actions`}
-                  className="eyebrow mb-2"
-                >
-                  Recommended for your situation
-                </div>
-                <ul className="flex flex-col gap-2">
-                  {recommendedActions.map((action) => (
-                    <li key={action.id}>
-                      <RecommendedActionCard action={action} />
-                    </li>
-                  ))}
-                </ul>
-                {/*
-                  Section-level disclaimer. The action cards (today, all
-                  Superfund) link out to EPA directories — the CCR
-                  search tool, the certified-lab listing, the vapor-
-                  intrusion overview. Live testing surfaced that the
-                  CCR directory can list utility entries whose own
-                  "CCR website" links 404, and the directory's coverage
-                  isn't always current. Hardcoded here (rather than
-                  per-action) because every current action links to
-                  an EPA resource and the fallback advice is the same;
-                  if a future module ever returns actions that don't
-                  link to EPA, this becomes a slot-driven field.
-                */}
-                <p
-                  className="text-small mt-3"
-                  style={{ color: "var(--color-text-tertiary)" }}
-                >
-                  EPA&rsquo;s directories aren&rsquo;t always complete or
-                  current. If a link is broken or your utility isn&rsquo;t
-                  listed, your city or county water department is the
-                  most reliable next step.
-                </p>
-              </section>
-            ) : null}
+                {hasRecommendedActions ? (
+                  <section aria-labelledby={`${titleId}-recommended-actions`}>
+                    <div
+                      id={`${titleId}-recommended-actions`}
+                      className="eyebrow mb-2"
+                    >
+                      Recommended for your situation
+                    </div>
+                    <ul className="flex flex-col gap-2">
+                      {recommendedActions.map((action) => (
+                        <li key={action.id}>
+                          <RecommendedActionCard action={action} />
+                        </li>
+                      ))}
+                    </ul>
+                    {/*
+                      Section-level disclaimer. The action cards (today, all
+                      Superfund) link out to EPA directories — the CCR
+                      search tool, the certified-lab listing, the vapor-
+                      intrusion overview. Live testing surfaced that the
+                      CCR directory can list utility entries whose own
+                      "CCR website" links 404, and the directory's coverage
+                      isn't always current. Hardcoded here (rather than
+                      per-action) because every current action links to
+                      an EPA resource and the fallback advice is the same;
+                      if a future module ever returns actions that don't
+                      link to EPA, this becomes a slot-driven field.
+                    */}
+                    <p
+                      className="text-small mt-3"
+                      style={{ color: "var(--color-text-tertiary)" }}
+                    >
+                      EPA&rsquo;s directories aren&rsquo;t always complete
+                      or current. If a link is broken or your utility
+                      isn&rsquo;t listed, your city or county water
+                      department is the most reliable next step.
+                    </p>
+                  </section>
+                ) : null}
 
-            {hasCards ? (
-              <section aria-labelledby={`${titleId}-cards`}>
-                <div id={`${titleId}-cards`} className="eyebrow mb-2">
-                  {overviewCardsHeader}
-                </div>
-                <ul className="flex flex-col gap-2">
-                  {cards.map((card) => (
-                    <li key={card.id}>
-                      <OverviewCardButton
-                        card={card}
-                        onClick={() => setActiveCardId(card.id)}
-                        registerRef={(el) => {
-                          if (el) cardRefs.current.set(card.id, el);
-                          else cardRefs.current.delete(card.id);
-                        }}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ) : null}
+                {hasCards ? (
+                  <section aria-labelledby={`${titleId}-cards`}>
+                    <div id={`${titleId}-cards`} className="eyebrow mb-2">
+                      {overviewCardsHeader}
+                    </div>
+                    <ul className="flex flex-col gap-2">
+                      {cards.map((card) => (
+                        <li key={card.id}>
+                          <OverviewCardButton
+                            card={card}
+                            onClick={() => setActiveCardId(card.id)}
+                            registerRef={(el) => {
+                              if (el) cardRefs.current.set(card.id, el);
+                              else cardRefs.current.delete(card.id);
+                            }}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
 
-            {hasActions ? (
-              <section aria-labelledby={`${titleId}-actions`}>
-                <div id={`${titleId}-actions`} className="eyebrow mb-2">
-                  What to do next
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {actions.map((action, i) => (
-                    <HabitatActionChip
-                      key={`${action.kind}:${action.url}:${i}`}
-                      action={action}
-                    />
-                  ))}
-                </div>
-              </section>
-            ) : null}
+                {hasActions ? (
+                  <section aria-labelledby={`${titleId}-actions`}>
+                    <div id={`${titleId}-actions`} className="eyebrow mb-2">
+                      What to do next
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {actions.map((action, i) => (
+                        <HabitatActionChip
+                          key={`${action.kind}:${action.url}:${i}`}
+                          action={action}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+              </>
+            )}
 
             <section aria-labelledby={`${titleId}-log`}>
               <button

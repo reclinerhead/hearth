@@ -360,3 +360,31 @@ export function findingStepNarration(headline: string): {
     result_summary: headline,
   };
 }
+
+/**
+ * Activity-log narration for the WQA-4 recommended-actions compute
+ * step. Always fires on a CWS / non-community run, even when no
+ * actions are emitted — the empty-state narration explicitly says
+ * "no recommendations to surface this run; we'll add the maintenance
+ * bridge when WQA-6 ships" so the user sees what the module
+ * considered.
+ */
+export function recommendedActionsComputeNarration(input: {
+  emittedActionIds: string[];
+}): { narration: string; detail: string; result_summary: string } {
+  const { emittedActionIds } = input;
+  if (emittedActionIds.length === 0) {
+    return {
+      narration:
+        "I looked at your utility's compliance and lead-and-copper data for actionable steps you could take. Nothing fits today — we'll add the maintenance bridge once that phase ships, and your annual Water Quality Report will let us get more specific.",
+      detail: "emitted: 0; pitcher_filter=skip; free_testing=skip; maintenance_bridge=skip(deferred)",
+      result_summary: "no recommendations",
+    };
+  }
+  return {
+    narration:
+      "I put together a short list of recommendations based on your utility's compliance record, lead-and-copper samples, and admin contact on file with EPA.",
+    detail: `emitted: ${emittedActionIds.length}; actions: ${emittedActionIds.join(", ")}; maintenance_bridge=skip(deferred until WQA-6)`,
+    result_summary: `${emittedActionIds.length} recommendation${emittedActionIds.length === 1 ? "" : "s"}`,
+  };
+}
