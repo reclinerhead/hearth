@@ -63,6 +63,24 @@ export function EmergencyReferencePanelClient({
 
   const totalCount = groups.reduce((sum, g) => sum + g.videos.length, 0);
 
+  // Split into populated and empty groups so the layout can be density
+  // -tuned per surface — populated tiles run 1-up on mobile and 2-up on
+  // desktop (where the panel sits next to maintenance and the icon-
+  // dominant tile is otherwise too large), while empty "Add a {label}
+  // video" rows always stack full-width since they're already compact
+  // and reading them at half-width buys nothing. Order is preserved
+  // within each group so Water/Gas/Electrical/Other still surface in
+  // their fixed sequence across the two layers.
+  const populated = groups.filter((g) => g.videos.length > 0);
+  const empty = groups.filter((g) => g.videos.length === 0);
+
+  function openUploader(category: EmergencyCategory) {
+    setOpen({ kind: "uploader", category });
+  }
+  function openVideo(category: EmergencyCategory, videoId: string) {
+    setOpen({ kind: "modal", category, initialVideoId: videoId });
+  }
+
   return (
     <>
       <div>
@@ -82,22 +100,28 @@ export function EmergencyReferencePanelClient({
         />
 
         <div className="flex flex-col gap-3">
-          {groups.map((group) => (
-            <CategoryRow
-              key={group.category}
-              group={group}
-              onOpenUploader={() =>
-                setOpen({ kind: "uploader", category: group.category })
-              }
-              onOpenVideo={(videoId) =>
-                setOpen({
-                  kind: "modal",
-                  category: group.category,
-                  initialVideoId: videoId,
-                })
-              }
-            />
-          ))}
+          {populated.length > 0 ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {populated.map((group) => (
+                <PopulatedCategoryCell
+                  key={group.category}
+                  group={group}
+                  onOpenVideo={(videoId) => openVideo(group.category, videoId)}
+                />
+              ))}
+            </div>
+          ) : null}
+          {empty.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {empty.map((group) => (
+                <EmptyCategoryAffordance
+                  key={group.category}
+                  group={group}
+                  onClick={() => openUploader(group.category)}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -129,21 +153,16 @@ export function EmergencyReferencePanelClient({
   );
 }
 
-function CategoryRow({
+function PopulatedCategoryCell({
   group,
-  onOpenUploader,
   onOpenVideo,
 }: {
   group: EmergencyReferenceCategoryGroup;
-  onOpenUploader: () => void;
   onOpenVideo: (videoId: string) => void;
 }) {
   const primary = group.videos.find((v) => v.isPrimary) ?? group.videos[0];
-  const secondaryCount = group.videos.length - (primary ? 1 : 0);
-
-  if (!primary) {
-    return <EmptyCategoryAffordance group={group} onClick={onOpenUploader} />;
-  }
+  if (!primary) return null;
+  const secondaryCount = group.videos.length - 1;
 
   return (
     <div className="flex flex-col gap-2">
