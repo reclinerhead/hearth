@@ -48,7 +48,7 @@ import type {
   HabitatModule,
   HouseContext,
 } from "@/lib/habitat/types";
-import { decideBranch } from "./branch";
+import { decideBranch, shouldSkipEpaLookups } from "./branch";
 import {
   CACHE_TTL_DAYS,
   createSupabaseWaterSystemCacheStore,
@@ -72,6 +72,7 @@ import {
 } from "./compliance";
 import { summarizeLcr, type LeadCopperSummary } from "./lcr";
 import {
+  buildCwsUnmappedPayload,
   buildPrivateWellPayload,
   buildStalePayload,
   buildSystemPayload,
@@ -90,6 +91,7 @@ import {
   HEARTH_COMPLIANCE_RULE_SOURCE,
   lcrFetchNarration,
   pwsidFetchNarration,
+  trustedWaterSourceNarration,
   violationsFetchNarration,
 } from "./narration";
 import type { SdwisViolationRecord } from "./sources/sdwis-violations";
@@ -144,6 +146,72 @@ const WaterQualityAwarenessModule: HabitatModule = {
     const lat = house.latitude;
     const lng = house.longitude;
 
+    // Short-circuit: when the user's onboarding answer is 'well' or
+    // 'shared', EPA has no useful data for this house — no PWSID, no
+    // SDWIS, no CCR. Trust the user, skip the lookups, and emit a
+    // 3-step log that narrates the trust path.
+    if (
+      house.waterSource === "well" ||
+      house.waterSource === "shared"
+    ) {
+      const trustedStep = trustedWaterSourceNarration({
+        waterSource: house.waterSource,
+      });
+      log.step({
+        kind: "compute",
+        narration: trustedStep.narration,
+        detail: trustedStep.detail,
+        result_summary: trustedStep.result_summary,
+      });
+      const decision = decideBranch({
+        waterSource: house.waterSource,
+        pwsidResolved: false,
+        record: null,
+      });
+      const decideStep = branchDecideNarration({
+        branch: decision.branch,
+        diagnostic: decision.diagnostic,
+        source: "user-declared",
+      });
+      log.step({
+        kind: "decide",
+        narration: decideStep.narration,
+        detail: decideStep.detail,
+        result_summary: decideStep.result_summary,
+        source: HEARTH_BRANCH_SOURCE,
+      });
+
+      const payload = buildPrivateWellPayload(
+        decision.diagnostic ?? "User declared a private/shared water source during onboarding.",
+        "user-declared",
+      );
+
+      const findStep = findingStepNarration(payload.headline);
+      log.step({
+        kind: "finding",
+        narration: findStep.narration,
+        result_summary: findStep.result_summary,
+      });
+
+      return {
+        severity: payload.severity,
+        headline: payload.headline,
+        summary: payload.summary,
+        findings: payload.findings as unknown as Record<string, unknown>,
+        sourceUrl: "https://www.epa.gov/ground-water-and-drinking-water",
+        activityLog: log.finalize(),
+      };
+    }
+
+    // Belt-and-suspenders for the shouldSkipEpaLookups helper. If this
+    // ever desyncs from the short-circuit above, the test suite will
+    // catch the divergence; the assertion keeps the invariant local.
+    if (shouldSkipEpaLookups(house.waterSource)) {
+      throw new Error(
+        "shouldSkipEpaLookups disagrees with the short-circuit logic above",
+      );
+    }
+
     // Step 1 — resolve the PWSID via CWS Service Areas.
     const pwsid = await resolvePwsidAtPoint(lat, lng);
     const fetch1 = pwsidFetchNarration({
@@ -187,6 +255,7 @@ const WaterQualityAwarenessModule: HabitatModule = {
 
     // Step 3 — branch decision.
     const decision = decideBranch({
+      waterSource: house.waterSource,
       pwsidResolved: pwsid.match !== null,
       record,
     });
@@ -204,7 +273,8 @@ const WaterQualityAwarenessModule: HabitatModule = {
 
     // Steps 4-6 — only on CWS / non-community paths where a record
     // exists. Violations and LCR samples are fetched in parallel and
-    // soft-fail independently.
+    // soft-fail independently. The cws_unmapped and private_well
+    // branches don't have a PWSID to query, so SDWIS is skipped.
     let enrichment: SdwisEnrichment | undefined;
     const shouldFetchSdwis =
       record !== null &&
@@ -354,6 +424,16 @@ const WaterQualityAwarenessModule: HabitatModule = {
         return buildPrivateWellPayload(
           decision.diagnostic ??
             "No EPA Community Water System polygon covers this address.",
+          // The user-declared private_well path is handled by the
+          // short-circuit at the top of check(). Any private_well
+          // we reach here came from the polygon-driven fallback.
+          "epa-inferred",
+        );
+      }
+      if (decision.branch === "cws_unmapped") {
+        return buildCwsUnmappedPayload(
+          decision.diagnostic ??
+            "User declared municipal water but EPA's polygon coverage didn't include this address.",
         );
       }
       if (decision.branch === "stale") {
@@ -395,7 +475,10 @@ const WaterQualityAwarenessModule: HabitatModule = {
   getOnboardingMessage(finding): string {
     const f = finding.findings as { branch?: string; system_card?: { pws_name?: string; compliance_status_short?: string } };
     if (f?.branch === "private_well") {
-      return "Your address looks like a private well — we'll add private-well guidance in an upcoming Hearth update.";
+      return "Your home is on a private water system — we'll add tailored guidance in an upcoming Hearth update.";
+    }
+    if (f?.branch === "cws_unmapped") {
+      return "You're on city water, but EPA's national map doesn't pinpoint your exact utility — you'll be able to upload your annual Water Quality Report manually in a future Hearth update.";
     }
     if (f?.branch === "stale") {
       return "I couldn't confirm your water system with EPA on this run — we'll try again next time.";

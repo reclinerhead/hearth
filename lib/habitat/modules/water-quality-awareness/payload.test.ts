@@ -3,6 +3,7 @@ import type { ComplianceSummary } from "./compliance";
 import type { LeadCopperSummary } from "./lcr";
 import {
   buildCwsSummary,
+  buildCwsUnmappedPayload,
   buildDescription,
   buildPrivateWellPayload,
   buildStalePayload,
@@ -379,12 +380,41 @@ describe("buildCwsSummary", () => {
 });
 
 describe("buildPrivateWellPayload", () => {
-  it("returns a private_well branch payload with the diagnostic preserved", () => {
+  it("returns a private_well branch payload with the diagnostic preserved (epa-inferred default)", () => {
     const p = buildPrivateWellPayload("custom diagnostic");
     expect(p.findings.branch).toBe("private_well");
     expect(p.findings.branch_metadata.diagnostic_note).toBe("custom diagnostic");
     expect(p.findings.system_card).toBeUndefined();
     expect(p.headline).toMatch(/private well/i);
+  });
+
+  it("uses confident copy when source='user-declared'", () => {
+    const p = buildPrivateWellPayload("custom diagnostic", "user-declared");
+    expect(p.headline).toBe("Your home is on a private water system");
+    expect(p.summary).toMatch(/Based on what you told us during onboarding/i);
+    expect(p.summary).not.toMatch(/usually means/i);
+  });
+
+  it("uses probabilistic copy when source='epa-inferred'", () => {
+    const p = buildPrivateWellPayload("custom diagnostic", "epa-inferred");
+    expect(p.headline).toBe("You're likely on a private well");
+    expect(p.summary).toMatch(/usually means you're on a private well/i);
+  });
+});
+
+describe("buildCwsUnmappedPayload", () => {
+  it("returns a cws_unmapped branch payload with the diagnostic preserved", () => {
+    const p = buildCwsUnmappedPayload("EPA polygon coverage gap diagnostic");
+    expect(p.findings.branch).toBe("cws_unmapped");
+    expect(p.findings.branch_metadata.diagnostic_note).toBe(
+      "EPA polygon coverage gap diagnostic",
+    );
+    expect(p.findings.branch_metadata.is_active).toBe(true);
+    expect(p.findings.system_card).toBeUndefined();
+    expect(p.severity).toBe("neutral");
+    expect(p.headline).toMatch(/couldn't pinpoint your water utility/i);
+    expect(p.summary).toMatch(/you're on city water/i);
+    expect(p.summary).toMatch(/Water Quality Report/i);
   });
 });
 

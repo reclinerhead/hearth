@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideBranch } from "./branch";
+import { decideBranch, shouldSkipEpaLookups } from "./branch";
 import type { EnvirofactsWaterSystemRecord } from "./sources/envirofacts";
 
 function kalamazoo(
@@ -25,56 +25,132 @@ function kalamazoo(
   };
 }
 
-describe("decideBranch", () => {
-  it("returns private_well when no PWSID was resolved", () => {
-    const r = decideBranch({ pwsidResolved: false, record: null });
-    expect(r.branch).toBe("private_well");
-    expect(r.diagnostic).toMatch(/private well/i);
-  });
-
-  it("returns stale when PWSID resolved but Envirofacts had no record", () => {
-    const r = decideBranch({ pwsidResolved: true, record: null });
-    expect(r.branch).toBe("stale");
-    expect(r.diagnostic).toMatch(/no WATER_SYSTEM record/i);
-  });
-
-  it("returns stale when pws_activity_code is not A", () => {
+describe("decideBranch — user-declared water source takes precedence", () => {
+  it("returns private_well with a user-declared diagnostic when waterSource is 'well'", () => {
     const r = decideBranch({
+      waterSource: "well",
+      pwsidResolved: true, // even if EPA would have matched
+      record: kalamazoo(),
+    });
+    expect(r.branch).toBe("private_well");
+    expect(r.diagnostic).toMatch(/told us during onboarding.*private well/i);
+  });
+
+  it("returns private_well with a shared-system diagnostic when waterSource is 'shared'", () => {
+    const r = decideBranch({
+      waterSource: "shared",
+      pwsidResolved: true,
+      record: kalamazoo(),
+    });
+    expect(r.branch).toBe("private_well");
+    expect(r.diagnostic).toMatch(/shared private water system/i);
+  });
+
+  it("returns cws_unmapped when waterSource='municipal' but no polygon match", () => {
+    const r = decideBranch({
+      waterSource: "municipal",
+      pwsidResolved: false,
+      record: null,
+    });
+    expect(r.branch).toBe("cws_unmapped");
+    expect(r.diagnostic).toMatch(/national map.*doesn't cover/i);
+  });
+
+  it("falls through to standard CWS logic when waterSource='municipal' and EPA matched", () => {
+    const r = decideBranch({
+      waterSource: "municipal",
+      pwsidResolved: true,
+      record: kalamazoo(),
+    });
+    expect(r.branch).toBe("cws_no_ccr");
+  });
+
+  it("returns stale for waterSource='municipal' + matched PWSID but inactive system", () => {
+    const r = decideBranch({
+      waterSource: "municipal",
       pwsidResolved: true,
       record: kalamazoo({ pws_activity_code: "I" }),
     });
     expect(r.branch).toBe("stale");
-    expect(r.diagnostic).toMatch(/pws_activity_code='I'/);
   });
 
-  it("returns cws_no_ccr for an active CWS", () => {
-    const r = decideBranch({ pwsidResolved: true, record: kalamazoo() });
-    expect(r.branch).toBe("cws_no_ccr");
-    expect(r.diagnostic).toBeUndefined();
-  });
-
-  it("returns non_community for an active TNCWS", () => {
+  it("returns stale for waterSource='municipal' + matched PWSID but Envirofacts had no row", () => {
     const r = decideBranch({
+      waterSource: "municipal",
+      pwsidResolved: true,
+      record: null,
+    });
+    expect(r.branch).toBe("stale");
+  });
+
+  it("returns non_community for waterSource='municipal' + active TNCWS", () => {
+    const r = decideBranch({
+      waterSource: "municipal",
       pwsidResolved: true,
       record: kalamazoo({ pws_type_code: "TNCWS" }),
     });
     expect(r.branch).toBe("non_community");
   });
+});
 
-  it("returns non_community for an active NTNCWS", () => {
+describe("decideBranch — waterSource unknown / null falls back to EPA-driven logic", () => {
+  it("returns private_well (EPA-inferred) when waterSource=null and no polygon match", () => {
     const r = decideBranch({
-      pwsidResolved: true,
-      record: kalamazoo({ pws_type_code: "NTNCWS" }),
+      waterSource: null,
+      pwsidResolved: false,
+      record: null,
     });
-    expect(r.branch).toBe("non_community");
+    expect(r.branch).toBe("private_well");
+    expect(r.diagnostic).toMatch(/couldn't tell from your onboarding answers/i);
   });
 
-  it("returns stale with a diagnostic when the pws_type_code is unrecognized", () => {
+  it("returns private_well (EPA-inferred) when waterSource='unknown' and no polygon match", () => {
     const r = decideBranch({
+      waterSource: "unknown",
+      pwsidResolved: false,
+      record: null,
+    });
+    expect(r.branch).toBe("private_well");
+    expect(r.diagnostic).toMatch(/couldn't tell from your onboarding answers/i);
+  });
+
+  it("returns cws_no_ccr for waterSource=null + matched active CWS", () => {
+    const r = decideBranch({
+      waterSource: null,
+      pwsidResolved: true,
+      record: kalamazoo(),
+    });
+    expect(r.branch).toBe("cws_no_ccr");
+  });
+
+  it("returns stale for waterSource=null + matched PWSID but inactive", () => {
+    const r = decideBranch({
+      waterSource: null,
+      pwsidResolved: true,
+      record: kalamazoo({ pws_activity_code: "I" }),
+    });
+    expect(r.branch).toBe("stale");
+  });
+
+  it("returns stale with diagnostic for waterSource=null + unrecognized pws_type_code", () => {
+    const r = decideBranch({
+      waterSource: null,
       pwsidResolved: true,
       record: kalamazoo({ pws_type_code: "ZZZ" }),
     });
     expect(r.branch).toBe("stale");
     expect(r.diagnostic).toMatch(/unrecognized.*pws_type_code='ZZZ'/);
+  });
+});
+
+describe("shouldSkipEpaLookups", () => {
+  it("returns true for well and shared", () => {
+    expect(shouldSkipEpaLookups("well")).toBe(true);
+    expect(shouldSkipEpaLookups("shared")).toBe(true);
+  });
+  it("returns false for municipal, unknown, and null", () => {
+    expect(shouldSkipEpaLookups("municipal")).toBe(false);
+    expect(shouldSkipEpaLookups("unknown")).toBe(false);
+    expect(shouldSkipEpaLookups(null)).toBe(false);
   });
 });

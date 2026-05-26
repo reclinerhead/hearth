@@ -174,8 +174,17 @@ function formatYear(iso: string): string {
 /**
  * Build the WQA findings payload + headline + summary for the
  * private_well branch.
+ *
+ * Source distinguishes user-declared (we trust the onboarding answer)
+ * from epa-inferred (no polygon match and no onboarding signal). The
+ * copy reads differently — confident vs. probabilistic — and the
+ * activity log already narrates the why behind the routing, so the
+ * payload just needs to match the tone.
  */
-export function buildPrivateWellPayload(diagnostic: string): WqaPayload {
+export function buildPrivateWellPayload(
+  diagnostic: string,
+  source: "user-declared" | "epa-inferred" = "epa-inferred",
+): WqaPayload {
   const findings: WqaFindings = {
     branch: "private_well",
     branch_metadata: {
@@ -186,6 +195,18 @@ export function buildPrivateWellPayload(diagnostic: string): WqaPayload {
       diagnostic_note: diagnostic,
     },
   };
+  if (source === "user-declared") {
+    return {
+      severity: NEUTRAL,
+      headline: "Your home is on a private water system",
+      summary:
+        "Based on what you told us during onboarding, your home isn't on a " +
+        "public water utility. The EPA doesn't monitor private wells or " +
+        "shared private systems — testing is your responsibility, and " +
+        "we'll add tailored private-system guidance in a future Hearth update.",
+      findings,
+    };
+  }
   return {
     severity: NEUTRAL,
     headline: "You're likely on a private well",
@@ -194,6 +215,44 @@ export function buildPrivateWellPayload(diagnostic: string): WqaPayload {
       "which usually means you're on a private well. The EPA doesn't monitor " +
       "private wells — testing is your responsibility, and we'll add private-well " +
       "guidance in a future Hearth update.",
+    findings,
+  };
+}
+
+/**
+ * Build the WQA findings payload + copy for the cws_unmapped branch
+ * — the user told us during onboarding that they're on city water,
+ * but EPA's national CWS service-area layer doesn't cover their
+ * exact coordinates.
+ *
+ * No PWSID means no SDWIS data and no CCR cache lookup, so the
+ * findings are minimal. WQA-3 will let these users upload a CCR
+ * manually, which is the natural path forward.
+ */
+export function buildCwsUnmappedPayload(diagnostic: string): WqaPayload {
+  const findings: WqaFindings = {
+    branch: "cws_unmapped",
+    branch_metadata: {
+      branch: "cws_unmapped",
+      // The user IS on an active utility, we just can't pinpoint it.
+      // Marking is_active=true so any downstream surfaces that
+      // condition on activity get the right answer.
+      is_active: true,
+      system_type: null,
+      admin_contact: null,
+      diagnostic_note: diagnostic,
+    },
+  };
+  return {
+    severity: NEUTRAL,
+    headline: "We couldn't pinpoint your water utility on EPA's map",
+    summary:
+      "You told us during onboarding that you're on city water, but EPA's " +
+      "national map of public water system service areas doesn't cover your " +
+      "exact address. That's common — EPA has roughly six of every seven U.S. " +
+      "addresses mapped, leaving rural fringes and recent annexations uncovered. " +
+      "Once your utility publishes their annual Water Quality Report, you'll " +
+      "be able to upload it here for personalized findings.",
     findings,
   };
 }

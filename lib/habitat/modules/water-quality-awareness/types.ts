@@ -13,11 +13,22 @@ import type { LeadCopperSummary } from "./lcr";
 import type { RecentViolationsSummary } from "./compliance";
 
 /**
- * Which of the five branches the module's check() landed in. The UI
+ * Which of the six branches the module's check() landed in. The UI
  * uses this to pick between the variants of the system card, and the
  * activity log narrates the decision against it.
  *
- *   private_well   — no CWS polygon covers the house's coordinates.
+ *   private_well   — User declared `water_source = 'well'` (or 'shared')
+ *                    during onboarding, OR water_source is unknown/null
+ *                    AND no CWS polygon covers the house's coordinates.
+ *                    Trusted user input takes precedence over EPA mapping.
+ *   cws_unmapped   — User declared `water_source = 'municipal'` but
+ *                    EPA's national CWS service-area layer doesn't cover
+ *                    the house's exact coordinates. Common — EPA's map
+ *                    has roughly 6 of every 7 U.S. addresses, leaving
+ *                    rural fringes and recent annexations uncovered.
+ *                    We can't pull a PWSID without a polygon match, so
+ *                    SDWIS / CCR features are unavailable; the user can
+ *                    still upload a CCR manually in WQA-3+.
  *   stale          — PWSID resolved but Envirofacts has no record or
  *                    the system's activity_code != 'A'.
  *   non_community  — Active TNCWS or NTNCWS. CCR not federally required.
@@ -26,6 +37,7 @@ import type { RecentViolationsSummary } from "./compliance";
  */
 export type WqaBranch =
   | "private_well"
+  | "cws_unmapped"
   | "stale"
   | "non_community"
   | "cws_no_ccr"

@@ -1495,18 +1495,30 @@ The fourth habitat module ([`lib/habitat/modules/water-quality-awareness/`](../l
 
 The module is **feature-flagged on `NEXT_PUBLIC_WQA_ENABLED === "true"`** at registry-import time in [`lib/habitat/registry.ts`](../lib/habitat/registry.ts). The `NEXT_PUBLIC_` prefix is load-bearing: the registry is imported by both the server-side workflow and the client-side discovery modal / dashboard tile, so the value has to be inlined into the client bundle. Without the prefix the workflow writes a finding and the client filters the matching tile out as "unknown module". Defaults off in production. Set the env var in Vercel to dogfood. Once WQA graduates to default-on the conditional comes out.
 
-**Branch logic** is the heart of Phase 1. The module collects two signals — does a CWS polygon cover the house's coordinates, and did Envirofacts return a record for the resolved PWSID — and maps them to one of five branches in [`branch.ts`](../lib/habitat/modules/water-quality-awareness/branch.ts):
+**Branch logic** is the heart of the module. The onboarding-captured `house.water_source` is the **primary signal** — not EPA's map. EPA's national CWS service-area layer covers roughly six of every seven U.S. addresses; the gap is mostly rural fringes, recent annexations, and edge cases like township parcels served by a city utility but mapped just outside the city polygon. When the user has explicitly told Hearth they're on city water during onboarding, treating "no polygon match" as "private well" is the wrong answer.
 
-| Inputs | Branch |
-|---|---|
-| No CWS polygon at the point | `private_well` |
-| PWSID resolved, Envirofacts returned no row | `stale` |
-| `pws_activity_code != 'A'` | `stale` |
-| `pws_type_code in ('TNCWS','NTNCWS')` | `non_community` |
-| `pws_type_code == 'CWS'` | `cws_no_ccr` |
-| Unrecognized `pws_type_code` | `stale` (with diagnostic) |
+[`branch.ts`](../lib/habitat/modules/water-quality-awareness/branch.ts) routes on `(waterSource, pwsidResolved, record)`:
 
-The fifth branch `cws_with_ccr` is reserved for WQA-3 — decided one layer up against the shared CCR cache that ships then. Phase 1 never produces it.
+| `water_source` | EPA polygon | Envirofacts record | Branch |
+|---|---|---|---|
+| `well` | (skipped) | (skipped) | `private_well` (user-declared) |
+| `shared` | (skipped) | (skipped) | `private_well` (user-declared) |
+| `municipal` | no match | — | `cws_unmapped` |
+| `municipal` | match | active CWS | `cws_no_ccr` |
+| `municipal` | match | active TNCWS/NTNCWS | `non_community` |
+| `municipal` | match | inactive / missing / weird type | `stale` |
+| `unknown` / `null` | no match | — | `private_well` (EPA-inferred) |
+| `unknown` / `null` | match | active CWS | `cws_no_ccr` |
+| `unknown` / `null` | match | active TNCWS/NTNCWS | `non_community` |
+| `unknown` / `null` | match | inactive / missing / weird type | `stale` |
+
+The 'well' and 'shared' short-circuit lives in `check()` itself, not in `branch.ts` — when the user has already told us the answer, we skip the EPA polygon lookup entirely and emit a 3-step activity log. The `shouldSkipEpaLookups` helper in `branch.ts` exists so the module's check() and any future caller (a future polling job, say) agree on the criterion.
+
+The `cws_unmapped` branch is the disciplined answer to a real EPA coverage gap: "you told us you're on city water, but EPA's national map doesn't pinpoint your utility — once you have your annual Water Quality Report, you can upload it manually." Severity is `neutral`. WQA-3 will provide the upload path.
+
+The `cws_with_ccr` branch is reserved for WQA-3 — decided one layer up against the shared CCR cache that ships then. Today nothing produces it from `branch.ts`.
+
+The `private_well` branch carries a source distinction internally — `user-declared` (we believe the onboarding answer) renders confident copy ("Your home is on a private water system"), while `epa-inferred` (we filled in the gap when `water_source` was unknown/null) renders probabilistic copy ("You're likely on a private well"). Both write the same `branch: 'private_well'` payload so downstream UI doesn't need to care.
 
 **Two data sources, both public and unauthenticated.**
 

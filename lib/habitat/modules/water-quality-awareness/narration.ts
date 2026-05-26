@@ -92,14 +92,38 @@ export function envirofactsFetchNarration(input: {
 export function branchDecideNarration(input: {
   branch: WqaBranch;
   diagnostic?: string;
+  /**
+   * When the private_well branch came from the user's onboarding
+   * answer rather than from EPA's polygon coverage being silent, the
+   * narration reads differently — confident and grounded in what the
+   * user already told us, rather than probabilistic. Defaults to
+   * "epa-inferred" so callers that don't pass it keep the original
+   * voice.
+   */
+  source?: "user-declared" | "epa-inferred";
 }): { narration: string; detail?: string; result_summary: string } {
   switch (input.branch) {
     case "private_well":
+      if (input.source === "user-declared") {
+        return {
+          narration:
+            "You told us during onboarding that your home isn't on a public water utility, so I'm trusting that and treating this as a private system. The EPA doesn't monitor private wells — testing is on you, and we'll add tailored guidance in a later Hearth update.",
+          detail: input.diagnostic,
+          result_summary: "branch: private_well (user-declared)",
+        };
+      }
       return {
         narration:
           "Since no public water system covers your address, I'm treating this house as a private-well home for now. We'll add private-well guidance in a future Hearth update.",
         detail: input.diagnostic,
         result_summary: "branch: private_well",
+      };
+    case "cws_unmapped":
+      return {
+        narration:
+          "You told us during onboarding that you're on city water, but EPA's national map of utility service areas doesn't cover your exact address. About one in every seven U.S. addresses falls outside EPA's mapping, so this is common — and it means we can't pull compliance data without a PWSID. You'll be able to upload your utility's annual Water Quality Report manually once that phase ships.",
+        detail: input.diagnostic,
+        result_summary: "branch: cws_unmapped",
       };
     case "stale":
       return {
@@ -130,6 +154,23 @@ export function branchDecideNarration(input: {
         result_summary: "branch: cws_with_ccr",
       };
   }
+}
+
+/**
+ * Activity-log narration for the very-first step on a user-declared
+ * private-well / shared-system run, where we skip the EPA polygon
+ * lookup entirely. Stands in for the usual "fetch CWS Service Areas"
+ * step so the log still narrates the input the decision rested on.
+ */
+export function trustedWaterSourceNarration(input: {
+  waterSource: "well" | "shared";
+}): { narration: string; detail: string; result_summary: string } {
+  const label = input.waterSource === "shared" ? "shared private water system" : "private well";
+  return {
+    narration: `You told us during onboarding that your home is on a ${label}, so I skipped EPA's public water system lookup — those records wouldn't apply.`,
+    detail: `house.water_source='${input.waterSource}'`,
+    result_summary: "skipped EPA lookup",
+  };
 }
 
 /**
