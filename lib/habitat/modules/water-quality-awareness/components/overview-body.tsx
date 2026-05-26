@@ -19,7 +19,7 @@
  * shell, not this component.
  */
 
-import { Icon } from "@/components/icon";
+import { Icon, type IconName } from "@/components/icon";
 import { findWqaContaminantByAlias } from "@/lib/habitat/water-quality/contaminants/lookup";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import type { LcrMeasurement } from "../lcr";
@@ -316,25 +316,45 @@ function SystemCard({ findings }: { findings: WqaFindings }) {
     }
   })();
 
-  const complianceLabel = (() => {
+  const compliance = ((): {
+    label: string;
+    tone: TileTone;
+    icon: IconName | null;
+  } => {
     if (card.compliance_status_short === "active_violations") {
       const recent = card.recent_violations;
       const contaminant = recent?.most_recent?.contaminant_name;
-      return contaminant
-        ? `Active violation: ${contaminant}`
-        : "Active violation on file";
+      return {
+        label: contaminant
+          ? `Active violation: ${contaminant}`
+          : "Active violation on file",
+        tone: "danger",
+        icon: "alert-triangle",
+      };
     }
     if (card.compliance_status_short === "no_active_violations") {
-      return "No active violations";
+      return {
+        label: "No active violations",
+        tone: "success",
+        icon: "shield",
+      };
     }
-    return "Not yet checked";
+    return { label: "Not yet checked", tone: "neutral", icon: null };
   })();
 
-  const ccrLabel = (() => {
+  const ccr = ((): {
+    label: string;
+    tone: TileTone;
+    icon: IconName | null;
+  } => {
     if (card.latest_ccr_status === "not_uploaded") {
-      return "Not yet uploaded";
+      return { label: "Not yet uploaded", tone: "neutral", icon: null };
     }
-    return `${card.latest_ccr_status.year} report on file`;
+    return {
+      label: `${card.latest_ccr_status.year} report on file`,
+      tone: "success",
+      icon: "file-text",
+    };
   })();
 
   return (
@@ -369,9 +389,24 @@ function SystemCard({ findings }: { findings: WqaFindings }) {
           marginBottom: 12,
         }}
       >
-        <StatTile label="Compliance" value={complianceLabel} />
-        <StatTile label="Latest CCR" value={ccrLabel} />
-        <StatTile label="Source" value={sourceLabel} />
+        <StatTile
+          label="Compliance"
+          value={compliance.label}
+          tone={compliance.tone}
+          icon={compliance.icon}
+        />
+        <StatTile
+          label="Latest CCR"
+          value={ccr.label}
+          tone={ccr.tone}
+          icon={ccr.icon}
+        />
+        <StatTile
+          label="Source"
+          value={sourceLabel}
+          tone="info"
+          icon="droplet"
+        />
       </div>
 
       <p
@@ -394,13 +429,62 @@ function SystemCard({ findings }: { findings: WqaFindings }) {
   );
 }
 
-function StatTile({ label, value }: { label: string; value: string }) {
+type TileTone = "neutral" | "success" | "info" | "danger";
+
+/**
+ * Visual treatment for the system-card stat tiles. Tinted variants
+ * (success / info / danger) lift the dominant state cues — a green
+ * "no active violations" tile reads as "good" before the user reads
+ * the text, and a blue Source tile breaks up a gray-dominant card.
+ *
+ * Tints mirror the project's existing pattern (globals.css line ~478):
+ * a soft 14% mix for background and a 35% mix for border, so the
+ * accents register as a tone, not a stoplight.
+ */
+const TONE_STYLES: Record<
+  TileTone,
+  { background: string; border: string; accent: string }
+> = {
+  neutral: {
+    background: "var(--color-bg-base)",
+    border: "var(--color-border-subtle)",
+    accent: "var(--color-text-secondary)",
+  },
+  success: {
+    background: "color-mix(in oklab, var(--color-success) 14%, transparent)",
+    border: "color-mix(in oklab, var(--color-success) 35%, transparent)",
+    accent: "var(--color-success)",
+  },
+  info: {
+    background: "color-mix(in oklab, var(--color-info) 14%, transparent)",
+    border: "color-mix(in oklab, var(--color-info) 35%, transparent)",
+    accent: "var(--color-info)",
+  },
+  danger: {
+    background: "color-mix(in oklab, var(--color-danger) 14%, transparent)",
+    border: "color-mix(in oklab, var(--color-danger) 35%, transparent)",
+    accent: "var(--color-danger)",
+  },
+};
+
+function StatTile({
+  label,
+  value,
+  tone = "neutral",
+  icon = null,
+}: {
+  label: string;
+  value: string;
+  tone?: TileTone;
+  icon?: IconName | null;
+}) {
+  const styles = TONE_STYLES[tone];
   return (
     <div
       className="rounded-md p-3"
       style={{
-        border: "1px solid var(--color-border-subtle)",
-        backgroundColor: "var(--color-bg-base)",
+        border: `1px solid ${styles.border}`,
+        backgroundColor: styles.background,
       }}
     >
       <div
@@ -411,12 +495,22 @@ function StatTile({ label, value }: { label: string; value: string }) {
       </div>
       <div
         style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
           fontSize: 14,
           fontWeight: 500,
           color: "var(--color-text-primary)",
         }}
       >
-        {value}
+        {icon ? (
+          <Icon
+            name={icon}
+            size={18}
+            style={{ color: styles.accent, flexShrink: 0 }}
+          />
+        ) : null}
+        <span>{value}</span>
       </div>
     </div>
   );
