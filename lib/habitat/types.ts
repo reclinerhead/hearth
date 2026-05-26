@@ -457,4 +457,29 @@ export interface HabitatModule {
     supporting_line: string;
     link?: { label: string; url: string };
   }>;
+
+  /**
+   * Optional. Renders a module-specific overview pane that replaces
+   * the default banner + recommended-actions + overview-cards layout.
+   *
+   * Modules implementing this slot own the entire body between the
+   * modal header and the activity log. Use sparingly — the default
+   * generic layout (banner / recommended actions / overview cards /
+   * action shelf) is the right answer for most modules. WQA is the
+   * first consumer because its overview is a structured landing page,
+   * not a card list (issue #171).
+   *
+   * The slot is passed `row` only — no React hooks, no module-side
+   * fetches. All data must already be in the persisted finding.
+   *
+   * Mechanics when set: the modal renders header → `renderOverviewBody`
+   * → activity log → footer. The cards / banner / recommended-actions
+   * / generic-actions sections are bypassed entirely; the module
+   * includes whatever it needs from those inside its own body.
+   *
+   * Imports `HabitatFindingRow` from `lib/hooks/use-habitat-findings`
+   * as a type-only import, same discipline as `getOverviewCards` and
+   * `renderDetail`.
+   */
+  renderOverviewBody?: (row: HabitatFindingRow) => ReactNode;
 }

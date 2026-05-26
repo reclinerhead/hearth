@@ -18,7 +18,7 @@ import {
   type LeadCopperSummary,
 } from "./lcr";
 import type { EnvirofactsWaterSystemRecord } from "./sources/envirofacts";
-import type { WqaBranch, WqaFindings } from "./types";
+import type { WqaBranch, WqaFindings, WqaRecommendedAction } from "./types";
 
 /**
  * Bundle returned by buildFindings. The orchestrator persists every
@@ -359,9 +359,21 @@ export function buildSystemPayload(
     leadCopper: { status: "unavailable" },
   },
   pwsidConfidence: "verified" | "inferred" = "verified",
+  /**
+   * Pre-computed WQA-4 recommended-action cards. Built by
+   * recommended-actions.ts and passed in from `check()` so the
+   * compute step can narrate the emitted IDs without
+   * re-running the build. Empty array suppresses the payload field.
+   */
+  recommendedActions: WqaRecommendedAction[] = [],
 ): WqaPayload {
   const adminName = formatAdminName(record.admin_name ?? record.org_name);
   const systemName = displaySystemName(record);
+  const adminContact = {
+    name: adminName,
+    email: record.email_addr ?? null,
+    phone: record.phone_number ?? null,
+  };
   const findings: WqaFindings = {
     branch,
     system_card: {
@@ -382,14 +394,17 @@ export function buildSystemPayload(
       branch,
       is_active: true,
       system_type: record.pws_type_code,
-      admin_contact: {
-        name: adminName,
-        email: record.email_addr ?? null,
-        phone: record.phone_number ?? null,
-      },
+      admin_contact: adminContact,
     },
     lead_copper_summary: enrichment.leadCopper,
   };
+
+  // Persist the recommended-actions list only when at least one
+  // action fired. Empty array → field omitted entirely so the UI's
+  // section-suppression check stays simple.
+  if (recommendedActions.length > 0) {
+    findings.recommended_actions = recommendedActions;
+  }
 
   // Surface the compact recent-violations block only when we
   // actually have a compliance summary — degraded runs leave the

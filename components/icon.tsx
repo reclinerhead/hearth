@@ -65,7 +65,8 @@ export type IconName =
   | "video"
   | "dots-vertical"
   | "trash"
-  | "star";
+  | "star"
+  | "phone";
 
 const base: SVGProps<SVGSVGElement> = {
   width: 20,
@@ -443,6 +444,9 @@ const paths: Record<IconName, React.ReactNode> = {
   ),
   star: (
     <path d="m12 3 2.6 5.6L20.5 9.6l-4.3 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8L3.5 9.6l5.9-1z" />
+  ),
+  phone: (
+    <path d="M5 4h3l2 5-2 1c1 2 3 4 5 5l1-2 5 2v3a2 2 0 0 1-2 2A14 14 0 0 1 3 6a2 2 0 0 1 2-2z" />
   ),
 };
 
