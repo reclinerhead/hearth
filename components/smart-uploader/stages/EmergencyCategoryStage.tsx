@@ -48,7 +48,6 @@ export function EmergencyCategoryStage({
               onClick={() => onPick(cat)}
               className="group relative flex flex-col items-stretch overflow-hidden rounded-[var(--radius-lg)] text-left transition-transform"
               style={{
-                aspectRatio: "1 / 1",
                 border: isSelected
                   ? "2px solid var(--color-accent)"
                   : "1px solid var(--color-border-subtle)",
@@ -56,7 +55,17 @@ export function EmergencyCategoryStage({
               }}
               aria-pressed={isSelected}
             >
-              <div className="relative flex-1">
+              {/*
+                Image is its own aspect-ratio container so all four icons
+                render at the same size regardless of how many lines their
+                subtitle wraps to. The strip below uses min-height to
+                guarantee a uniform footprint across the four tiles even
+                when the Water/Gas/Electrical subtitles only need 2 lines —
+                that buys consistent image heights without shrinking the
+                three shorter tiles' icons. flex-1 absorbs any extra row
+                stretch if a subtitle wraps further on a narrow viewport.
+              */}
+              <div className="relative w-full" style={{ aspectRatio: "1 / 1" }}>
                 <Image
                   src={meta.iconSrc}
                   alt=""
@@ -67,10 +76,11 @@ export function EmergencyCategoryStage({
                 />
               </div>
               <div
-                className="px-3 py-2"
+                className="px-3 py-2 flex-1"
                 style={{
                   borderTop: "1px solid var(--color-border-subtle)",
                   backgroundColor: "var(--color-bg-surface)",
+                  minHeight: 96,
                 }}
               >
                 <div style={{ fontSize: 15, fontWeight: 500 }}>{meta.label}</div>
