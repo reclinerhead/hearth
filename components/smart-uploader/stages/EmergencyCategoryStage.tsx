@@ -74,6 +74,16 @@ export function EmergencyCategoryStage({
                 }}
               >
                 <div style={{ fontSize: 15, fontWeight: 500 }}>{meta.label}</div>
+                <div
+                  className="mt-0.5"
+                  style={{
+                    fontSize: 12,
+                    lineHeight: 1.35,
+                    color: "var(--color-text-tertiary)",
+                  }}
+                >
+                  {meta.description}
+                </div>
               </div>
             </button>
           );

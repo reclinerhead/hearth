@@ -28,8 +28,7 @@ const WATER: EmergencyCategoryMeta = {
   category: "water",
   label: "Water",
   iconSrc: "/document_icons/emergency_water.jpg",
-  description:
-    "Main shutoff, outside faucets, sump pump, sprinklers, anything that stops water.",
+  description: "Main shutoff, outdoor spigots, individual fixture valves",
   labelPlaceholder: "Main shutoff in basement",
 };
 
@@ -37,8 +36,7 @@ const GAS: EmergencyCategoryMeta = {
   category: "gas",
   label: "Gas",
   iconSrc: "/document_icons/emergency_gas_meter.jpg",
-  description:
-    "Gas meter, individual appliance shutoffs, propane tank, smell-of-gas instructions.",
+  description: "Main utility shutoff, individual appliance valves",
   labelPlaceholder: "Meter shutoff on side of house",
 };
 
@@ -46,7 +44,7 @@ const ELECTRICAL: EmergencyCategoryMeta = {
   category: "electrical",
   label: "Electrical",
   iconSrc: "/document_icons/emergency_electric.jpg",
-  description: "Main breaker, sub-panels, generator transfer switch.",
+  description: "Main breaker, individual circuit breakers, subpanels",
   labelPlaceholder: "Main panel in garage",
 };
 
@@ -54,7 +52,8 @@ const OTHER: EmergencyCategoryMeta = {
   category: "other",
   label: "Other",
   iconSrc: "/document_icons/emergency_other.jpg",
-  description: "Sump pump, alarm panel, sprinkler controller — anything else.",
+  description:
+    "Alarm panels, sump pumps, generators, well pumps — anything else future-you should know how to operate",
   labelPlaceholder: "What is this?",
 };
 
