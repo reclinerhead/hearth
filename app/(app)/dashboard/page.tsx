@@ -84,11 +84,21 @@ export default async function DashboardPage() {
         initialHouse={house}
       />
 
+      {/*
+        `min-w-0` on every grid item is load-bearing: grid items default to
+        `min-width: auto` (= min-content), so any deep child with a wide
+        intrinsic size (an absolutely-positioned image with natural
+        dimensions ~1000px, a non-truncating long token, a fixed-width
+        button) will push the column past the viewport on mobile and force
+        iOS Safari into pinch-zoom-out mode. The button-level `w-full`
+        fix on the emergency tile (#178) was not enough on its own — the
+        column itself was over-sizing.
+      */}
       <section className="grid gap-6 md:grid-cols-2">
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 min-w-0">
           <EmergencyReferencePanel houseId={data.id} />
 
-          <div>
+          <div className="min-w-0">
             <SectionHeader
               eyebrow="The world around your house"
               title="Habitat"
@@ -101,7 +111,7 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <div>
+        <div className="min-w-0">
           {/*
             MaintenancePanelDashboard renders its own SectionHeader so the
             populated and empty-state branches stay consistent — the
