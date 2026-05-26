@@ -176,11 +176,20 @@ export type WqaFindings = {
  * shape. The `id` is stable and human-readable so a future
  * notifications layer can reference "the user already saw the
  * filter recommendation, don't surface it again."
+ *
+ * `provenance` is an optional muted-text line rendered below
+ * `supporting_line`. Use it when the card mentions a specific
+ * person, phone number, or other data point a homeowner would
+ * reasonably ask "wait, where did that come from?" about — the
+ * free_testing card uses it to attribute James Baker / the phone
+ * number to EPA Envirofacts so we're not telling people to call a
+ * stranger without context.
  */
 export type WqaRecommendedAction = {
   id: string;
   icon: string;
   headline: string;
   supporting_line: string;
+  provenance?: string;
   link?: { label: string; url: string };
 };

@@ -217,4 +217,47 @@ describe("buildRecommendedActions", () => {
     );
     expect(actions.find((a) => a.id === "maintenance_bridge")).toBeUndefined();
   });
+
+  it("free_testing carries a provenance line attributing the contact to EPA Envirofacts", () => {
+    const actions = buildRecommendedActions(inputs());
+    const ft = actions.find((a) => a.id === "free_testing")!;
+    expect(ft.provenance).toBeDefined();
+    expect(ft.provenance).toContain("James Baker");
+    expect(ft.provenance).toContain("administrator of record");
+    expect(ft.provenance).toContain("Envirofacts");
+  });
+
+  it("free_testing provenance degrades gracefully when admin name is null", () => {
+    const actions = buildRecommendedActions(
+      inputs({
+        adminContact: { name: null, email: null, phone: "555-555-5555" },
+      }),
+    );
+    const ft = actions.find((a) => a.id === "free_testing")!;
+    expect(ft.provenance).toBeDefined();
+    expect(ft.provenance).not.toContain("null");
+    expect(ft.provenance).toContain("Envirofacts");
+  });
+
+  it("pitcher_filter does NOT carry a provenance line (no personal data to attribute)", () => {
+    const actions = buildRecommendedActions(
+      inputs({ compliance: complianceActiveHealth() }),
+    );
+    const pf = actions.find((a) => a.id === "pitcher_filter")!;
+    expect(pf.provenance).toBeUndefined();
+  });
+
+  it("uses 'phone' for the free_testing icon (must exist in components/icon.tsx)", () => {
+    const ft = buildRecommendedActions(inputs()).find(
+      (a) => a.id === "free_testing",
+    )!;
+    expect(ft.icon).toBe("phone");
+  });
+
+  it("uses 'droplet' for the pitcher_filter icon (must exist in components/icon.tsx)", () => {
+    const pf = buildRecommendedActions(
+      inputs({ compliance: complianceActiveHealth() }),
+    ).find((a) => a.id === "pitcher_filter")!;
+    expect(pf.icon).toBe("droplet");
+  });
 });

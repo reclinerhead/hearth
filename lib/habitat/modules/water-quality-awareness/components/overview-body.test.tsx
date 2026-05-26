@@ -122,6 +122,37 @@ describe("WqaOverviewBody — cws_no_ccr verified (Kalamazoo happy path)", () =>
     );
   });
 
+  it("renders the provenance line below the supporting_line when present", () => {
+    const findings = cwsNoCcrFindings();
+    findings.recommended_actions = [
+      {
+        id: "free_testing",
+        icon: "phone",
+        headline: "Ask your utility about free residential testing",
+        supporting_line: "Call James Baker at 269-337-8768.",
+        provenance:
+          "James Baker is listed as Kalamazoo PWS's administrator of record on EPA's Envirofacts WATER_SYSTEM file.",
+      },
+    ];
+    render(findings);
+    expect(text()).toContain("administrator of record");
+    expect(text()).toContain("Envirofacts");
+  });
+
+  it("does NOT render provenance when the field is absent (e.g. pitcher_filter)", () => {
+    const findings = cwsNoCcrFindings();
+    findings.recommended_actions = [
+      {
+        id: "pitcher_filter",
+        icon: "droplet",
+        headline: "Consider a faucet-mount or pitcher filter",
+        supporting_line: "Whatever supporting copy.",
+      },
+    ];
+    render(findings);
+    expect(text()).not.toContain("administrator of record");
+  });
+
   it("renders Detected in your water with the lead row and a Context tier badge", () => {
     render(cwsNoCcrFindings());
     expect(text()).toContain("Detected in your water");

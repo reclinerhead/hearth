@@ -187,6 +187,17 @@ function buildFreeTestingAction(
   const contactClause = adminName
     ? `Call ${adminName} at ${phone}`
     : `Call ${phone}`;
+
+  // Provenance attribution. Telling a user to call a specific person
+  // and phone number without explaining where we got those reads as
+  // "Hearth knows a guy" — the provenance line makes it clear we
+  // pulled the contact from EPA's public administrator-on-file
+  // record, which is the same source every other utility customer
+  // could look up themselves.
+  const provenance = adminName
+    ? `${adminName} is listed as ${utility}'s administrator of record on EPA's Envirofacts WATER_SYSTEM file. The phone number is the one EPA has on file for the utility.`
+    : `The phone number is the one EPA has on file for ${utility} in its Envirofacts WATER_SYSTEM record.`;
+
   return {
     id: "free_testing",
     icon: "phone",
@@ -195,5 +206,6 @@ function buildFreeTestingAction(
       `${contactClause} to ask if ${utility} offers free in-home water ` +
       `testing — many utilities do, especially for lead and copper, and ` +
       `most don't advertise it on the bill.`,
+    provenance,
   };
 }

@@ -490,6 +490,19 @@ function RecommendedActionCard({ action }: { action: WqaRecommendedAction }) {
         >
           {action.supporting_line}
         </p>
+        {action.provenance ? (
+          <p
+            className="text-small"
+            style={{
+              color: "var(--color-text-tertiary)",
+              margin: 0,
+              marginTop: 6,
+              lineHeight: 1.55,
+            }}
+          >
+            {action.provenance}
+          </p>
+        ) : null}
         {action.link ? (
           <div className="text-small mt-2">
             <a
@@ -801,7 +814,11 @@ function SourcePill({
   note?: string;
 }) {
   const icon =
-    status === "ok" ? "check" : status === "not_uploaded" ? "info" : "info";
+    status === "ok"
+      ? "circle-check"
+      : status === "not_uploaded"
+        ? "info"
+        : "info";
   const color =
     status === "ok"
       ? "var(--color-accent)"
