@@ -1318,7 +1318,8 @@ export function DashboardLive({
   return (
     <>
       <section className="grid gap-6 md:grid-cols-2">
-        <div className="flex flex-col gap-2">
+        {/* min-w-0 on grid items: see comment in app/(app)/dashboard/page.tsx. */}
+        <div className="flex flex-col gap-2 min-w-0">
           <HouseImageSurface
             house={house}
             imageUrl={imageUrl}
@@ -1344,7 +1345,7 @@ export function DashboardLive({
             </div>
           ) : null}
         </div>
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 min-w-0">
           {summary ? (
             <RefreshSummaryBanner
               summary={summary}
