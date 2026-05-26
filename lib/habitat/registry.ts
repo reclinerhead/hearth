@@ -2,6 +2,7 @@ import type { HabitatModule } from "./types";
 import EpaRadonZone from "./modules/epa-radon-zone";
 import EpaSuperfundProximity from "./modules/epa-superfund-proximity";
 import FemaFloodZones from "./modules/fema-flood-zones";
+import WaterQualityAwareness from "./modules/water-quality-awareness";
 
 /**
  * Every habitat module in the system.
@@ -21,9 +22,22 @@ import FemaFloodZones from "./modules/fema-flood-zones";
  *
  * Module keys must be unique across the registry and must match the
  * module_key value the module writes to hearth.habitat_findings.
+ *
+ * Feature-flagged modules (Water Quality Awareness, issue #166) are
+ * appended conditionally on a `process.env.WQA_ENABLED === "true"`
+ * check. The env var is evaluated at module-import time, so toggling
+ * it requires a Vercel deploy — fine for the dogfooding phase. Once
+ * WQA graduates to a default-on module, drop the conditional and
+ * inline the import alongside the rest.
  */
-export const HABITAT_MODULES: readonly HabitatModule[] = [
+const baseModules: HabitatModule[] = [
   EpaRadonZone,
   FemaFloodZones,
   EpaSuperfundProximity,
-] as const;
+];
+
+if (process.env.WQA_ENABLED === "true") {
+  baseModules.push(WaterQualityAwareness);
+}
+
+export const HABITAT_MODULES: readonly HabitatModule[] = baseModules;

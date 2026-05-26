@@ -107,6 +107,8 @@ Key facts about each table:
 
 All four tables (houses, rooms, inventory, documents) use a shared `hearth.set_updated_at()` trigger function defined in the houses migration. `hearth.document_pages` is intentionally not in that set — pages are immutable, so the trigger has nothing to write.
 
+`hearth.water_systems` (issue #166) is a per-utility shared cache keyed by `pwsid`, not tied to any single house — multiple houses on Kalamazoo PWS resolve to the same row. RLS is globally readable to authenticated users with no write policies (writes happen exclusively through the service-role workflow path). `raw_payload jsonb not null` preserves the full Envirofacts response so future column additions can be backfilled from existing rows. See "Water Quality Awareness module" under the Habitat surface section for the full pattern.
+
 ### Schema-qualification rules (load-bearing)
 
 - Every `CREATE TABLE`, `CREATE FUNCTION`, `CREATE INDEX`, `CREATE POLICY` in a migration **must** be schema-qualified: `hearth.houses`, not `houses`. Bare names default to `public` and would leak into the shared schema.
@@ -1484,6 +1486,42 @@ Cadence is `once` — FEMA updates the NFHL roughly monthly but a homeowner's ma
 Three FEMA quirks the module handles explicitly. (1) `-9999` is FEMA's null sentinel for the numeric fields `STATIC_BFE`, `DEPTH`, `VELOCITY`, `BFE_REVERT`, and `DEP_REVERT`; [`fetch.ts`](../lib/habitat/modules/fema-flood-zones/fetch.ts) coerces those to `null` in `normalizeFloodZone` before the data flows anywhere else — surfacing "-9999 feet" in the UI would be a memorable bug. (2) Multiple overlapping polygons can come back at boundaries; `pickMostSevere` in [`classify.ts`](../lib/habitat/modules/fema-flood-zones/classify.ts) selects the higher-severity zone and the activity log's compute step calls out the selection so the user sees the choice. (3) Empty `features[]` means the address sits outside NFHL digital coverage — the module severity is `neutral` (not `favorable`; we don't claim "all clear" when FEMA doesn't have data), the action shelf drops the FEMA Map Service Center deep-link (FEMA has nothing to render for that area) and keeps just the learn-more link, and the activity log shrinks to 4 steps (rule omitted because there's no zone to apply a rule to).
 
 The module uses the generic finding modal — no `getOverviewCards` or `renderDetail`. Single finding, single zone, no per-item drill-down. The action shelf carries two link chips on the happy path: a deep link to FEMA's Map Service Center pre-populated to the user's address via `?AddressQuery=...` (gives the user a way to see the actual polygon edge for their area), plus a link to FEMA's flood-zone definitions page.
+
+### Water Quality Awareness module (Phase 1)
+
+The fourth habitat module ([`lib/habitat/modules/water-quality-awareness/`](../lib/habitat/modules/water-quality-awareness/)) and the foundation of the broader Water Quality Awareness initiative (epic issue #165). Phase 1 (issue #166) ships only the system-identity surface — the module resolves a house's coordinates to a Public Water System ID, persists the EPA WATER_SYSTEM inventory record, and decides which of five branches the house falls into. Compliance history (WQA-2), CCR upload + extraction (WQA-3), and the richer findings view (WQA-4) ship in later phases.
+
+The module is **feature-flagged on `WQA_ENABLED === "true"`** at registry-import time in [`lib/habitat/registry.ts`](../lib/habitat/registry.ts). Defaults off in production. Set the env var in Vercel to dogfood. Once WQA graduates to default-on the conditional comes out.
+
+**Branch logic** is the heart of Phase 1. The module collects two signals — does a CWS polygon cover the house's coordinates, and did Envirofacts return a record for the resolved PWSID — and maps them to one of five branches in [`branch.ts`](../lib/habitat/modules/water-quality-awareness/branch.ts):
+
+| Inputs | Branch |
+|---|---|
+| No CWS polygon at the point | `private_well` |
+| PWSID resolved, Envirofacts returned no row | `stale` |
+| `pws_activity_code != 'A'` | `stale` |
+| `pws_type_code in ('TNCWS','NTNCWS')` | `non_community` |
+| `pws_type_code == 'CWS'` | `cws_no_ccr` |
+| Unrecognized `pws_type_code` | `stale` (with diagnostic) |
+
+The fifth branch `cws_with_ccr` is reserved for WQA-3 — decided one layer up against the shared CCR cache that ships then. Phase 1 never produces it.
+
+**Two data sources, both public and unauthenticated.**
+
+- **EPA Community Water System Service Areas** — an ArcGIS FeatureServer at [`services.arcgis.com/cJ9YHowT8TU7DUyn/.../Water_System_Boundaries/FeatureServer/0`](https://www.epa.gov/ground-water-and-drinking-water/public-water-system-service-areas). Same Esri point-in-polygon idiom as the FEMA NFHL client (`geometry={lon},{lat}` in WGS84, `spatialRel=esriSpatialRelIntersects`); zero features means the address sits outside every CWS polygon — the private-well signal. Implementation in [`sources/cws-service-areas.ts`](../lib/habitat/modules/water-quality-awareness/sources/cws-service-areas.ts).
+- **EPA Envirofacts WATER_SYSTEM** — REST endpoint at `https://data.epa.gov/efservice/WATER_SYSTEM/PWSID/{pwsid}/JSON`. Returns a one-element JSON array with the system inventory record (utility name, admin contact, source water, population, owner type, source-water-protection status), or an empty array when EPA has no record. Implementation in [`sources/envirofacts.ts`](../lib/habitat/modules/water-quality-awareness/sources/envirofacts.ts).
+
+**Shared cache, keyed by PWSID.** `hearth.water_systems` (migration `20260526130000_create_water_systems_table.sql`) is the architectural foundation for the rest of the module — one row per utility, **shared across every house on that system**. When two neighbors on Kalamazoo PWS run the module, only the first triggers an Envirofacts call. The 90-day TTL is enforced in [`cache.ts`](../lib/habitat/modules/water-quality-awareness/cache.ts) rather than in SQL — same discipline as the Superfund per-state cache, single constant to tune later. `raw_payload jsonb not null` preserves the full Envirofacts response so future column additions can be backfilled from existing rows without re-fetching from EPA. RLS is globally readable to authenticated users and has no write policies — writes happen exclusively through the service-role workflow path.
+
+**Findings storage.** Per-house findings live on `hearth.habitat_findings` under `module_key='water_quality_awareness'`, same as every other habitat module — no per-module findings table. Issue #166 originally proposed a separate `hearth.water_system_findings` table; we decided against it during implementation to keep the habitat persistence pattern consistent. The persisted payload shape is in [`types.ts`](../lib/habitat/modules/water-quality-awareness/types.ts) (`WqaFindings`): `branch`, an optional `system_card` block (system name, PWSID, description, source type, compliance-status sentinel, latest-CCR sentinel, source-water-protection-since date), and a `branch_metadata` block carrying the admin contact and an optional `diagnostic_note` that surfaces in the activity log on stale/private-well rows.
+
+**Description copy is templated, not LLM-generated.** [`payload.ts`](../lib/habitat/modules/water-quality-awareness/payload.ts) builds the system-card description from inventory fields ("Groundwater system on file with EPA. Serves about 192,992 people across 41,411 service connections. EPA-recognized source water protection program since 2004."). LLM-rewritten descriptions are deferred to WQA-4 (the findings view rewrite) — a stable template reads better than a stale model output, and the cost asymmetry is the same one the radon module's `summary` makes.
+
+**UI surface in Phase 1 is the standard habitat tile + modal pattern.** No custom 3-stat grid, no dedicated SuggestedNext panel. The issue's mockups describe a rich "Your water system" card and a SuggestedNext "find your CCR" surface, but: (a) the SuggestedNext panel doesn't exist anywhere in the codebase yet — it's referenced in this guide as a future thing — and (b) two of the three stat-grid values would render as placeholders in Phase 1 ("Compliance: Not yet checked", "Latest CCR: Not yet uploaded") because the data sources that fill them ship in WQA-2 / WQA-3. The disciplined call was to skip the custom UI scaffolding until the stats actually carry information. The richer surface will land alongside WQA-4 once the payload has real data to show.
+
+**Cadence is `once`** in Phase 1 — we resolve a PWSID and persist the system record, and that doesn't need to re-run on a schedule until later phases add compliance and CCR data. WQA-2 will likely bump this to `yearly`.
+
+**The hero icon under `public/habitat_module_images/water_quality_awareness.jpg` is not yet committed** — the module deliberately omits `iconImage` until the asset lands. The compact tile and modal header both handle a missing icon gracefully (the tile drops the 72px hero column; the modal renders without the thumbnail).
 
 ### `HabitatModule.category`
 
