@@ -109,6 +109,8 @@ All four tables (houses, rooms, inventory, documents) use a shared `hearth.set_u
 
 `hearth.water_systems` (issue #166) is a per-utility shared cache keyed by `pwsid`, not tied to any single house — multiple houses on Kalamazoo PWS resolve to the same row. RLS is globally readable to authenticated users with no write policies (writes happen exclusively through the service-role workflow path). `raw_payload jsonb not null` preserves the full Envirofacts response so future column additions can be backfilled from existing rows. See "Water Quality Awareness module" under the Habitat surface section for the full pattern.
 
+`hearth.water_system_violations` and `hearth.water_system_lcr_samples` (issue #169) are the SDWIS sibling caches — per-(PWSID, violation_id) and per-(PWSID, sample_id) respectively, both FKing back to `water_systems(pwsid)`. The accompanying `hearth.water_system_data_fetches` table tracks per-(PWSID, dataset) freshness for both, decoupling "fetched and EPA returned zero rows" from "never fetched". All three tables share the same RLS pattern as `water_systems` — globally readable, service-role writes only — and the same app-code-enforced TTL discipline (currently 30 days vs. 90 days for inventory).
+
 ### Schema-qualification rules (load-bearing)
 
 - Every `CREATE TABLE`, `CREATE FUNCTION`, `CREATE INDEX`, `CREATE POLICY` in a migration **must** be schema-qualified: `hearth.houses`, not `houses`. Bare names default to `public` and would leak into the shared schema.
@@ -1487,9 +1489,9 @@ Three FEMA quirks the module handles explicitly. (1) `-9999` is FEMA's null sent
 
 The module uses the generic finding modal — no `getOverviewCards` or `renderDetail`. Single finding, single zone, no per-item drill-down. The action shelf carries two link chips on the happy path: a deep link to FEMA's Map Service Center pre-populated to the user's address via `?AddressQuery=...` (gives the user a way to see the actual polygon edge for their area), plus a link to FEMA's flood-zone definitions page.
 
-### Water Quality Awareness module (Phase 1)
+### Water Quality Awareness module
 
-The fourth habitat module ([`lib/habitat/modules/water-quality-awareness/`](../lib/habitat/modules/water-quality-awareness/)) and the foundation of the broader Water Quality Awareness initiative (epic issue #165). Phase 1 (issue #166) ships only the system-identity surface — the module resolves a house's coordinates to a Public Water System ID, persists the EPA WATER_SYSTEM inventory record, and decides which of five branches the house falls into. Compliance history (WQA-2), CCR upload + extraction (WQA-3), and the richer findings view (WQA-4) ship in later phases.
+The fourth habitat module ([`lib/habitat/modules/water-quality-awareness/`](../lib/habitat/modules/water-quality-awareness/)) and the foundation of the broader Water Quality Awareness initiative (epic issue #165). Phase 1 (issue #166) shipped the system-identity surface — the module resolves a house's coordinates to a Public Water System ID, persists the EPA WATER_SYSTEM inventory record, and decides which of five branches the house falls into. Phase 2 (issue #169) layers EPA SDWIS compliance + lead/copper sample data on top of the Phase 1 surface, populates `compliance_status_short` and a new `lead_copper_summary` block, and drives the finding's severity from real EPA data instead of always-neutral. CCR upload + extraction (WQA-3) and the richer findings view (WQA-4) ship in later phases.
 
 The module is **feature-flagged on `WQA_ENABLED === "true"`** at registry-import time in [`lib/habitat/registry.ts`](../lib/habitat/registry.ts). Defaults off in production. Set the env var in Vercel to dogfood. Once WQA graduates to default-on the conditional comes out.
 
@@ -1519,9 +1521,48 @@ The fifth branch `cws_with_ccr` is reserved for WQA-3 — decided one layer up a
 
 **UI surface in Phase 1 is the standard habitat tile + modal pattern.** No custom 3-stat grid, no dedicated SuggestedNext panel. The issue's mockups describe a rich "Your water system" card and a SuggestedNext "find your CCR" surface, but: (a) the SuggestedNext panel doesn't exist anywhere in the codebase yet — it's referenced in this guide as a future thing — and (b) two of the three stat-grid values would render as placeholders in Phase 1 ("Compliance: Not yet checked", "Latest CCR: Not yet uploaded") because the data sources that fill them ship in WQA-2 / WQA-3. The disciplined call was to skip the custom UI scaffolding until the stats actually carry information. The richer surface will land alongside WQA-4 once the payload has real data to show.
 
-**Cadence is `once`** in Phase 1 — we resolve a PWSID and persist the system record, and that doesn't need to re-run on a schedule until later phases add compliance and CCR data. WQA-2 will likely bump this to `yearly`.
+**Cadence is `yearly` (bumped from `once` in WQA-2).** SDWIS submissions are quarterly so the data does meaningfully change inside a year; the orchestrator's `cadenceToNextCheck` already handles `'yearly'`. The next-check cron isn't running today — `next_check_due_at` is recorded but the auto-rerun job is deferred — so practical refresh still happens when a user triggers a manual re-check.
 
 **The hero icon under `public/habitat_module_images/water_quality_awareness.jpg` is not yet committed** — the module deliberately omits `iconImage` until the asset lands. The compact tile and modal header both handle a missing icon gracefully (the tile drops the 72px hero column; the modal renders without the thumbnail).
+
+#### SDWIS compliance + LCR (Phase 2, issue #169)
+
+Phase 2 adds two new EPA Envirofacts pulls to the existing branch logic — on the `cws_no_ccr` and `non_community` branches only — and one new compute step that summarizes the results.
+
+**Data sources.** Both public, unauthenticated, same REST family as the Phase 1 WATER_SYSTEM pull.
+
+- **SDWIS VIOLATION** — `https://data.epa.gov/efservice/VIOLATION/PWSID/{pwsid}/JSON`. Every violation EPA has on file for the PWSID since 1993. An empty array is a meaningful positive signal. Client in [`sources/sdwis-violations.ts`](../lib/habitat/modules/water-quality-awareness/sources/sdwis-violations.ts).
+- **SDWIS LCR_SAMPLE_RESULT** — `https://data.epa.gov/efservice/LCR_SAMPLE_RESULT/PWSID/{pwsid}/JSON`. 90th-percentile system-rollup lead and copper samples per sampling period. Sparse by design — EPA's sampling schedule rotates systems through the pool. Empty array is common and meaningful ("no_samples_on_file"). Client in [`sources/sdwis-lcr-samples.ts`](../lib/habitat/modules/water-quality-awareness/sources/sdwis-lcr-samples.ts).
+
+**Two new shared caches, both PWSID-keyed.** Same architecture as the Phase 1 `water_systems` cache: service-role-only writes, globally readable to authenticated users, app-code-enforced 30-day TTL (vs. 90 days for inventory — violations and samples change more frequently). Three migrations land together in [`20260527120000_create_water_system_sdwis_tables.sql`](../supabase/migrations/20260527120000_create_water_system_sdwis_tables.sql):
+
+- **`hearth.water_system_violations`** — one row per (PWSID, violation_id). Parsed columns the summarizer reads + `raw_payload` for future widening. FKs to `water_systems(pwsid)`.
+- **`hearth.water_system_lcr_samples`** — one row per (PWSID, sample_id). Same shape, different fields. FKs to `water_systems(pwsid)`.
+- **`hearth.water_system_data_fetches`** — per-(PWSID, dataset) freshness bookkeeping. Held separately from the collection tables so the cache layer can decide hit/miss/expired without scanning the collection, and so the "EPA returned zero rows" case stays distinguishable from "never fetched". `dataset` is CHECK-constrained to `('violations', 'lcr_samples')`; WQA-3 may add `'ccr_extraction'` via an `alter table … drop constraint … add constraint`.
+
+**Cache wrappers under [`caches/`](../lib/habitat/modules/water-quality-awareness/caches/)**. Phase 2 reorganized the module's cache layer — the original flat `cache.ts` from WQA-1 moved to `caches/water-system-cache.ts`, joined by `caches/violations-cache.ts`, `caches/lcr-cache.ts`, and a small `caches/sdwis-shared.ts` carrying the freshness lookup/upsert helpers both SDWIS caches consume. The two SDWIS wrappers are intentionally parallel rather than abstracted into a generic "SDWIS table cache" — different conflict keys, different consumer shapes, different normalized fields. Two ~200-line files read cleaner than one parametric abstraction we'd have to re-read every time.
+
+**Summarization.** Two pure modules over the cached records:
+
+- [`compliance.ts`](../lib/habitat/modules/water-quality-awareness/compliance.ts) maps violations[] → `ComplianceStatusShort` (`unknown` / `no_active_violations` / `active_violations`) plus a `recent_violations` block covering the last 5 years (`COMPLIANCE_RECENT_YEARS`). "Active" means `rtc_date` is null OR in the future — EPA occasionally writes a future RTC date and treating those as still-active reads more honestly than declaring early resolution.
+- [`lcr.ts`](../lib/habitat/modules/water-quality-awareness/lcr.ts) maps samples[] → a discriminated `LeadCopperSummary` union (`no_samples_on_file` / `unavailable` / `available`). The `available` variant carries the most-recent sampling period's lead and copper 90th-percentile values, plus a count of historical periods. The federal action levels (lead = 0.015 mg/L, copper = 1.3 mg/L) and the 80% approaching-threshold ratio live as named constants for testability and severity input derivation.
+
+**Severity is now data-driven** (was always `'neutral'` in Phase 1). [`payload.ts`](../lib/habitat/modules/water-quality-awareness/payload.ts) → `deriveSeverity` returns:
+
+- `'concern'` when there's an active health-based violation OR an LCR measurement at/above the action level.
+- `'caution'` when there's an active non-health-based violation OR a measurement at 80%+ of the action level but below.
+- `'favorable'` only when compliance is clean AND at least one LCR measurement is below the action level. The conjunction is deliberate — celebrating a clean utility before LCR data is in would over-promise.
+- `'neutral'` otherwise (degraded compliance fetch, no LCR samples on file, or any case where we lack positive signal on both axes).
+
+**Soft-fail at every level.** Phase 2's load-bearing discipline. The two SDWIS fetches run in `Promise.allSettled` inside `index.ts`, and each failure mode handles cleanly:
+
+- Violations fetch fails → activity log records the failure step, `compliance_status_short` stays `'unknown'`, `recent_violations` is absent from the payload (lets the UI distinguish "we tried and found nothing recent" from "we couldn't tell").
+- LCR fetch fails → activity log records it, `lead_copper_summary.status = 'unavailable'`.
+- Both fail → both fields degrade independently. The finding still ships with the Phase 1 system-identity surface intact. The module never throws after the initial coordinate-validation guard.
+
+**Contaminant code lookup.** SDWIS rows carry numeric `contaminant_code` values ("5000" = Lead, "2950" = TTHM). There's no EPA endpoint that maps codes to names cleanly, so [`data/contaminant-codes.ts`](../lib/habitat/modules/water-quality-awareness/data/contaminant-codes.ts) ships a hand-maintained table covering the codes that show up in residential drinking-water violations and LCR samples (around 50 codes today, grouped into `inorganic` / `organic` / `dbp` / `microbial` / `radionuclide` / `pfas` / `other`). Unmapped codes render as `"Contaminant code {N}"` and the compute step's activity-log detail counts how many distinct unmapped codes appeared — a coverage diagnostic for filling the table over time.
+
+**Activity log arc on the CWS happy path grew from 4 to 7 steps:** PWSID resolve → WATER_SYSTEM fetch → branch decide → violations fetch → LCR fetch → compliance compute → finding. The two new fetches run in parallel but emit log steps in deterministic order (violations then LCR) for readability.
 
 ### `HabitatModule.category`
 

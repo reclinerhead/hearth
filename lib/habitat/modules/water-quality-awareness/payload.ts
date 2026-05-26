@@ -12,6 +12,11 @@
  */
 
 import type { HabitatSeverity } from "@/lib/habitat/types";
+import type { ComplianceSummary } from "./compliance";
+import {
+  computeLcrSeverityInputs,
+  type LeadCopperSummary,
+} from "./lcr";
 import type { EnvirofactsWaterSystemRecord } from "./sources/envirofacts";
 import type { WqaBranch, WqaFindings } from "./types";
 
@@ -221,13 +226,73 @@ export function buildStalePayload(diagnostic: string): WqaPayload {
 }
 
 /**
+ * SDWIS enrichment passed into buildSystemPayload alongside the EPA
+ * inventory record. Both fields are optional — when WQA-2's fetch
+ * paths soft-fail, the payload still renders, just with the
+ * compliance_status_short stuck at "unknown" and the LCR summary set
+ * to "unavailable".
+ */
+export type SdwisEnrichment = {
+  compliance: ComplianceSummary | null;
+  leadCopper: LeadCopperSummary;
+};
+
+/**
+ * Severity decision for a CWS / non-community finding. Pure function
+ * over the SDWIS enrichment so the decision is testable independently
+ * of the rest of the payload assembly.
+ *
+ *   favorable — no active violations AND at least one LCR
+ *               measurement below the action level AND nothing
+ *               above the action level. This is the "your utility
+ *               looks clean" case worth celebrating quietly.
+ *   concern   — at least one active health-based violation OR an LCR
+ *               90th-percentile above the federal action level.
+ *   caution   — at least one active non-health-based violation OR an
+ *               LCR measurement >=80% of the action level.
+ *   neutral   — everything else (compliance "unknown", LCR
+ *               "unavailable", or LCR "no_samples_on_file" without
+ *               a concerning compliance signal).
+ *
+ * Exported for the test suite.
+ */
+export function deriveSeverity(input: SdwisEnrichment): HabitatSeverity {
+  const compliance = input.compliance;
+  const lcrInputs = computeLcrSeverityInputs(input.leadCopper);
+
+  // concern wins immediately
+  if (compliance?.has_active_health_based) return "concern";
+  if (lcrInputs.lead_above_action || lcrInputs.copper_above_action) {
+    return "concern";
+  }
+  // caution next
+  if (compliance?.has_active_non_health_based) return "caution";
+  if (lcrInputs.any_approaching) return "caution";
+  // favorable only when we have positive signal on both axes
+  if (
+    compliance?.status === "no_active_violations" &&
+    lcrInputs.any_below_action
+  ) {
+    return "favorable";
+  }
+  return NEUTRAL;
+}
+
+/**
  * Build the WQA findings payload + copy for a successful CWS or
  * non-community resolution. The shared payload between the two
  * branches is the same shape; only the copy and branch label differ.
+ *
+ * `enrichment` is the WQA-2 SDWIS data — when null on both fields the
+ * payload still ships, just without compliance or LCR enrichment.
  */
 export function buildSystemPayload(
   branch: Extract<WqaBranch, "cws_no_ccr" | "non_community">,
   record: EnvirofactsWaterSystemRecord,
+  enrichment: SdwisEnrichment = {
+    compliance: null,
+    leadCopper: { status: "unavailable" },
+  },
 ): WqaPayload {
   const adminName = formatAdminName(record.admin_name ?? record.org_name);
   const systemName = displaySystemName(record);
@@ -238,7 +303,7 @@ export function buildSystemPayload(
       pwsid: record.pwsid,
       description: buildDescription(record),
       source_type: mapSourceType(record.gw_sw_code),
-      compliance_status_short: "unknown",
+      compliance_status_short: enrichment.compliance?.status ?? "unknown",
       latest_ccr_status: "not_uploaded",
       source_water_protection_since:
         record.source_water_protection_code === "Y" &&
@@ -256,10 +321,22 @@ export function buildSystemPayload(
         phone: record.phone_number ?? null,
       },
     },
+    lead_copper_summary: enrichment.leadCopper,
   };
+
+  // Surface the compact recent-violations block only when we
+  // actually have a compliance summary — degraded runs leave the
+  // field absent so the UI can distinguish "we tried and found
+  // nothing recent" from "we couldn't read it".
+  if (enrichment.compliance) {
+    findings.system_card!.recent_violations = enrichment.compliance.recent;
+  }
+
+  const severity = deriveSeverity(enrichment);
+
   if (branch === "non_community") {
     return {
-      severity: NEUTRAL,
+      severity,
       headline: `Your address is served by ${systemName}`,
       summary:
         `${systemName} is a non-community water system on file with EPA. ` +
@@ -271,13 +348,77 @@ export function buildSystemPayload(
     };
   }
   return {
-    severity: NEUTRAL,
+    severity,
     headline: `Your water comes from ${systemName}`,
-    summary:
-      `We found your water utility on file with EPA. We'll layer in compliance ` +
-      `history and your utility's annual Water Quality Report in the next ` +
-      `Hearth updates — once you have a Report, you'll be able to upload it ` +
-      `here for a personalized read.`,
+    summary: buildCwsSummary(systemName, enrichment),
     findings,
   };
+}
+
+/**
+ * Compose the summary line for a CWS finding from the enrichment.
+ * Stays short — one or two sentences — and degrades gracefully when
+ * either compliance or LCR data is unavailable.
+ *
+ * Exported for the test suite.
+ */
+export function buildCwsSummary(
+  systemName: string,
+  enrichment: SdwisEnrichment,
+): string {
+  const compliance = enrichment.compliance;
+  const lcr = enrichment.leadCopper;
+
+  const complianceClause = (() => {
+    if (!compliance) {
+      return `We're still working on reading EPA's compliance record for ${systemName}.`;
+    }
+    if (compliance.status === "active_violations") {
+      return `EPA shows at least one active health-based violation for ${systemName} right now.`;
+    }
+    if (compliance.recent.total_in_last_5_years === 0) {
+      return `EPA shows no violations for ${systemName} in the last five years.`;
+    }
+    return `EPA shows no active health-based violations for ${systemName}; everything reported in the last five years has been resolved.`;
+  })();
+
+  const lcrClause = (() => {
+    if (lcr.status === "available") {
+      const p = lcr.most_recent_sampling_period;
+      const lead = p.lead_90th_percentile;
+      const copper = p.copper_90th_percentile;
+      const summaryParts: string[] = [];
+      if (lead) {
+        if (lead.sign === "<") {
+          summaryParts.push("lead below detection");
+        } else if (lead.value >= 0.015) {
+          summaryParts.push(`lead at or above the federal action level (${lead.value} ${lead.unit.toLowerCase()})`);
+        } else {
+          summaryParts.push(`lead below the federal action level (${lead.value} ${lead.unit.toLowerCase()})`);
+        }
+      }
+      if (copper) {
+        if (copper.sign === "<") {
+          summaryParts.push("copper below detection");
+        } else if (copper.value >= 1.3) {
+          summaryParts.push(`copper at or above the federal action level (${copper.value} ${copper.unit.toLowerCase()})`);
+        } else {
+          summaryParts.push(`copper below the federal action level (${copper.value} ${copper.unit.toLowerCase()})`);
+        }
+      }
+      if (summaryParts.length === 0) return "";
+      return `Most recent lead-and-copper samples: ${summaryParts.join(" and ")}.`;
+    }
+    if (lcr.status === "no_samples_on_file") {
+      return `EPA doesn't have lead-and-copper sample results on file for this utility yet — sampling schedules rotate, so that's not unusual.`;
+    }
+    return "";
+  })();
+
+  const ccrClause =
+    `We'll layer in your utility's annual Water Quality Report next — once you have a recent copy, you'll be able to upload it here for a personalized read.`;
+
+  return [complianceClause, lcrClause, ccrClause]
+    .filter((p) => p.length > 0)
+    .join(" ");
 }

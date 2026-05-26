@@ -1,15 +1,83 @@
 import { describe, expect, it } from "vitest";
+import type { ComplianceSummary } from "./compliance";
+import type { LeadCopperSummary } from "./lcr";
 import {
+  buildCwsSummary,
   buildDescription,
   buildPrivateWellPayload,
   buildStalePayload,
   buildSystemPayload,
+  deriveSeverity,
   displaySystemName,
   formatAdminName,
   mapSourceType,
   titleCase,
+  type SdwisEnrichment,
 } from "./payload";
 import type { EnvirofactsWaterSystemRecord } from "./sources/envirofacts";
+
+function complianceClean(): ComplianceSummary {
+  return {
+    status: "no_active_violations",
+    has_active_health_based: false,
+    has_active_non_health_based: false,
+    recent: {
+      total_in_last_5_years: 0,
+      health_based_in_last_5_years: 0,
+      most_recent: null,
+    },
+  };
+}
+
+function complianceActiveHealth(): ComplianceSummary {
+  return {
+    status: "active_violations",
+    has_active_health_based: true,
+    has_active_non_health_based: false,
+    recent: {
+      total_in_last_5_years: 1,
+      health_based_in_last_5_years: 1,
+      most_recent: {
+        contaminant_name: "Lead",
+        contaminant_code: "5000",
+        violation_type: "MCL",
+        is_health_based: true,
+        first_reported_date: "2025-01-01T00:00:00Z",
+        returned_to_compliance_date: null,
+      },
+    },
+  };
+}
+
+const lcrAvailableBelow: LeadCopperSummary = {
+  status: "available",
+  sampling_period_count: 1,
+  most_recent_sampling_period: {
+    sampling_end_date: "2024-06-30T00:00:00Z",
+    lead_90th_percentile: { value: 0.003, unit: "MG/L", sign: "=" },
+    copper_90th_percentile: { value: 0.2, unit: "MG/L", sign: "=" },
+  },
+};
+
+const lcrAbove: LeadCopperSummary = {
+  status: "available",
+  sampling_period_count: 1,
+  most_recent_sampling_period: {
+    sampling_end_date: "2024-06-30T00:00:00Z",
+    lead_90th_percentile: { value: 0.018, unit: "MG/L", sign: "=" },
+    copper_90th_percentile: null,
+  },
+};
+
+const lcrApproaching: LeadCopperSummary = {
+  status: "available",
+  sampling_period_count: 1,
+  most_recent_sampling_period: {
+    sampling_end_date: "2024-06-30T00:00:00Z",
+    lead_90th_percentile: { value: 0.013, unit: "MG/L", sign: "=" },
+    copper_90th_percentile: null,
+  },
+};
 
 function kalamazoo(
   overrides: Partial<EnvirofactsWaterSystemRecord> = {},
@@ -145,6 +213,168 @@ describe("buildSystemPayload — non_community", () => {
     expect(p.findings.branch).toBe("non_community");
     expect(p.headline).toMatch(/served by/);
     expect(p.summary).toMatch(/non-community/i);
+  });
+});
+
+describe("deriveSeverity", () => {
+  it("returns concern when there's an active health-based violation", () => {
+    expect(
+      deriveSeverity({
+        compliance: complianceActiveHealth(),
+        leadCopper: lcrAvailableBelow,
+      }),
+    ).toBe("concern");
+  });
+
+  it("returns concern when LCR shows a value above the action level", () => {
+    expect(
+      deriveSeverity({
+        compliance: complianceClean(),
+        leadCopper: lcrAbove,
+      }),
+    ).toBe("concern");
+  });
+
+  it("returns caution when only a non-health-based violation is active", () => {
+    expect(
+      deriveSeverity({
+        compliance: {
+          ...complianceClean(),
+          has_active_non_health_based: true,
+        },
+        leadCopper: { status: "no_samples_on_file" },
+      }),
+    ).toBe("caution");
+  });
+
+  it("returns caution when an LCR measurement is approaching the action level", () => {
+    expect(
+      deriveSeverity({
+        compliance: complianceClean(),
+        leadCopper: lcrApproaching,
+      }),
+    ).toBe("caution");
+  });
+
+  it("returns favorable only when compliance is clean AND LCR is below action level", () => {
+    expect(
+      deriveSeverity({
+        compliance: complianceClean(),
+        leadCopper: lcrAvailableBelow,
+      }),
+    ).toBe("favorable");
+  });
+
+  it("returns neutral when LCR is unavailable / no_samples_on_file even with clean compliance", () => {
+    expect(
+      deriveSeverity({
+        compliance: complianceClean(),
+        leadCopper: { status: "no_samples_on_file" },
+      }),
+    ).toBe("neutral");
+    expect(
+      deriveSeverity({
+        compliance: complianceClean(),
+        leadCopper: { status: "unavailable" },
+      }),
+    ).toBe("neutral");
+  });
+
+  it("returns neutral when compliance is null (degraded run)", () => {
+    expect(
+      deriveSeverity({
+        compliance: null,
+        leadCopper: lcrAvailableBelow,
+      }),
+    ).toBe("neutral");
+  });
+});
+
+describe("buildSystemPayload — with SDWIS enrichment", () => {
+  it("surfaces compliance_status_short and recent_violations on the system_card when compliance is populated", () => {
+    const enrichment: SdwisEnrichment = {
+      compliance: complianceClean(),
+      leadCopper: lcrAvailableBelow,
+    };
+    const p = buildSystemPayload("cws_no_ccr", kalamazoo(), enrichment);
+    expect(p.findings.system_card?.compliance_status_short).toBe(
+      "no_active_violations",
+    );
+    expect(p.findings.system_card?.recent_violations).toBeDefined();
+    expect(p.findings.system_card?.recent_violations?.total_in_last_5_years).toBe(0);
+  });
+
+  it("attaches the lead_copper_summary onto the findings payload", () => {
+    const enrichment: SdwisEnrichment = {
+      compliance: complianceClean(),
+      leadCopper: lcrAvailableBelow,
+    };
+    const p = buildSystemPayload("cws_no_ccr", kalamazoo(), enrichment);
+    expect(p.findings.lead_copper_summary?.status).toBe("available");
+  });
+
+  it("leaves compliance_status_short as unknown when compliance is null (degraded)", () => {
+    const enrichment: SdwisEnrichment = {
+      compliance: null,
+      leadCopper: { status: "unavailable" },
+    };
+    const p = buildSystemPayload("cws_no_ccr", kalamazoo(), enrichment);
+    expect(p.findings.system_card?.compliance_status_short).toBe("unknown");
+    expect(p.findings.system_card?.recent_violations).toBeUndefined();
+    expect(p.findings.lead_copper_summary?.status).toBe("unavailable");
+  });
+
+  it("computes a favorable severity for clean compliance + below-action LCR", () => {
+    const enrichment: SdwisEnrichment = {
+      compliance: complianceClean(),
+      leadCopper: lcrAvailableBelow,
+    };
+    const p = buildSystemPayload("cws_no_ccr", kalamazoo(), enrichment);
+    expect(p.severity).toBe("favorable");
+  });
+
+  it("computes a concern severity when LCR shows above the action level", () => {
+    const enrichment: SdwisEnrichment = {
+      compliance: complianceClean(),
+      leadCopper: lcrAbove,
+    };
+    const p = buildSystemPayload("cws_no_ccr", kalamazoo(), enrichment);
+    expect(p.severity).toBe("concern");
+  });
+});
+
+describe("buildCwsSummary", () => {
+  it("mentions clean compliance and below-action LCR values when both are present", () => {
+    const summary = buildCwsSummary("Kalamazoo Public Water Supply", {
+      compliance: complianceClean(),
+      leadCopper: lcrAvailableBelow,
+    });
+    expect(summary).toMatch(/no violations/i);
+    expect(summary).toMatch(/lead below the federal action level/i);
+  });
+
+  it("mentions active health-based violation when compliance is dirty", () => {
+    const summary = buildCwsSummary("Kalamazoo Public Water Supply", {
+      compliance: complianceActiveHealth(),
+      leadCopper: { status: "no_samples_on_file" },
+    });
+    expect(summary).toMatch(/active health-based violation/i);
+  });
+
+  it("falls back to a still-working line when compliance is null", () => {
+    const summary = buildCwsSummary("Kalamazoo Public Water Supply", {
+      compliance: null,
+      leadCopper: { status: "unavailable" },
+    });
+    expect(summary).toMatch(/still working on reading EPA/i);
+  });
+
+  it("notes when EPA has no LCR samples on file", () => {
+    const summary = buildCwsSummary("Kalamazoo Public Water Supply", {
+      compliance: complianceClean(),
+      leadCopper: { status: "no_samples_on_file" },
+    });
+    expect(summary).toMatch(/doesn't have lead-and-copper sample results on file/i);
   });
 });
 

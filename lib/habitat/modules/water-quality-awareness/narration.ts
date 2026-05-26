@@ -25,6 +25,21 @@ export const HEARTH_BRANCH_SOURCE: ActivitySource = {
   url: "/how-it-works#water-quality-awareness",
 };
 
+export const EPA_SDWIS_VIOLATIONS_SOURCE: ActivitySource = {
+  label: "EPA SDWIS Violations (Envirofacts)",
+  url: "https://www.epa.gov/enviro/envirofacts-data-service-api",
+};
+
+export const EPA_SDWIS_LCR_SOURCE: ActivitySource = {
+  label: "EPA Lead and Copper Rule Sample Results",
+  url: "https://www.epa.gov/enviro/envirofacts-data-service-api",
+};
+
+export const HEARTH_COMPLIANCE_RULE_SOURCE: ActivitySource = {
+  label: "How Hearth reads your utility's compliance record",
+  url: "/how-it-works#water-quality-awareness",
+};
+
 export function pwsidFetchNarration(input: {
   lat: number;
   lng: number;
@@ -115,6 +130,128 @@ export function branchDecideNarration(input: {
         result_summary: "branch: cws_with_ccr",
       };
   }
+}
+
+/**
+ * Activity-log narration for the SDWIS violations fetch step. Same
+ * cache-hit / cache-miss / fetch-failed three-state shape as the
+ * Envirofacts fetch helper.
+ */
+export function violationsFetchNarration(input: {
+  pwsid: string;
+  outcome:
+    | { kind: "hit"; ageDays: number; rowCount: number }
+    | { kind: "miss"; reason: "no-row" | "expired" | "lookup-error"; rowCount: number; sourceUrl: string }
+    | { kind: "failed"; message: string };
+}): { narration: string; detail: string; result_summary: string } {
+  const o = input.outcome;
+  if (o.kind === "hit") {
+    const violationsClause =
+      o.rowCount === 0
+        ? "no violations on file"
+        : `${o.rowCount} violation${o.rowCount === 1 ? "" : "s"} on file`;
+    return {
+      narration: `I had your utility's compliance history on file from an earlier check (${o.ageDays}d old), so I reused it instead of re-asking EPA.`,
+      detail: `Cache hit on hearth.water_system_violations for ${input.pwsid}; ${violationsClause}; ttl=30d`,
+      result_summary: "cache: hit",
+    };
+  }
+  if (o.kind === "miss") {
+    const violationsClause =
+      o.rowCount === 0
+        ? "no violations on file"
+        : `${o.rowCount} violation${o.rowCount === 1 ? "" : "s"} fetched`;
+    return {
+      narration:
+        "I pulled your utility's violation history from EPA's compliance database.",
+      detail: `Cache miss (${o.reason}); GET ${o.sourceUrl}; ${violationsClause}`,
+      result_summary: "cache: miss",
+    };
+  }
+  return {
+    narration:
+      "I tried to pull your utility's violation history from EPA but the request didn't go through. Compliance status will show as 'unknown' for this run.",
+    detail: o.message,
+    result_summary: "fetch: failed",
+  };
+}
+
+/**
+ * Activity-log narration for the LCR samples fetch step.
+ */
+export function lcrFetchNarration(input: {
+  pwsid: string;
+  outcome:
+    | { kind: "hit"; ageDays: number; rowCount: number }
+    | { kind: "miss"; reason: "no-row" | "expired" | "lookup-error"; rowCount: number; sourceUrl: string }
+    | { kind: "failed"; message: string };
+}): { narration: string; detail: string; result_summary: string } {
+  const o = input.outcome;
+  if (o.kind === "hit") {
+    const samplesClause =
+      o.rowCount === 0
+        ? "no samples on file"
+        : `${o.rowCount} sample row${o.rowCount === 1 ? "" : "s"} on file`;
+    return {
+      narration: `I had your utility's lead and copper samples on file from an earlier check (${o.ageDays}d old), so I reused them instead of re-asking EPA.`,
+      detail: `Cache hit on hearth.water_system_lcr_samples for ${input.pwsid}; ${samplesClause}; ttl=30d`,
+      result_summary: "cache: hit",
+    };
+  }
+  if (o.kind === "miss") {
+    if (o.rowCount === 0) {
+      return {
+        narration:
+          "I checked EPA for your utility's most recent lead and copper sample results. Your utility doesn't have any on file yet — that's not unusual on a rotating sampling schedule.",
+        detail: `Cache miss (${o.reason}); GET ${o.sourceUrl}; 0 samples returned`,
+        result_summary: "cache: miss",
+      };
+    }
+    return {
+      narration:
+        "I checked the most recent lead and copper samples your utility submitted to EPA.",
+      detail: `Cache miss (${o.reason}); GET ${o.sourceUrl}; ${o.rowCount} sample row${o.rowCount === 1 ? "" : "s"} fetched`,
+      result_summary: "cache: miss",
+    };
+  }
+  return {
+    narration:
+      "I tried to pull your utility's lead and copper sample results from EPA but the request didn't go through. Lead and copper data will be unavailable for this run.",
+    detail: o.message,
+    result_summary: "fetch: failed",
+  };
+}
+
+/**
+ * Activity-log narration for the compliance summarization compute step.
+ */
+export function complianceComputeNarration(input: {
+  status: "unknown" | "no_active_violations" | "active_violations";
+  recentTotal: number;
+  recentHealth: number;
+  recentYears: number;
+  unmappedContaminantCount: number;
+}): { narration: string; detail: string; result_summary: string } {
+  if (input.status === "unknown") {
+    return {
+      narration:
+        "I couldn't read your utility's compliance status this run, so I'm leaving it as 'unknown' and we'll try again next time.",
+      detail: "compliance summary skipped (violations fetch failed)",
+      result_summary: "status: unknown",
+    };
+  }
+  if (input.status === "active_violations") {
+    return {
+      narration: `I looked across your utility's violation history. There's at least one active health-based violation right now${input.recentTotal > 0 ? ` and ${input.recentTotal} total violation${input.recentTotal === 1 ? "" : "s"} in the last ${input.recentYears} years` : ""}.`,
+      detail: `health_based_active>0; recent_window=${input.recentYears}y; total_recent=${input.recentTotal}; health_recent=${input.recentHealth}; unmapped_contaminants=${input.unmappedContaminantCount}`,
+      result_summary: "status: active_violations",
+    };
+  }
+  return {
+    narration: `I looked across your utility's violation history. No active health-based violations right now${input.recentTotal === 0 ? `, and nothing in the last ${input.recentYears} years.` : `, though there were ${input.recentTotal} reported in the last ${input.recentYears} years that have since been resolved.`}`,
+    detail: `health_based_active=0; recent_window=${input.recentYears}y; total_recent=${input.recentTotal}; health_recent=${input.recentHealth}; unmapped_contaminants=${input.unmappedContaminantCount}`,
+    result_summary: "status: no_active_violations",
+  };
 }
 
 export function findingStepNarration(headline: string): {

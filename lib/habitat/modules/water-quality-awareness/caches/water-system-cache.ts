@@ -20,7 +20,7 @@ import {
   fetchWaterSystem,
   type EnvirofactsWaterSystemRecord,
   type FetchWaterSystemOptions,
-} from "./sources/envirofacts";
+} from "../sources/envirofacts";
 
 /**
  * Days a cached water_systems row stays valid before the module
