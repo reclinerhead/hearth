@@ -19,6 +19,7 @@ import {
   type SdwisLcrSampleRecord,
 } from "../sources/sdwis-lcr-samples";
 import {
+  dedupeByKey,
   lookupFreshness,
   supabaseEnvAvailable,
   upsertFreshness,
@@ -144,12 +145,17 @@ export function createSupabaseLcrCacheStore(): LcrCacheStore {
         });
         if (input.records.length === 0) return;
         const rawRows = Array.isArray(input.rawPayload) ? input.rawPayload : [];
-        const rows = input.records.map((record, i) =>
-          buildLcrSampleRow({
+        // Dedupe by the upsert conflict key — same defensive move as
+        // the violations cache. See dedupeByKey in sdwis-shared.ts.
+        const deduped = dedupeByKey(
+          input.records.map((record, i) => ({
             record,
             rawRow: rawRows[i] ?? record,
-            sourceUrl: input.sourceUrl,
-          }),
+          })),
+          ({ record }) => `${record.pwsid}|${record.sample_id}`,
+        );
+        const rows = deduped.map(({ record, rawRow }) =>
+          buildLcrSampleRow({ record, rawRow, sourceUrl: input.sourceUrl }),
         );
         const { error } = await supabase
           .from("water_system_lcr_samples")

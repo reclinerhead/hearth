@@ -148,6 +148,31 @@ export async function lookupFreshness(
 }
 
 /**
+ * Dedupe an array by a string key extracted from each item, preserving
+ * the last occurrence of each key. EPA's SDWIS endpoints occasionally
+ * return multiple rows for the same `(pwsid, violation_id)` or
+ * `(pwsid, sample_id)` — amended records, multi-period entries, etc.
+ * A batched Postgres UPSERT that contains a duplicate conflict key
+ * fails with "ON CONFLICT DO UPDATE command cannot affect row a
+ * second time", so we dedupe in app code before sending.
+ *
+ * Last-write-wins is fine: the duplicate rows share their conflict
+ * key, so the data they'd upsert to is largely the same anyway.
+ *
+ * Exported for the test suite.
+ */
+export function dedupeByKey<T>(
+  items: T[],
+  keyOf: (item: T) => string,
+): T[] {
+  const map = new Map<string, T>();
+  for (const item of items) {
+    map.set(keyOf(item), item);
+  }
+  return Array.from(map.values());
+}
+
+/**
  * Upsert a fetch-bookkeeping row in water_system_data_fetches. Always
  * runs alongside a collection-table upsert (or alongside the
  * "EPA returned zero rows" no-op) so the cache layer can distinguish

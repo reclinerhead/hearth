@@ -23,6 +23,7 @@ import {
   type SdwisViolationRecord,
 } from "../sources/sdwis-violations";
 import {
+  dedupeByKey,
   lookupFreshness,
   supabaseEnvAvailable,
   upsertFreshness,
@@ -190,12 +191,21 @@ export function createSupabaseViolationsCacheStore(): ViolationsCacheStore {
         // record's worth of data, which is what consumers expect when
         // reading via rowToViolation.
         const rawRows = Array.isArray(input.rawPayload) ? input.rawPayload : [];
-        const rows = input.records.map((record, i) =>
-          buildViolationsRow({
+        // Dedupe by the upsert conflict key before sending to
+        // Postgres. EPA's VIOLATION endpoint sometimes returns
+        // multiple rows with the same (pwsid, violation_id) — an
+        // amended violation, a multi-period record surfaced more than
+        // once, etc. See `dedupeByKey` in sdwis-shared.ts for the
+        // full rationale.
+        const deduped = dedupeByKey(
+          input.records.map((record, i) => ({
             record,
             rawRow: rawRows[i] ?? record,
-            sourceUrl: input.sourceUrl,
-          }),
+          })),
+          ({ record }) => `${record.pwsid}|${record.violation_id}`,
+        );
+        const rows = deduped.map(({ record, rawRow }) =>
+          buildViolationsRow({ record, rawRow, sourceUrl: input.sourceUrl }),
         );
         const { error } = await supabase
           .from("water_system_violations")
