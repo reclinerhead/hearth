@@ -291,6 +291,50 @@ describe("deriveSeverity", () => {
   });
 });
 
+describe("buildSystemPayload — pwsid_confidence axis", () => {
+  it("defaults pwsid_confidence to 'verified' when the argument is omitted (back-compat)", () => {
+    const p = buildSystemPayload("cws_no_ccr", kalamazoo());
+    expect(p.findings.system_card?.pwsid_confidence).toBe("verified");
+  });
+
+  it("writes pwsid_confidence='verified' when explicitly passed", () => {
+    const p = buildSystemPayload(
+      "cws_no_ccr",
+      kalamazoo(),
+      { compliance: null, leadCopper: { status: "unavailable" } },
+      "verified",
+    );
+    expect(p.findings.system_card?.pwsid_confidence).toBe("verified");
+  });
+
+  it("writes pwsid_confidence='inferred' when the fallback resolved the PWSID", () => {
+    const p = buildSystemPayload(
+      "cws_no_ccr",
+      kalamazoo(),
+      { compliance: null, leadCopper: { status: "unavailable" } },
+      "inferred",
+    );
+    expect(p.findings.system_card?.pwsid_confidence).toBe("inferred");
+  });
+
+  it("writes pwsid_confidence on non_community branches too", () => {
+    const p = buildSystemPayload(
+      "non_community",
+      kalamazoo({ pws_type_code: "TNCWS" }),
+      undefined,
+      "inferred",
+    );
+    expect(p.findings.system_card?.pwsid_confidence).toBe("inferred");
+  });
+});
+
+describe("buildCwsUnmappedPayload — no pwsid_confidence", () => {
+  it("does not write pwsid_confidence (no PWSID to be confident about)", () => {
+    const p = buildCwsUnmappedPayload("test");
+    expect(p.findings.system_card).toBeUndefined();
+  });
+});
+
 describe("buildSystemPayload — with SDWIS enrichment", () => {
   it("surfaces compliance_status_short and recent_violations on the system_card when compliance is populated", () => {
     const enrichment: SdwisEnrichment = {

@@ -4,13 +4,37 @@
  * Lives on hearth.habitat_findings.findings (JSONB) under
  * module_key='water_quality_awareness'. Phase 1 (WQA-1) shipped the
  * Tier 1 surface (system identity + branch metadata). Phase 2 (WQA-2)
- * adds compliance status enrichment + the lead_copper_summary block.
- * WQA-3 will populate latest-CCR metadata. Optional fields exist in
- * the type so later phases don't require a payload version bump.
+ * adds compliance status enrichment + the lead_copper_summary block,
+ * plus the PWSID-resolution-confidence axis for the nearest-polygon
+ * fallback. WQA-3 will populate latest-CCR metadata. Optional fields
+ * exist in the type so later phases don't require a payload version
+ * bump.
  */
 
 import type { LeadCopperSummary } from "./lcr";
 import type { RecentViolationsSummary } from "./compliance";
+
+/**
+ * How confidently the module identified the user's water utility.
+ * Travels alongside the branch decision through `check()` and lands
+ * on the persisted payload as `system_card.pwsid_confidence`.
+ *
+ *   verified — EPA's point-in-polygon query returned a match at the
+ *              user's exact coordinates. The PWSID is authoritative.
+ *   inferred — The direct query came up empty, but the nearest-polygon
+ *              fallback (~500m radius) found a single utility nearby.
+ *              SDWIS data fetches run against this PWSID with the
+ *              confidence flag carried alongside; future UI can render
+ *              an "is this right?" affordance.
+ *   unmapped — Neither the direct query nor the fallback resolved a
+ *              PWSID with confidence. Either zero polygons within the
+ *              radius or multiple competing utilities. No PWSID is
+ *              available for downstream SDWIS / CCR work.
+ */
+export type PwsidResolution =
+  | { confidence: "verified"; pwsid: string; pwsName: string | null }
+  | { confidence: "inferred"; pwsid: string; pwsName: string | null }
+  | { confidence: "unmapped" };
 
 /**
  * Which of the six branches the module's check() landed in. The UI
@@ -70,6 +94,16 @@ export type WqaFindings = {
       | "unknown"
       | "no_active_violations"
       | "active_violations";
+    /**
+     * How confidently the module resolved the PWSID for this finding.
+     * Present on cws_no_ccr / non_community / cws_with_ccr branches;
+     * absent on cws_unmapped, private_well, and stale (where no PWSID
+     * is available). Back-compat for payloads persisted before the
+     * nearest-polygon fallback shipped: a missing value should be
+     * treated as "verified" (the only behavior that existed pre-#169
+     * follow-up).
+     */
+    pwsid_confidence?: "verified" | "inferred";
     /**
      * Compact summary of compliance history over the last 5 years.
      * Populated by WQA-2 when the violations fetch succeeded; absent

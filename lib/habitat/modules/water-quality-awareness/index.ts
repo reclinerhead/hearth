@@ -90,13 +90,20 @@ import {
   HEARTH_BRANCH_SOURCE,
   HEARTH_COMPLIANCE_RULE_SOURCE,
   lcrFetchNarration,
+  nearestPwsidFetchNarration,
   pwsidFetchNarration,
   trustedWaterSourceNarration,
   violationsFetchNarration,
 } from "./narration";
 import type { SdwisViolationRecord } from "./sources/sdwis-violations";
 import type { SdwisLcrSampleRecord } from "./sources/sdwis-lcr-samples";
-import { resolvePwsidAtPoint } from "./sources/cws-service-areas";
+import {
+  NEAREST_POLYGON_FALLBACK_RADIUS_M,
+  resolveNearestPwsid,
+  resolvePwsidAtPoint,
+  type NearestPwsidResult,
+} from "./sources/cws-service-areas";
+import type { PwsidResolution, WqaBranch } from "./types";
 
 const MODULE_KEY = "water_quality_awareness";
 
@@ -212,13 +219,15 @@ const WaterQualityAwarenessModule: HabitatModule = {
       );
     }
 
-    // Step 1 — resolve the PWSID via CWS Service Areas.
-    const pwsid = await resolvePwsidAtPoint(lat, lng);
+    // Step 1 — direct point-in-polygon lookup.
+    const directMatch = await resolvePwsidAtPoint(lat, lng);
     const fetch1 = pwsidFetchNarration({
       lat,
       lng,
-      resolved: pwsid.match !== null,
-      totalFeatures: pwsid.totalFeatures,
+      resolved: directMatch.match !== null,
+      totalFeatures: directMatch.totalFeatures,
+      // Fallback always runs on a direct miss (post-WQA-2-followup).
+      willRunFallback: directMatch.match === null,
     });
     log.step({
       kind: "fetch",
@@ -228,18 +237,59 @@ const WaterQualityAwarenessModule: HabitatModule = {
       source: EPA_CWS_SERVICE_AREAS_SOURCE,
     });
 
-    // Step 2 — if the PWSID resolved, fetch the WATER_SYSTEM record.
+    // Step 1b — when the direct lookup missed, run the nearest-polygon
+    // fallback (~500m buffer). EPA's national polygon coverage has
+    // documented gaps (rural fringes, recent annexations, and pockets
+    // inside major cities — 604 Norton Dr in Kalamazoo is the
+    // canonical regression case). The fallback recovers the correct
+    // PWSID when every nearby polygon belongs to the same utility.
+    let resolution: PwsidResolution;
+    let nearbyOutcome: NearestPwsidResult | null = null;
+    if (directMatch.match) {
+      resolution = {
+        confidence: "verified",
+        pwsid: directMatch.match.pwsid,
+        pwsName: directMatch.match.pwsName,
+      };
+    } else {
+      nearbyOutcome = await resolveNearestPwsid(lat, lng);
+      const fallbackStep = nearestPwsidFetchNarration({
+        radiusMeters: NEAREST_POLYGON_FALLBACK_RADIUS_M,
+        outcome: nearbyOutcome,
+      });
+      log.step({
+        kind: "fetch",
+        narration: fallbackStep.narration,
+        detail: fallbackStep.detail,
+        result_summary: fallbackStep.result_summary,
+        source: EPA_CWS_SERVICE_AREAS_SOURCE,
+      });
+      if (nearbyOutcome.kind === "single-nearby") {
+        resolution = {
+          confidence: "inferred",
+          pwsid: nearbyOutcome.pwsid,
+          pwsName: nearbyOutcome.pwsName,
+        };
+      } else {
+        resolution = { confidence: "unmapped" };
+      }
+    }
+
+    // Step 2 — when we have a PWSID (verified OR inferred), fetch the
+    // WATER_SYSTEM inventory record. Inferred PWSIDs are treated as
+    // authoritative for data fetching; the confidence distinction
+    // surfaces only in payload + activity log.
     let record = null as Awaited<ReturnType<typeof resolveWaterSystem>>["record"];
-    if (pwsid.match) {
+    if (resolution.confidence !== "unmapped") {
       const store = createSupabaseWaterSystemCacheStore();
-      const resolved = await resolveWaterSystem(pwsid.match.pwsid, store);
+      const resolved = await resolveWaterSystem(resolution.pwsid, store);
       record = resolved.record;
       const fetch2 = envirofactsFetchNarration({
-        pwsid: pwsid.match.pwsid,
+        pwsid: resolution.pwsid,
         cacheKind: resolved.cache.kind,
         cacheDetail:
           resolved.cache.kind === "hit"
-            ? `Cache hit on hearth.water_systems for ${pwsid.match.pwsid}, refreshed_at=${resolved.cache.refreshedAt.toISOString()}, age=${resolved.cache.ageDays}d, ttl=${CACHE_TTL_DAYS}d`
+            ? `Cache hit on hearth.water_systems for ${resolution.pwsid}, refreshed_at=${resolved.cache.refreshedAt.toISOString()}, age=${resolved.cache.ageDays}d, ttl=${CACHE_TTL_DAYS}d`
             : `Cache ${resolved.cache.reason === "no-row" ? "miss (no row)" : resolved.cache.reason === "expired" ? "miss (expired, refetched + cache updated)" : "miss (lookup error, refetched)"}; GET ${resolved.sourceUrl}`,
         ageDays:
           resolved.cache.kind === "hit" ? resolved.cache.ageDays : undefined,
@@ -253,12 +303,32 @@ const WaterQualityAwarenessModule: HabitatModule = {
       });
     }
 
-    // Step 3 — branch decision.
-    const decision = decideBranch({
-      waterSource: house.waterSource,
-      pwsidResolved: pwsid.match !== null,
-      record,
-    });
+    // Step 3 — branch decision. The competing-utilities-nearby case is
+    // special-cased here rather than in branch.ts: a user with
+    // waterSource=null who has multiple utilities within 500m is
+    // almost certainly on city water (we just can't pick which one),
+    // and the default branch.ts logic would route them to private_well
+    // — wrong answer. Route to cws_unmapped instead so the user sees
+    // the right framing.
+    let decision: { branch: WqaBranch; diagnostic?: string };
+    if (
+      resolution.confidence === "unmapped" &&
+      nearbyOutcome?.kind === "multiple-competing"
+    ) {
+      const list = nearbyOutcome.candidates
+        .map((c) => c.pwsid)
+        .join(", ");
+      decision = {
+        branch: "cws_unmapped",
+        diagnostic: `EPA's national map didn't directly match your address. Multiple utilities (${list}) have polygons within ${NEAREST_POLYGON_FALLBACK_RADIUS_M}m, so we can't pick one with confidence.`,
+      };
+    } else {
+      decision = decideBranch({
+        waterSource: house.waterSource,
+        pwsidResolved: resolution.confidence !== "unmapped",
+        record,
+      });
+    }
     const decideStep = branchDecideNarration({
       branch: decision.branch,
       diagnostic: decision.diagnostic,
@@ -282,15 +352,16 @@ const WaterQualityAwarenessModule: HabitatModule = {
         decision.branch === "non_community" ||
         decision.branch === "cws_with_ccr");
 
-    if (shouldFetchSdwis && pwsid.match) {
+    if (shouldFetchSdwis && resolution.confidence !== "unmapped") {
+      const resolutionPwsid = resolution.pwsid;
       const violationsStore = createSupabaseViolationsCacheStore();
       const lcrStore = createSupabaseLcrCacheStore();
 
       // Run both fetches in parallel. Using Promise.allSettled so a
       // failure on either doesn't short-circuit the other.
       const [violationsOutcome, lcrOutcome] = await Promise.allSettled([
-        resolveViolations(pwsid.match.pwsid, violationsStore),
-        resolveLcrSamples(pwsid.match.pwsid, lcrStore),
+        resolveViolations(resolutionPwsid, violationsStore),
+        resolveLcrSamples(resolutionPwsid, lcrStore),
       ]);
 
       // Violations fetch step
@@ -301,7 +372,7 @@ const WaterQualityAwarenessModule: HabitatModule = {
         const violationsRowCount = violations.length;
         const violationsSourceUrl = violationsOutcome.value.sourceUrl;
         const narr = violationsFetchNarration({
-          pwsid: pwsid.match.pwsid,
+          pwsid: resolutionPwsid,
           outcome:
             cache.kind === "hit"
               ? {
@@ -329,7 +400,7 @@ const WaterQualityAwarenessModule: HabitatModule = {
             ? violationsOutcome.reason.message
             : String(violationsOutcome.reason);
         const narr = violationsFetchNarration({
-          pwsid: pwsid.match.pwsid,
+          pwsid: resolutionPwsid,
           outcome: { kind: "failed", message },
         });
         log.step({
@@ -349,7 +420,7 @@ const WaterQualityAwarenessModule: HabitatModule = {
         lcrOutcomeAvailable = true;
         const cache: LcrCacheLookupResult = lcrOutcome.value.cache;
         const narr = lcrFetchNarration({
-          pwsid: pwsid.match.pwsid,
+          pwsid: resolutionPwsid,
           outcome:
             cache.kind === "hit"
               ? {
@@ -378,7 +449,7 @@ const WaterQualityAwarenessModule: HabitatModule = {
             ? lcrOutcome.reason.message
             : String(lcrOutcome.reason);
         const narr = lcrFetchNarration({
-          pwsid: pwsid.match.pwsid,
+          pwsid: resolutionPwsid,
           outcome: { kind: "failed", message },
         });
         log.step({
@@ -451,7 +522,14 @@ const WaterQualityAwarenessModule: HabitatModule = {
       // builder's type stays narrow.
       const safeBranch =
         decision.branch === "cws_with_ccr" ? "cws_no_ccr" : decision.branch;
-      return buildSystemPayload(safeBranch, record, enrichment);
+      // When we reach the buildSystemPayload path the resolution
+      // confidence is always "verified" or "inferred" — "unmapped"
+      // routes to cws_unmapped via the branches above. TypeScript
+      // can't narrow that across the IIFE boundary, so we read off
+      // the live resolution object directly.
+      const confidence =
+        resolution.confidence === "unmapped" ? "verified" : resolution.confidence;
+      return buildSystemPayload(safeBranch, record, enrichment, confidence);
     })();
 
     // Final step — finding.

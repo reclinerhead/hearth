@@ -344,6 +344,12 @@ export function deriveSeverity(input: SdwisEnrichment): HabitatSeverity {
  *
  * `enrichment` is the WQA-2 SDWIS data — when null on both fields the
  * payload still ships, just without compliance or LCR enrichment.
+ *
+ * `pwsidConfidence` carries the WQA-2 followup nearest-polygon fallback's
+ * verdict: "verified" when EPA's point-in-polygon query matched the
+ * user's exact coordinates, "inferred" when the 500m fallback found a
+ * single dominant utility nearby. Defaults to "verified" for back-
+ * compat with payload-build call sites that don't pass it.
  */
 export function buildSystemPayload(
   branch: Extract<WqaBranch, "cws_no_ccr" | "non_community">,
@@ -352,6 +358,7 @@ export function buildSystemPayload(
     compliance: null,
     leadCopper: { status: "unavailable" },
   },
+  pwsidConfidence: "verified" | "inferred" = "verified",
 ): WqaPayload {
   const adminName = formatAdminName(record.admin_name ?? record.org_name);
   const systemName = displaySystemName(record);
@@ -363,6 +370,7 @@ export function buildSystemPayload(
       description: buildDescription(record),
       source_type: mapSourceType(record.gw_sw_code),
       compliance_status_short: enrichment.compliance?.status ?? "unknown",
+      pwsid_confidence: pwsidConfidence,
       latest_ccr_status: "not_uploaded",
       source_water_protection_since:
         record.source_water_protection_code === "Y" &&

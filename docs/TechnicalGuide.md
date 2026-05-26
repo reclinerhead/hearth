@@ -1497,20 +1497,22 @@ The module is **feature-flagged on `NEXT_PUBLIC_WQA_ENABLED === "true"`** at reg
 
 **Branch logic** is the heart of the module. The onboarding-captured `house.water_source` is the **primary signal** — not EPA's map. EPA's national CWS service-area layer covers roughly six of every seven U.S. addresses; the gap is mostly rural fringes, recent annexations, and edge cases like township parcels served by a city utility but mapped just outside the city polygon. When the user has explicitly told Hearth they're on city water during onboarding, treating "no polygon match" as "private well" is the wrong answer.
 
-[`branch.ts`](../lib/habitat/modules/water-quality-awareness/branch.ts) routes on `(waterSource, pwsidResolved, record)`:
+[`branch.ts`](../lib/habitat/modules/water-quality-awareness/branch.ts) routes on `(waterSource, pwsidResolved, record)`, with "polygon" meaning either the direct point-in-polygon match OR the nearest-polygon fallback (see "Nearest-polygon fallback" below):
 
-| `water_source` | EPA polygon | Envirofacts record | Branch |
+| `water_source` | EPA polygon (direct OR fallback) | Envirofacts record | Branch |
 |---|---|---|---|
 | `well` | (skipped) | (skipped) | `private_well` (user-declared) |
 | `shared` | (skipped) | (skipped) | `private_well` (user-declared) |
-| `municipal` | no match | — | `cws_unmapped` |
-| `municipal` | match | active CWS | `cws_no_ccr` |
-| `municipal` | match | active TNCWS/NTNCWS | `non_community` |
-| `municipal` | match | inactive / missing / weird type | `stale` |
-| `unknown` / `null` | no match | — | `private_well` (EPA-inferred) |
-| `unknown` / `null` | match | active CWS | `cws_no_ccr` |
-| `unknown` / `null` | match | active TNCWS/NTNCWS | `non_community` |
-| `unknown` / `null` | match | inactive / missing / weird type | `stale` |
+| `municipal` | no match (both lookups), no nearby utilities | — | `cws_unmapped` |
+| `municipal` | no match (both lookups), multiple competing utilities nearby | — | `cws_unmapped` |
+| `municipal` | match (verified OR inferred) | active CWS | `cws_no_ccr` |
+| `municipal` | match (verified OR inferred) | active TNCWS/NTNCWS | `non_community` |
+| `municipal` | match (verified OR inferred) | inactive / missing / weird type | `stale` |
+| `unknown` / `null` | no match (both lookups), no nearby utilities | — | `private_well` (EPA-inferred) |
+| `unknown` / `null` | no match (both lookups), multiple competing utilities nearby | — | `cws_unmapped` (override) |
+| `unknown` / `null` | match (verified OR inferred) | active CWS | `cws_no_ccr` |
+| `unknown` / `null` | match (verified OR inferred) | active TNCWS/NTNCWS | `non_community` |
+| `unknown` / `null` | match (verified OR inferred) | inactive / missing / weird type | `stale` |
 
 The 'well' and 'shared' short-circuit lives in `check()` itself, not in `branch.ts` — when the user has already told us the answer, we skip the EPA polygon lookup entirely and emit a 3-step activity log. The `shouldSkipEpaLookups` helper in `branch.ts` exists so the module's check() and any future caller (a future polling job, say) agree on the criterion.
 
@@ -1519,6 +1521,26 @@ The `cws_unmapped` branch is the disciplined answer to a real EPA coverage gap: 
 The `cws_with_ccr` branch is reserved for WQA-3 — decided one layer up against the shared CCR cache that ships then. Today nothing produces it from `branch.ts`.
 
 The `private_well` branch carries a source distinction internally — `user-declared` (we believe the onboarding answer) renders confident copy ("Your home is on a private water system"), while `epa-inferred` (we filled in the gap when `water_source` was unknown/null) renders probabilistic copy ("You're likely on a private well"). Both write the same `branch: 'private_well'` payload so downstream UI doesn't need to care.
+
+#### Nearest-polygon fallback (WQA-2 follow-up)
+
+EPA's national CWS Service Areas layer has documented coverage gaps — established residential addresses well inside city limits can sit in holes the layer's digitization missed. The canonical regression case is 604 Norton Dr in Kalamazoo, MI: the exact coords (`42.26496, -85.57231`) return zero features from EPA's point-in-polygon query, but points 250–550 m in any direction return MI0003520 (Kalamazoo PWS) as expected. The MI0003520 polygon's actual edge clips just short of the parcel.
+
+The fallback recovers the correct PWSID in most coverage-gap cases without user action. When [`resolvePwsidAtPoint`](../lib/habitat/modules/water-quality-awareness/sources/cws-service-areas.ts) returns zero features, [`check()`](../lib/habitat/modules/water-quality-awareness/index.ts) runs a second ArcGIS query against a 500 m buffer at the same point via [`resolveNearestPwsid`](../lib/habitat/modules/water-quality-awareness/sources/cws-service-areas.ts). The 500 m radius (`NEAREST_POLYGON_FALLBACK_RADIUS_M`) is tuned to recover 604 Norton's case (~250 m to the nearest in-polygon point) without expanding into adjacent utilities' territory.
+
+Three outcomes:
+
+| Fallback outcome | Resolution | Branch impact |
+|---|---|---|
+| `single-nearby` (every polygon within 500 m shares one PWSID) | `confidence: "inferred"` — treated as authoritative for SDWIS / CCR fetches | Routes to `cws_no_ccr` / `non_community` / `stale` like a verified PWSID |
+| `multiple-competing` (polygons from multiple PWSIDs nearby) | `confidence: "unmapped"` | Routes to `cws_unmapped` regardless of `water_source` — multiple utilities within 500 m is a strong city-water signal even when the user didn't declare it |
+| `no-match` (zero polygons within 500 m) | `confidence: "unmapped"` | Falls through to standard `branch.ts` routing — `private_well` for unknown/null water_source, `cws_unmapped` for declared municipal |
+
+The fallback ONLY runs on direct miss. When the direct query matches, the second ArcGIS call is skipped entirely — saves an unnecessary round trip on the happy path. Same fetch + timeout + throw-on-transient-error discipline as the direct query; the fallback's own failures propagate to the orchestrator's `failed`-finding path.
+
+**The `pwsid_confidence` axis on the payload** is separate from the branch axis. The `system_card.pwsid_confidence` field carries `"verified"` (direct match) or `"inferred"` (fallback match) on `cws_no_ccr` / `non_community` / `cws_with_ccr` branches; it's absent on `cws_unmapped` / `private_well` / `stale` (no PWSID to be confident about). Back-compat: a missing value should be read as `"verified"` — the only behavior that existed before the fallback shipped. The intended UI use case is a "we think you're served by X — confirm or correct" affordance on inferred matches, scheduled for WQA-4's findings-view rewrite.
+
+**The activity log gains one step** on direct-miss runs — a separate `fetch` step narrating the fallback outcome ("Every public water utility within 500 meters of your address is the same one — Kalamazoo PWS. I'm going with that, with medium confidence.") between the direct lookup and the branch decision. The direct-miss copy in step 1 also changes to "let me try a wider search" rather than declaring the verdict; the verdict comes in step 2.
 
 **Two data sources, both public and unauthenticated.**
 

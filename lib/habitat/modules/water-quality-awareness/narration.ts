@@ -45,9 +45,25 @@ export function pwsidFetchNarration(input: {
   lng: number;
   resolved: boolean;
   totalFeatures: number;
+  /**
+   * When the direct lookup misses and the module is about to run the
+   * nearest-polygon fallback (which is always, post-WQA-2-followup),
+   * the no-match narration changes to set up the next step rather
+   * than declaring the verdict. Defaults to true so callers that
+   * don't pass it get the modern flow.
+   */
+  willRunFallback?: boolean;
 }): { narration: string; detail: string; result_summary: string } {
-  const { lat, lng, resolved, totalFeatures } = input;
+  const { lat, lng, resolved, totalFeatures, willRunFallback = true } = input;
   if (!resolved) {
+    if (willRunFallback) {
+      return {
+        narration:
+          "I checked your exact coordinates against EPA's national map of public water system service areas and didn't find a match — let me try a wider search.",
+        detail: `lat=${lat}, lng=${lng}; CWS Service Areas returned 0 features`,
+        result_summary: "no direct match",
+      };
+    }
     return {
       narration:
         "I looked up your address against EPA's national map of public water system service areas and didn't find a match — that's the usual signal for a private well.",
@@ -63,6 +79,45 @@ export function pwsidFetchNarration(input: {
     narration: `I looked up your address against EPA's national map of public water system service areas and found the utility that serves you${overlap}.`,
     detail: `lat=${lat}, lng=${lng}; CWS Service Areas returned ${totalFeatures} feature${totalFeatures === 1 ? "" : "s"}`,
     result_summary: "PWSID resolved",
+  };
+}
+
+/**
+ * Activity-log narration for the nearest-polygon fallback step. Only
+ * runs after the direct point-in-polygon query came up empty.
+ */
+export function nearestPwsidFetchNarration(input: {
+  radiusMeters: number;
+  outcome:
+    | { kind: "single-nearby"; pwsid: string; pwsName: string | null; candidateCount: number }
+    | { kind: "multiple-competing"; candidates: Array<{ pwsid: string; pwsName: string | null; count: number }> }
+    | { kind: "no-match" };
+}): { narration: string; detail: string; result_summary: string } {
+  const { radiusMeters, outcome } = input;
+  if (outcome.kind === "single-nearby") {
+    const displayName = outcome.pwsName
+      ? `${outcome.pwsName} (${outcome.pwsid})`
+      : outcome.pwsid;
+    return {
+      narration: `Every public water utility within ${radiusMeters} meters of your address is the same one — ${displayName}. I'm going with that, with medium confidence.`,
+      detail: `radius=${radiusMeters}m; candidate polygons=${outcome.candidateCount}; resolved=${outcome.pwsid}`,
+      result_summary: "inferred match",
+    };
+  }
+  if (outcome.kind === "multiple-competing") {
+    const list = outcome.candidates
+      .map((c) => `${c.pwsid}${c.pwsName ? ` (${c.pwsName})` : ""} ×${c.count}`)
+      .join(", ");
+    return {
+      narration: `I found multiple public water utilities near your address but couldn't pick one with confidence. You'll be able to upload your utility's annual Water Quality Report manually once that phase ships.`,
+      detail: `radius=${radiusMeters}m; competing candidates: ${list}`,
+      result_summary: "competing candidates",
+    };
+  }
+  return {
+    narration: `No public water utilities within ${radiusMeters} meters of your address either — this is most likely a private well.`,
+    detail: `radius=${radiusMeters}m; 0 candidate polygons`,
+    result_summary: "no nearby utilities",
   };
 }
 
