@@ -176,9 +176,9 @@ function EmptySection({ hint }: { hint: string }) {
  * type icon at size 56 — keeps the card structurally consistent so the
  * grid never has one tile that suddenly looks like a row.
  *
- * Hover / focus deliberately stays subtle (1px accent ring, 1px lift,
- * 2px focus outline). The photo is the focal point; chrome shouldn't
- * fight it.
+ * Hover / focus deliberately stays subtle (1px accent ring on hover,
+ * 2px accent outline on focus-visible). The photo doesn't move on
+ * hover — only the chrome around it changes.
  */
 function InventoryTile({ item }: { item: InventoryItem }) {
   const fallbackIcon =
@@ -192,7 +192,7 @@ function InventoryTile({ item }: { item: InventoryItem }) {
     <Link
       href={`/inventory/${item.id}`}
       aria-label={item.name}
-      className="group relative block overflow-hidden transition-transform duration-150 hover:-translate-y-px hover:shadow-[0_0_0_1px_var(--color-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+      className="group relative block overflow-hidden transition-shadow duration-150 hover:shadow-[0_0_0_1px_var(--color-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
       style={{
         aspectRatio: "4 / 3",
         borderRadius: "var(--radius-lg)",
