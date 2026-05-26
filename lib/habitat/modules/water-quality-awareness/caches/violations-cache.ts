@@ -154,6 +154,18 @@ export function createSupabaseViolationsCacheStore(): ViolationsCacheStore {
         const records = (data ?? []).map((row) =>
           rowToViolation(row as Record<string, unknown>),
         );
+        // Defensive: the freshness row and the collection table can
+        // desync — see the matching block in lcr-cache.ts for the
+        // full rationale. When freshness says "we have rows" but the
+        // collection is empty, treat as expired so the next fetch
+        // refreshes both.
+        if (freshness.rowCount > 0 && records.length === 0) {
+          console.warn(
+            "[violations-cache] desync detected: freshness row reports " +
+              `${freshness.rowCount} rows but collection has 0 — treating as expired`,
+          );
+          return { kind: "miss", reason: "expired" };
+        }
         return {
           kind: "hit",
           records,

@@ -115,6 +115,20 @@ export function createSupabaseLcrCacheStore(): LcrCacheStore {
         const records = (data ?? []).map((row) =>
           rowToLcrSample(row as Record<string, unknown>),
         );
+        // Defensive: the freshness row and the collection table can
+        // desync. The collection is keyed under the parent water_systems
+        // FK and CASCADE-deletes; a manual clear of the collection
+        // during testing leaves the freshness row untouched; future
+        // partial-delete cleanups could also drift the two. When
+        // freshness says "we have rows" but the collection has none,
+        // treat as expired so the next fetch refreshes both.
+        if (freshness.rowCount > 0 && records.length === 0) {
+          console.warn(
+            "[lcr-cache] desync detected: freshness row reports " +
+              `${freshness.rowCount} rows but collection has 0 — treating as expired`,
+          );
+          return { kind: "miss", reason: "expired" };
+        }
         return {
           kind: "hit",
           records,
