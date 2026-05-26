@@ -139,9 +139,9 @@ export default async function InventoryPage() {
             {sectionItems.length === 0 ? (
               <EmptySection hint={section.emptyHint} />
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
                 {sectionItems.map((item) => (
-                  <InventoryListRow key={item.id} item={item} />
+                  <InventoryTile key={item.id} item={item} />
                 ))}
               </div>
             )}
@@ -163,88 +163,120 @@ function EmptySection({ hint }: { hint: string }) {
   );
 }
 
-function InventoryListRow({ item }: { item: InventoryItem }) {
+/**
+ * Inventory list tile. Photo fills the 4:3 surface; a bottom scrim
+ * carries the room eyebrow, item name, and manufacturer-model sub-line
+ * in white-on-darkened-photo. Modeled on the dashboard Emergency panel's
+ * PrimaryTile (issue #174) — the user's photos are the most distinctive
+ * thing on the page, so they get the full canvas instead of sitting in
+ * a thumbnail slot next to a directory-style row of text.
+ *
+ * Items without an attached photo fall back to the same radial-gradient
+ * wash `PlaceholderImage` uses in `components/ui.tsx`, plus a centered
+ * type icon at size 56 — keeps the card structurally consistent so the
+ * grid never has one tile that suddenly looks like a row.
+ *
+ * Hover / focus deliberately stays subtle (1px accent ring, 1px lift,
+ * 2px focus outline). The photo is the focal point; chrome shouldn't
+ * fight it.
+ */
+function InventoryTile({ item }: { item: InventoryItem }) {
   const fallbackIcon =
     item.subtype && SUBTYPE_FALLBACK_ICON[item.subtype]
       ? SUBTYPE_FALLBACK_ICON[item.subtype]
       : TYPE_FALLBACK_ICON[item.type];
   const detailLine = buildDetailLine(item);
+  const hasPhoto = item.thumbnailPath !== null;
 
-  // The dashboard's InventoryRow uses a 48×48 thumbnail in a half-width
-  // column. The list page has the full content column, so the desktop
-  // hero earns more space — a 192×192 thumb lets the user actually
-  // read a vehicle badge or a nameplate from a glance at the list.
-  // Mobile keeps its 80×80 size deliberately; the small-viewport tile
-  // is two-up at most so an oversized image would crowd the text.
-  //
-  // The 600px thumbnail asset stored at hearth.documents.thumbnail_path
-  // is what backs <InventoryThumbnail>, so even at 192px display we're
-  // well above 2x DPR — no need to bump to the 1920px storage_path here.
-  //
-  // Future: once the maintenance-log table lands, "Last serviced" / "Next
-  // due" will slot into a second tertiary line below `detailLine`. The
-  // fields exist on `hearth.inventory` today (`last_serviced_on`,
-  // `next_service_due_on`) but aren't populated by any flow, so they'd
-  // currently render as "Unknown" everywhere — wired up when there's
-  // real data to display.
   return (
     <Link
       href={`/inventory/${item.id}`}
-      className="group flex items-center gap-4 rounded-[var(--radius-md)] p-3 sm:p-4 transition-colors"
+      aria-label={item.name}
+      className="group relative block overflow-hidden transition-transform duration-150 hover:-translate-y-px hover:shadow-[0_0_0_1px_var(--color-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
       style={{
-        backgroundColor: "var(--color-bg-surface)",
+        aspectRatio: "4 / 3",
+        borderRadius: "var(--radius-lg)",
         border: "1px solid var(--color-border-subtle)",
+        backgroundColor: "var(--color-bg-surface-raised)",
       }}
     >
-      <span
-        className="flex h-20 w-20 sm:h-48 sm:w-48 shrink-0 items-center justify-center rounded-md overflow-hidden"
-        style={{
-          backgroundColor: "var(--color-bg-surface-raised)",
-          color: "var(--color-text-secondary)",
-        }}
-      >
-        <InventoryThumbnail
-          thumbnailPath={item.thumbnailPath}
-          fallbackIcon={fallbackIcon}
-        />
-      </span>
-
-      <div className="min-w-0 flex-1">
+      {hasPhoto ? (
         <div
-          className="truncate"
-          style={{
-            fontSize: 16,
-            fontWeight: 500,
-            color: "var(--color-text-primary)",
-            lineHeight: 1.3,
-          }}
-        >
-          {item.name}
-        </div>
-        <div
-          className="text-small truncate"
+          className="absolute inset-0 flex items-center justify-center"
           style={{ color: "var(--color-text-tertiary)" }}
         >
+          <InventoryThumbnail
+            thumbnailPath={item.thumbnailPath}
+            fallbackIcon={fallbackIcon}
+          />
+        </div>
+      ) : (
+        <TileFallbackArtwork icon={fallbackIcon} />
+      )}
+
+      <div
+        aria-hidden
+        className="absolute inset-x-0 bottom-0 h-1/2"
+        style={{
+          // Slightly stronger top stop than the emergency tile's `78%`
+          // because inventory carries a sub-line in addition to the
+          // title — that small text needs the extra contrast to stay
+          // readable on bright photos (white appliances, beige siding).
+          background:
+            "linear-gradient(to top, color-mix(in oklab, #000 82%, transparent), color-mix(in oklab, #000 20%, transparent) 60%, transparent)",
+        }}
+      />
+
+      <div className="absolute inset-x-0 bottom-0 px-4 pb-3 pt-6">
+        <div
+          style={{
+            color: "color-mix(in oklab, #fff 78%, transparent)",
+            letterSpacing: 0.5,
+            textTransform: "uppercase",
+            fontSize: 11,
+          }}
+        >
           {item.roomName}
+        </div>
+        <div
+          className="truncate"
+          style={{ color: "#fff", fontSize: 18, fontWeight: 500 }}
+        >
+          {item.name}
         </div>
         {detailLine ? (
           <div
             className="text-small truncate"
-            style={{ color: "var(--color-text-secondary)", marginTop: 2 }}
+            style={{
+              color: "color-mix(in oklab, #fff 65%, transparent)",
+              marginTop: 2,
+            }}
           >
             {detailLine}
           </div>
         ) : null}
       </div>
-
-      <span
-        aria-hidden
-        style={{ color: "var(--color-text-tertiary)" }}
-        className="opacity-0 group-hover:opacity-100 transition-opacity"
-      >
-        <Icon name="chevron-right" size={16} />
-      </span>
     </Link>
+  );
+}
+
+function TileFallbackArtwork({ icon }: { icon: IconName }) {
+  return (
+    <>
+      <div
+        aria-hidden
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(circle at 30% 25%, color-mix(in oklab, var(--color-accent) 14%, transparent), transparent 55%), radial-gradient(circle at 70% 75%, color-mix(in oklab, var(--color-info) 10%, transparent), transparent 60%)",
+        }}
+      />
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span style={{ color: "var(--color-text-tertiary)" }}>
+          <Icon name={icon} size={56} />
+        </span>
+      </div>
+    </>
   );
 }
 
