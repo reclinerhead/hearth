@@ -22,6 +22,19 @@ export type DocumentStatus =
   | "attached"
   | "failed";
 
+// Emergency-video category (issue #139). Backed by a CHECK on
+// hearth.documents.emergency_category. Populated only for rows where
+// kind = 'emergency_procedure_video'; null on every other kind.
+export type EmergencyCategory = "water" | "gas" | "electrical" | "other";
+
+// Storage bucket the row's binary content lives in. Forward-looking
+// so a future bucket migration changes this column rather than every
+// row's storage_path. Defaults to 'hearth-documents' for non-video
+// rows; emergency-video rows always write 'hearth-emergency-videos'.
+export type DocumentStorageBucket =
+  | "hearth-documents"
+  | "hearth-emergency-videos";
+
 export type DocumentRow = {
   id: string;
   house_id: string;
@@ -44,6 +57,19 @@ export type DocumentRow = {
   analyzed_at: string | null;
 
   notes: string | null;
+
+  // Emergency-video columns (issue #139). Null on every kind except
+  // 'emergency_procedure_video'. See the migration's CHECK constraints
+  // for the cross-column rules:
+  //   - emergency_category is non-null iff kind = 'emergency_procedure_video'
+  //   - emergency_is_primary is false on every non-emergency row
+  //   - storage_bucket = 'hearth-emergency-videos' iff kind = 'emergency_procedure_video'
+  duration_seconds: number | null;
+  emergency_category: EmergencyCategory | null;
+  emergency_label: string | null;
+  emergency_is_primary: boolean;
+  poster_storage_path: string | null;
+  storage_bucket: DocumentStorageBucket;
 
   created_at: string;
   updated_at: string;

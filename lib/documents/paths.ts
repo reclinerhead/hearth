@@ -8,9 +8,14 @@
  */
 
 export const HEARTH_DOCUMENTS_BUCKET = "hearth-documents";
+export const HEARTH_EMERGENCY_VIDEOS_BUCKET = "hearth-emergency-videos";
 
 export const OPTIMIZED_FILENAME = "optimized.jpg";
 export const THUMBNAIL_FILENAME = "thumb.jpg";
+
+export const EMERGENCY_VIDEO_WEBM_FILENAME = "video.webm";
+export const EMERGENCY_VIDEO_MP4_FILENAME = "video.mp4";
+export const EMERGENCY_VIDEO_POSTER_FILENAME = "poster.jpg";
 
 type DocumentPathArgs = {
   houseId: string;
@@ -93,4 +98,37 @@ export function pageThumbnailObjectPath(args: PagePathArgs): string {
   assertPathArgs(args);
   assertPageNumber(args.pageNumber);
   return `${args.houseId}/${args.documentId}/page-${args.pageNumber}-thumb.jpg`;
+}
+
+type EmergencyVideoPathArgs = DocumentPathArgs & {
+  container: "webm" | "mp4";
+};
+
+/**
+ * Full object path for an emergency procedure video in the
+ * `hearth-emergency-videos` bucket. Container is webm on Chrome /
+ * Firefox / Edge, mp4 on Safari — picked by the compression
+ * pipeline based on MediaRecorder.isTypeSupported.
+ *
+ *   emergencyVideoObjectPath({ houseId, documentId, container: 'webm' })
+ *   → "{houseId}/{documentId}/video.webm"
+ */
+export function emergencyVideoObjectPath(args: EmergencyVideoPathArgs): string {
+  assertPathArgs(args);
+  const filename =
+    args.container === "webm"
+      ? EMERGENCY_VIDEO_WEBM_FILENAME
+      : EMERGENCY_VIDEO_MP4_FILENAME;
+  return `${args.houseId}/${args.documentId}/${filename}`;
+}
+
+/**
+ * Full object path for an emergency video's poster-frame JPEG.
+ *
+ *   emergencyVideoPosterObjectPath({ houseId, documentId })
+ *   → "{houseId}/{documentId}/poster.jpg"
+ */
+export function emergencyVideoPosterObjectPath(args: DocumentPathArgs): string {
+  assertPathArgs(args);
+  return `${args.houseId}/${args.documentId}/${EMERGENCY_VIDEO_POSTER_FILENAME}`;
 }
