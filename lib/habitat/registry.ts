@@ -24,10 +24,15 @@ import WaterQualityAwareness from "./modules/water-quality-awareness";
  * module_key value the module writes to hearth.habitat_findings.
  *
  * Feature-flagged modules (Water Quality Awareness, issue #166) are
- * appended conditionally on a `process.env.WQA_ENABLED === "true"`
- * check. The env var is evaluated at module-import time, so toggling
- * it requires a Vercel deploy — fine for the dogfooding phase. Once
- * WQA graduates to a default-on module, drop the conditional and
+ * appended conditionally on a `process.env.NEXT_PUBLIC_WQA_ENABLED === "true"`
+ * check. The `NEXT_PUBLIC_` prefix is load-bearing: this registry is
+ * imported by both the server-side workflow and the client-side
+ * discovery modal / dashboard tile. Without the prefix Next.js doesn't
+ * inline the value into the client bundle, so the workflow would write
+ * a finding while the client filtered the matching tile out as
+ * "unknown module". The env var is evaluated at module-import time;
+ * toggling it requires a Vercel deploy — fine for the dogfooding phase.
+ * Once WQA graduates to a default-on module, drop the conditional and
  * inline the import alongside the rest.
  */
 const baseModules: HabitatModule[] = [
@@ -36,7 +41,7 @@ const baseModules: HabitatModule[] = [
   EpaSuperfundProximity,
 ];
 
-if (process.env.WQA_ENABLED === "true") {
+if (process.env.NEXT_PUBLIC_WQA_ENABLED === "true") {
   baseModules.push(WaterQualityAwareness);
 }
 

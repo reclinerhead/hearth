@@ -19,7 +19,7 @@
  * facing entry point.
  *
  * Feature flag: the module is exported as the default export but only
- * registered in lib/habitat/registry.ts when `WQA_ENABLED === "true"`.
+ * registered in lib/habitat/registry.ts when `NEXT_PUBLIC_WQA_ENABLED === "true"`.
  *
  * Activity-log narration arc on the happy CWS / non-community path:
  *
