@@ -175,7 +175,7 @@ function PopulatedCategoryCell({
         <button
           type="button"
           onClick={() => onOpenVideo(primary.id)}
-          className="flex items-center justify-between gap-2 rounded-[var(--radius-md)] px-3 py-2 text-left text-small"
+          className="flex w-full items-center justify-between gap-2 rounded-[var(--radius-md)] px-3 py-2 text-left text-small"
           style={{
             border: "1px solid var(--color-border-subtle)",
             color: "var(--color-text-secondary)",
@@ -210,7 +210,7 @@ function AddAnotherAffordance({
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-3 text-left transition-colors"
+      className="flex w-full items-center gap-3 rounded-[var(--radius-md)] px-3 py-3 text-left transition-colors"
       style={{
         border: "1px dashed var(--color-border-emphasis)",
         backgroundColor: "var(--color-bg-surface)",
@@ -283,7 +283,12 @@ function PrimaryTile({
     <button
       type="button"
       onClick={onClick}
-      className="group relative overflow-hidden text-left transition-transform"
+      // `block w-full` is required so the button stretches to fill its
+      // flex/grid parent. Without it, `<button>` defaults to
+      // `display: inline-block` and the aspect-ratio + min-height combo
+      // computes an intrinsic size that overflows the viewport on iOS
+      // Safari. Same pattern as the inventory list tile.
+      className="group relative block w-full overflow-hidden text-left transition-transform"
       style={{
         aspectRatio: "16 / 10",
         borderRadius: "var(--radius-lg)",
