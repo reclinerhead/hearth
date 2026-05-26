@@ -74,31 +74,6 @@ export function DesktopSidebar() {
           })}
         </ul>
       </nav>
-
-      <div className="mt-auto">
-        <div
-          className="surface p-3"
-          style={{
-            backgroundColor: "var(--color-bg-surface-ai)",
-            borderColor:
-              "color-mix(in oklab, var(--color-accent) 22%, var(--color-border-subtle))",
-          }}
-        >
-          <div className="flex items-center gap-2 mb-1">
-            <span style={{ color: "var(--color-accent)" }}>
-              <Icon name="sparkles" size={14} />
-            </span>
-            <span className="eyebrow">Day One Briefing</span>
-          </div>
-          <p
-            className="text-small"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            We&apos;ll surface what we know about your house as soon as
-            you&apos;ve added a few details.
-          </p>
-        </div>
-      </div>
     </aside>
   );
 }
