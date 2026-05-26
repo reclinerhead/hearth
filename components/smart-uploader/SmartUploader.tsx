@@ -10,11 +10,18 @@ import type {
   DocumentRow,
   NameplateExtraction,
 } from "@/types/document";
+import type { EmergencyCategory } from "@/types/document";
 import { useDocumentUpload } from "./hooks/use-document-upload";
+import { useEmergencyVideoUpload } from "./hooks/use-emergency-video-upload";
 import { useReceiptUpload } from "./hooks/use-receipt-upload";
 import { AnalysisFailedStage } from "./stages/AnalysisFailedStage";
 import { CaptureStage } from "./stages/CaptureStage";
 import { DuplicateStage } from "./stages/DuplicateStage";
+import { EmergencyCaptureStage } from "./stages/EmergencyCaptureStage";
+import { EmergencyCategoryStage } from "./stages/EmergencyCategoryStage";
+import { EmergencyCompressStage } from "./stages/EmergencyCompressStage";
+import { EmergencyLabelStage } from "./stages/EmergencyLabelStage";
+import { EmergencyReviewStage } from "./stages/EmergencyReviewStage";
 import { MultiPageCaptureStage } from "./stages/MultiPageCaptureStage";
 import { NotUsefulStage } from "./stages/NotUsefulStage";
 import { PathPickerStage } from "./stages/PathPickerStage";
@@ -81,6 +88,23 @@ export type SmartUploaderProps = {
    * pattern the host page wants.
    */
   onSaved?: (result: { inventoryId: string }) => void;
+  /**
+   * Pre-routes into the emergency-procedure-video flow. Two shapes:
+   *
+   *   - `"category-picker"` — skip the path-picker and land on the
+   *     four-icon category-picker stage. Used by the dashboard's
+   *     combined "Add another emergency video" affordance.
+   *   - `{ category: <one of four> }` — skip both the path-picker
+   *     and the category-picker; land on the label stage with the
+   *     category pinned. Reserved for future per-category prompts
+   *     (e.g. a SuggestedNext "you should add a Gas video" card).
+   *
+   * Ignored when targetInventoryId is set (emergency videos are
+   * house-scoped only).
+   */
+  initialEmergencyEntry?:
+    | "category-picker"
+    | { category: EmergencyCategory };
 };
 
 type Stage =
@@ -90,6 +114,11 @@ type Stage =
   | { name: "receipt-processing" }
   | { name: "receipt-review" }
   | { name: "receipt-failed"; message: string }
+  | { name: "emergency-category" }
+  | { name: "emergency-label" }
+  | { name: "emergency-capture" }
+  | { name: "emergency-compress" }
+  | { name: "emergency-review" }
   | { name: "processing" }
   | { name: "duplicate"; existingDocument: DocumentRow }
   | {
@@ -112,7 +141,18 @@ export function SmartUploader(props: SmartUploaderProps) {
     targetInventoryName,
     targetKind,
     onSaved,
+    initialEmergencyEntry,
   } = props;
+
+  // Narrow the polymorphic entry prop once; both initial-state and
+  // open-effect read these flags below.
+  const emergencyOpensOnPicker = initialEmergencyEntry === "category-picker";
+  const emergencyPreselectedCategory =
+    initialEmergencyEntry &&
+    typeof initialEmergencyEntry === "object" &&
+    "category" in initialEmergencyEntry
+      ? initialEmergencyEntry.category
+      : null;
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -120,13 +160,19 @@ export function SmartUploader(props: SmartUploaderProps) {
   // Target-mode opens straight on the matching capture stage — the
   // user has already implicitly picked the path by clicking "Add
   // photo" or "Add document" on a known inventory item. Discovery
-  // mode (top-nav + Add) still lands on the path-picker so the user
-  // picks photo / receipt / future entries explicitly.
+  // mode (top-nav + Add) lands on the path-picker so the user picks
+  // photo / receipt / future entries explicitly. Emergency entries
+  // bypass the path-picker — either to the category-picker stage
+  // (no pre-selection) or to the label stage (category pinned).
   const initialStage: Stage = targetInventoryId
     ? targetKind === "receipt"
       ? { name: "receipt-capture" }
       : { name: "capture", path: "photo", file: null, previewUrl: null }
-    : { name: "path-picker" };
+    : emergencyPreselectedCategory
+      ? { name: "emergency-label" }
+      : emergencyOpensOnPicker
+        ? { name: "emergency-category" }
+        : { name: "path-picker" };
   const [stage, setStage] = useState<Stage>(initialStage);
   const [rooms, setRooms] = useState<SeededRoomOption[] | null>(null);
   // Drag-to-dismiss: tracks the live downward translation of the sheet
@@ -146,6 +192,16 @@ export function SmartUploader(props: SmartUploaderProps) {
     finalize: finalizeReceipt,
     reset: resetReceipt,
   } = useReceiptUpload({ houseId, targetInventoryId });
+
+  const {
+    state: emergencyState,
+    setCategory: setEmergencyCategory,
+    setLabel: setEmergencyLabel,
+    startCompression: startEmergencyCompression,
+    resetForRetake: resetEmergencyForRetake,
+    save: saveEmergency,
+    reset: resetEmergency,
+  } = useEmergencyVideoUpload({ houseId });
 
   // Latest-ref pattern for parent-supplied callbacks. The target-mode
   // success effect below transitions on `uploadState.phase` and would
@@ -175,18 +231,40 @@ export function SmartUploader(props: SmartUploaderProps) {
   // on capture, discovery opens on the path-picker.
   useEffect(() => {
     if (open) {
+      resetUpload();
+      resetReceipt();
+      resetEmergency();
+      if (emergencyPreselectedCategory && !targetInventoryId) {
+        // Seed the emergency hook with the chosen category so the
+        // label stage shows the right icon and the save flow knows
+        // which category it's writing into. Reset above cleared it;
+        // re-seed in the same paint.
+        setEmergencyCategory(emergencyPreselectedCategory);
+      }
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStage(
         targetInventoryId
           ? targetKind === "receipt"
             ? { name: "receipt-capture" }
             : { name: "capture", path: "photo", file: null, previewUrl: null }
-          : { name: "path-picker" },
+          : emergencyPreselectedCategory
+            ? { name: "emergency-label" }
+            : emergencyOpensOnPicker
+              ? { name: "emergency-category" }
+              : { name: "path-picker" },
       );
-      resetUpload();
-      resetReceipt();
     }
-  }, [open, resetUpload, resetReceipt, targetInventoryId, targetKind]);
+  }, [
+    open,
+    resetUpload,
+    resetReceipt,
+    resetEmergency,
+    setEmergencyCategory,
+    targetInventoryId,
+    targetKind,
+    emergencyPreselectedCategory,
+    emergencyOpensOnPicker,
+  ]);
 
   // Fetch rooms once per open. Server-side via the browser client is
   // fine here — RLS scopes the read to houses the user owns, and the
@@ -311,6 +389,42 @@ export function SmartUploader(props: SmartUploaderProps) {
     };
   }, [stage, uploadState.documentId, receiptState.documentId]);
 
+  // Mirror the emergency hook's phases into the user-facing stage
+  // state. The hook owns the pipeline (compress / save); this
+  // component owns the user-visible stage tag. State transitions:
+  //   compressing  → stay on emergency-compress
+  //   compressed   → advance to emergency-review
+  //   done         → success + auto-dismiss
+  //   error        → render on the stage that triggered it (compress
+  //                  errors stay on emergency-compress; save errors
+  //                  stay on emergency-review).
+  useEffect(() => {
+    if (emergencyState.phase === "compressed") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStage({ name: "emergency-review" });
+      return;
+    }
+    if (emergencyState.phase === "done" && emergencyState.saved) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStage({ name: "success" });
+      const timer = setTimeout(
+        () => onOpenChangeRef.current(false),
+        SUCCESS_DISMISS_MS,
+      );
+      // No onSaved callback — emergency videos aren't attached to an
+      // inventory item, so the dashboard refresh runs through the
+      // server action's revalidatePath('/dashboard') call. Calling
+      // onSaved here would require fabricating an inventoryId, which
+      // would be a lie. The dashboard's server component re-renders
+      // on revalidate; that's the signal the parent already listens
+      // for on a no-target-mode save.
+      return () => clearTimeout(timer);
+    }
+    // No transition on 'compressing' / 'saving' / 'idle' / 'error' —
+    // those are surfaced inline on the current stage so the user
+    // doesn't lose the stage context they're already looking at.
+  }, [emergencyState.phase, emergencyState.saved]);
+
   // Mirror the receipt hook's phases into the user-facing stage state,
   // same pattern as the photo hook above. The capture stage owns the
   // intermediate "adding-page" loop; we only transition the modal on
@@ -352,6 +466,11 @@ export function SmartUploader(props: SmartUploaderProps) {
   // Close handler factors in stage: if the user closes mid-flow we
   // clean up the in-flight document; if they close from a stage where
   // the row is already attached or never existed, we don't.
+  //
+  // Emergency-video stages are not in the cleanup list — the upload
+  // doesn't happen until the final save step, so a mid-flow cancel
+  // never leaves a row to delete. The reset call below handles the
+  // client-side blob URLs the hook accumulated during compression.
   const handleClose = useCallback(() => {
     const currentStage = cleanupRef.current.stage;
     const cleanupStages: Stage["name"][] = [
@@ -370,8 +489,11 @@ export function SmartUploader(props: SmartUploaderProps) {
     if (cleanupStages.includes(currentStage) && currentStage !== "duplicate") {
       void cleanupCurrentDocument();
     }
+    // Revoke any in-memory blob URLs from the emergency flow. Safe to
+    // call when the flow never started — reset is a no-op then.
+    resetEmergency();
     onOpenChange(false);
-  }, [cleanupCurrentDocument, onOpenChange]);
+  }, [cleanupCurrentDocument, onOpenChange, resetEmergency]);
 
   // Capture-stage preview URL needs cleanup on unmount or replacement.
   useEffect(() => {
@@ -649,6 +771,86 @@ export function SmartUploader(props: SmartUploaderProps) {
                 })
               }
               onPickReceipt={() => setStage({ name: "receipt-capture" })}
+              onPickEmergencyVideo={() => {
+                resetEmergency();
+                setStage({ name: "emergency-category" });
+              }}
+            />
+          ) : null}
+
+          {stage.name === "emergency-category" ? (
+            <EmergencyCategoryStage
+              selected={emergencyState.category}
+              onPick={(category: EmergencyCategory) => {
+                setEmergencyCategory(category);
+                setStage({ name: "emergency-label" });
+              }}
+              onBack={() => setStage({ name: "path-picker" })}
+            />
+          ) : null}
+
+          {stage.name === "emergency-label" && emergencyState.category ? (
+            <EmergencyLabelStage
+              category={emergencyState.category}
+              initialLabel={emergencyState.label}
+              onContinue={(label) => {
+                setEmergencyLabel(label);
+                setStage({ name: "emergency-capture" });
+              }}
+              onBack={() =>
+                emergencyPreselectedCategory
+                  ? handleClose()
+                  : setStage({ name: "emergency-category" })
+              }
+            />
+          ) : null}
+
+          {stage.name === "emergency-capture" ? (
+            <EmergencyCaptureStage
+              onFile={(file) => {
+                setStage({ name: "emergency-compress" });
+                void startEmergencyCompression(file);
+              }}
+              onBack={() => setStage({ name: "emergency-label" })}
+            />
+          ) : null}
+
+          {stage.name === "emergency-compress" ? (
+            <EmergencyCompressStage
+              error={
+                emergencyState.phase === "error" ? emergencyState.error : null
+              }
+              onRetake={() => {
+                resetEmergencyForRetake();
+                setStage({ name: "emergency-capture" });
+              }}
+              onCancel={handleClose}
+            />
+          ) : null}
+
+          {stage.name === "emergency-review" &&
+          emergencyState.result &&
+          emergencyState.category ? (
+            <EmergencyReviewStage
+              category={emergencyState.category}
+              label={emergencyState.label}
+              videoPreviewUrl={emergencyState.result.videoPreviewUrl}
+              posterPreviewUrl={emergencyState.result.posterPreviewUrl}
+              durationSeconds={emergencyState.result.durationSeconds}
+              compressedSize={emergencyState.result.compressedSize}
+              saving={emergencyState.phase === "saving"}
+              saveError={
+                emergencyState.phase === "error" ? emergencyState.error : null
+              }
+              onSave={(notes) => {
+                const filename = `emergency-${emergencyState.category}-${Date.now()}.${emergencyState.result?.container ?? "webm"}`;
+                void saveEmergency(notes, filename);
+              }}
+              onRetake={() => {
+                resetEmergencyForRetake();
+                setStage({ name: "emergency-capture" });
+              }}
+              onCancel={handleClose}
             />
           ) : null}
 
@@ -796,6 +998,16 @@ function headerTitleForStage(
         return `Add document for ${opts.targetInventoryName}`;
       case "receipt-failed":
         return "Something went wrong";
+      case "emergency-category":
+      case "emergency-label":
+      case "emergency-capture":
+      case "emergency-compress":
+      case "emergency-review":
+        // Not reachable in target mode — emergency videos are
+        // house-scoped and only the discovery-mode path-picker
+        // routes into the emergency flow. Type checker wants every
+        // case covered.
+        return "Emergency procedure video";
       case "duplicate":
         return "Already in your library";
       case "review-new":
@@ -825,6 +1037,16 @@ function headerTitleForStage(
       return "Review and attach";
     case "receipt-failed":
       return "Something went wrong";
+    case "emergency-category":
+      return "What kind of emergency?";
+    case "emergency-label":
+      return "Name this video";
+    case "emergency-capture":
+      return "Record or upload the video";
+    case "emergency-compress":
+      return "Optimizing your video…";
+    case "emergency-review":
+      return "Review and save";
     case "processing":
       return "Working on it…";
     case "duplicate":

@@ -3,16 +3,19 @@
 import { Icon, type IconName } from "@/components/icon";
 
 /**
- * Stage 1 — Path picker. The photo and receipt paths are both active
- * once issue #117 ships; the emergency-procedure-video entry stays
- * disabled with a "Soon" badge until that pipeline lands.
+ * Stage 1 — Path picker. The photo and receipt paths landed in earlier
+ * phases; the emergency-procedure-video entry lands in issue #139 and
+ * the disabled "Soon" affordance is replaced with an active option
+ * accent-colored to match the emergency surface.
  */
 export function PathPickerStage({
   onPickPhoto,
   onPickReceipt,
+  onPickEmergencyVideo,
 }: {
   onPickPhoto: () => void;
   onPickReceipt: () => void;
+  onPickEmergencyVideo: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -38,10 +41,12 @@ export function PathPickerStage({
         onClick={onPickReceipt}
       />
 
-      <DisabledOption
-        icon="photo"
+      <ActiveOption
+        icon="video"
         title="Emergency procedure video"
-        body="Shutoffs, breaker panels, etc."
+        body="Record a 20-second tour of a shutoff valve, breaker panel, or anything else future-you will be glad past-you pointed at."
+        onClick={onPickEmergencyVideo}
+        accentTone="danger"
       />
     </div>
   );
@@ -52,12 +57,20 @@ function ActiveOption({
   title,
   body,
   onClick,
+  accentTone = "accent",
 }: {
   icon: IconName;
   title: string;
   body: string;
   onClick: () => void;
+  /**
+   * Color of the leading icon chip. 'accent' (default) for general
+   * paths; 'danger' for the emergency-procedure-video entry so it
+   * carries the same red treatment the panel uses on the dashboard.
+   */
+  accentTone?: "accent" | "danger";
 }) {
+  const toneVar = accentTone === "danger" ? "var(--color-danger)" : "var(--color-accent)";
   return (
     <button
       type="button"
@@ -71,9 +84,8 @@ function ActiveOption({
       <span
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md"
         style={{
-          backgroundColor:
-            "color-mix(in oklab, var(--color-accent) 18%, transparent)",
-          color: "var(--color-accent)",
+          backgroundColor: `color-mix(in oklab, ${toneVar} 18%, transparent)`,
+          color: toneVar,
         }}
         aria-hidden
       >
@@ -99,60 +111,3 @@ function ActiveOption({
   );
 }
 
-function DisabledOption({
-  icon,
-  title,
-  body,
-}: {
-  icon: Parameters<typeof Icon>[0]["name"];
-  title: string;
-  body: string;
-}) {
-  return (
-    <div
-      className="flex items-start gap-3 rounded-[var(--radius-md)] p-4 text-left"
-      style={{
-        backgroundColor: "transparent",
-        border: "1px dashed var(--color-border-subtle)",
-        opacity: 0.7,
-      }}
-      aria-disabled
-    >
-      <span
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md"
-        style={{
-          backgroundColor: "var(--color-bg-surface)",
-          color: "var(--color-text-tertiary)",
-        }}
-        aria-hidden
-      >
-        <Icon name={icon} size={20} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span
-            style={{
-              fontSize: 14,
-              fontWeight: 500,
-              color: "var(--color-text-secondary)",
-            }}
-          >
-            {title}
-          </span>
-          <span
-            className="chip"
-            style={{ height: 18, fontSize: 10, padding: "0 6px" }}
-          >
-            Soon
-          </span>
-        </div>
-        <div
-          className="text-small mt-0.5"
-          style={{ color: "var(--color-text-tertiary)" }}
-        >
-          {body}
-        </div>
-      </div>
-    </div>
-  );
-}

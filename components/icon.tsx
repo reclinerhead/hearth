@@ -57,7 +57,15 @@ export type IconName =
   | "car"
   | "paw"
   | "package"
-  | "dollar-sign";
+  | "dollar-sign"
+  | "play"
+  | "pause"
+  | "maximize"
+  | "minimize"
+  | "video"
+  | "dots-vertical"
+  | "trash"
+  | "star";
 
 const base: SVGProps<SVGSVGElement> = {
   width: 20,
@@ -387,6 +395,54 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M12 2v20" />
       <path d="M17 6H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6" />
     </>
+  ),
+  play: <path d="M7 4v16l13-8z" fill="currentColor" />,
+  pause: (
+    <>
+      <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" />
+      <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" />
+    </>
+  ),
+  maximize: (
+    <>
+      <path d="M4 9V4h5" />
+      <path d="M20 9V4h-5" />
+      <path d="M4 15v5h5" />
+      <path d="M20 15v5h-5" />
+    </>
+  ),
+  minimize: (
+    <>
+      <path d="M9 4v5H4" />
+      <path d="M15 4v5h5" />
+      <path d="M9 20v-5H4" />
+      <path d="M15 20v-5h5" />
+    </>
+  ),
+  video: (
+    <>
+      <rect x="3" y="6" width="13" height="12" rx="2" />
+      <path d="m16 10 5-3v10l-5-3z" />
+    </>
+  ),
+  "dots-vertical": (
+    <>
+      <circle cx="12" cy="5" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="19" r="1.5" fill="currentColor" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M4 7h16" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12" />
+      <path d="M9 7V4h6v3" />
+    </>
+  ),
+  star: (
+    <path d="m12 3 2.6 5.6L20.5 9.6l-4.3 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8L3.5 9.6l5.9-1z" />
   ),
 };
 

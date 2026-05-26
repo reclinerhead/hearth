@@ -15,11 +15,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   HEARTH_DOCUMENTS_BUCKET,
+  HEARTH_EMERGENCY_VIDEOS_BUCKET,
+  emergencyVideoObjectPath,
+  emergencyVideoPosterObjectPath,
   optimizedObjectPath,
   pageOptimizedObjectPath,
   pageThumbnailObjectPath,
   thumbnailObjectPath,
 } from "./paths";
+import type { VideoContainer } from "./process-video";
 
 export type UploadDocumentFilesArgs = {
   supabase: SupabaseClient;
@@ -97,6 +101,92 @@ export async function uploadDocumentFiles(
     (thumbnailResult.status === "fulfilled" && thumbnailResult.value.error) ||
     (optimizedResult.status === "rejected" && optimizedResult.reason) ||
     (thumbnailResult.status === "rejected" && thumbnailResult.reason) ||
+    new Error("Upload failed for an unknown reason");
+
+  throw firstError;
+}
+
+export type UploadEmergencyVideoFilesArgs = {
+  supabase: SupabaseClient;
+  houseId: string;
+  documentId: string;
+  /** Compressed video Blob from processVideo. */
+  video: Blob;
+  /** Poster JPEG Blob from processVideo. */
+  poster: Blob;
+  /** Container picked by the compression pipeline (webm or mp4). */
+  container: VideoContainer;
+  /** MIME of the video Blob (e.g. 'video/webm;codecs=vp9,opus'). */
+  videoMimeType: string;
+};
+
+export type UploadEmergencyVideoFilesResult = {
+  /** Path written to hearth.documents.storage_path. */
+  videoPath: string;
+  /** Path written to hearth.documents.poster_storage_path. */
+  posterPath: string;
+};
+
+/**
+ * Uploads the compressed emergency-video Blob and its poster JPEG to
+ * the hearth-emergency-videos bucket in parallel. Same partial-failure
+ * cleanup contract as uploadDocumentFiles, but against a different
+ * bucket and using video/poster paths.
+ *
+ * Throws on any storage error.
+ */
+export async function uploadEmergencyVideoFiles(
+  args: UploadEmergencyVideoFilesArgs,
+): Promise<UploadEmergencyVideoFilesResult> {
+  const videoPath = emergencyVideoObjectPath({
+    houseId: args.houseId,
+    documentId: args.documentId,
+    container: args.container,
+  });
+  const posterPath = emergencyVideoPosterObjectPath({
+    houseId: args.houseId,
+    documentId: args.documentId,
+  });
+
+  const bucket = args.supabase.storage.from(HEARTH_EMERGENCY_VIDEOS_BUCKET);
+
+  const videoOptions = {
+    upsert: false,
+    cacheControl: "31536000, immutable",
+    contentType: args.videoMimeType,
+  } as const;
+  const posterOptions = {
+    upsert: false,
+    cacheControl: "31536000, immutable",
+    contentType: "image/jpeg",
+  } as const;
+
+  const [videoResult, posterResult] = await Promise.allSettled([
+    bucket.upload(videoPath, args.video, videoOptions),
+    bucket.upload(posterPath, args.poster, posterOptions),
+  ]);
+
+  const videoOk =
+    videoResult.status === "fulfilled" && !videoResult.value.error;
+  const posterOk =
+    posterResult.status === "fulfilled" && !posterResult.value.error;
+
+  if (videoOk && posterOk) {
+    return { videoPath, posterPath };
+  }
+
+  const cleanupPaths: string[] = [];
+  if (videoOk) cleanupPaths.push(videoPath);
+  if (posterOk) cleanupPaths.push(posterPath);
+  if (cleanupPaths.length > 0) {
+    await bucket.remove(cleanupPaths).catch(() => undefined);
+  }
+
+  const firstError =
+    (videoResult.status === "fulfilled" && videoResult.value.error) ||
+    (posterResult.status === "fulfilled" && posterResult.value.error) ||
+    (videoResult.status === "rejected" && videoResult.reason) ||
+    (posterResult.status === "rejected" && posterResult.reason) ||
     new Error("Upload failed for an unknown reason");
 
   throw firstError;
