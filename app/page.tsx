@@ -22,7 +22,7 @@ export default async function Home() {
         fill
         priority
         sizes="100vw"
-        className="object-cover object-center"
+        className="object-contain object-center"
       />
 
       <div className="relative z-10 flex min-h-dvh items-center justify-center px-4">
