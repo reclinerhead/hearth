@@ -27,7 +27,7 @@ export default async function Home() {
 
       <div className="relative z-10 flex min-h-dvh items-center justify-center px-4">
         <div
-          className="w-full max-w-95 text-center"
+          className="w-full max-w-lg text-center"
           style={{
             backgroundColor:
               "color-mix(in oklab, var(--color-bg-base) 90%, transparent)",
