@@ -17,12 +17,13 @@ export default async function Home() {
   return (
     <main className="relative min-h-dvh w-full overflow-hidden">
       <Image
-        src="/landing/hero.png"
+        src="/landing/hero-mobile.png"
         alt="Architectural sketch of a home with Hearth annotation panels showing air quality, home facts, water quality, and ground risk."
-        fill
+        width={832}
+        height={1248}
         priority
         sizes="100vw"
-        className="object-contain object-center"
+        className="absolute left-0 top-1/2 w-full h-auto -translate-y-1/2"
       />
 
       <div className="relative z-10 flex min-h-dvh items-center justify-center px-4">
