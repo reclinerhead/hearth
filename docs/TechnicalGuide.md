@@ -42,7 +42,8 @@ app/                       # Next.js App Router
     signout/               # Server-side sign-out POST
   login/                   # Public sign-in page (OTP + Google)
   layout.tsx               # Root html/body shell, font wiring
-  page.tsx                 # Public landing; redirects authed users to /dashboard
+  page.tsx                 # Public landing (full-bleed annotated house sketch + sign-in card);
+                           # redirects authed users to /dashboard
   .well-known/workflow/    # Auto-generated Workflow SDK endpoints (gitignored)
 components/                # Shared UI primitives (see "Design system")
 lib/
@@ -856,6 +857,7 @@ The page exists first because most of the reports depend on the maintenance modu
 
 ### Sign-in surfaces
 
+- `/` — public landing. Full-bleed pencil-style architectural sketch of a home with four floating annotation panels (Air Quality, Home Facts, Water Quality, Ground) baked into the image, overlaid by a centered translucent card carrying the Hearth wordmark, h1 tagline, and primary Sign in CTA. The annotation panels deliberately mirror the Habitat surface's visual language (dark slate fill, thin amber left-rule, ALL-CAPS titles) so the page previews what the product actually does rather than functioning as a generic marketing splash. Asset lives at `public/landing/hero.png` (PNG, not JPG, to preserve sketch fidelity); the card uses `color-mix` against `--color-bg-base` at 90% opacity so light/dark token swaps still work without hardcoding. One-screen poster — no below-the-fold marketing content is planned for this surface. Signed-in visitors redirect to `/dashboard` from the page's server component before any of this renders.
 - `/login` — public page with two paths: Supabase **magic-link OTP** (`signInWithOtp` → emailRedirectTo `/auth/confirm`) and **Google OAuth** (`signInWithOAuth` → redirectTo `/auth/callback`).
 - `/auth/callback` — OAuth code exchange handler.
 - `/auth/confirm` — OTP token verification handler.
