@@ -26,6 +26,15 @@ import {
   buildDeltaPrompt,
   buildReceiptPrompt,
 } from "./prompt";
+import {
+  ccrExtractionSchema,
+  type CcrExtractionResult,
+} from "./ccr-schema";
+import {
+  buildCcrSystemPrompt,
+  buildCcrUserPrompt,
+  type CcrUserPromptInput,
+} from "./ccr-prompt";
 
 export type AnalyzeImageInput = {
   /** Image bytes as a base64-encoded data URL or a public URL. */
@@ -122,6 +131,74 @@ export async function analyzeReceipt(
           {
             type: "text",
             text: "Extract the receipt data per the system prompt. Treat the images above as the ordered pages of a single receipt.",
+          },
+        ],
+      },
+    ],
+  });
+  return result.object;
+}
+
+export type AnalyzeCcrInput = {
+  /**
+   * Page URLs in order — page 1 first, then page 2, etc. CCRs are
+   * typically 4-12 page documents and benefit from the same single-
+   * extraction-across-all-pages discipline as receipts (cross-page
+   * tables, multi-page contaminant lists).
+   */
+  pageUrls: string[];
+  /**
+   * Per-call context — expected PWSID, utility name, and a brief
+   * known-system summary. The user prompt builder injects these so
+   * the model can cross-check what the document prints. None of
+   * these affect the system prompt's shape — they only thread
+   * through `buildCcrUserPrompt`.
+   */
+  context: CcrUserPromptInput;
+};
+
+/**
+ * Multi-page CCR extraction. Issue #176 (WQA-3).
+ *
+ * Same model + AI SDK pattern as `analyzeReceipt`. The Zod schema
+ * (`ccrExtractionSchema`) rejects any field outside the five sections
+ * defined in the schema file, so even if the model tried to absorb
+ * source-water narrative or infrastructure-improvement copy the
+ * call would fail validation. The prompt explicitly enumerates the
+ * out-of-scope categories as belt-and-suspenders.
+ *
+ * Throws when:
+ *   - `pageUrls` is empty (caller bug — finalize-ccr-upload should
+ *     guard this)
+ *   - `generateObject` fails validation (model output didn't fit
+ *     the schema)
+ *   - the network call to the AI Gateway errors
+ *
+ * The caller (`analyze-ccr.ts` server action) wraps this in try/catch
+ * and surfaces the error to the Smart Uploader as a "couldn't read
+ * that, try again" affordance.
+ */
+export async function analyzeCcrPdf(
+  input: AnalyzeCcrInput,
+): Promise<CcrExtractionResult> {
+  if (input.pageUrls.length === 0) {
+    throw new Error("analyzeCcrPdf: pageUrls must contain at least one page");
+  }
+  const result = await generateObject({
+    model: getModelString(),
+    schema: ccrExtractionSchema,
+    system: buildCcrSystemPrompt(),
+    messages: [
+      {
+        role: "user",
+        content: [
+          ...input.pageUrls.map(
+            (url) =>
+              ({ type: "image", image: new URL(url) }) as const,
+          ),
+          {
+            type: "text",
+            text: buildCcrUserPrompt(input.context),
           },
         ],
       },

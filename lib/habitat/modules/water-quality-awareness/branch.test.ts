@@ -143,6 +143,80 @@ describe("decideBranch — waterSource unknown / null falls back to EPA-driven l
   });
 });
 
+describe("decideBranch — ccrCached upgrades CWS to cws_with_ccr (#176, WQA-3)", () => {
+  // The orchestrator runs the CCR shared-cache lookup after the
+  // WATER_SYSTEM fetch and threads the result through to decideBranch
+  // as ccrCached. On every active-CWS path that would have returned
+  // cws_no_ccr, the same inputs with ccrCached=true return cws_with_ccr.
+  // Non-CWS branches (non_community, stale, private_well, cws_unmapped)
+  // ignore the flag — a CCR is only meaningful for CWS systems.
+
+  it("returns cws_with_ccr for waterSource='municipal' + active CWS + ccrCached=true", () => {
+    const r = decideBranch({
+      waterSource: "municipal",
+      pwsidResolved: true,
+      record: kalamazoo(),
+      ccrCached: true,
+    });
+    expect(r.branch).toBe("cws_with_ccr");
+  });
+
+  it("returns cws_no_ccr for waterSource='municipal' + active CWS + ccrCached=false", () => {
+    const r = decideBranch({
+      waterSource: "municipal",
+      pwsidResolved: true,
+      record: kalamazoo(),
+      ccrCached: false,
+    });
+    expect(r.branch).toBe("cws_no_ccr");
+  });
+
+  it("returns cws_no_ccr for waterSource='municipal' + active CWS when ccrCached omitted (back-compat)", () => {
+    // Callers that don't yet thread the CCR cache through (older tests,
+    // future module variants) get the pre-WQA-3 behavior.
+    const r = decideBranch({
+      waterSource: "municipal",
+      pwsidResolved: true,
+      record: kalamazoo(),
+    });
+    expect(r.branch).toBe("cws_no_ccr");
+  });
+
+  it("returns cws_with_ccr for waterSource=null + matched active CWS + ccrCached=true", () => {
+    const r = decideBranch({
+      waterSource: null,
+      pwsidResolved: true,
+      record: kalamazoo(),
+      ccrCached: true,
+    });
+    expect(r.branch).toBe("cws_with_ccr");
+  });
+
+  it("does NOT upgrade non_community to cws_with_ccr even with ccrCached=true", () => {
+    // CCR is federally required for CWS only; non-community systems
+    // wouldn't have a CCR in the first place. ccrCached on a non-
+    // community record is structurally impossible, but guarding for
+    // it keeps the contract clean.
+    const r = decideBranch({
+      waterSource: "municipal",
+      pwsidResolved: true,
+      record: kalamazoo({ pws_type_code: "TNCWS" }),
+      ccrCached: true,
+    });
+    expect(r.branch).toBe("non_community");
+  });
+
+  it("does NOT upgrade stale to cws_with_ccr even with ccrCached=true", () => {
+    const r = decideBranch({
+      waterSource: "municipal",
+      pwsidResolved: true,
+      record: kalamazoo({ pws_activity_code: "I" }),
+      ccrCached: true,
+    });
+    expect(r.branch).toBe("stale");
+  });
+});
+
 describe("shouldSkipEpaLookups", () => {
   it("returns true for well and shared", () => {
     expect(shouldSkipEpaLookups("well")).toBe(true);

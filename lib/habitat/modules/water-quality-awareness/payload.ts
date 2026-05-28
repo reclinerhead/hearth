@@ -19,6 +19,8 @@ import {
 } from "./lcr";
 import type { EnvirofactsWaterSystemRecord } from "./sources/envirofacts";
 import type { WqaBranch, WqaFindings, WqaRecommendedAction } from "./types";
+import type { CcrFindings } from "./ccr";
+import { ccrHasCautionSignal, ccrHasConcernSignal } from "./ccr";
 
 /**
  * Bundle returned by buildFindings. The orchestrator persists every
@@ -298,23 +300,28 @@ export type SdwisEnrichment = {
 
 /**
  * Severity decision for a CWS / non-community finding. Pure function
- * over the SDWIS enrichment so the decision is testable independently
- * of the rest of the payload assembly.
+ * over the SDWIS enrichment + an optional CCR findings fragment so
+ * the decision is testable independently of the rest of the payload
+ * assembly.
  *
  *   favorable — no active health-based violations AND every LCR
  *               sample on file is below the detection limit
- *               (sign='<'). The only state that earns the
- *               "your utility looks clean" framing — see issue #188.
+ *               (sign='<') AND no CCR concern/caution signal. The
+ *               only state that earns the "your utility looks clean"
+ *               framing — see issue #188.
  *   concern   — at least one active health-based violation OR an LCR
- *               90th-percentile at or above the federal action level.
+ *               90th-percentile at or above the federal action level
+ *               OR a CCR contaminant at or above its MCL.
  *   caution   — any detected lead or copper below the action level
- *               (sign='='|'>' with value > 0). Includes the
- *               approaching tier. Hearth's framing: EPA action levels
+ *               (sign='='|'>' with value > 0) OR a CCR caution
+ *               signal (PFAS at any level, or a non-PFAS contaminant
+ *               at 80%+ of MCL). Includes the approaching tier.
+ *               Hearth's framing: EPA action levels and federal MCLs
  *               are regulatory thresholds, not health-safety
  *               thresholds — any detection is worth surfacing.
  *   neutral   — everything else (compliance "unknown", LCR
  *               "unavailable", LCR "no_samples_on_file", or no
- *               positive signal on either axis).
+ *               positive signal on any axis).
  *
  * Note (#188): `has_active_non_health_based` is no longer a caution
  * driver. Monitoring/reporting violations are an EPA-utility
@@ -322,24 +329,40 @@ export type SdwisEnrichment = {
  * stays persisted on system_card because `recommended-actions.ts`
  * reads it for its own card-emission logic.
  *
+ * Issue #176 (WQA-3): the CCR axis is layered in via the optional
+ * `ccr` arg. When CCR data is present, its concern / caution signals
+ * compose with the SDWIS axes — a CCR-detected contaminant at MCL
+ * escalates to concern even if SDWIS is clean; a PFAS detection
+ * escalates to caution even when lead/copper are below detection.
+ *
  * Exported for the test suite.
  */
-export function deriveSeverity(input: SdwisEnrichment): HabitatSeverity {
+export function deriveSeverity(
+  input: SdwisEnrichment,
+  ccr: CcrFindings | null = null,
+): HabitatSeverity {
   const compliance = input.compliance;
   const lcrInputs = computeLcrSeverityInputs(input.leadCopper);
 
-  // concern wins immediately
+  // concern wins immediately — SDWIS or CCR axis.
   if (compliance?.has_active_health_based) return "concern";
   if (lcrInputs.lead_above_action || lcrInputs.copper_above_action) {
     return "concern";
   }
+  if (ccr && ccrHasConcernSignal(ccr)) return "concern";
+
   // any detected lead or copper below the action level (sign='='|'>'
   // with positive value) → caution. Includes the approaching tier
-  // by definition.
+  // by definition. CCR caution signal (PFAS at any level, or non-
+  // PFAS at 80%+ of MCL) escalates here too.
   if (lcrInputs.any_detected) return "caution";
+  if (ccr && ccrHasCautionSignal(ccr)) return "caution";
+
   // favorable only when compliance is clean AND every sample on file
-  // is below the detection limit. A utility with detected-but-low
-  // measurements falls into caution above, not here.
+  // is below the detection limit AND (when CCR data is available)
+  // the CCR carries no concern/caution signal. A utility with
+  // detected-but-low CCR measurements falls into caution above, not
+  // here.
   if (
     compliance?.status === "no_active_violations" &&
     lcrInputs.any_below_detection
@@ -363,8 +386,24 @@ export function deriveSeverity(input: SdwisEnrichment): HabitatSeverity {
  * single dominant utility nearby. Defaults to "verified" for back-
  * compat with payload-build call sites that don't pass it.
  */
+/**
+ * CCR enrichment bundle passed into `buildSystemPayload` on the
+ * `cws_with_ccr` branch. `findings` lands on `WqaFindings.ccr_findings`;
+ * `reportYear` drives `system_card.latest_ccr_status`.
+ *
+ * The orchestrator builds this bundle from the `water_system_reports`
+ * row that the CCR cache returned — `reportYear` comes from the row's
+ * coverage year (authoritative), `findings` comes from passing the
+ * row's `extracted_data` through `buildCcrFindings`. Null on every
+ * other branch.
+ */
+export type CcrEnrichment = {
+  reportYear: number;
+  findings: CcrFindings;
+};
+
 export function buildSystemPayload(
-  branch: Extract<WqaBranch, "cws_no_ccr" | "non_community">,
+  branch: Extract<WqaBranch, "cws_no_ccr" | "cws_with_ccr" | "non_community">,
   record: EnvirofactsWaterSystemRecord,
   enrichment: SdwisEnrichment = {
     compliance: null,
@@ -378,6 +417,11 @@ export function buildSystemPayload(
    * re-running the build. Empty array suppresses the payload field.
    */
   recommendedActions: WqaRecommendedAction[] = [],
+  /**
+   * CCR enrichment from the shared cache. Present only on the
+   * `cws_with_ccr` branch. Issue #176 (WQA-3).
+   */
+  ccrEnrichment: CcrEnrichment | null = null,
 ): WqaPayload {
   const adminName = formatAdminName(record.admin_name ?? record.org_name);
   const systemName = displaySystemName(record);
@@ -395,7 +439,9 @@ export function buildSystemPayload(
       source_type: mapSourceType(record.gw_sw_code),
       compliance_status_short: enrichment.compliance?.status ?? "unknown",
       pwsid_confidence: pwsidConfidence,
-      latest_ccr_status: "not_uploaded",
+      latest_ccr_status: ccrEnrichment
+        ? { year: ccrEnrichment.reportYear }
+        : "not_uploaded",
       source_water_protection_since:
         record.source_water_protection_code === "Y" &&
         typeof record.source_protection_begin_date === "string"
@@ -433,7 +479,19 @@ export function buildSystemPayload(
       enrichment.compliance.has_active_non_health_based;
   }
 
-  const severity = deriveSeverity(enrichment);
+  // Persist the CCR findings fragment on the cws_with_ccr branch.
+  // The findings view's "Detected in your water" section renders
+  // straight off this — concern/caution-sorted contaminant list, the
+  // lead/copper distribution from the report, UCMR results, and the
+  // free-testing-offer flag.
+  if (ccrEnrichment) {
+    findings.ccr_findings = ccrEnrichment.findings;
+  }
+
+  const severity = deriveSeverity(
+    enrichment,
+    ccrEnrichment ? ccrEnrichment.findings : null,
+  );
 
   if (branch === "non_community") {
     return {
@@ -451,7 +509,7 @@ export function buildSystemPayload(
   return {
     severity,
     headline: `Your water comes from ${systemName}`,
-    summary: buildCwsSummary(systemName, enrichment),
+    summary: buildCwsSummary(systemName, enrichment, ccrEnrichment),
     findings,
   };
 }
@@ -466,6 +524,7 @@ export function buildSystemPayload(
 export function buildCwsSummary(
   systemName: string,
   enrichment: SdwisEnrichment,
+  ccr: CcrEnrichment | null = null,
 ): string {
   const compliance = enrichment.compliance;
   const lcr = enrichment.leadCopper;
@@ -516,8 +575,9 @@ export function buildCwsSummary(
     return "";
   })();
 
-  const ccrClause =
-    `We'll layer in your utility's annual Water Quality Report next — once you have a recent copy, you'll be able to upload it here for a personalized read.`;
+  const ccrClause = ccr
+    ? `Your utility's ${ccr.reportYear} Water Quality Report is on file — open the finding to see what we extracted.`
+    : `We'll layer in your utility's annual Water Quality Report next — once you have a recent copy, you'll be able to upload it here for a personalized read.`;
 
   return [complianceClause, lcrClause, ccrClause]
     .filter((p) => p.length > 0)
