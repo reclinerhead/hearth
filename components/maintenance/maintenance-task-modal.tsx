@@ -307,12 +307,9 @@ function ModalHeaderContext({
 }) {
   if (isPerUse) {
     return (
-      <div
-        className="text-small"
-        style={{ color: "var(--color-text-secondary)" }}
-      >
-        {task.subtitle ?? "Every time you use it."}
-      </div>
+      <TaskInstructionsCallout
+        text={task.subtitle ?? "Every time you use it."}
+      />
     );
   }
 
@@ -335,15 +332,8 @@ function ModalHeaderContext({
   const overdue = !isCompleted && due ? lateDays > 0 : false;
 
   return (
-    <div className="flex flex-col gap-2">
-      {task.subtitle ? (
-        <div
-          className="text-small"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          {task.subtitle}
-        </div>
-      ) : null}
+    <div className="flex flex-col gap-3">
+      {task.subtitle ? <TaskInstructionsCallout text={task.subtitle} /> : null}
       <div className="flex items-center gap-2 flex-wrap">
         <div
           className="text-small inline-flex items-center gap-1.5 px-2 py-1 rounded-md"
@@ -384,6 +374,46 @@ function ModalHeaderContext({
           </span>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+// Issue #177 — the subtitle is what the homeowner actually does for this
+// task ("Vacuum blower housing, clean exhaust duct, inspect gas
+// connector"); render it as a focal callout rather than muted helper
+// text so it reads as the primary content. Surface card + left accent
+// stripe + tool icon give it weight without inventing chrome that doesn't
+// exist elsewhere in the modal — the treatment echoes the modifier rows
+// inside WhyThisTaskExpand at lower intensity.
+function TaskInstructionsCallout({ text }: { text: string }) {
+  return (
+    <div
+      className="flex items-start gap-3 p-3"
+      style={{
+        backgroundColor: "var(--color-bg-surface-raised)",
+        border: "1px solid var(--color-border-subtle)",
+        borderLeft: "3px solid var(--color-accent)",
+        borderRadius: "var(--radius-md)",
+      }}
+    >
+      <Icon
+        name="tool"
+        size={16}
+        style={{
+          color: "var(--color-accent)",
+          marginTop: 2,
+          flexShrink: 0,
+        }}
+      />
+      <p
+        style={{
+          color: "var(--color-text-primary)",
+          fontWeight: 500,
+          margin: 0,
+        }}
+      >
+        {text}
+      </p>
     </div>
   );
 }
