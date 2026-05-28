@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { triggerHabitatModuleRecheck } from "@/app/(app)/dashboard/actions";
 import { Icon } from "./icon";
 import { HabitatActionChip } from "./habitat-action-chip";
 import {
@@ -13,6 +14,8 @@ import type { ActivityStep } from "@/lib/habitat/activity-log";
 import type {
   FindingAction,
   HabitatModule,
+  HabitatRecheckSource,
+  HabitatRecheckSummary,
   HabitatSeverity,
   OverviewCard,
 } from "@/lib/habitat/types";
@@ -99,6 +102,33 @@ export function HabitatFindingModal({
   const [logOpen, setLogOpen] = useState(false);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
 
+  // Issue #196 — "Recheck findings" affordance + fresh-update banner.
+  //
+  // `pendingRecheck` holds the trigger metadata between the click (or
+  // CCR upload finalize) and the realtime row update that lands when
+  // the workflow completes:
+  //   - `since` is the wall-clock time the trigger fired; we use it to
+  //     ignore stale row updates that arrived before the trigger.
+  //   - `source` lets the module's summarizeRecheckChanges slot tune
+  //     copy by what kicked off the recheck (manual click vs. CCR
+  //     upload).
+  //   - `beforeRow` is the snapshot of the persisted finding at trigger
+  //     time, so the module's diff function has something to compare
+  //     against.
+  //
+  // `recheckBanner` is the rendered banner payload (or null when
+  // nothing's worth surfacing). Set when the matching row update lands;
+  // cleared when the user clicks anywhere in the body.
+  const [pendingRecheck, setPendingRecheck] = useState<{
+    since: number;
+    source: HabitatRecheckSource;
+    beforeRow: HabitatFindingRow;
+  } | null>(null);
+  const [recheckBanner, setRecheckBanner] = useState<{
+    summary: HabitatRecheckSummary;
+    source: HabitatRecheckSource;
+  } | null>(null);
+
   // Wrap onClose so closing the modal (from the close button, ESC, or
   // backdrop click) synchronously clears the pane state. Done here
   // rather than from a `useEffect(() => { if (!open) reset() })` so
@@ -173,6 +203,92 @@ export function HabitatFindingModal({
     }
   }, [activeCardId, open]);
 
+  // Issue #196 — Watch the row prop for the "recheck just finished"
+  // transition. The dashboard's useHabitatFindings keeps the row prop
+  // live via Realtime, so when the workflow's final UPSERT lands we
+  // see a new row here with status='completed' and a fresh checked_at.
+  //
+  // The summary computation runs only when a recheck is actually
+  // pending — without that guard, every initial mount or unrelated row
+  // change would speculatively fire the banner.
+  useEffect(() => {
+    if (!pendingRecheck) return;
+    if (row.status !== "completed") return;
+    const checkedAt = row.checked_at
+      ? new Date(row.checked_at).getTime()
+      : null;
+    if (checkedAt === null || checkedAt < pendingRecheck.since) return;
+
+    const summary =
+      habitatModule.summarizeRecheckChanges?.(
+        pendingRecheck.beforeRow,
+        row,
+        pendingRecheck.source,
+      ) ?? null;
+
+    if (summary !== null) {
+      setRecheckBanner({ summary, source: pendingRecheck.source });
+    } else if (pendingRecheck.source === "manual") {
+      // The user explicitly asked for a recheck and the module had
+      // nothing surfaceable to report; we still acknowledge the click
+      // with a neutral confirmation so the action doesn't feel ignored.
+      setRecheckBanner({
+        summary: {
+          headline: "Recheck complete — no new changes.",
+          tone: "neutral",
+        },
+        source: pendingRecheck.source,
+      });
+    }
+    // ccr_upload with no changes is silently no-op; the upload modal's
+    // own acknowledgment already covered that path.
+
+    setPendingRecheck(null);
+  }, [pendingRecheck, row, habitatModule]);
+
+  // Reset state when the modal closes — otherwise re-opening it would
+  // show stale banner content from a previous session.
+  useEffect(() => {
+    if (open) return;
+    setPendingRecheck(null);
+    setRecheckBanner(null);
+  }, [open]);
+
+  const handleTriggerRecheck = useCallback(
+    (source: HabitatRecheckSource) => {
+      // Capture the current row as the "before" snapshot. Important to
+      // snapshot synchronously here, before the realtime sub flips
+      // status='running' and replaces our prop.
+      setPendingRecheck({
+        since: Date.now(),
+        source,
+        beforeRow: row,
+      });
+      setRecheckBanner(null);
+      void triggerHabitatModuleRecheck(houseId, habitatModule.key);
+    },
+    [houseId, habitatModule.key, row],
+  );
+
+  // Module-side opt-in for the banner. WQA calls this from its CCR
+  // upload modal's onSuccess so the banner that lands ~10-20s later
+  // reads as a CCR confirmation rather than a generic recheck note.
+  const notifyRecheckTriggered = useCallback(
+    (source: HabitatRecheckSource) => {
+      setPendingRecheck({
+        since: Date.now(),
+        source,
+        beforeRow: row,
+      });
+      setRecheckBanner(null);
+    },
+    [row],
+  );
+
+  const dismissBanner = useCallback(() => {
+    if (recheckBanner !== null) setRecheckBanner(null);
+  }, [recheckBanner]);
+
   if (!open) return null;
 
   // The hook types these loosely; once the panel filters by populated
@@ -233,8 +349,21 @@ export function HabitatFindingModal({
   // sections are bypassed entirely — the module renders whatever it
   // wants. Activity log + footer still come from the modal shell.
   const overviewBody =
-    habitatModule.renderOverviewBody?.(row, { houseId }) ?? null;
+    habitatModule.renderOverviewBody?.(row, {
+      houseId,
+      notifyRecheckTriggered,
+    }) ?? null;
   const hasCustomOverviewBody = overviewBody !== null;
+
+  // Issue #196 — Recheck affordance. The link is gated by status:
+  // enabled on completed/failed, disabled while running. We can't
+  // gate by `module.isApplicable(houseContext)` here without a context
+  // round-trip, but if the modal is open at all the user got here by
+  // clicking the tile — which only renders when the module produced a
+  // finding for this house, i.e. it was applicable. So we always show
+  // the link when status allows.
+  const isRunning = row.status === "running";
+  const recheckLabel = isRunning ? "Rechecking…" : "Recheck findings";
 
   const activeCard =
     activeCardId !== null
@@ -342,7 +471,16 @@ export function HabitatFindingModal({
             {detailContent}
           </DetailPane>
         ) : (
-          <div className="overflow-y-auto p-4 sm:p-5 space-y-5">
+          <div
+            className="overflow-y-auto p-4 sm:p-5 space-y-5"
+            onClick={dismissBanner}
+          >
+            {recheckBanner ? (
+              <RecheckBanner
+                summary={recheckBanner.summary}
+                onDismiss={dismissBanner}
+              />
+            ) : null}
             {hasCustomOverviewBody ? (
               // Issue #171: module-owned body. Skip the default
               // banner / recommended-actions / cards / actions
@@ -502,8 +640,33 @@ export function HabitatFindingModal({
             color: "var(--color-text-tertiary)",
           }}
         >
-          <span>
-            {checkedAtFormatted ? `Last checked ${checkedAtFormatted}` : ""}
+          <span className="flex items-center gap-3 min-w-0">
+            <span className="truncate">
+              {checkedAtFormatted ? `Last checked ${checkedAtFormatted}` : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => handleTriggerRecheck("manual")}
+              disabled={isRunning}
+              className="inline-flex items-center gap-1.5"
+              style={{
+                color: isRunning
+                  ? "var(--color-text-tertiary)"
+                  : "var(--color-text-secondary)",
+                cursor: isRunning ? "wait" : "pointer",
+                textDecoration: "underline",
+                textDecorationStyle: "dotted",
+                textUnderlineOffset: 3,
+              }}
+              aria-label={
+                isRunning
+                  ? "Recheck in progress"
+                  : "Re-run this habitat check"
+              }
+            >
+              {isRunning ? <Spinner /> : null}
+              <span>{recheckLabel}</span>
+            </button>
           </span>
           <span className="flex items-center gap-3">
             {footerSourceUrl ? (
@@ -836,5 +999,117 @@ function RecommendedActionCard({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/* ---------- recheck-affordance support ------------------------------- */
+
+/**
+ * Fresh-update banner that surfaces at the top of the modal body when a
+ * recheck completes. Module-provided headline + tone; the shell owns
+ * the strip layout and the dismiss affordance. Issue #196.
+ */
+function RecheckBanner({
+  summary,
+  onDismiss,
+}: {
+  summary: HabitatRecheckSummary;
+  onDismiss: () => void;
+}) {
+  const accent =
+    summary.tone === "success"
+      ? "var(--color-success)"
+      : summary.tone === "info"
+        ? "var(--color-info)"
+        : "var(--color-text-secondary)";
+  const background =
+    summary.tone === "success"
+      ? "color-mix(in oklab, var(--color-success) 14%, transparent)"
+      : summary.tone === "info"
+        ? "color-mix(in oklab, var(--color-info) 14%, transparent)"
+        : "var(--color-bg-surface-raised)";
+  const border =
+    summary.tone === "success"
+      ? "color-mix(in oklab, var(--color-success) 35%, transparent)"
+      : summary.tone === "info"
+        ? "color-mix(in oklab, var(--color-info) 35%, transparent)"
+        : "var(--color-border-subtle)";
+  const iconName =
+    summary.tone === "success" ? "circle-check" : "info";
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="rounded-md flex items-start gap-3 p-3"
+      style={{
+        border: `1px solid ${border}`,
+        backgroundColor: background,
+      }}
+    >
+      <span aria-hidden className="shrink-0 mt-0.5" style={{ color: accent }}>
+        <Icon name={iconName as never} size={18} />
+      </span>
+      <p
+        className="text-small"
+        style={{
+          color: "var(--color-text-secondary)",
+          lineHeight: 1.55,
+          margin: 0,
+          flex: 1,
+        }}
+      >
+        {summary.headline}
+      </p>
+      <button
+        type="button"
+        onClick={(e) => {
+          // Stop the click from bubbling to the body's onClick that also
+          // dismisses — both run the same handler, but a stop here keeps
+          // the X press from looking double-counted in tests.
+          e.stopPropagation();
+          onDismiss();
+        }}
+        className="btn btn-ghost btn-icon shrink-0"
+        style={{
+          padding: 4,
+          color: "var(--color-text-tertiary)",
+        }}
+        aria-label="Dismiss this update"
+      >
+        <svg
+          width={14}
+          height={14}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Inline spinner for the footer "Rechecking…" state. Borrowed from the
+ * CcrUploadModal pattern — three-line declaration via inline animation.
+ */
+function Spinner() {
+  return (
+    <span
+      className="inline-block h-3 w-3 rounded-full border-2"
+      style={{
+        borderColor:
+          "color-mix(in oklab, var(--color-text-secondary) 30%, transparent)",
+        borderTopColor: "var(--color-text-secondary)",
+        animation: "spin 0.8s linear infinite",
+      }}
+      aria-hidden
+    />
   );
 }
