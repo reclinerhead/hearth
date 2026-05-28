@@ -24,14 +24,22 @@
  */
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { triggerHabitatModuleRecheck } from "@/app/(app)/dashboard/actions";
+import { useEffect, useRef, useState } from "react";
+import {
+  confirmWqaPwsid,
+  correctWqaPwsid,
+  triggerHabitatModuleRecheck,
+} from "@/app/(app)/dashboard/actions";
 import { CcrUploadModal } from "@/components/ccr-upload/CcrUploadModal";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
 import { findWqaContaminantByAlias } from "@/lib/habitat/water-quality/contaminants/lookup";
 import type { HabitatRecheckSource } from "@/lib/habitat/types";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
+import {
+  isValidPwsid,
+  normalizePwsid,
+} from "../pwsid-validation";
 import type {
   CcrFindings,
   CcrSummarizedContaminant,
@@ -60,16 +68,48 @@ export function WqaOverviewBody({
   houseId: string;
   /**
    * Issue #196 — let the modal shell pre-arm its fresh-update banner
-   * when the body kicks off a recheck on its own (currently just the
-   * CCR upload success path). Optional so the existing test renders
-   * that pass `row` + `houseId` only keep working unchanged; in
-   * production the modal shell always provides it.
+   * when the body kicks off a recheck on its own (currently the CCR
+   * upload success path and the issue #193 PWSID correction path).
+   * Optional so the existing test renders that pass `row` + `houseId`
+   * only keep working unchanged; in production the modal shell always
+   * provides it.
    */
   notifyRecheckTriggered?: (source: HabitatRecheckSource) => void;
 }) {
   const f = (row.findings ?? null) as WqaFindings | null;
   const router = useRouter();
   const [ccrModalOpen, setCcrModalOpen] = useState(false);
+
+  // Issue #193 — PWSID correction in-flight state.
+  //
+  // The "Yes, that's right" confirm path doesn't touch this state — it
+  // mutates the finding row directly via Realtime, so the strip
+  // disappears the moment the next prop lands.
+  //
+  // The "No, my utility is different" correct path triggers a full
+  // WQA recheck. We track the wall-clock timestamp the trigger fired
+  // so we can ignore row updates that arrived before the correction
+  // (matches the existing `pendingRecheck.since` pattern in the modal
+  // shell, see components/habitat-finding-modal.tsx).
+  //
+  // Cleared when `row.checked_at` advances past `since` AND
+  // `row.status === "completed"` — that's the same convergence rule
+  // the modal-shell banner uses, just localized to the WQA body so
+  // the system card can show an inline "Re-running…" state while the
+  // workflow is in flight.
+  const [correctionInFlight, setCorrectionInFlight] = useState<{
+    since: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!correctionInFlight) return;
+    if (row.status !== "completed") return;
+    const checkedAt = row.checked_at
+      ? new Date(row.checked_at).getTime()
+      : null;
+    if (checkedAt === null || checkedAt < correctionInFlight.since) return;
+    setCorrectionInFlight(null);
+  }, [correctionInFlight, row.status, row.checked_at]);
 
   if (!f) {
     return (
@@ -84,20 +124,43 @@ export function WqaOverviewBody({
   }
 
   const card = f.system_card;
+  const isReRunningForCorrection = correctionInFlight !== null;
+
+  // Shared callback used by both the InferredHeader "No" path and the
+  // SystemCard post-confirmation edit affordance. Pre-arms the modal
+  // shell's banner and flips the local in-flight state synchronously
+  // so the UI swaps to the "Re-running…" view without waiting for the
+  // first realtime push.
+  function handleCorrectionSubmitted() {
+    notifyRecheckTriggered?.("manual");
+    setCorrectionInFlight({ since: Date.now() });
+  }
 
   return (
     <div className="flex flex-col gap-6">
-      <BranchHeaderStrip findings={f} />
-      <SystemCard
-        findings={f}
-        onUploadCcrRequest={
-          card &&
-          card.latest_ccr_status === "not_uploaded" &&
-          f.branch === "cws_no_ccr"
-            ? () => setCcrModalOpen(true)
-            : null
-        }
-      />
+      {!isReRunningForCorrection ? (
+        <BranchHeaderStrip
+          findings={f}
+          houseId={houseId}
+          onCorrectionSubmitted={handleCorrectionSubmitted}
+        />
+      ) : null}
+      {isReRunningForCorrection ? (
+        <ReRunningSystemCard />
+      ) : (
+        <SystemCard
+          findings={f}
+          houseId={houseId}
+          onCorrectionSubmitted={handleCorrectionSubmitted}
+          onUploadCcrRequest={
+            card &&
+            card.latest_ccr_status === "not_uploaded" &&
+            f.branch === "cws_no_ccr"
+              ? () => setCcrModalOpen(true)
+              : null
+          }
+        />
+      )}
       <RecommendedActionsSection findings={f} />
       <DetectedInWater findings={f} />
       <SourcesBlock findings={f} />
@@ -141,6 +204,66 @@ export function WqaOverviewBody({
   );
 }
 
+/**
+ * Replaces the System Card while a user-corrected PWSID is being
+ * processed. Calm centered message + spinner so the user knows
+ * something's happening; the modal shell's footer also shows the
+ * generic "Rechecking…" indicator, but this in-place state keeps the
+ * eye where the change is about to land. Issue #193.
+ */
+function ReRunningSystemCard() {
+  return (
+    <section
+      className="rounded-md flex items-center gap-3 p-4"
+      style={{
+        border: "1px solid var(--color-border-subtle)",
+        backgroundColor: "var(--color-bg-surface-raised)",
+      }}
+      aria-live="polite"
+    >
+      <InlineSpinner />
+      <div className="min-w-0 flex-1">
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            color: "var(--color-text-primary)",
+          }}
+        >
+          Re-running your water quality check
+        </div>
+        <p
+          className="text-small"
+          style={{
+            color: "var(--color-text-secondary)",
+            lineHeight: 1.55,
+            margin: 0,
+            marginTop: 4,
+          }}
+        >
+          Using the utility you just told us about. This usually takes
+          a few seconds.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function InlineSpinner() {
+  return (
+    <span
+      aria-hidden
+      className="inline-block h-4 w-4 rounded-full border-2 shrink-0"
+      style={{
+        borderColor:
+          "color-mix(in oklab, var(--color-text-secondary) 30%, transparent)",
+        borderTopColor: "var(--color-accent)",
+        animation: "spin 0.8s linear infinite",
+      }}
+    />
+  );
+}
+
 /* ---------- 1. branch-aware header strip ------------------------------- */
 
 /**
@@ -151,14 +274,41 @@ export function WqaOverviewBody({
  * only in this issue — the actual confirm/correct + upload wiring is
  * deferred to follow-up issues (see Open questions on #171).
  */
-function BranchHeaderStrip({ findings }: { findings: WqaFindings }) {
+function BranchHeaderStrip({
+  findings,
+  houseId,
+  onCorrectionSubmitted,
+}: {
+  findings: WqaFindings;
+  houseId: string;
+  /**
+   * Fires when the user has submitted a PWSID correction and the
+   * server action has acknowledged it. Lets the parent flip the
+   * in-flight state so the System Card swaps to the "Re-running…"
+   * view while the workflow churns. Issue #193.
+   */
+  onCorrectionSubmitted: () => void;
+}) {
   const branch = findings.branch;
   const card = findings.system_card;
   const confidence = card?.pwsid_confidence;
 
-  if (branch === "cws_no_ccr" && confidence === "inferred") {
+  // Confirmation prompt takes priority over the branch-specific
+  // framing whenever the PWSID is inferred: getting the utility
+  // identity right is the precondition for trusting any downstream
+  // data on the system, including a cached CCR or a non-community
+  // designation. We show this on cws_no_ccr / cws_with_ccr /
+  // non_community — every branch where a system_card exists with
+  // `pwsid_confidence === "inferred"`. The branch-specific strips
+  // appear again once the user has confirmed or corrected.
+  if (confidence === "inferred" && card) {
     return (
-      <InferredHeader pwsName={card?.pws_name ?? "your water utility"} />
+      <InferredHeader
+        pwsName={card.pws_name}
+        pwsid={card.pwsid}
+        houseId={houseId}
+        onCorrectionSubmitted={onCorrectionSubmitted}
+      />
     );
   }
   if (branch === "cws_unmapped") {
@@ -173,8 +323,9 @@ function BranchHeaderStrip({ findings }: { findings: WqaFindings }) {
   if (branch === "stale") {
     return <StaleHeader diagnostic={findings.branch_metadata.diagnostic_note} />;
   }
-  // cws_no_ccr verified, cws_with_ccr — no strip (the system card below
-  // carries the framing on its own).
+  // cws_no_ccr verified / user_confirmed / user_corrected, cws_with_ccr
+  // verified / user_confirmed / user_corrected — no strip (the system
+  // card below carries the framing on its own).
   return null;
 }
 
@@ -226,10 +377,62 @@ function HeaderStripCard(props: {
   );
 }
 
-function InferredHeader({ pwsName }: { pwsName: string }) {
-  // The confirm / correct affordance is visual only in this issue. The
-  // buttons render disabled with a hover tooltip explaining that the
-  // wiring lands in a follow-up. See open questions on #171.
+/**
+ * Confirmation / correction prompt rendered on the `cws_no_ccr` branch
+ * when `pwsid_confidence === "inferred"`. Issue #193 wires the two
+ * buttons: "Yes, that's right" flips the persisted confidence to
+ * `user_confirmed` in place (no recheck — the PWSID itself didn't
+ * change), while "No, my utility is different" expands an inline
+ * PWSID input that triggers a full recheck on save.
+ */
+function InferredHeader({
+  pwsName,
+  pwsid,
+  houseId,
+  onCorrectionSubmitted,
+}: {
+  pwsName: string;
+  pwsid: string;
+  houseId: string;
+  onCorrectionSubmitted: () => void;
+}) {
+  const [mode, setMode] = useState<"prompt" | "correcting">("prompt");
+  const [confirmInFlight, setConfirmInFlight] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  if (mode === "correcting") {
+    return (
+      <HeaderStripCard
+        iconName="info"
+        title="Tell us your water utility"
+        body={
+          <>
+            Enter your PWSID — your utility&rsquo;s federal ID. You can
+            find it on your most recent water bill, on your utility&rsquo;s
+            annual Water Quality Report, or by searching the{" "}
+            <a
+              href="https://sdwis.epa.gov/ords/sfdw_pub/r/sfdw/sdwis_fed_reports_public/200"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "var(--color-accent)" }}
+            >
+              EPA&rsquo;s SDWIS public search
+            </a>
+            .
+          </>
+        }
+        cta={
+          <PwsidEditor
+            houseId={houseId}
+            initialValue=""
+            onCancel={() => setMode("prompt")}
+            onSubmitted={onCorrectionSubmitted}
+          />
+        }
+      />
+    );
+  }
+
   return (
     <HeaderStripCard
       iconName="info"
@@ -243,18 +446,187 @@ function InferredHeader({ pwsName }: { pwsName: string }) {
         </>
       }
       cta={
-        <div className="flex flex-wrap gap-2">
-          <DisabledPlaceholderButton
-            label="Yes, that&rsquo;s right"
-            note="Confirmation is coming in a follow-up"
-          />
-          <DisabledPlaceholderButton
-            label="No, my utility is different"
-            note="Manual correction is coming in a follow-up"
-          />
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={confirmInFlight}
+              onClick={async () => {
+                setConfirmError(null);
+                setConfirmInFlight(true);
+                const result = await confirmWqaPwsid(houseId, pwsid);
+                if (!result.ok) {
+                  setConfirmError(result.error);
+                  setConfirmInFlight(false);
+                }
+                // On success, the realtime update flips
+                // pwsid_confidence on the persisted finding so this
+                // component unmounts. No need to clear in-flight state.
+              }}
+            >
+              {confirmInFlight ? "Saving…" : "Yes, that's right"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setMode("correcting")}
+            >
+              No, my utility is different
+            </button>
+          </div>
+          {confirmError ? (
+            <p
+              className="text-small"
+              style={{ color: "var(--color-danger)" }}
+              role="alert"
+            >
+              {confirmError}
+            </p>
+          ) : null}
         </div>
       }
     />
+  );
+}
+
+/**
+ * Inline PWSID input. Used by both the "No, my utility is different"
+ * path on the inferred-confidence header strip and the post-
+ * confirmation edit affordance on the System Card. Format-validates
+ * client-side against `^[A-Z]{2}\d{7}$` so the Save button only
+ * lights up when the user has typed something the server will accept.
+ *
+ * On submit, calls `correctWqaPwsid` which writes the override to
+ * `hearth.houses` and triggers a single-module WQA recheck. Errors
+ * surface inline; the input stays visible so the user can retry
+ * without losing what they typed. Issue #193.
+ */
+function PwsidEditor({
+  houseId,
+  initialValue,
+  onCancel,
+  onSubmitted,
+}: {
+  houseId: string;
+  initialValue: string;
+  onCancel: () => void;
+  /**
+   * Fires when `correctWqaPwsid` returns ok. The parent flips its
+   * in-flight state so the System Card swaps to the "Re-running…"
+   * view; this component unmounts as part of that swap.
+   */
+  onSubmitted: () => void;
+}) {
+  const [value, setValue] = useState(initialValue);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Auto-focus the input when the editor mounts so the user can start
+  // typing immediately. requestAnimationFrame defers past the parent's
+  // layout settle so the focus call lands in the right tick.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const normalized = normalizePwsid(value);
+  const isValid = isValidPwsid(normalized);
+
+  async function handleSubmit() {
+    if (!isValid || submitting) return;
+    setError(null);
+    setSubmitting(true);
+    const result = await correctWqaPwsid(houseId, normalized);
+    if (!result.ok) {
+      setError(result.error);
+      setSubmitting(false);
+      return;
+    }
+    onSubmitted();
+    // The parent unmounts us when the in-flight state flips. Leaving
+    // `submitting` true here prevents any flash of an interactive
+    // state in the final frame before unmount.
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <label
+          htmlFor="wqa-pwsid-input"
+          className="text-small"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          PWSID
+        </label>
+        <input
+          ref={inputRef}
+          id="wqa-pwsid-input"
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void handleSubmit();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              onCancel();
+            }
+          }}
+          placeholder="MI0003520"
+          autoComplete="off"
+          spellCheck={false}
+          disabled={submitting}
+          aria-invalid={value.length > 0 && !isValid}
+          aria-describedby="wqa-pwsid-hint"
+          className="mono"
+          style={{
+            width: "12ch",
+            padding: "6px 8px",
+            border: "1px solid var(--color-border-subtle)",
+            borderRadius: "var(--radius-sm)",
+            backgroundColor: "var(--color-bg-base)",
+            color: "var(--color-text-primary)",
+            fontSize: 13,
+          }}
+        />
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={handleSubmit}
+          disabled={!isValid || submitting}
+        >
+          {submitting ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={onCancel}
+          disabled={submitting}
+        >
+          Cancel
+        </button>
+      </div>
+      <p
+        id="wqa-pwsid-hint"
+        className="text-small"
+        style={{ color: "var(--color-text-tertiary)", lineHeight: 1.55 }}
+      >
+        Format: two-letter state code followed by a seven-digit number
+        (e.g. MI0003520).
+      </p>
+      {error ? (
+        <p
+          className="text-small"
+          style={{ color: "var(--color-danger)" }}
+          role="alert"
+        >
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -380,9 +752,18 @@ function DisabledPlaceholderButton({
 
 function SystemCard({
   findings,
+  houseId,
+  onCorrectionSubmitted,
   onUploadCcrRequest,
 }: {
   findings: WqaFindings;
+  houseId: string;
+  /**
+   * Issue #193 — fires when the user submits a PWSID correction
+   * through the inline edit affordance. The parent flips the
+   * in-flight state so this card swaps to the "Re-running…" view.
+   */
+  onCorrectionSubmitted: () => void;
   /**
    * When set, the Latest CCR tile renders as an interactive button
    * inviting the user to upload their utility's annual report. Null
@@ -392,6 +773,10 @@ function SystemCard({
   onUploadCcrRequest: (() => void) | null;
 }) {
   const card = findings.system_card;
+  // Issue #193 — local toggle for the inline PWSID edit affordance.
+  // Lives on this component (not lifted) because the editor only
+  // visually replaces the PWSID line; the rest of the card stays put.
+  const [editingPwsid, setEditingPwsid] = useState(false);
   if (!card) return null;
 
   const sourceLabel = (() => {
@@ -467,12 +852,56 @@ function SystemCard({
       >
         {card.pws_name}
       </h3>
-      <div
-        className="mono text-small"
-        style={{ color: "var(--color-text-tertiary)", marginBottom: 12 }}
-      >
-        PWSID {card.pwsid}
-      </div>
+      {editingPwsid ? (
+        // Issue #193 — inline correction editor replaces the PWSID
+        // display line. Same component the "No, my utility is
+        // different" path uses on the inferred-confidence header
+        // strip; one editor, two entry points.
+        <div style={{ marginBottom: 12 }}>
+          <PwsidEditor
+            houseId={houseId}
+            initialValue={card.pwsid}
+            onCancel={() => setEditingPwsid(false)}
+            onSubmitted={() => {
+              setEditingPwsid(false);
+              onCorrectionSubmitted();
+            }}
+          />
+        </div>
+      ) : (
+        <div
+          className="flex items-center gap-2"
+          style={{ marginBottom: 12 }}
+        >
+          <span
+            className="mono text-small"
+            style={{ color: "var(--color-text-tertiary)" }}
+          >
+            PWSID {card.pwsid}
+          </span>
+          {/* Edit affordance only on confirmation-eligible states.
+              Suppressed on `inferred` because the dedicated header
+              strip carries the confirm/correct affordance — showing
+              edit here too would be redundant and confusing. */}
+          {card.pwsid_confidence !== "inferred" ? (
+            <button
+              type="button"
+              onClick={() => setEditingPwsid(true)}
+              className="inline-flex items-center gap-1 text-small"
+              aria-label="Change your water utility's PWSID"
+              style={{
+                color: "var(--color-text-tertiary)",
+                background: "transparent",
+                border: "none",
+                padding: 0,
+              }}
+            >
+              <Icon name="edit" size={12} aria-hidden />
+              <span>Edit</span>
+            </button>
+          ) : null}
+        </div>
+      )}
 
       <div
         className="grid gap-3"
@@ -1168,8 +1597,23 @@ function SourcesBlock({ findings }: { findings: WqaFindings }) {
 
   return (
     <section aria-labelledby="wqa-sources-heading">
-      <div id="wqa-sources-heading" className="eyebrow mb-2">
-        Sources
+      <div className="flex items-baseline justify-between gap-3 mb-2">
+        <div id="wqa-sources-heading" className="eyebrow">
+          Sources
+        </div>
+        <a
+          href="/how-it-works#water-quality-awareness"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-small"
+          style={{
+            color: "var(--color-accent)",
+            textDecoration: "underline",
+            textUnderlineOffset: 3,
+          }}
+        >
+          How Hearth reads these sources
+        </a>
       </div>
       <ul className="flex flex-wrap gap-2">
         {pills.map((pill) => (
@@ -1178,17 +1622,6 @@ function SourcesBlock({ findings }: { findings: WqaFindings }) {
           </li>
         ))}
       </ul>
-      <p
-        className="text-small mt-3"
-        style={{ color: "var(--color-text-tertiary)" }}
-      >
-        <a
-          href="/how-it-works#water-quality-awareness"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          How Hearth reads these sources
-        </a>
-      </p>
     </section>
   );
 }

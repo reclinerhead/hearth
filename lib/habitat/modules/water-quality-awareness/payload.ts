@@ -381,10 +381,10 @@ export function deriveSeverity(
  * payload still ships, just without compliance or LCR enrichment.
  *
  * `pwsidConfidence` carries the WQA-2 followup nearest-polygon fallback's
- * verdict: "verified" when EPA's point-in-polygon query matched the
- * user's exact coordinates, "inferred" when the 500m fallback found a
- * single dominant utility nearby. Defaults to "verified" for back-
- * compat with payload-build call sites that don't pass it.
+ * verdict ("verified" / "inferred") or, when the user has confirmed or
+ * corrected their PWSID via the WQA findings panel, one of the two
+ * `user_*` values (issue #193). Defaults to "verified" for back-compat
+ * with payload-build call sites that don't pass it.
  */
 /**
  * CCR enrichment bundle passed into `buildSystemPayload` on the
@@ -409,7 +409,11 @@ export function buildSystemPayload(
     compliance: null,
     leadCopper: { status: "unavailable" },
   },
-  pwsidConfidence: "verified" | "inferred" = "verified",
+  pwsidConfidence:
+    | "verified"
+    | "inferred"
+    | "user_confirmed"
+    | "user_corrected" = "verified",
   /**
    * Pre-computed WQA-4 recommended-action cards. Built by
    * recommended-actions.ts and passed in from `check()` so the

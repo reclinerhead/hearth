@@ -31,6 +31,8 @@ const KALAMAZOO_HOUSE: HouseContext = {
   parcelId: null,
   waterSource: "municipal",
   basementPresent: null,
+  waterSystemUserPwsid: null,
+  waterSystemPwsidConfidence: null,
 };
 
 type FetchHandler = (url: string) => Response | Promise<Response>;
@@ -424,6 +426,82 @@ describe("WQA module check() — direct miss + no-match fallback", () => {
     const finding = await WqaModule.check(KALAMAZOO_HOUSE);
     const f = finding.findings as unknown as WqaFindings;
     expect(f.branch).toBe("cws_unmapped");
+  });
+});
+
+describe("WQA module check() — issue #193 user-supplied PWSID override", () => {
+  it("skips the EPA polygon lookup when waterSystemUserPwsid is set", async () => {
+    const m = installFetchMock({
+      "FeatureServer/0/query?": () => {
+        throw new Error(
+          "EPA polygon lookup should be skipped when the user supplied a PWSID",
+        );
+      },
+      "efservice/WATER_SYSTEM": () =>
+        fakeResponse(kalamazooWaterSystemResponse()),
+      "efservice/VIOLATION": () => fakeResponse([]),
+      "efservice/LCR_SAMPLE_RESULT": () => fakeResponse([]),
+    });
+
+    const house: HouseContext = {
+      ...KALAMAZOO_HOUSE,
+      waterSystemUserPwsid: "MI0003520",
+      waterSystemPwsidConfidence: "user_confirmed",
+    };
+    const finding = await WqaModule.check(house);
+    const f = finding.findings as unknown as WqaFindings;
+
+    // The persisted confidence mirrors the houses-row value.
+    expect(f.system_card?.pwsid_confidence).toBe("user_confirmed");
+    expect(f.system_card?.pwsid).toBe("MI0003520");
+    expect(f.branch).toBe("cws_no_ccr");
+
+    // No FeatureServer calls at all — the override path bypasses both
+    // the direct point-in-polygon and the nearest-polygon fallback.
+    const featureCalls = m.fetchSpy.mock.calls.filter((c) =>
+      String(c[0]).includes("FeatureServer"),
+    );
+    expect(featureCalls).toHaveLength(0);
+  });
+
+  it("persists user_corrected confidence when the houses row says so", async () => {
+    installFetchMock({
+      "FeatureServer/0/query?": () => {
+        throw new Error("polygon lookup should not run");
+      },
+      "efservice/WATER_SYSTEM": () =>
+        fakeResponse(kalamazooWaterSystemResponse()),
+      "efservice/VIOLATION": () => fakeResponse([]),
+      "efservice/LCR_SAMPLE_RESULT": () => fakeResponse([]),
+    });
+
+    const house: HouseContext = {
+      ...KALAMAZOO_HOUSE,
+      waterSystemUserPwsid: "MI0003520",
+      waterSystemPwsidConfidence: "user_corrected",
+    };
+    const finding = await WqaModule.check(house);
+    const f = finding.findings as unknown as WqaFindings;
+    expect(f.system_card?.pwsid_confidence).toBe("user_corrected");
+  });
+
+  it("routes to 'stale' when the user-supplied PWSID returns no record from EPA", async () => {
+    installFetchMock({
+      "FeatureServer/0/query?": () => {
+        throw new Error("polygon lookup should not run");
+      },
+      // EPA returns an empty array for unknown PWSIDs.
+      "efservice/WATER_SYSTEM": () => fakeResponse([]),
+    });
+
+    const house: HouseContext = {
+      ...KALAMAZOO_HOUSE,
+      waterSystemUserPwsid: "ZZ9999999",
+      waterSystemPwsidConfidence: "user_corrected",
+    };
+    const finding = await WqaModule.check(house);
+    const f = finding.findings as unknown as WqaFindings;
+    expect(f.branch).toBe("stale");
   });
 });
 

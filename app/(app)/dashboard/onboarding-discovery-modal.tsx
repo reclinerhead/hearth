@@ -84,6 +84,8 @@ function houseContextFromRow(house: House): HouseContext {
     parcelId: house.parcel_id,
     waterSource: house.water_source,
     basementPresent: house.basement_present,
+    waterSystemUserPwsid: house.water_system_user_pwsid ?? null,
+    waterSystemPwsidConfidence: house.water_system_pwsid_confidence ?? null,
   };
 }
 

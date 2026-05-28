@@ -84,7 +84,7 @@ async function loadHouseContext(houseId: string): Promise<HouseContext> {
   const { data, error } = await supabase
     .from("houses")
     .select(
-      "id, address_line1, city, state, county, postal_code, latitude, longitude, parcel_id, water_source, basement_present",
+      "id, address_line1, city, state, county, postal_code, latitude, longitude, parcel_id, water_source, basement_present, water_system_user_pwsid, water_system_pwsid_confidence",
     )
     .eq("id", houseId)
     .single();
@@ -107,6 +107,12 @@ async function loadHouseContext(houseId: string): Promise<HouseContext> {
     parcelId: data.parcel_id,
     waterSource: data.water_source ?? null,
     basementPresent: data.basement_present ?? null,
+    waterSystemUserPwsid: data.water_system_user_pwsid ?? null,
+    waterSystemPwsidConfidence:
+      (data.water_system_pwsid_confidence as
+        | "user_confirmed"
+        | "user_corrected"
+        | null) ?? null,
   };
 }
 

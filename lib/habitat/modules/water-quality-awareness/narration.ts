@@ -212,6 +212,35 @@ export function branchDecideNarration(input: {
 }
 
 /**
+ * Activity-log narration for runs where the user has confirmed or
+ * corrected their PWSID via the WQA findings panel — we read the
+ * override straight off `houses.water_system_user_pwsid` and skip
+ * the EPA polygon lookup entirely. Issue #193.
+ *
+ * Stands in for the usual "fetch CWS Service Areas" + nearest-polygon
+ * steps so the log still narrates the input the decision rested on.
+ */
+export function userSuppliedPwsidNarration(input: {
+  pwsid: string;
+  confidence: "user_confirmed" | "user_corrected";
+}): { narration: string; detail: string; result_summary: string } {
+  if (input.confidence === "user_confirmed") {
+    return {
+      narration:
+        "You confirmed this is the utility serving your home, so I used the PWSID you confirmed directly instead of checking EPA's polygon map again.",
+      detail: `houses.water_system_user_pwsid=${input.pwsid}; confidence=user_confirmed`,
+      result_summary: "used confirmed PWSID",
+    };
+  }
+  return {
+    narration:
+      "You told us the utility serving your home, so I used the PWSID you supplied directly instead of checking EPA's polygon map.",
+    detail: `houses.water_system_user_pwsid=${input.pwsid}; confidence=user_corrected`,
+    result_summary: "used corrected PWSID",
+  };
+}
+
+/**
  * Activity-log narration for the very-first step on a user-declared
  * private-well / shared-system run, where we skip the EPA polygon
  * lookup entirely. Stands in for the usual "fetch CWS Service Areas"

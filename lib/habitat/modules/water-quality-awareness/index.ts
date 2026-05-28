@@ -104,6 +104,7 @@ import {
   pwsidFetchNarration,
   recommendedActionsComputeNarration,
   trustedWaterSourceNarration,
+  userSuppliedPwsidNarration,
   violationsFetchNarration,
 } from "./narration";
 import {
@@ -239,66 +240,97 @@ const WaterQualityAwarenessModule: HabitatModule = {
       );
     }
 
-    // Step 1 — direct point-in-polygon lookup.
-    const directMatch = await resolvePwsidAtPoint(lat, lng);
-    const fetch1 = pwsidFetchNarration({
-      lat,
-      lng,
-      resolved: directMatch.match !== null,
-      totalFeatures: directMatch.totalFeatures,
-      // Fallback always runs on a direct miss (post-WQA-2-followup).
-      willRunFallback: directMatch.match === null,
-    });
-    log.step({
-      kind: "fetch",
-      narration: fetch1.narration,
-      detail: fetch1.detail,
-      result_summary: fetch1.result_summary,
-      source: EPA_CWS_SERVICE_AREAS_SOURCE,
-    });
-
-    // Step 1b — when the direct lookup missed, run the nearest-polygon
-    // fallback (~500m buffer). EPA's national polygon coverage has
-    // documented gaps (rural fringes, recent annexations, and pockets
-    // inside major cities — 604 Norton Dr in Kalamazoo is the
-    // canonical regression case). The fallback recovers the correct
-    // PWSID when every nearby polygon belongs to the same utility.
+    // Issue #193 — user-supplied PWSID short-circuit. When the user has
+    // confirmed or corrected their PWSID via the WQA findings panel,
+    // we skip the EPA polygon lookup entirely and use their override as
+    // the authoritative PWSID. Downstream WATER_SYSTEM / CCR / SDWIS
+    // fetches all key off this PWSID the same way they would for a
+    // verified polygon match. The confidence flag travels through to
+    // the persisted payload so the UI keeps the strip suppressed and
+    // surfaces the edit affordance on the system card.
     let resolution: PwsidResolution;
     let nearbyOutcome: NearestPwsidResult | null = null;
-    if (directMatch.match) {
-      resolution = {
-        confidence: "verified",
-        pwsid: directMatch.match.pwsid,
-        pwsName: directMatch.match.pwsName,
-      };
-    } else {
-      nearbyOutcome = await resolveNearestPwsid(lat, lng);
-      const fallbackStep = nearestPwsidFetchNarration({
-        radiusMeters: NEAREST_POLYGON_FALLBACK_RADIUS_M,
-        outcome: nearbyOutcome,
+
+    if (
+      house.waterSystemUserPwsid !== null &&
+      house.waterSystemPwsidConfidence !== null
+    ) {
+      const userStep = userSuppliedPwsidNarration({
+        pwsid: house.waterSystemUserPwsid,
+        confidence: house.waterSystemPwsidConfidence,
       });
       log.step({
         kind: "fetch",
-        narration: fallbackStep.narration,
-        detail: fallbackStep.detail,
-        result_summary: fallbackStep.result_summary,
+        narration: userStep.narration,
+        detail: userStep.detail,
+        result_summary: userStep.result_summary,
+        source: HEARTH_BRANCH_SOURCE,
+      });
+      resolution = {
+        confidence: house.waterSystemPwsidConfidence,
+        pwsid: house.waterSystemUserPwsid,
+        pwsName: null,
+      };
+    } else {
+      // Step 1 — direct point-in-polygon lookup.
+      const directMatch = await resolvePwsidAtPoint(lat, lng);
+      const fetch1 = pwsidFetchNarration({
+        lat,
+        lng,
+        resolved: directMatch.match !== null,
+        totalFeatures: directMatch.totalFeatures,
+        // Fallback always runs on a direct miss (post-WQA-2-followup).
+        willRunFallback: directMatch.match === null,
+      });
+      log.step({
+        kind: "fetch",
+        narration: fetch1.narration,
+        detail: fetch1.detail,
+        result_summary: fetch1.result_summary,
         source: EPA_CWS_SERVICE_AREAS_SOURCE,
       });
-      if (nearbyOutcome.kind === "single-nearby") {
+
+      // Step 1b — when the direct lookup missed, run the nearest-polygon
+      // fallback (~500m buffer). EPA's national polygon coverage has
+      // documented gaps (rural fringes, recent annexations, and pockets
+      // inside major cities — 604 Norton Dr in Kalamazoo is the
+      // canonical regression case). The fallback recovers the correct
+      // PWSID when every nearby polygon belongs to the same utility.
+      if (directMatch.match) {
         resolution = {
-          confidence: "inferred",
-          pwsid: nearbyOutcome.pwsid,
-          pwsName: nearbyOutcome.pwsName,
+          confidence: "verified",
+          pwsid: directMatch.match.pwsid,
+          pwsName: directMatch.match.pwsName,
         };
       } else {
-        resolution = { confidence: "unmapped" };
+        nearbyOutcome = await resolveNearestPwsid(lat, lng);
+        const fallbackStep = nearestPwsidFetchNarration({
+          radiusMeters: NEAREST_POLYGON_FALLBACK_RADIUS_M,
+          outcome: nearbyOutcome,
+        });
+        log.step({
+          kind: "fetch",
+          narration: fallbackStep.narration,
+          detail: fallbackStep.detail,
+          result_summary: fallbackStep.result_summary,
+          source: EPA_CWS_SERVICE_AREAS_SOURCE,
+        });
+        if (nearbyOutcome.kind === "single-nearby") {
+          resolution = {
+            confidence: "inferred",
+            pwsid: nearbyOutcome.pwsid,
+            pwsName: nearbyOutcome.pwsName,
+          };
+        } else {
+          resolution = { confidence: "unmapped" };
+        }
       }
     }
-
-    // Step 2 — when we have a PWSID (verified OR inferred), fetch the
-    // WATER_SYSTEM inventory record. Inferred PWSIDs are treated as
-    // authoritative for data fetching; the confidence distinction
-    // surfaces only in payload + activity log.
+    // Step 2 — when we have a PWSID (verified / inferred / user_*),
+    // fetch the WATER_SYSTEM inventory record. Inferred and user-
+    // supplied PWSIDs are treated as authoritative for data fetching;
+    // the confidence distinction surfaces only in payload + activity
+    // log.
     let record = null as Awaited<ReturnType<typeof resolveWaterSystem>>["record"];
     if (resolution.confidence !== "unmapped") {
       const store = createSupabaseWaterSystemCacheStore();
@@ -607,11 +639,12 @@ const WaterQualityAwarenessModule: HabitatModule = {
         return buildStalePayload("Internal: branch resolved but record is null.");
       }
       // When we reach the buildSystemPayload path the resolution
-      // confidence is always "verified" or "inferred" — "unmapped"
-      // routes to cws_unmapped via the branches above. TypeScript
-      // can't narrow that across the IIFE boundary, so we read off
-      // the live resolution object directly.
-      const confidence =
+      // confidence is always "verified" / "inferred" / "user_confirmed"
+      // / "user_corrected" — "unmapped" routes to cws_unmapped via the
+      // branches above. TypeScript can't narrow that across the IIFE
+      // boundary, so we read off the live resolution object directly
+      // and fall back to "verified" defensively (unreachable).
+      const confidence: "verified" | "inferred" | "user_confirmed" | "user_corrected" =
         resolution.confidence === "unmapped" ? "verified" : resolution.confidence;
       // Build the CCR enrichment from the cache row when we landed on
       // cws_with_ccr. The persisted row's coverage year is the

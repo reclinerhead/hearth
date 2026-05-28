@@ -75,6 +75,21 @@ export interface HouseContext {
    */
   waterSource: "well" | "municipal" | "shared" | "unknown" | null;
   basementPresent: boolean | null;
+
+  /**
+   * Issue #193 — User-supplied PWSID override for the Water Quality
+   * Awareness module. When `waterSystemUserPwsid` is non-null, WQA's
+   * `check()` skips EPA polygon resolution and uses this PWSID as
+   * authoritative. The persisted `pwsid_confidence` on the finding
+   * mirrors `waterSystemPwsidConfidence`.
+   *
+   * Both fields are paired by a cross-column constraint at the database
+   * layer: either both are null (no override) or both are non-null
+   * (user confirmed or corrected). Modules can therefore treat them as
+   * a single Option<{pwsid, confidence}> at the application layer.
+   */
+  waterSystemUserPwsid: string | null;
+  waterSystemPwsidConfidence: "user_confirmed" | "user_corrected" | null;
 }
 
 /**
