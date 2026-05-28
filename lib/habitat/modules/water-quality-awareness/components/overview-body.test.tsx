@@ -505,6 +505,118 @@ describe("WqaOverviewBody — LCR empty states", () => {
   });
 });
 
+/* -------- cws_with_ccr fixtures and tests -------- */
+
+type CcrFixtureRow = {
+  name: string;
+  level: number | null;
+  mcl: number | null;
+  tier: "concern" | "caution" | "context";
+};
+
+function cwsWithCcrFindings(rows: CcrFixtureRow[]): WqaFindings {
+  const contaminants = rows.map((r) => ({
+    contaminant_name: r.name,
+    contaminant_code: null,
+    detected_level: r.level,
+    unit: "ppb",
+    mcl: r.mcl,
+    mclg: null,
+    mcl_action_level: null,
+    sources: null,
+    monitoring_period: null,
+    violation_in_period_ind: null,
+    notes: null,
+    source_table_label: null,
+    tier: r.tier,
+    has_multiple_observations: false,
+    other_observations: [],
+  }));
+  return {
+    branch: "cws_with_ccr",
+    system_card: {
+      pws_name: "Test Utility",
+      pwsid: "MI0000001",
+      description: "Surface water system.",
+      source_type: "surface",
+      compliance_status_short: "no_active_violations",
+      latest_ccr_status: { year: 2024 },
+      source_water_protection_since: null,
+    },
+    branch_metadata: {
+      branch: "cws_with_ccr",
+      is_active: true,
+      system_type: "CWS",
+      admin_contact: null,
+    },
+    ccr_findings: {
+      report_year: 2024,
+      published_date: null,
+      contaminants,
+      lead_copper_distribution: null,
+      ucmr_results: null,
+      free_testing_offer: null,
+      ai_confidence: 0.9,
+    },
+  };
+}
+
+describe("WqaOverviewBody — CCR contaminant list (issue #199)", () => {
+  it("renders headline rows inline and collapses 2+ context rows behind a disclosure", () => {
+    render(
+      cwsWithCcrFindings([
+        { name: "Cau-A", level: 2.5, mcl: 3, tier: "caution" },
+        { name: "Ctx-A", level: 0.1, mcl: 3, tier: "context" },
+        { name: "Ctx-B", level: 0.05, mcl: 3, tier: "context" },
+        { name: "Ctx-C", level: 0.02, mcl: 3, tier: "context" },
+      ]),
+    );
+    // Headline (caution) row visible above the fold.
+    expect(text()).toContain("Cau-A");
+    // Disclosure summary shows the count of collapsed rows.
+    expect(text()).toContain("3 more contaminants detected at low levels");
+    // The context rows themselves are inside the <details> — the
+    // summary doesn't contain them, but textContent walks the whole
+    // tree so the names ARE in the text. Test what's structurally
+    // observable instead: the summary text is present.
+    expect(text()).toMatch(/3 more contaminants detected at low levels/);
+  });
+
+  it("keeps a single context row inline (no disclosure overhead for one row)", () => {
+    render(
+      cwsWithCcrFindings([
+        { name: "Cau-A", level: 2.5, mcl: 3, tier: "caution" },
+        { name: "Ctx-Only", level: 0.1, mcl: 3, tier: "context" },
+      ]),
+    );
+    expect(text()).toContain("Cau-A");
+    expect(text()).toContain("Ctx-Only");
+    expect(text()).not.toContain("more contaminants detected at low levels");
+  });
+
+  it("does not render a disclosure when there are zero context rows", () => {
+    render(
+      cwsWithCcrFindings([
+        { name: "Con-A", level: 5, mcl: 3, tier: "concern" },
+        { name: "Cau-A", level: 2.5, mcl: 3, tier: "caution" },
+      ]),
+    );
+    expect(text()).toContain("Con-A");
+    expect(text()).toContain("Cau-A");
+    expect(text()).not.toContain("more contaminants detected at low levels");
+  });
+
+  it("renders disclosure-only when every row is context (no inline headline list)", () => {
+    render(
+      cwsWithCcrFindings([
+        { name: "Ctx-A", level: 0.1, mcl: 3, tier: "context" },
+        { name: "Ctx-B", level: 0.05, mcl: 3, tier: "context" },
+      ]),
+    );
+    expect(text()).toContain("2 more contaminants detected at low levels");
+  });
+});
+
 describe("WqaOverviewBody — cws_unmapped", () => {
   it("renders the unmapped header strip with disabled CCR upload affordance", () => {
     const findings: WqaFindings = {
