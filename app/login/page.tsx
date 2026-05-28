@@ -50,8 +50,11 @@ export default function LoginPage() {
     <main
       className="flex min-h-dvh flex-col items-center justify-center px-6"
       style={{
-        background:
-          "radial-gradient(900px 600px at 50% -10%, color-mix(in oklab, var(--color-accent) 12%, transparent), transparent 60%)",
+        background: `
+          radial-gradient(120% 80% at 50% 120%, transparent 40%, color-mix(in oklab, black 35%, transparent) 100%),
+          radial-gradient(140% 90% at 50% 50%, color-mix(in oklab, var(--color-accent) 9%, transparent), transparent 62%),
+          var(--color-bg-base)
+        `,
       }}
     >
       <div className="w-full max-w-sm">
