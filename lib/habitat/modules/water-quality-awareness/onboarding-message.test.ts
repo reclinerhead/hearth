@@ -30,6 +30,7 @@ function withInput(
     severity: "neutral",
     pwsName: NAME,
     complianceStatus: "no_active_violations",
+    hasActiveNonHealthBased: false,
     lcrAxis: { kind: "unknown" },
     ...overrides,
   };
@@ -119,12 +120,16 @@ describe("buildCwsOnboardingMessage", () => {
   });
 
   describe("caution — non-health-based violation", () => {
+    // `compliance_status_short` is health-based-only by design — it stays
+    // 'no_active_violations' even when has_active_non_health_based is
+    // true. The builder reads the separate flag for this branch.
     it("uses monitoring-flavoured copy with no LCR clause when LCR is clean", () => {
       expect(
         buildCwsOnboardingMessage(
           withInput({
             severity: "caution",
-            complianceStatus: "active_violations",
+            complianceStatus: "no_active_violations",
+            hasActiveNonHealthBased: true,
             lcrAxis: lcr({ lead: "below", copper: "below" }),
           }),
         ),
@@ -138,7 +143,8 @@ describe("buildCwsOnboardingMessage", () => {
         buildCwsOnboardingMessage(
           withInput({
             severity: "caution",
-            complianceStatus: "active_violations",
+            complianceStatus: "no_active_violations",
+            hasActiveNonHealthBased: true,
             lcrAxis: { kind: "unknown" },
           }),
         ),
@@ -147,18 +153,35 @@ describe("buildCwsOnboardingMessage", () => {
       );
     });
 
-    it("appends the LCR-approaching clause when both axes flag caution", () => {
+    it("appends the LCR-approaching clause when both non-health and LCR axes flag caution", () => {
       expect(
         buildCwsOnboardingMessage(
           withInput({
             severity: "caution",
-            complianceStatus: "active_violations",
+            complianceStatus: "no_active_violations",
+            hasActiveNonHealthBased: true,
             lcrAxis: lcr({ lead: "approaching", copper: "absent" }),
           }),
         ),
       ).toBe(
         `Found your water utility — ${NAME} — EPA shows a non-health monitoring issue on file and recent lead samples are approaching the action level. We'll flag this for follow-up.`,
       );
+    });
+
+    it("falls back to neutral copy on legacy rows where hasActiveNonHealthBased is undefined (pre-#186 payloads)", () => {
+      // Old payloads don't carry the flag. We can't fabricate a
+      // monitoring issue we can't confirm, so the row degrades to the
+      // neutral fallback until the WQA cadence rewrites it.
+      expect(
+        buildCwsOnboardingMessage(
+          withInput({
+            severity: "caution",
+            complianceStatus: "no_active_violations",
+            hasActiveNonHealthBased: undefined,
+            lcrAxis: { kind: "unknown" },
+          }),
+        ),
+      ).toBe(`Found your water utility — ${NAME}.`);
     });
   });
 

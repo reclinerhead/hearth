@@ -606,6 +606,7 @@ const WaterQualityAwarenessModule: HabitatModule = {
           | "unknown"
           | "no_active_violations"
           | "active_violations";
+        has_active_non_health_based?: boolean;
       };
       lead_copper_summary?: LeadCopperSummary;
     };
@@ -631,6 +632,7 @@ const WaterQualityAwarenessModule: HabitatModule = {
       severity: finding.severity,
       pwsName: name,
       complianceStatus: f?.system_card?.compliance_status_short,
+      hasActiveNonHealthBased: f?.system_card?.has_active_non_health_based,
       lcrAxis: classifyLcrAxis(
         f?.lead_copper_summary ?? { status: "unavailable" },
       ),

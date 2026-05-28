@@ -37,6 +37,17 @@ export type CwsOnboardingMessageInput = {
   severity: HabitatSeverity;
   pwsName: string | undefined;
   complianceStatus: ComplianceStatusShort | undefined;
+  /**
+   * Whether the system carries at least one currently-active
+   * non-health-based (monitoring / reporting) violation. Tracked
+   * separately from `complianceStatus` because the latter is
+   * health-based-only — a non-health-based violation doesn't flip
+   * `compliance_status_short` to `'active_violations'`. Undefined on
+   * payloads persisted before issue #186 added the field; treated as
+   * `false` so old rows degrade to the neutral fallback rather than
+   * fabricating a violation.
+   */
+  hasActiveNonHealthBased: boolean | undefined;
   lcrAxis: LcrAxisClassification;
 };
 
@@ -70,9 +81,10 @@ export function buildCwsOnboardingMessage(
   }
 
   // Caution via non-health-based ("monitoring") compliance violation.
-  // Compliance is active but the row didn't escalate to concern, so the
-  // active violation must be non-health-based.
-  if (severity === "caution" && complianceStatus === "active_violations") {
+  // `compliance_status_short` is health-based-only, so we read the
+  // separate `has_active_non_health_based` flag here. If LCR is also
+  // approaching, append the contaminant clause.
+  if (severity === "caution" && input.hasActiveNonHealthBased) {
     if (approaching.length > 0) {
       return joinClause(
         input.pwsName,
