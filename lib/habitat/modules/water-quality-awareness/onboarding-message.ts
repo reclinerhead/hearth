@@ -1,24 +1,28 @@
 /**
  * Pure builder for the Water Quality Awareness module's discovery-modal
- * line (issue #186).
+ * line.
  *
- * Pre-#186 the line read off `compliance_status_short` only, which
- * produced a contradiction whenever WQA flagged a `caution` row via
- * the Lead and Copper Rule axis: the modal would show a warning glyph
- * + "Worth knowing" pill next to "EPA shows no active compliance
- * issues." This builder pairs the positive signal on the clean axis
- * with the honest call-out of the actual flag driver on the other
- * axis, drawing every input straight off the persisted finding.
+ * History:
+ *   #186 — first cut. Replaced a compliance-only line with a two-clause
+ *          sentence that paired clean compliance with the actual flag
+ *          driver, drawing every input straight off the persisted finding.
+ *   #188 — severity logic shifted: any detected lead/copper drives
+ *          caution (not only ≥80% of the action level), and
+ *          monitoring/reporting violations stop driving severity.
+ *          The builder's voice updated to "in active compliance with
+ *          EPA" + "any presence is worth knowing about" for the new
+ *          detected-but-low tier. The previous `hasActiveNonHealthBased`
+ *          branch was removed (unreachable after the severity change).
  *
  * Three inputs do all the work:
- *   - `severity` — the row's final severity, the disambiguator between
- *     "concern via health-based violation" and "concern via LCR above
- *     action" (and similarly for caution).
+ *   - `severity` — the row's final severity. Disambiguates "concern via
+ *     health-based violation" from "concern via LCR above action", and
+ *     gates which LCR tier the caution copy describes.
  *   - `complianceStatus` — `system_card.compliance_status_short`.
  *   - `lcrAxis` — `classifyLcrAxis(lead_copper_summary)` from `./lcr`,
- *     which exposes per-metal `above` / `approaching` / `below` /
- *     `absent` state without re-implementing the EPA action-level
- *     thresholds.
+ *     which exposes per-metal `above` / `approaching` / `detected` /
+ *     `below` / `absent` state without re-implementing the EPA action-
+ *     level thresholds.
  *
  * Branch and PWSID identity (private_well, cws_unmapped, stale,
  * non_community) are handled separately by the caller — those rows
@@ -37,17 +41,6 @@ export type CwsOnboardingMessageInput = {
   severity: HabitatSeverity;
   pwsName: string | undefined;
   complianceStatus: ComplianceStatusShort | undefined;
-  /**
-   * Whether the system carries at least one currently-active
-   * non-health-based (monitoring / reporting) violation. Tracked
-   * separately from `complianceStatus` because the latter is
-   * health-based-only — a non-health-based violation doesn't flip
-   * `compliance_status_short` to `'active_violations'`. Undefined on
-   * payloads persisted before issue #186 added the field; treated as
-   * `false` so old rows degrade to the neutral fallback rather than
-   * fabricating a violation.
-   */
-  hasActiveNonHealthBased: boolean | undefined;
   lcrAxis: LcrAxisClassification;
 };
 
@@ -62,6 +55,7 @@ export function buildCwsOnboardingMessage(
   const { severity, complianceStatus, lcrAxis } = input;
   const above = metalsAt(lcrAxis, "above");
   const approaching = metalsAt(lcrAxis, "approaching");
+  const detected = metalsAt(lcrAxis, "detected");
   const below = metalsAt(lcrAxis, "below");
 
   // Concern via active health-based compliance violation.
@@ -76,42 +70,40 @@ export function buildCwsOnboardingMessage(
   if (severity === "concern" && above.length > 0) {
     return joinClause(
       input.pwsName,
-      `EPA shows no active violations, but recent ${formatMetals(above)} samples are at or above the action level. Worth a closer look.`,
+      `they're in active compliance with EPA, but recent ${formatMetals(above)} samples are at or above the action level. Worth a closer look.`,
     );
   }
 
-  // Caution via non-health-based ("monitoring") compliance violation.
-  // `compliance_status_short` is health-based-only, so we read the
-  // separate `has_active_non_health_based` flag here. If LCR is also
-  // approaching, append the contaminant clause.
-  if (severity === "caution" && input.hasActiveNonHealthBased) {
-    if (approaching.length > 0) {
-      return joinClause(
-        input.pwsName,
-        `EPA shows a non-health monitoring issue on file and recent ${formatMetals(approaching)} samples are approaching the action level. We'll flag this for follow-up.`,
-      );
-    }
-    return joinClause(
-      input.pwsName,
-      "EPA shows a non-health monitoring issue on file. We'll flag this for follow-up.",
-    );
-  }
-
-  // Caution via LCR approaching the action level (compliance clean).
+  // Caution via LCR approaching the action level (≥80% but below).
+  // Comes before the broader detected branch so the more specific
+  // "approaching" copy wins when applicable.
   if (severity === "caution" && approaching.length > 0) {
     return joinClause(
       input.pwsName,
-      `EPA shows no active violations, but recent ${formatMetals(approaching)} samples are approaching the action level. We'll flag this for follow-up.`,
+      `they're in active compliance with EPA, but recent ${formatMetals(approaching)} samples are approaching the action level. We'll flag this for follow-up.`,
     );
   }
 
-  // Favorable — clean compliance AND at least one metal below action.
-  // We mention only the metals that actually had a below-action sample
-  // so we don't overclaim "lead and copper" when only one was tested.
+  // Caution via any detected lead/copper below the approaching tier
+  // (#188). Hearth's framing: any presence is worth knowing about —
+  // EPA's action level is a regulatory threshold, not a health-safety
+  // one. Voice pairs the positive on compliance with the honest
+  // call-out on the LCR axis.
+  if (severity === "caution" && detected.length > 0) {
+    return joinClause(
+      input.pwsName,
+      `they're in active compliance with EPA, but recent samples have detected ${formatMetals(detected)}. Any presence is worth knowing about.`,
+    );
+  }
+
+  // Favorable — clean compliance AND every sample below the detection
+  // limit. We mention only the metals that actually had a below-
+  // detection sample so we don't overclaim "lead and copper" when only
+  // one was tested.
   if (severity === "favorable") {
     return joinClause(
       input.pwsName,
-      `EPA shows no active violations and recent ${formatMetals(below)} samples are below the action level.`,
+      `they're in active compliance with EPA and recent samples show no detectable ${formatMetals(below)}.`,
     );
   }
 

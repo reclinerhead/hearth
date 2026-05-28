@@ -606,7 +606,6 @@ const WaterQualityAwarenessModule: HabitatModule = {
           | "unknown"
           | "no_active_violations"
           | "active_violations";
-        has_active_non_health_based?: boolean;
       };
       lead_copper_summary?: LeadCopperSummary;
     };
@@ -626,13 +625,12 @@ const WaterQualityAwarenessModule: HabitatModule = {
         : "Your address is served by a non-community water system.";
     }
     // CWS branches: build the line off severity + compliance + LCR axis
-    // so the message names the actual flag driver (issue #186). Helper is
-    // pure and unit-tested in `onboarding-message.test.ts`.
+    // so the message names the actual flag driver (issues #186, #188).
+    // Helper is pure and unit-tested in `onboarding-message.test.ts`.
     return buildCwsOnboardingMessage({
       severity: finding.severity,
       pwsName: name,
       complianceStatus: f?.system_card?.compliance_status_short,
-      hasActiveNonHealthBased: f?.system_card?.has_active_non_health_based,
       lcrAxis: classifyLcrAxis(
         f?.lead_copper_summary ?? { status: "unavailable" },
       ),

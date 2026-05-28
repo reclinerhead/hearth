@@ -241,7 +241,7 @@ describe("WQA module check() — direct miss + single-nearby fallback", () => {
     expect(f.system_card?.compliance_status_short).toBe("no_active_violations");
   });
 
-  it("regression: real Kalamazoo LCR response (17 PB90 rows, no copper, no dates) produces favorable severity", async () => {
+  it("regression: real Kalamazoo LCR response (17 PB90 rows, no copper, no dates) produces caution severity (issue #188)", async () => {
     installFetchMock({
       "FeatureServer/0/query?": (url) => {
         if (url.includes("distance=")) {
@@ -261,9 +261,12 @@ describe("WQA module check() — direct miss + single-nearby fallback", () => {
 
     const finding = await WqaModule.check(KALAMAZOO_HOUSE);
     const f = finding.findings as unknown as WqaFindings;
-    // Most recent lead is 0.0053 mg/L — below the 0.015 action level.
-    // No active violations + below-action LCR → favorable.
-    expect(finding.severity).toBe("favorable");
+    // Most recent lead is 0.0053 mg/L — well below the 0.015 action
+    // level but a positive detection. Pre-#188 this produced
+    // `favorable`; #188 escalates to `caution` because any lead
+    // detection is worth surfacing (regulatory thresholds aren't
+    // health-safety thresholds).
+    expect(finding.severity).toBe("caution");
     expect(f.lead_copper_summary?.status).toBe("available");
     if (f.lead_copper_summary?.status === "available") {
       const lead =
@@ -278,7 +281,7 @@ describe("WQA module check() — direct miss + single-nearby fallback", () => {
     }
   });
 
-  it("WQA-4: persists recommended_actions on the payload (free_testing fires for Kalamazoo)", async () => {
+  it("WQA-4: persists recommended_actions on the payload (pitcher_filter + free_testing both fire for Kalamazoo under #188)", async () => {
     installFetchMock({
       "FeatureServer/0/query?": (url) => {
         if (url.includes("distance=")) {
@@ -299,13 +302,22 @@ describe("WQA module check() — direct miss + single-nearby fallback", () => {
     const finding = await WqaModule.check(KALAMAZOO_HOUSE);
     const f = finding.findings as unknown as WqaFindings;
     // Kalamazoo has admin contact with phone → free_testing fires.
-    // Compliance is clean and LCR is well below action → pitcher_filter
-    // does NOT fire.
+    // Under #188, any detected lead/copper also fires pitcher_filter
+    // (Kalamazoo's recent lead is positive at ~35% of action level).
     expect(f.recommended_actions).toBeDefined();
-    expect(f.recommended_actions?.map((a) => a.id)).toEqual(["free_testing"]);
-    const card = f.recommended_actions![0];
-    expect(card.supporting_line).toContain("269-337-8768");
-    expect(card.supporting_line).toContain(
+    expect(f.recommended_actions?.map((a) => a.id)).toEqual([
+      "pitcher_filter",
+      "free_testing",
+    ]);
+    const filterCard = f.recommended_actions!.find(
+      (a) => a.id === "pitcher_filter",
+    )!;
+    expect(filterCard.supporting_line).toMatch(/any presence is worth knowing/i);
+    const testingCard = f.recommended_actions!.find(
+      (a) => a.id === "free_testing",
+    )!;
+    expect(testingCard.supporting_line).toContain("269-337-8768");
+    expect(testingCard.supporting_line).toContain(
       "Kalamazoo Public Water Supply",
     );
   });
@@ -332,14 +344,14 @@ describe("WQA module check() — direct miss + single-nearby fallback", () => {
     const steps = finding.activityLog?.steps ?? [];
     const computeSteps = steps.filter((s) => s.kind === "compute");
     // Two compute steps: one for compliance summary, one for
-    // recommended-actions (WQA-4). The recommended-actions step
-    // carries the emitted IDs in its detail.
+    // recommended-actions (WQA-4). Under #188 Kalamazoo emits both
+    // pitcher_filter and free_testing cards.
     const recommendationsStep = computeSteps.find((s) =>
-      (s.detail ?? "").includes("actions: free_testing"),
+      (s.detail ?? "").includes("actions: pitcher_filter, free_testing"),
     );
     expect(recommendationsStep).toBeDefined();
     expect(recommendationsStep?.result_summary).toMatch(
-      /1 recommendation/i,
+      /2 recommendations/i,
     );
   });
 });

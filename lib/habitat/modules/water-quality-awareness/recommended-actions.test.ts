@@ -41,7 +41,27 @@ function complianceActiveHealth(): ComplianceSummary {
   };
 }
 
-function lcrBelow(): LeadCopperSummary {
+function lcrBelowDetection(): LeadCopperSummary {
+  return {
+    status: "available",
+    sampling_period_count: 1,
+    most_recent_sampling_period: {
+      sampling_end_date: null,
+      lead_90th_percentile: {
+        value: 0.001,
+        unit: "mg/L",
+        sign: "<",
+        sample_id: "MI381874",
+      },
+      copper_90th_percentile: null,
+    },
+  };
+}
+
+function lcrDetected(): LeadCopperSummary {
+  // Positive but below the 80% approaching threshold — Kalamazoo's
+  // recent lead value (~35% of action level). Under #188 this drives
+  // caution severity and emits the pitcher_filter recommendation.
   return {
     status: "available",
     sampling_period_count: 1,
@@ -97,7 +117,7 @@ function inputs(
 ): RecommendedActionsInputs {
   return {
     compliance: complianceClean(),
-    leadCopper: lcrBelow(),
+    leadCopper: lcrBelowDetection(),
     adminContact: {
       name: "James Baker",
       email: "bakerj@kalamazoocity.org",
@@ -125,7 +145,16 @@ describe("shouldEmitPitcherFilter", () => {
     ).toBe(true);
   });
 
-  it("returns false when compliance is clean and LCR is below approaching", () => {
+  it("returns true when LCR has any detected lead/copper below approaching (issue #188)", () => {
+    // Any detection — not just approaching — emits the filter card.
+    // Hearth's framing: EPA's action level is a regulatory threshold,
+    // not a health-safety one.
+    expect(
+      shouldEmitPitcherFilter(inputs({ leadCopper: lcrDetected() })),
+    ).toBe(true);
+  });
+
+  it("returns false when compliance is clean and every LCR sample is below detection", () => {
     expect(shouldEmitPitcherFilter(inputs())).toBe(false);
   });
 
@@ -197,6 +226,14 @@ describe("buildRecommendedActions", () => {
       inputs({ leadCopper: lcrApproaching() }),
     );
     expect(approaching[0].supporting_line).toMatch(/inexpensive insurance/i);
+    // Sub-approaching detected: the #188 tier. Distinct copy that
+    // explicitly frames "any presence is worth knowing about."
+    const detected = buildRecommendedActions(
+      inputs({ leadCopper: lcrDetected() }),
+    );
+    expect(detected[0].id).toBe("pitcher_filter");
+    expect(detected[0].supporting_line).toMatch(/any presence is worth knowing/i);
+    expect(detected[0].supporting_line).toMatch(/sub-regulatory/i);
   });
 
   it("omits the admin name from free_testing copy when it's null", () => {

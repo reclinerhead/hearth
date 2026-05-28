@@ -97,12 +97,16 @@ export function buildRecommendedActions(
 /**
  * Whether to emit the pitcher_filter card. True when:
  *   - compliance shows an active health-based violation, OR
- *   - LCR data shows any measurement at or above the action level, OR
- *   - LCR data shows any measurement approaching (≥80% of) the
- *     action level.
+ *   - LCR data shows any detected lead or copper (sign='='|'>'
+ *     with value > 0), regardless of where the measurement sits
+ *     relative to the EPA action level.
  *
- * False when LCR is unavailable / no-samples-on-file AND compliance
- * is clean — no actionable signal to recommend filtration against.
+ * Aligned with the #188 severity model: any detection is worth a
+ * filter recommendation because EPA's action level is a regulatory
+ * cutoff, not a health-safety one, and household-plumbing lead can
+ * exceed system-wide samples regardless. False when LCR is
+ * unavailable / no-samples-on-file AND compliance is clean — no
+ * actionable signal to recommend filtration against.
  *
  * Exported for the test suite.
  */
@@ -111,11 +115,7 @@ export function shouldEmitPitcherFilter(
 ): boolean {
   if (input.compliance?.has_active_health_based) return true;
   const lcr = computeLcrSeverityInputs(input.leadCopper);
-  return (
-    lcr.lead_above_action ||
-    lcr.copper_above_action ||
-    lcr.any_approaching
-  );
+  return lcr.any_detected;
 }
 
 /**
@@ -140,7 +140,8 @@ function buildPitcherFilterAction(
   const lcrInputs = computeLcrSeverityInputs(input.leadCopper);
 
   // Tune the supporting line to the strongest signal — health-based
-  // violations are the heaviest, then above-action, then approaching.
+  // violations are the heaviest, then above-action, then approaching,
+  // then sub-approaching detection (#188).
   let supporting: string;
   if (compliance?.has_active_health_based) {
     supporting =
@@ -154,13 +155,21 @@ function buildPitcherFilterAction(
       "mount filter certified to NSF/ANSI 53 for lead reduction is the " +
       "broad-coverage starting point — we'll get more specific once " +
       "your annual Water Quality Report is uploaded.";
-  } else {
+  } else if (lcrInputs.any_approaching) {
     supporting =
       "Your utility's most recent lead-and-copper sampling is below " +
       "the federal action level but approaching it. A faucet-mount " +
       "filter certified to NSF/ANSI 53 is inexpensive insurance and " +
       "addresses lead from your own household plumbing (which the " +
       "utility's sampling doesn't directly measure).";
+  } else {
+    supporting =
+      "Your utility's most recent lead-and-copper sampling detected " +
+      "lead or copper at sub-regulatory levels. EPA's action level is " +
+      "a regulatory threshold, not a health-safety one — any presence " +
+      "is worth knowing about. A faucet-mount filter certified to " +
+      "NSF/ANSI 53 also addresses lead from your own household " +
+      "plumbing, which the utility's sampling doesn't directly measure.";
   }
 
   return {
