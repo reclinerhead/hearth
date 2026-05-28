@@ -1066,7 +1066,8 @@ function RecheckBanner({
       <p
         className="text-small"
         style={{
-          color: "var(--color-text-secondary)",
+          color: "var(--color-text-primary)",
+          fontWeight: 500,
           lineHeight: 1.55,
           margin: 0,
           flex: 1,
