@@ -1,8 +1,27 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+
+// `WqaOverviewBody` calls `useRouter()` from `next/navigation` so the
+// success handler on the CCR upload modal can trigger a server data
+// refresh. The Vitest jsdom environment has no Next app-router context;
+// the mock below stands in for it so the component renders. Tests
+// don't exercise the refresh path, so a no-op refresh is the right
+// stub — extending it requires a real test that opens the upload
+// modal, which isn't in this suite.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    refresh: () => {},
+    push: () => {},
+    replace: () => {},
+    back: () => {},
+    forward: () => {},
+    prefetch: () => {},
+  }),
+}));
+
 import { WqaOverviewBody } from "./overview-body";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import type { WqaFindings } from "../types";
@@ -38,7 +57,9 @@ function render(findings: WqaFindings) {
     activity_log: null,
     checked_at: "2026-05-26T00:00:00Z",
   };
-  act(() => root.render(<WqaOverviewBody row={row} />));
+  act(() =>
+    root.render(<WqaOverviewBody row={row} houseId="test-house-id" />),
+  );
 }
 
 function text(): string {
@@ -110,7 +131,9 @@ describe("WqaOverviewBody — cws_no_ccr verified (Kalamazoo happy path)", () =>
     expect(text()).toContain("Kalamazoo Public Water Supply");
     expect(text()).toContain("MI0003520");
     expect(text()).toContain("No active violations");
-    expect(text()).toContain("Not yet uploaded");
+    // The Latest CCR tile is the upload affordance on cws_no_ccr (#194).
+    // Earlier it read "Not yet uploaded"; now it invites the user.
+    expect(text()).toContain("Upload yours");
     expect(text()).toContain("Groundwater");
   });
 

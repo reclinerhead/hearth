@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * WQA overview body — the rich modal content the
  * `HabitatModule.renderOverviewBody` slot (issue #171) returns.
@@ -11,18 +13,29 @@
  *   3. Recommended for your situation (when recommended_actions
  *      is populated)
  *   4. Detected in your water (lead and copper measurements with
- *      tier cues; WQA-3 will expand this with CCR contaminants)
+ *      tier cues; CCR-detected contaminants when ccr_findings is
+ *      populated — issue #194 WQA-3 follow-up)
  *   5. Sources block (status pills for each of the four data sources)
  *
- * Pure read off the persisted finding — no hooks, no fetches. The
- * activity log section ("How we got here") is owned by the modal
- * shell, not this component.
+ * The `houseId` prop comes from the modal shell's
+ * `renderOverviewBody(row, { houseId })` context call. It's required
+ * because the Latest CCR tile spawns a house-scoped CCR upload modal
+ * — without it, no upload affordance can render.
  */
 
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { triggerHabitatRecheck } from "@/app/(app)/dashboard/actions";
+import { CcrUploadModal } from "@/components/ccr-upload/CcrUploadModal";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
 import { findWqaContaminantByAlias } from "@/lib/habitat/water-quality/contaminants/lookup";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
+import type {
+  CcrFindings,
+  CcrSummarizedContaminant,
+  CcrContaminantTier,
+} from "../ccr";
 import type { LcrMeasurement } from "../lcr";
 import {
   APPROACHING_THRESHOLD_RATIO,
@@ -37,8 +50,17 @@ import type {
 
 /* ---------- top-level body --------------------------------------------- */
 
-export function WqaOverviewBody({ row }: { row: HabitatFindingRow }) {
+export function WqaOverviewBody({
+  row,
+  houseId,
+}: {
+  row: HabitatFindingRow;
+  houseId: string;
+}) {
   const f = (row.findings ?? null) as WqaFindings | null;
+  const router = useRouter();
+  const [ccrModalOpen, setCcrModalOpen] = useState(false);
+
   if (!f) {
     return (
       <p
@@ -51,13 +73,52 @@ export function WqaOverviewBody({ row }: { row: HabitatFindingRow }) {
     );
   }
 
+  const card = f.system_card;
+
   return (
     <div className="flex flex-col gap-6">
       <BranchHeaderStrip findings={f} />
-      <SystemCard findings={f} />
+      <SystemCard
+        findings={f}
+        onUploadCcrRequest={
+          card &&
+          card.latest_ccr_status === "not_uploaded" &&
+          f.branch === "cws_no_ccr"
+            ? () => setCcrModalOpen(true)
+            : null
+        }
+      />
       <RecommendedActionsSection findings={f} />
       <DetectedInWater findings={f} />
       <SourcesBlock findings={f} />
+
+      {card?.pwsid ? (
+        <CcrUploadModal
+          open={ccrModalOpen}
+          onOpenChange={setCcrModalOpen}
+          houseId={houseId}
+          pwsid={card.pwsid}
+          utilityName={card.pws_name}
+          knownSystemContext={card.description}
+          onSuccess={() => {
+            // Kick off a habitat re-check so the WQA module runs again,
+            // finds the freshly-persisted CCR in the shared cache, and
+            // writes the `cws_with_ccr` branch + `latest_ccr_status:
+            // { year }` onto the finding row. The dashboard's realtime
+            // subscription propagates the new row into both the tile
+            // and (because the same row drives both) the finding modal
+            // body the user is still looking at, so the Latest CCR
+            // tile flips from "Upload yours" to "{year} report on file"
+            // without the user lifting a finger. Fire-and-forget: the
+            // server action returns immediately because the workflow
+            // runs in the background. router.refresh() also runs to
+            // catch any non-realtime surfaces (e.g. server components
+            // that read habitat_findings on initial render).
+            void triggerHabitatRecheck(houseId);
+            router.refresh();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -299,7 +360,19 @@ function DisabledPlaceholderButton({
 
 /* ---------- 2. "Your water system" card -------------------------------- */
 
-function SystemCard({ findings }: { findings: WqaFindings }) {
+function SystemCard({
+  findings,
+  onUploadCcrRequest,
+}: {
+  findings: WqaFindings;
+  /**
+   * When set, the Latest CCR tile renders as an interactive button
+   * inviting the user to upload their utility's annual report. Null
+   * on every state where upload isn't the right next step (CCR
+   * already on file, non-CWS branches, cws_unmapped without a PWSID).
+   */
+  onUploadCcrRequest: (() => void) | null;
+}) {
   const card = findings.system_card;
   if (!card) return null;
 
@@ -399,10 +472,12 @@ function SystemCard({ findings }: { findings: WqaFindings }) {
         />
         <StatTile
           label="Latest CCR"
-          value={ccr.label}
-          tone={ccr.tone}
-          icon={ccr.icon}
-          tooltip="A Consumer Confidence Report (CCR), also called an Annual Water Quality Report, is the federally-required annual disclosure of every regulated contaminant your utility tested for and detected last year. Utilities mail or email it by July 1 each year. Hearth will let you upload yours in an upcoming release."
+          value={onUploadCcrRequest ? "Upload yours" : ccr.label}
+          tone={onUploadCcrRequest ? "info" : ccr.tone}
+          icon={onUploadCcrRequest ? "upload" : ccr.icon}
+          tooltip="A Consumer Confidence Report (CCR), also called an Annual Water Quality Report, is the federally-required annual disclosure of every regulated contaminant your utility tested for and detected last year. Utilities mail or email it by July 1 each year — upload yours to populate the rest of this finding."
+          onClick={onUploadCcrRequest ?? undefined}
+          actionable={onUploadCcrRequest !== null}
         />
         <StatTile
           label="Source"
@@ -477,22 +552,25 @@ function StatTile({
   tone = "neutral",
   icon = null,
   tooltip = null,
+  onClick,
+  actionable = false,
 }: {
   label: string;
   value: string;
   tone?: TileTone;
   icon?: IconName | null;
   tooltip?: string | null;
+  /** When set together with `actionable`, the tile becomes a button. */
+  onClick?: () => void;
+  /**
+   * Renders the tile as an interactive button rather than a static
+   * div. Used by the Latest CCR tile in cws_no_ccr to invite upload.
+   */
+  actionable?: boolean;
 }) {
   const styles = TONE_STYLES[tone];
-  return (
-    <div
-      className="rounded-md p-3"
-      style={{
-        border: `1px solid ${styles.border}`,
-        backgroundColor: styles.background,
-      }}
-    >
+  const body = (
+    <>
       <div
         style={{
           display: "flex",
@@ -535,6 +613,35 @@ function StatTile({
         ) : null}
         <span>{value}</span>
       </div>
+    </>
+  );
+
+  if (actionable && onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="rounded-md p-3 text-left transition-colors"
+        style={{
+          border: `1px solid ${styles.border}`,
+          backgroundColor: styles.background,
+          color: "inherit",
+        }}
+      >
+        {body}
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="rounded-md p-3"
+      style={{
+        border: `1px solid ${styles.border}`,
+        backgroundColor: styles.background,
+      }}
+    >
+      {body}
     </div>
   );
 }
@@ -643,6 +750,7 @@ function RecommendedActionCard({ action }: { action: WqaRecommendedAction }) {
 
 function DetectedInWater({ findings }: { findings: WqaFindings }) {
   const lcr = findings.lead_copper_summary;
+  const ccr = findings.ccr_findings;
 
   // Suppress section entirely on branches that have no contaminant
   // data and no actionable empty-state copy to offer.
@@ -653,12 +761,22 @@ function DetectedInWater({ findings }: { findings: WqaFindings }) {
     return null;
   }
 
+  // On cws_with_ccr, the CCR's contaminant list is the canonical "what's
+  // in your water" view — it covers lead/copper plus everything else the
+  // utility tested. We render that in place of the SDWIS-only lead/copper
+  // rows. On other CWS branches (cws_no_ccr, non_community) we fall
+  // back to the SDWIS lead/copper view.
+  const renderCcr =
+    findings.branch === "cws_with_ccr" && ccr && ccr.contaminants !== null;
+
   return (
     <section aria-labelledby="wqa-detected-heading">
       <div id="wqa-detected-heading" className="eyebrow mb-2">
         Detected in your water
       </div>
-      {!lcr || lcr.status === "unavailable" ? (
+      {renderCcr ? (
+        <CcrContaminantList ccr={ccr!} />
+      ) : !lcr || lcr.status === "unavailable" ? (
         <EmptyDetected
           body="We couldn't read your utility's lead-and-copper samples on this run. We'll try again on the next refresh."
         />
@@ -683,6 +801,138 @@ function DetectedInWater({ findings }: { findings: WqaFindings }) {
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * CCR-derived contaminant list. Read straight off `findings.ccr_findings`
+ * which the summarizer already sorted concern → caution → context. Each
+ * row shows the detected level, MCL, and source boilerplate from the
+ * CCR; the disclosure expands to the contaminant-reference description
+ * when one is on file.
+ */
+function CcrContaminantList({ ccr }: { ccr: CcrFindings }) {
+  const contaminants = ccr.contaminants ?? [];
+
+  if (contaminants.length === 0) {
+    // The extraction returned a clean contaminant table — a positive
+    // signal that the utility tested for the federally regulated set
+    // and detected nothing above its reporting threshold. The lead/
+    // copper distribution may still have data; surface it as the
+    // bottom-line summary.
+    return (
+      <div className="flex flex-col gap-2">
+        <p
+          className="text-small"
+          style={{ color: "var(--color-text-secondary)", lineHeight: 1.55 }}
+        >
+          Your utility&rsquo;s {ccr.report_year ?? "latest"} report shows no
+          measurable detections above EPA reporting thresholds for the
+          federally regulated contaminants.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <ul className="flex flex-col gap-2">
+      {contaminants.map((c, i) => (
+        <li
+          key={`${c.contaminant_name}-${i}`}
+          className="rounded-md p-3"
+          style={{
+            border: "1px solid var(--color-border-subtle)",
+            backgroundColor: "var(--color-bg-surface-raised)",
+          }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <CcrTierBadge tier={c.tier} />
+            <span
+              style={{
+                fontSize: 14,
+                fontWeight: 500,
+                color: "var(--color-text-primary)",
+              }}
+            >
+              {c.contaminant_name}
+            </span>
+          </div>
+          <div
+            className="mono text-small"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            {formatCcrLevel(c)}
+            {c.mcl !== null ? (
+              <span style={{ color: "var(--color-text-tertiary)" }}>
+                {" "}
+                • MCL {c.mcl}
+                {c.unit ? ` ${c.unit}` : ""}
+              </span>
+            ) : null}
+            {c.monitoring_period ? (
+              <span style={{ color: "var(--color-text-tertiary)" }}>
+                {" "}
+                • {c.monitoring_period}
+              </span>
+            ) : null}
+          </div>
+          {c.sources || c.notes ? (
+            <details className="mt-2">
+              <summary
+                className="text-small cursor-pointer"
+                style={{ color: "var(--color-accent)" }}
+              >
+                What this means
+              </summary>
+              <div
+                className="text-small mt-2"
+                style={{
+                  color: "var(--color-text-secondary)",
+                  lineHeight: 1.55,
+                }}
+              >
+                {c.sources ? <p>Likely sources: {c.sources}</p> : null}
+                {c.notes ? <p>{c.notes}</p> : null}
+              </div>
+            </details>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function formatCcrLevel(c: CcrSummarizedContaminant): string {
+  if (c.detected_level === null) return "Detection level not reported";
+  if (c.unit) return `Detected: ${c.detected_level} ${c.unit}`;
+  return `Detected: ${c.detected_level}`;
+}
+
+function CcrTierBadge({ tier }: { tier: CcrContaminantTier }) {
+  const label =
+    tier === "concern"
+      ? "Worth acting on"
+      : tier === "caution"
+        ? "Worth knowing"
+        : "Context";
+  const tone =
+    tier === "context"
+      ? { bg: "var(--color-bg-base)", color: "var(--color-text-tertiary)" }
+      : {
+          bg: "color-mix(in oklab, #d97706 18%, transparent)",
+          color: "#d97706",
+        };
+  return (
+    <span
+      className="rounded-full px-2 py-0.5 eyebrow"
+      style={{
+        backgroundColor: tone.bg,
+        color: tone.color,
+        fontSize: 10,
+      }}
+    >
+      {label}
+    </span>
   );
 }
 

@@ -705,8 +705,8 @@ const WaterQualityAwarenessModule: HabitatModule = {
    * JSX-runtime imports — same discipline `renderDetail` uses for
    * the Superfund site-detail card.
    */
-  renderOverviewBody(row) {
-    return createElement(WqaOverviewBody, { row });
+  renderOverviewBody(row, context) {
+    return createElement(WqaOverviewBody, { row, houseId: context.houseId });
   },
 };
 
