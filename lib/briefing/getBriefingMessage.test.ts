@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { getBriefingMessage } from "./getBriefingMessage";
+import {
+  getBriefingMessage,
+  getBriefingMessageParts,
+} from "./getBriefingMessage";
 
 describe("getBriefingMessage", () => {
   it("renders all four facts when every field is populated", () => {
@@ -99,5 +102,61 @@ describe("getBriefingMessage", () => {
         bathrooms: null,
       }),
     ).toBe("Found your home data — built in 1902");
+  });
+});
+
+describe("getBriefingMessageParts", () => {
+  it("returns 'Home data found' + comma-separated secondary when fields populate", () => {
+    expect(
+      getBriefingMessageParts({
+        year_built: 1934,
+        living_area_sqft: 2210,
+        bedrooms: 3,
+        bathrooms: 3,
+      }),
+    ).toEqual({
+      lead: "Home data found",
+      secondary: "built in 1934, 2,210 sq ft, 3 bed / 3 bath",
+    });
+  });
+
+  it("falls back to 'Public records checked' with a null secondary when every field is null", () => {
+    expect(
+      getBriefingMessageParts({
+        year_built: null,
+        living_area_sqft: null,
+        bedrooms: null,
+        bathrooms: null,
+      }),
+    ).toEqual({ lead: "Public records checked", secondary: null });
+  });
+
+  it("renders partial data without trailing punctuation in the secondary line", () => {
+    expect(
+      getBriefingMessageParts({
+        year_built: 1902,
+        living_area_sqft: null,
+        bedrooms: null,
+        bathrooms: null,
+      }),
+    ).toEqual({ lead: "Home data found", secondary: "built in 1902" });
+  });
+
+  it("stays in sync with getBriefingMessage (composition invariant)", () => {
+    const cases: Array<Parameters<typeof getBriefingMessage>[0]> = [
+      { year_built: 1934, living_area_sqft: 2210, bedrooms: 3, bathrooms: 3 },
+      { year_built: 1934, living_area_sqft: null, bedrooms: 3, bathrooms: 3 },
+      { year_built: null, living_area_sqft: null, bedrooms: 3, bathrooms: null },
+      { year_built: null, living_area_sqft: null, bedrooms: null, bathrooms: null },
+    ];
+    for (const c of cases) {
+      const single = getBriefingMessage(c);
+      const { secondary } = getBriefingMessageParts(c);
+      const composed =
+        secondary === null
+          ? "Looked up your home's public records"
+          : `Found your home data — ${secondary}`;
+      expect(composed, JSON.stringify(c)).toBe(single);
+    }
   });
 });

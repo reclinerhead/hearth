@@ -12,18 +12,31 @@ import {
   type WaterSourceChoice,
 } from "@/components/property-situation-fields";
 import {
+  discoveryRowGlyph,
+  isFlaggedSeverity,
+  pillLabelForSeverity,
+  pillTooltipForSeverity,
+  SEVERITY_COLOR,
+} from "@/components/habitat-severity";
+import { Tooltip } from "@/components/tooltip";
+import {
   useHabitatFindings,
   type HabitatFindingRow,
 } from "@/lib/hooks/use-habitat-findings";
 import { HABITAT_MODULES } from "@/lib/habitat/registry";
-import type { HabitatModule, HouseContext } from "@/lib/habitat/types";
-import { getBriefingMessage } from "@/lib/briefing/getBriefingMessage";
+import type {
+  HabitatModule,
+  HabitatSeverity,
+  HouseContext,
+} from "@/lib/habitat/types";
+import { getBriefingMessageParts } from "@/lib/briefing/getBriefingMessage";
 import { createClient } from "@/lib/supabase/client";
 import type { House } from "@/types/house";
 import { triggerHabitatRecheck } from "./actions";
 import {
   buildRowList,
   fallbackOnboardingMessage,
+  type BriefingRowContent,
   type DiscoveryRowProps,
   type Phase,
 } from "./onboarding-discovery-rows";
@@ -128,13 +141,24 @@ export function OnboardingDiscoveryModal({
   const [buttonEnabled, setButtonEnabled] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
 
-  // Briefing result is computed once on transition into briefing-result
+  // Briefing result is captured once on transition into briefing-result
   // and held — recomputing from the live row would make the line flicker
-  // if a later realtime update lands while it's still on screen.
-  const [briefingLine, setBriefingLine] = useState<string | null>(null);
+  // if a later realtime update lands while it's still on screen. Stored
+  // as { lead, secondary } so the card-row treatment (issue #184) can
+  // split the headline ("Home data found") from the facts on the
+  // secondary line. The failure branch fills secondary = null so the
+  // row renders as a single-line entry.
+  const [briefingContent, setBriefingContent] =
+    useState<BriefingRowContent | null>(null);
   // Module result lines are stored by index so navigating forward through
   // phases doesn't recompute (and never reads stale finding state).
   const [moduleLines, setModuleLines] = useState<Record<number, string>>({});
+  // Captured severity per module index, indexed alongside moduleLines so
+  // the row renderer can derive the glyph, border, and relevance pill at
+  // any later phase. Sparse — failed / not_applicable rows omit the key.
+  const [moduleSeverities, setModuleSeverities] = useState<
+    Record<number, HabitatSeverity>
+  >({});
 
   // Property-questions form state (issue #142). Initialized from the
   // live house row so a user who navigates back to onboarding after
@@ -276,15 +300,18 @@ export function OnboardingDiscoveryModal({
   }, [phase.kind]);
 
   // briefing-checking → briefing-result when the briefing row reaches a
-  // terminal status. We compute the result line at the transition point so
-  // it's stable for the whole RESULT_DISPLAY_MIN_MS window.
+  // terminal status. We compute the result content at the transition
+  // point so it's stable for the whole RESULT_DISPLAY_MIN_MS window.
   useEffect(() => {
     if (phase.kind !== "briefing-checking") return;
     if (!briefingReadyForPhase) return;
     if (briefingStatus === "failed") {
-      setBriefingLine("We couldn't find some details — that's OK, you can still get started.");
+      setBriefingContent({
+        lead: "We couldn't find some details — that's OK, you can still get started.",
+        secondary: null,
+      });
     } else {
-      setBriefingLine(getBriefingMessage(house));
+      setBriefingContent(getBriefingMessageParts(house));
     }
     setPhase({ kind: "briefing-result" });
   }, [phase.kind, briefingReadyForPhase, briefingStatus, house]);
@@ -348,6 +375,10 @@ export function OnboardingDiscoveryModal({
     }
 
     let line: string;
+    // Captured alongside the result line so the done-state row can
+    // render the right glyph / border / pill at any later phase (issue
+    // #184). Failed and not_applicable rows omit severity entirely.
+    let capturedSeverity: HabitatSeverity | undefined;
     if (finding.status === "failed") {
       line = `We hit a snag checking ${mod.name} — we'll try again later.`;
     } else if (finding.status === "not_applicable") {
@@ -357,9 +388,11 @@ export function OnboardingDiscoveryModal({
       line = `${mod.name} doesn't apply to your area.`;
     } else {
       // status === 'completed'
+      const severity = (finding.severity ?? "neutral") as HabitatSeverity;
+      capturedSeverity = severity;
       if (mod.getOnboardingMessage) {
         line = mod.getOnboardingMessage({
-          severity: (finding.severity ?? "neutral") as never,
+          severity,
           headline: finding.headline ?? "",
           summary: finding.summary ?? "",
           findings: finding.findings ?? {},
@@ -372,6 +405,9 @@ export function OnboardingDiscoveryModal({
 
     const index = phase.index;
     setModuleLines((prev) => ({ ...prev, [index]: line }));
+    if (capturedSeverity) {
+      setModuleSeverities((prev) => ({ ...prev, [index]: capturedSeverity }));
+    }
     setPhase({ kind: "module-result", index });
   }, [phase, modules, findingByKey, mode, sessionStartedAt]);
 
@@ -419,7 +455,23 @@ export function OnboardingDiscoveryModal({
   // Build the line list that's been revealed so far. We render previous
   // phases as completed lines and the current phase as the live row, so
   // the user sees the discovery accumulating rather than jumping.
-  const rows = buildRowList(phase, modules, briefingLine, moduleLines);
+  const rows = buildRowList(
+    phase,
+    modules,
+    briefingContent,
+    moduleLines,
+    moduleSeverities,
+  );
+
+  // Summary chip for the done phase: total rows shown (briefing + each
+  // habitat module that landed) and the subset flagged as "worth a
+  // closer look." The briefing row never counts toward the flagged N —
+  // it has no severity. Derived from `rows` so the count tracks the
+  // actually-rendered list, not the registry length.
+  const summaryTotal = rows.length;
+  const summaryFlagged = rows.filter(
+    (r) => r.id !== "briefing" && isFlaggedSeverity(r.severity),
+  ).length;
 
   return (
     <div
@@ -472,23 +524,24 @@ export function OnboardingDiscoveryModal({
                     : "We're looking up information about your home."}
             </h2>
             {/*
-              Always render the subtitle paragraph so its vertical space
-              stays reserved through the "All set" beat. The text is
-              hidden (not removed) on done, which keeps the surface
-              height stable end-to-end per issue #108.
+              Subtitle slot — always renders so the vertical space stays
+              reserved through the "All set" beat (issue #108 height
+              stability). In `done` the slot carries the summary chip
+              ("{total} facts found · {N} worth a closer look"); in
+              every other phase it carries the existing copy.
             */}
-            <p
-              className="text-small mt-1"
-              style={{
-                color: "var(--color-text-secondary)",
-                visibility: phase.kind === "done" ? "hidden" : "visible",
-              }}
-              aria-hidden={phase.kind === "done"}
-            >
-              {phase.kind === "property-questions"
-                ? "These help us calibrate environmental findings to your house. Both are optional."
-                : "This typically takes 20 to 30 seconds."}
-            </p>
+            {phase.kind === "done" ? (
+              <SummaryChip total={summaryTotal} flagged={summaryFlagged} />
+            ) : (
+              <p
+                className="text-small mt-1"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                {phase.kind === "property-questions"
+                  ? "These help us calibrate environmental findings to your house. Both are optional."
+                  : "This typically takes 20 to 30 seconds."}
+              </p>
+            )}
           </div>
 
           <ul className="flex flex-col gap-2">
@@ -608,25 +661,63 @@ function PropertyQuestionsSection({
   );
 }
 
-function DiscoveryRow({ state, text }: DiscoveryRowProps) {
-  const indicatorColor =
+/**
+ * One discovery-modal row, rendered as a bordered card row (issue #184).
+ *
+ * Done rows lead with a 14px/500 lead line and an optional 13px secondary
+ * line below it. Flagged severities (caution / concern / critical) get
+ * a warm-tinted border, an alert-triangle glyph in the severity colour,
+ * and a "Worth knowing" / "Worth a closer look" relevance pill with a
+ * keyboard- and screen-reader-accessible tooltip. Non-flagged done rows
+ * stay subtle: subtle-border, green check, no pill. Checking and idle
+ * rows render as a single-line entry with the previous pulsing-dot /
+ * hollow-circle treatment so the reveal sequence is preserved.
+ */
+function DiscoveryRow({ state, lead, secondary, severity }: DiscoveryRowProps) {
+  const flagged = state === "done" && isFlaggedSeverity(severity);
+  const borderColor = flagged
+    ? "color-mix(in oklab, var(--color-warning) 22%, var(--color-border-subtle))"
+    : "var(--color-border-subtle)";
+  const glyphColor =
     state === "checking"
       ? "var(--color-accent)"
       : state === "done"
-        ? "var(--color-success)"
-        : "var(--color-border-subtle)";
-  const textColor =
-    state === "checking"
-      ? "var(--color-text-secondary)"
-      : state === "done"
-        ? "var(--color-text-primary)"
+        ? severity
+          ? SEVERITY_COLOR[severity]
+          : "var(--color-success)"
         : "var(--color-text-tertiary)";
+  const leadColor =
+    state === "done"
+      ? "var(--color-text-primary)"
+      : state === "checking"
+        ? "var(--color-text-secondary)"
+        : "var(--color-text-tertiary)";
+  const idleLeadOpacity = state === "idle" ? 0.7 : 1;
+  const pillLabel =
+    state === "done" ? pillLabelForSeverity(severity) : null;
+  const pillTooltip =
+    state === "done" ? pillTooltipForSeverity(severity) : null;
+
   return (
-    <li className="flex items-start gap-3">
+    <li
+      className="flex items-start gap-3"
+      style={{
+        backgroundColor: "var(--color-bg-surface)",
+        border: `1px solid ${borderColor}`,
+        borderRadius: "var(--radius-md)",
+        padding: "13px 14px",
+      }}
+    >
       <span
         aria-hidden
-        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center"
-        style={{ color: indicatorColor }}
+        className="flex h-5 w-5 shrink-0 items-center justify-center"
+        style={{
+          color: glyphColor,
+          // Sit with the lead line, not centred on the whole card —
+          // the secondary line should grow downward from the lead
+          // without dragging the glyph with it.
+          marginTop: 1,
+        }}
       >
         {state === "checking" ? (
           <span
@@ -634,7 +725,7 @@ function DiscoveryRow({ state, text }: DiscoveryRowProps) {
             style={{ backgroundColor: "currentColor" }}
           />
         ) : state === "done" ? (
-          <Icon name="circle-check" size={16} />
+          <Icon name={discoveryRowGlyph(severity)} size={16} />
         ) : (
           <span
             className="inline-block h-2.5 w-2.5 rounded-full"
@@ -645,9 +736,114 @@ function DiscoveryRow({ state, text }: DiscoveryRowProps) {
           />
         )}
       </span>
-      <span style={{ fontSize: 14, lineHeight: 1.45, color: textColor }}>
-        {text}
-      </span>
+      <div className="flex-1 min-w-0">
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            lineHeight: 1.4,
+            color: leadColor,
+            opacity: idleLeadOpacity,
+          }}
+        >
+          {lead}
+        </div>
+        {state === "done" && secondary ? (
+          <div
+            style={{
+              fontSize: 13,
+              lineHeight: 1.45,
+              color: "var(--color-text-secondary)",
+              marginTop: 1,
+            }}
+          >
+            {secondary}
+          </div>
+        ) : null}
+      </div>
+      {pillLabel && pillTooltip ? (
+        <span className="shrink-0 self-center">
+          <Tooltip content={pillTooltip}>
+            <RelevancePill label={pillLabel} />
+          </Tooltip>
+        </span>
+      ) : null}
     </li>
+  );
+}
+
+function RelevancePill({ label }: { label: string }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        fontSize: 11,
+        fontWeight: 500,
+        lineHeight: 1.4,
+        color: "var(--color-warning)",
+        backgroundColor:
+          "color-mix(in oklab, var(--color-warning) 14%, transparent)",
+        border:
+          "1px solid color-mix(in oklab, var(--color-warning) 28%, transparent)",
+        borderRadius: 999,
+        padding: "2px 9px",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+/**
+ * Severity summary rendered in the done phase under the headline.
+ * Occupies the same slot the subtitle paragraph holds in earlier
+ * phases so the modal surface keeps its vertical footprint (issue
+ * #108). The warning-coloured dot only appears when there's at least
+ * one flagged finding — a clean sweep shouldn't manufacture concern.
+ */
+function SummaryChip({ total, flagged }: { total: number; flagged: number }) {
+  const factsLabel = total === 1 ? "1 fact found" : `${total} facts found`;
+  const flaggedLabel =
+    flagged === 1 ? "1 worth a closer look" : `${flagged} worth a closer look`;
+  return (
+    <p
+      className="text-small mt-1"
+      style={{
+        color: "var(--color-text-secondary)",
+        display: "flex",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: "0 8px",
+      }}
+    >
+      <span>{factsLabel}</span>
+      {flagged > 0 ? (
+        <>
+          <span aria-hidden>·</span>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              color: "var(--color-text-primary)",
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                display: "inline-block",
+                width: 8,
+                height: 8,
+                borderRadius: 999,
+                backgroundColor: "var(--color-warning)",
+              }}
+            />
+            <span>{flaggedLabel}</span>
+          </span>
+        </>
+      ) : null}
+    </p>
   );
 }

@@ -20,7 +20,23 @@ export type BriefingMessageInput = {
   bathrooms: number | null;
 };
 
-export function getBriefingMessage(house: BriefingMessageInput): string {
+/**
+ * Lead + secondary split of the briefing result, used by the discovery
+ * modal's card-row treatment (issue #184). The lead reads as a headline
+ * ("Home data found" / "Public records checked") and the secondary line
+ * carries the comma-separated facts. When nothing concrete landed the
+ * secondary is null and only the honest fallback lead is shown.
+ *
+ * `getBriefingMessage` composes from this so the two helpers can't drift.
+ */
+export type BriefingMessageParts = {
+  lead: string;
+  secondary: string | null;
+};
+
+export function getBriefingMessageParts(
+  house: BriefingMessageInput,
+): BriefingMessageParts {
   const parts: string[] = [];
 
   if (house.year_built !== null) {
@@ -37,14 +53,22 @@ export function getBriefingMessage(house: BriefingMessageInput): string {
   }
 
   if (parts.length === 0) {
+    return { lead: "Public records checked", secondary: null };
+  }
+
+  return { lead: "Home data found", secondary: parts.join(", ") };
+}
+
+export function getBriefingMessage(house: BriefingMessageInput): string {
+  const { secondary } = getBriefingMessageParts(house);
+  if (secondary === null) {
     // Nothing concrete to surface — the workflow ran but returned nulls
     // (e.g. Sonar couldn't find the address on Zillow). The modal still
     // needs a line; this one is honest about what happened without
     // dwelling on the miss.
     return "Looked up your home's public records";
   }
-
-  return `Found your home data — ${parts.join(", ")}`;
+  return `Found your home data — ${secondary}`;
 }
 
 function formatNumber(n: number): string {
