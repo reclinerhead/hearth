@@ -132,6 +132,8 @@ function makeHouse(overrides: Partial<HouseContext> = {}): HouseContext {
     parcelId: null,
     waterSource: null,
     basementPresent: null,
+    waterSystemUserPwsid: null,
+    waterSystemPwsidConfidence: null,
     ...overrides,
   };
 }

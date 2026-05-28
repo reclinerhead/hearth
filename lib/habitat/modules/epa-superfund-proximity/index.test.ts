@@ -32,6 +32,8 @@ function makeHouse(overrides: Partial<HouseContext> = {}): HouseContext {
     // branches override these explicitly.
     waterSource: null,
     basementPresent: null,
+    waterSystemUserPwsid: null,
+    waterSystemPwsidConfidence: null,
     ...overrides,
   };
 }

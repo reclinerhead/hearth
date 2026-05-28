@@ -20,21 +20,33 @@ import type { CcrFindings } from "./ccr";
  * Travels alongside the branch decision through `check()` and lands
  * on the persisted payload as `system_card.pwsid_confidence`.
  *
- *   verified — EPA's point-in-polygon query returned a match at the
- *              user's exact coordinates. The PWSID is authoritative.
- *   inferred — The direct query came up empty, but the nearest-polygon
- *              fallback (~500m radius) found a single utility nearby.
- *              SDWIS data fetches run against this PWSID with the
- *              confidence flag carried alongside; future UI can render
- *              an "is this right?" affordance.
- *   unmapped — Neither the direct query nor the fallback resolved a
- *              PWSID with confidence. Either zero polygons within the
- *              radius or multiple competing utilities. No PWSID is
- *              available for downstream SDWIS / CCR work.
+ *   verified       — EPA's point-in-polygon query returned a match at
+ *                    the user's exact coordinates. The PWSID is
+ *                    authoritative.
+ *   inferred       — The direct query came up empty, but the nearest-
+ *                    polygon fallback (~500m radius) found a single
+ *                    utility nearby. SDWIS data fetches run against
+ *                    this PWSID with the confidence flag carried
+ *                    alongside; the UI renders an "is this right?"
+ *                    affordance from this state.
+ *   unmapped       — Neither the direct query nor the fallback
+ *                    resolved a PWSID with confidence. Either zero
+ *                    polygons within the radius or multiple competing
+ *                    utilities. No PWSID is available for downstream
+ *                    SDWIS / CCR work.
+ *   user_confirmed — User saw an inferred match and confirmed it
+ *                    explicitly via the WQA findings panel. Same PWSID
+ *                    EPA had inferred, now treated as authoritative.
+ *                    Issue #193.
+ *   user_corrected — User entered a different PWSID via the WQA
+ *                    correction input. Overrides EPA's polygon
+ *                    resolution entirely. Issue #193.
  */
 export type PwsidResolution =
   | { confidence: "verified"; pwsid: string; pwsName: string | null }
   | { confidence: "inferred"; pwsid: string; pwsName: string | null }
+  | { confidence: "user_confirmed"; pwsid: string; pwsName: string | null }
+  | { confidence: "user_corrected"; pwsid: string; pwsName: string | null }
   | { confidence: "unmapped" };
 
 /**
@@ -118,8 +130,17 @@ export type WqaFindings = {
      * nearest-polygon fallback shipped: a missing value should be
      * treated as "verified" (the only behavior that existed pre-#169
      * follow-up).
+     *
+     * The two `user_*` values land here when the user has acted on the
+     * confirmation prompt — see `houses.water_system_user_pwsid` and
+     * issue #193. Both states hide the confirmation strip and reveal
+     * the post-confirmation edit affordance on the system card.
      */
-    pwsid_confidence?: "verified" | "inferred";
+    pwsid_confidence?:
+      | "verified"
+      | "inferred"
+      | "user_confirmed"
+      | "user_corrected";
     /**
      * Compact summary of compliance history over the last 5 years.
      * Populated by WQA-2 when the violations fetch succeeded; absent

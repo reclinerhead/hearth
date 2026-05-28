@@ -14,6 +14,14 @@ export type BriefingStatus = "pending" | "running" | "completed" | "failed";
  */
 export type WaterSource = "well" | "municipal" | "shared" | "unknown";
 
+/**
+ * Issue #193 — How a user-supplied PWSID landed in `houses.water_system_user_pwsid`.
+ * `user_confirmed` = user accepted an inferred EPA match; `user_corrected` =
+ * user entered a different PWSID via the WQA correction input. Never set by
+ * the module itself — only by the confirmation UI in the WQA findings panel.
+ */
+export type WaterSystemPwsidConfidence = "user_confirmed" | "user_corrected";
+
 export type House = {
   id: string;
   owner_id: string;
@@ -46,6 +54,14 @@ export type House = {
   // (Yes / No / Not sure or never captured).
   water_source: WaterSource | null;
   basement_present: boolean | null;
+
+  // Issue #193 — User-supplied PWSID override for the Water Quality Awareness
+  // module. When set, WQA's check() skips EPA polygon resolution and uses
+  // this PWSID directly. The pair is bound by a cross-column constraint in
+  // the migration: both null = no override; both set = user has acted on
+  // the confirmation prompt.
+  water_system_user_pwsid: string | null;
+  water_system_pwsid_confidence: WaterSystemPwsidConfidence | null;
 
   purchase_date: string | null;
   purchase_price_cents: number | null;

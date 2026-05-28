@@ -22,6 +22,20 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
+// Server actions are "use server" functions that pull in workflow/api,
+// Supabase server clients, and other Node-only deps. The body file
+// imports them directly; jsdom can't load that module graph. Mock the
+// whole module so the import resolves to no-op stubs. The tests in
+// this suite render the body and assert what renders — none of them
+// click the actual confirm/correct buttons, so unconditional success
+// stubs are the right shape. A future "actually click the button"
+// test will need vi.fn() spies + assertions instead.
+vi.mock("@/app/(app)/dashboard/actions", () => ({
+  confirmWqaPwsid: async () => ({ ok: true }),
+  correctWqaPwsid: async () => ({ ok: true }),
+  triggerHabitatModuleRecheck: async () => ({ ok: true }),
+}));
+
 import { WqaOverviewBody } from "./overview-body";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import type { WqaFindings } from "../types";
@@ -202,15 +216,31 @@ describe("WqaOverviewBody — cws_no_ccr verified (Kalamazoo happy path)", () =>
 });
 
 describe("WqaOverviewBody — cws_no_ccr inferred (the 604 Norton case)", () => {
-  it("renders the inferred header strip with disabled confirm/correct buttons", () => {
+  it("renders the inferred header strip with enabled confirm/correct buttons", () => {
     const findings = cwsNoCcrFindings();
     findings.system_card!.pwsid_confidence = "inferred";
     render(findings);
     expect(text()).toContain(
       "We think your home is served by Kalamazoo Public Water Supply",
     );
-    expect(text()).toContain("Yes, that’s right");
+    expect(text()).toContain("Yes, that's right");
     expect(text()).toContain("No, my utility is different");
+    // Issue #193 — both buttons are real, enabled buttons now. The
+    // "disabled placeholder" treatment is gone for these two, and no
+    // "coming in a follow-up" tooltip should be in the DOM.
+    expect(text()).not.toContain("Confirmation is coming in a follow-up");
+    expect(text()).not.toContain("Manual correction is coming in a follow-up");
+    const buttons = container.querySelectorAll("button");
+    const confirm = Array.from(buttons).find(
+      (b) => b.textContent === "Yes, that's right",
+    );
+    const correct = Array.from(buttons).find(
+      (b) => b.textContent === "No, my utility is different",
+    );
+    expect(confirm).toBeDefined();
+    expect(confirm?.disabled).toBe(false);
+    expect(correct).toBeDefined();
+    expect(correct?.disabled).toBe(false);
   });
 
   it("renders the inferred-match caveat at the bottom of the system card description", () => {
@@ -218,6 +248,110 @@ describe("WqaOverviewBody — cws_no_ccr inferred (the 604 Norton case)", () => 
     findings.system_card!.pwsid_confidence = "inferred";
     render(findings);
     expect(text()).toContain("We inferred this match");
+  });
+
+  it("does NOT render the post-confirmation Edit affordance on inferred (strip handles correction instead)", () => {
+    const findings = cwsNoCcrFindings();
+    findings.system_card!.pwsid_confidence = "inferred";
+    render(findings);
+    // The edit affordance shows next to the PWSID line on the system
+    // card — but only after the user has settled the confirmation
+    // question. While the strip is still showing, the edit button
+    // would be a redundant duplicate of "No, my utility is different".
+    const editButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((b) => b.getAttribute("aria-label") === "Change your water utility's PWSID");
+    expect(editButton).toBeUndefined();
+  });
+});
+
+describe("WqaOverviewBody — issue #193 post-confirmation states", () => {
+  it("suppresses the inferred header strip when pwsid_confidence is user_confirmed", () => {
+    const findings = cwsNoCcrFindings();
+    findings.system_card!.pwsid_confidence = "user_confirmed";
+    render(findings);
+    expect(text()).not.toContain("We think your home is served by");
+    expect(text()).not.toContain("Yes, that's right");
+    expect(text()).not.toContain("No, my utility is different");
+  });
+
+  it("suppresses the inferred header strip when pwsid_confidence is user_corrected", () => {
+    const findings = cwsNoCcrFindings();
+    findings.system_card!.pwsid_confidence = "user_corrected";
+    render(findings);
+    expect(text()).not.toContain("We think your home is served by");
+    expect(text()).not.toContain("Yes, that's right");
+  });
+
+  it("renders the Edit affordance next to the PWSID line on user_confirmed", () => {
+    const findings = cwsNoCcrFindings();
+    findings.system_card!.pwsid_confidence = "user_confirmed";
+    render(findings);
+    const editButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((b) => b.getAttribute("aria-label") === "Change your water utility's PWSID");
+    expect(editButton).toBeDefined();
+  });
+
+  it("renders the Edit affordance next to the PWSID line on user_corrected", () => {
+    const findings = cwsNoCcrFindings();
+    findings.system_card!.pwsid_confidence = "user_corrected";
+    render(findings);
+    const editButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((b) => b.getAttribute("aria-label") === "Change your water utility's PWSID");
+    expect(editButton).toBeDefined();
+  });
+
+  it("renders the Edit affordance on verified PWSIDs too (corrections are always available)", () => {
+    const findings = cwsNoCcrFindings();
+    findings.system_card!.pwsid_confidence = "verified";
+    render(findings);
+    const editButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((b) => b.getAttribute("aria-label") === "Change your water utility's PWSID");
+    expect(editButton).toBeDefined();
+  });
+
+  it("expands the inline PWSID editor when the Edit affordance is clicked", () => {
+    const findings = cwsNoCcrFindings();
+    findings.system_card!.pwsid_confidence = "user_confirmed";
+    render(findings);
+    const editButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((b) => b.getAttribute("aria-label") === "Change your water utility's PWSID");
+    expect(editButton).toBeDefined();
+    act(() => editButton!.click());
+    // Editor renders with a labeled input + hint copy.
+    expect(text()).toContain("Format: two-letter state code");
+    const input = container.querySelector(
+      "input#wqa-pwsid-input",
+    ) as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+  });
+
+  it("expands the inline PWSID editor when 'No, my utility is different' is clicked on inferred", () => {
+    const findings = cwsNoCcrFindings();
+    findings.system_card!.pwsid_confidence = "inferred";
+    render(findings);
+    const noButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((b) => b.textContent === "No, my utility is different");
+    expect(noButton).toBeDefined();
+    act(() => noButton!.click());
+    expect(text()).toContain("Tell us your water utility");
+    expect(text()).toContain("SDWIS public search");
+    // And the link out to EPA's SDWIS search renders with the right
+    // target — that's the load-bearing "give the user a way to find
+    // their PWSID" affordance.
+    const epaLink = Array.from(
+      container.querySelectorAll("a"),
+    ).find((a) => a.href.includes("sdwis.epa.gov"));
+    expect(epaLink).toBeDefined();
+    const input = container.querySelector(
+      "input#wqa-pwsid-input",
+    ) as HTMLInputElement | null;
+    expect(input).not.toBeNull();
   });
 });
 

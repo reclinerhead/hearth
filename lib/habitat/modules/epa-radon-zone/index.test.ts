@@ -27,6 +27,10 @@ function makeHouse(overrides: Partial<HouseContext> = {}): HouseContext {
     latitude: 42.2917,
     longitude: -85.5872,
     parcelId: null,
+    waterSource: null,
+    basementPresent: null,
+    waterSystemUserPwsid: null,
+    waterSystemPwsidConfidence: null,
     ...overrides,
   };
 }
