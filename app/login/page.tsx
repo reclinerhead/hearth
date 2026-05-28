@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 
@@ -49,31 +48,15 @@ export default function LoginPage() {
 
   return (
     <main
-      className="relative flex min-h-dvh w-full flex-col items-center justify-center overflow-hidden px-6"
-      style={{ backgroundColor: "var(--color-bg-base)" }}
+      className="flex min-h-dvh flex-col items-center justify-center px-6"
+      style={{
+        background: `
+          radial-gradient(560px 440px at 50% 50%, color-mix(in oklab, var(--color-accent) 20%, transparent), transparent 70%),
+          var(--color-bg-base)
+        `,
+      }}
     >
-      <Image
-        src="/landing/hero.png"
-        alt=""
-        aria-hidden
-        fill
-        sizes="100vw"
-        className="object-cover object-center"
-        style={{ opacity: 0.22, filter: "blur(56px)" }}
-      />
-
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background: `
-            radial-gradient(120% 80% at 50% 120%, transparent 40%, color-mix(in oklab, black 45%, transparent) 100%),
-            radial-gradient(120% 80% at 50% 45%, color-mix(in oklab, var(--color-accent) 14%, transparent), transparent 60%)
-          `,
-        }}
-      />
-
-      <div className="relative z-10 w-full max-w-sm">
+      <div className="w-full max-w-sm">
         <div className="flex flex-col items-center gap-2 mb-8">
           <span style={{ color: "var(--color-accent)" }}>
             <Icon name="flame" size={24} aria-label="Hearth" />
