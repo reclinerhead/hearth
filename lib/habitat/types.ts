@@ -494,13 +494,91 @@ export interface HabitatModule {
    * `renderDetail`.
    *
    * The `context` argument carries surface-level facts the module
-   * needs to render interactive affordances — currently `houseId` so
-   * the WQA module can spawn its CCR upload modal with the right
-   * scope. Optional second argument so existing callers (the modal
-   * shell) can keep working even before they thread context through.
+   * needs to render interactive affordances:
+   *   - `houseId`: scopes the WQA CCR upload modal and any future
+   *     house-scoped affordances modules want to spawn.
+   *   - `notifyRecheckTriggered`: lets the module tell the modal shell
+   *     that something inside its body just kicked off a recheck so
+   *     the shell can pre-arm the fresh-update banner (issue #196).
+   *     The WQA CCR upload flow calls this with `"ccr_upload"` when
+   *     finalize succeeds, so the banner that lands ~10-20s later
+   *     uses the CCR-aware copy variant rather than the generic
+   *     "Recheck complete" copy.
    */
   renderOverviewBody?: (
     row: HabitatFindingRow,
-    context: { houseId: string },
+    context: {
+      houseId: string;
+      notifyRecheckTriggered: (source: HabitatRecheckSource) => void;
+    },
   ) => ReactNode;
+
+  /**
+   * Optional summary of what changed between the previous and the
+   * just-completed run of this module's check(). Drives the
+   * "fresh-update" banner that surfaces at the top of the finding
+   * modal body after a Recheck completes — see issue #196.
+   *
+   * Returns:
+   *   - `{ headline, tone }` when something user-visible changed and
+   *     is worth surfacing. The modal shell renders the headline in
+   *     a tinted strip whose color is picked from `tone`.
+   *   - `null` when nothing worth surfacing changed (the banner
+   *     shows the generic "Recheck complete" copy in this case, or
+   *     suppresses entirely depending on the trigger source).
+   *
+   * The `source` argument tells the module what kicked off the
+   * recheck. Modules can vary copy by source — WQA, for instance,
+   * surfaces a CCR-specific headline when `source === "ccr_upload"`
+   * and the new row's `latest_ccr_status` flipped from "not_uploaded"
+   * to a `{ year }` payload.
+   *
+   * `before` is null when the modal has no previous-row snapshot to
+   * diff against (first time the finding lands, or the modal opened
+   * after the trigger fired). Modules should handle this defensively
+   * — usually by surfacing whatever's interesting on the `after`
+   * payload alone.
+   *
+   * Pure function: no hooks, no fetches. Same discipline as
+   * `renderOverviewBody`.
+   */
+  summarizeRecheckChanges?: (
+    before: HabitatFindingRow | null,
+    after: HabitatFindingRow,
+    source: HabitatRecheckSource,
+  ) => HabitatRecheckSummary | null;
 }
+
+/**
+ * What triggered a habitat module recheck. Passed through to
+ * `HabitatModule.summarizeRecheckChanges` so modules can vary the
+ * fresh-update banner copy by context.
+ *
+ *   manual      — User clicked the "Recheck findings" link in the
+ *                 finding modal footer.
+ *   ccr_upload  — WQA-specific: a CCR upload just landed and the
+ *                 module auto-rechecked to absorb the new data.
+ *   all_modules — Dashboard's "Refresh House Facts" path. Modules
+ *                 rarely care about this case in their summarize
+ *                 implementation (it's a bulk operation with no
+ *                 modal context); included for completeness so the
+ *                 slot's contract covers every code path that fires
+ *                 the workflow.
+ */
+export type HabitatRecheckSource = "manual" | "ccr_upload" | "all_modules";
+
+/**
+ * Module-provided summary of what changed in a recheck. Rendered by
+ * the finding-modal shell as a tinted strip above the body.
+ */
+export type HabitatRecheckSummary = {
+  /** One-line headline in module voice — what the user just gained. */
+  headline: string;
+  /**
+   * Color tone for the strip. `info` for purely-informational
+   * surfaces (CCR landed, new data available); `success` for
+   * favorable transitions (a concern resolved); `neutral` for
+   * "we re-checked and confirmed everything's still as it was."
+   */
+  tone: "info" | "success" | "neutral";
+};

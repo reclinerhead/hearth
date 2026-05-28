@@ -25,11 +25,12 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { triggerHabitatRecheck } from "@/app/(app)/dashboard/actions";
+import { triggerHabitatModuleRecheck } from "@/app/(app)/dashboard/actions";
 import { CcrUploadModal } from "@/components/ccr-upload/CcrUploadModal";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
 import { findWqaContaminantByAlias } from "@/lib/habitat/water-quality/contaminants/lookup";
+import type { HabitatRecheckSource } from "@/lib/habitat/types";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import type {
   CcrFindings,
@@ -53,9 +54,18 @@ import type {
 export function WqaOverviewBody({
   row,
   houseId,
+  notifyRecheckTriggered,
 }: {
   row: HabitatFindingRow;
   houseId: string;
+  /**
+   * Issue #196 — let the modal shell pre-arm its fresh-update banner
+   * when the body kicks off a recheck on its own (currently just the
+   * CCR upload success path). Optional so the existing test renders
+   * that pass `row` + `houseId` only keep working unchanged; in
+   * production the modal shell always provides it.
+   */
+  notifyRecheckTriggered?: (source: HabitatRecheckSource) => void;
 }) {
   const f = (row.findings ?? null) as WqaFindings | null;
   const router = useRouter();
@@ -101,20 +111,28 @@ export function WqaOverviewBody({
           utilityName={card.pws_name}
           knownSystemContext={card.description}
           onSuccess={() => {
-            // Kick off a habitat re-check so the WQA module runs again,
-            // finds the freshly-persisted CCR in the shared cache, and
-            // writes the `cws_with_ccr` branch + `latest_ccr_status:
-            // { year }` onto the finding row. The dashboard's realtime
-            // subscription propagates the new row into both the tile
-            // and (because the same row drives both) the finding modal
-            // body the user is still looking at, so the Latest CCR
-            // tile flips from "Upload yours" to "{year} report on file"
-            // without the user lifting a finger. Fire-and-forget: the
-            // server action returns immediately because the workflow
-            // runs in the background. router.refresh() also runs to
-            // catch any non-realtime surfaces (e.g. server components
-            // that read habitat_findings on initial render).
-            void triggerHabitatRecheck(houseId);
+            // Issue #196: pre-arm the modal shell's fresh-update banner
+            // so the row update that lands ~10-20s later surfaces the
+            // CCR-aware copy variant. Calling this before the trigger
+            // makes the source attribution unambiguous — the snapshot
+            // captures the current row (latest_ccr_status="not_uploaded")
+            // as the "before" state.
+            notifyRecheckTriggered?.("ccr_upload");
+            // Per-module trigger (#196): only WQA re-runs, not every
+            // habitat module against the house. WQA's check() finds
+            // the freshly-persisted CCR in the shared cache and writes
+            // cws_with_ccr + ccr_findings + latest_ccr_status: { year }
+            // onto the finding row. The dashboard's realtime
+            // subscription propagates that update into both the
+            // dashboard tile and the finding modal the user is still
+            // looking at — no manual refresh needed. Fire-and-forget:
+            // the server action returns immediately because the
+            // workflow runs in the background. router.refresh() also
+            // runs to catch server-component surfaces.
+            void triggerHabitatModuleRecheck(
+              houseId,
+              "water_quality_awareness",
+            );
             router.refresh();
           }}
         />
@@ -475,7 +493,11 @@ function SystemCard({
           value={onUploadCcrRequest ? "Upload yours" : ccr.label}
           tone={onUploadCcrRequest ? "info" : ccr.tone}
           icon={onUploadCcrRequest ? "upload" : ccr.icon}
-          tooltip="A Consumer Confidence Report (CCR), also called an Annual Water Quality Report, is the federally-required annual disclosure of every regulated contaminant your utility tested for and detected last year. Utilities mail or email it by July 1 each year — upload yours to populate the rest of this finding."
+          tooltip={
+            card.latest_ccr_status === "not_uploaded"
+              ? "A Consumer Confidence Report (CCR), also called an Annual Water Quality Report, is the federally-required annual disclosure of every regulated contaminant your utility tested for and detected last year. Utilities mail or email it by July 1 each year — upload yours to populate the rest of this finding."
+              : `Your utility's ${card.latest_ccr_status.year} Consumer Confidence Report is on file. The contaminants listed below — along with any free-testing offer and the recommended actions — were extracted directly from that report.`
+          }
           onClick={onUploadCcrRequest ?? undefined}
           actionable={onUploadCcrRequest !== null}
         />

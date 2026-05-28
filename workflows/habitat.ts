@@ -40,6 +40,42 @@ export async function runHabitatChecks(houseId: string): Promise<void> {
   );
 }
 
+/**
+ * Re-run a single habitat module against a house. Issue #196.
+ *
+ * Per-module granularity for re-checks — paired with the finding-modal
+ * "Recheck findings" affordance and the CCR upload flow's post-success
+ * trigger. Same step-level retry / status-bookkeeping as the all-modules
+ * orchestrator above; the only difference is which modules get a turn.
+ *
+ * Soft-fails on:
+ *   - An unknown module key (not in HABITAT_MODULES). The server action
+ *     guards this client-side, but the workflow re-validates because
+ *     workflow input can stale across deploys (e.g. a queued task firing
+ *     after we removed a module from the registry).
+ *   - A module that's no longer applicable to this house (e.g. user
+ *     changed water_source between when the trigger fired and when the
+ *     workflow ran). Skipping is the right answer — writing a stale
+ *     'completed' would be worse.
+ *
+ * Both soft-fail paths simply return without touching habitat_findings,
+ * matching the orchestrator's "don't write garbage into a row" discipline.
+ */
+export async function runSingleHabitatModule(
+  houseId: string,
+  moduleKey: string,
+): Promise<void> {
+  "use workflow";
+
+  const context = await loadHouseContext(houseId);
+
+  const module = HABITAT_MODULES.find((m) => m.key === moduleKey);
+  if (!module) return;
+  if (!module.isApplicable(context)) return;
+
+  await runOneModule(context, moduleKey);
+}
+
 async function loadHouseContext(houseId: string): Promise<HouseContext> {
   "use step";
 

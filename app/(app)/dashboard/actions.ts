@@ -1,9 +1,13 @@
 "use server";
 
 import { start } from "workflow/api";
+import { HABITAT_MODULES } from "@/lib/habitat/registry";
 import { createClient } from "@/lib/supabase/server";
 import { runBriefing } from "@/workflows/briefing";
-import { runHabitatChecks } from "@/workflows/habitat";
+import {
+  runHabitatChecks,
+  runSingleHabitatModule,
+} from "@/workflows/habitat";
 import { runHouseImage } from "@/workflows/house-image";
 
 export type RefreshBriefingResult =
@@ -11,6 +15,10 @@ export type RefreshBriefingResult =
   | { ok: false; error: string };
 
 export type TriggerHabitatRecheckResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export type TriggerHabitatModuleRecheckResult =
   | { ok: true }
   | { ok: false; error: string };
 
@@ -151,6 +159,73 @@ export async function triggerHabitatRecheck(
     return {
       ok: false,
       error: "We couldn't re-run the habitat checks. Try again in a moment.",
+    };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Re-run a single habitat module for the signed-in user's house.
+ * Issue #196.
+ *
+ * Used by the finding-modal "Recheck findings" affordance and by the
+ * CCR upload flow's post-success trigger. Same auth + ownership shape
+ * as `triggerHabitatRecheck` above; the only differences are the
+ * `moduleKey` parameter and the validation that it names a real
+ * module in the registry.
+ *
+ * The workflow itself rechecks applicability before running, so a
+ * stale trigger (e.g. user changed water_source between the click and
+ * the workflow firing) soft-fails inside the workflow rather than
+ * writing a stale `completed` row.
+ */
+export async function triggerHabitatModuleRecheck(
+  houseId: string,
+  moduleKey: string,
+): Promise<TriggerHabitatModuleRecheckResult> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { ok: false, error: "You need to be signed in to do that." };
+  }
+
+  // Validate the module key client-side error returns a clean message
+  // rather than letting the workflow no-op silently. The registry is
+  // already loaded in this server bundle for the workflow's own use.
+  const knownKeys = HABITAT_MODULES.map((m) => m.key);
+  if (!knownKeys.includes(moduleKey)) {
+    return {
+      ok: false,
+      error: `Unknown habitat module '${moduleKey}'.`,
+    };
+  }
+
+  // RLS scopes SELECT to owner_id = auth.uid(); a missing row means
+  // either a bad houseId or someone else's row.
+  const { data: house, error } = await supabase
+    .from("houses")
+    .select("id")
+    .eq("id", houseId)
+    .single();
+
+  if (error || !house) {
+    return { ok: false, error: "We couldn't find that house." };
+  }
+
+  try {
+    await start(runSingleHabitatModule, [houseId, moduleKey]);
+  } catch (workflowError) {
+    console.error(
+      `trigger habitat module recheck workflow start failed for '${moduleKey}'`,
+      workflowError,
+    );
+    return {
+      ok: false,
+      error: "We couldn't re-run that check. Try again in a moment.",
     };
   }
 

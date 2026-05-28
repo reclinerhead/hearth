@@ -85,6 +85,7 @@ import {
   buildSystemPayload,
   type SdwisEnrichment,
 } from "./payload";
+import { summarizeWqaRecheckChanges } from "./recheck-summary";
 import {
   branchDecideNarration,
   ccrCacheFetchNarration,
@@ -706,8 +707,19 @@ const WaterQualityAwarenessModule: HabitatModule = {
    * the Superfund site-detail card.
    */
   renderOverviewBody(row, context) {
-    return createElement(WqaOverviewBody, { row, houseId: context.houseId });
+    return createElement(WqaOverviewBody, {
+      row,
+      houseId: context.houseId,
+      notifyRecheckTriggered: context.notifyRecheckTriggered,
+    });
   },
+
+  /**
+   * Issue #196 — drives the "fresh-update" banner that surfaces at the
+   * top of the modal body after a Recheck completes. Logic + voice in
+   * `recheck-summary.ts`; this is the slot binding.
+   */
+  summarizeRecheckChanges: summarizeWqaRecheckChanges,
 };
 
 export default WaterQualityAwarenessModule;
