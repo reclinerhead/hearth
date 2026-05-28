@@ -11,12 +11,25 @@
  * The model side stays unchanged — same `{ type: 'image', image: URL }`
  * message shape as receipts.
  *
- * `pdfjs-dist` v5+ ships an ES module bundle and a separate worker. We
- * load the worker via `import.meta.url` so the bundler can resolve it
- * locally (no CDN dependency), and we import the worker chunk lazily
- * inside `renderPdfToPages()` so the bundle weight only lands when the
- * user actually opens the CCR upload flow.
+ * `pdfjs-dist` v5+ ships an ES module bundle and a separate worker.
+ * The worker is copied into `public/pdfjs/` at install time by
+ * `scripts/copy-pdfjs-worker.mjs` (hooked from `postinstall`), and the
+ * browser loads it via the static path below. The earlier
+ * `new URL(..., import.meta.url)` pattern triggered an
+ * `empty-import-meta` warning when the Vercel Workflow bundler reached
+ * this file transitively through the habitat-module registry — the
+ * code is never actually executed in that CJS context (browser-only
+ * pipeline) but the warning was noisy. A static path resolves the
+ * warning cleanly without changing runtime behavior.
  */
+
+/**
+ * Public URL the static worker is served from. Matches the destination
+ * `scripts/copy-pdfjs-worker.mjs` writes to. If the pdfjs-dist version
+ * is upgraded, the postinstall script picks up the new bytes on the
+ * next `pnpm install` — no code change required here.
+ */
+const PDFJS_WORKER_SRC = "/pdfjs/pdf.worker.min.mjs";
 
 import { OPTIMIZED_FILENAME, THUMBNAIL_FILENAME } from "./paths";
 import {
@@ -97,14 +110,11 @@ export async function renderPdfToPages(
   file: File,
 ): Promise<ProcessImageResult[]> {
   const pdfjs = await import("pdfjs-dist");
-  // The worker is loaded via the bundler's URL resolution — keeps the
-  // worker chunk co-located with the main bundle's vendor hash rather
-  // than fetching from a CDN. Setting workerSrc once per page load is
-  // idempotent (pdfjs guards against double-init internally).
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
-    import.meta.url,
-  ).toString();
+  // The worker is served as a static asset from public/pdfjs/, copied
+  // there by scripts/copy-pdfjs-worker.mjs at install time. Setting
+  // workerSrc once per page load is idempotent (pdfjs guards against
+  // double-init internally).
+  pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_SRC;
 
   const buffer = await file.arrayBuffer();
   // pdfjs reads the buffer; pass a fresh `Uint8Array` so its internal
