@@ -25,6 +25,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { triggerHabitatRecheck } from "@/app/(app)/dashboard/actions";
 import { CcrUploadModal } from "@/components/ccr-upload/CcrUploadModal";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
@@ -100,10 +101,20 @@ export function WqaOverviewBody({
           utilityName={card.pws_name}
           knownSystemContext={card.description}
           onSuccess={() => {
-            // Refresh server data so the dashboard tile + this finding
-            // re-render against the latest persisted state. The user can
-            // dismiss the modal at their leisure; the refresh runs in
-            // the background.
+            // Kick off a habitat re-check so the WQA module runs again,
+            // finds the freshly-persisted CCR in the shared cache, and
+            // writes the `cws_with_ccr` branch + `latest_ccr_status:
+            // { year }` onto the finding row. The dashboard's realtime
+            // subscription propagates the new row into both the tile
+            // and (because the same row drives both) the finding modal
+            // body the user is still looking at, so the Latest CCR
+            // tile flips from "Upload yours" to "{year} report on file"
+            // without the user lifting a finger. Fire-and-forget: the
+            // server action returns immediately because the workflow
+            // runs in the background. router.refresh() also runs to
+            // catch any non-realtime surfaces (e.g. server components
+            // that read habitat_findings on initial render).
+            void triggerHabitatRecheck(houseId);
             router.refresh();
           }}
         />
