@@ -1588,8 +1588,23 @@ function SourcesBlock({ findings }: { findings: WqaFindings }) {
 
   return (
     <section aria-labelledby="wqa-sources-heading">
-      <div id="wqa-sources-heading" className="eyebrow mb-2">
-        Sources
+      <div className="flex items-baseline justify-between gap-3 mb-2">
+        <div id="wqa-sources-heading" className="eyebrow">
+          Sources
+        </div>
+        <a
+          href="/how-it-works#water-quality-awareness"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-small"
+          style={{
+            color: "var(--color-accent)",
+            textDecoration: "underline",
+            textUnderlineOffset: 3,
+          }}
+        >
+          How Hearth reads these sources
+        </a>
       </div>
       <ul className="flex flex-wrap gap-2">
         {pills.map((pill) => (
@@ -1598,17 +1613,6 @@ function SourcesBlock({ findings }: { findings: WqaFindings }) {
           </li>
         ))}
       </ul>
-      <p
-        className="text-small mt-3"
-        style={{ color: "var(--color-text-tertiary)" }}
-      >
-        <a
-          href="/how-it-works#water-quality-awareness"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          How Hearth reads these sources
-        </a>
-      </p>
     </section>
   );
 }
