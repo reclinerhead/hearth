@@ -1,8 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
+
+const heroEdgeFade =
+  "linear-gradient(to bottom, transparent 0%, black 14%, black 86%, transparent 100%)";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -47,35 +51,91 @@ export default function LoginPage() {
   }
 
   return (
-    <main
-      className="flex min-h-dvh flex-col items-center justify-center px-6"
-      style={{
-        background: `
-          radial-gradient(560px 440px at 50% 50%, color-mix(in oklab, var(--color-accent) 20%, transparent), transparent 70%),
-          var(--color-bg-base)
-        `,
-      }}
-    >
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center gap-2 mb-8">
-          <span style={{ color: "var(--color-accent)" }}>
-            <Icon name="flame" size={24} aria-label="Hearth" />
-          </span>
-          <h1
-            className="h1"
-            style={{ fontSize: "var(--text-h2)", letterSpacing: 0 }}
-          >
-            Hearth
-          </h1>
-          <p
-            className="text-small"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            Your home, documented.
-          </p>
-        </div>
+    <main className="relative min-h-dvh w-full overflow-hidden">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: `
+            radial-gradient(140% 90% at 50% 50%, color-mix(in oklab, var(--color-accent) 9%, transparent), transparent 62%),
+            var(--color-bg-base)
+          `,
+        }}
+      />
 
-        <div className="surface p-5 sm:p-6">
+      <Image
+        src="/landing/hero-mobile.png"
+        alt=""
+        aria-hidden
+        width={832}
+        height={1248}
+        priority
+        sizes="(min-width: 768px) 0px, 100vw"
+        className="absolute left-0 top-1/2 w-full h-auto -translate-y-1/2 md:hidden"
+        style={{
+          maskImage: heroEdgeFade,
+          WebkitMaskImage: heroEdgeFade,
+        }}
+      />
+
+      <Image
+        src="/landing/hero.png"
+        alt=""
+        aria-hidden
+        width={1360}
+        height={768}
+        priority
+        sizes="(min-width: 768px) 100vw, 0px"
+        className="absolute left-0 top-1/2 hidden w-full h-auto -translate-y-1/2 md:block"
+        style={{
+          maskImage: heroEdgeFade,
+          WebkitMaskImage: heroEdgeFade,
+        }}
+      />
+
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(120% 80% at 50% 120%, transparent 40%, color-mix(in oklab, black 35%, transparent) 100%)",
+        }}
+      />
+
+      <div className="relative z-10 flex min-h-dvh items-center justify-center px-4">
+        <div
+          className="w-full max-w-sm"
+          style={{
+            backgroundColor:
+              "color-mix(in oklab, var(--color-bg-base) 78%, transparent)",
+            backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
+            padding: "var(--space-6) var(--space-7)",
+            borderRadius: "var(--radius-lg)",
+            border:
+              "1px solid color-mix(in oklab, var(--color-border-subtle) 70%, transparent)",
+            boxShadow:
+              "0 24px 60px -20px color-mix(in oklab, black 55%, transparent), 0 8px 20px -8px color-mix(in oklab, black 40%, transparent)",
+          }}
+        >
+          <div className="flex flex-col items-center gap-2 mb-6">
+            <span style={{ color: "var(--color-accent)" }}>
+              <Icon name="flame" size={24} aria-label="Hearth" />
+            </span>
+            <h1
+              className="h1"
+              style={{ fontSize: "var(--text-h2)", letterSpacing: 0 }}
+            >
+              Hearth
+            </h1>
+            <p
+              className="text-small"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              Your home, documented.
+            </p>
+          </div>
+
           <button
             type="button"
             onClick={handleGoogleSignIn}
