@@ -7,6 +7,7 @@ import {
   classifyContaminantTier,
   extractEarliestYear,
   extractMostRecentYear,
+  mclRatio,
   normalizeContaminantGroupKey,
   PFAS_NAME_HINTS,
 } from "./ccr";
@@ -233,22 +234,83 @@ describe("buildCcrFindings", () => {
     ]);
   });
 
-  it("preserves within-tier ordering from the extraction", () => {
+  it("sorts within a tier by detected_level / mcl descending (issue #199)", () => {
+    // Three concern-tier rows emitted in ascending-ratio order. The
+    // pre-#199 summarizer preserved extraction order; the post-#199
+    // summarizer floats the worst exceedance to the top of the tier.
     const out = buildCcrFindings({
       reportYear: 2024,
       publishedDate: null,
       extractedData: extracted({
         detected_contaminants: [
-          contaminant({ contaminant_name: "Concern-A", detected_level: 4, mcl: 3 }),
-          contaminant({ contaminant_name: "Concern-B", detected_level: 5, mcl: 3 }),
-          contaminant({ contaminant_name: "Concern-C", detected_level: 6, mcl: 3 }),
+          contaminant({ contaminant_name: "Concern-A", detected_level: 4, mcl: 3 }), // 1.33
+          contaminant({ contaminant_name: "Concern-B", detected_level: 5, mcl: 3 }), // 1.67
+          contaminant({ contaminant_name: "Concern-C", detected_level: 6, mcl: 3 }), // 2.00
         ],
       }),
     });
     expect(out.contaminants?.map((c) => c.contaminant_name)).toEqual([
-      "Concern-A",
-      "Concern-B",
       "Concern-C",
+      "Concern-B",
+      "Concern-A",
+    ]);
+  });
+
+  it("falls back to extraction order within a tier when neither row has a computable ratio", () => {
+    // Two context rows, neither with an MCL — the comparator has no
+    // ratio signal so extraction order survives as the tiebreaker.
+    const out = buildCcrFindings({
+      reportYear: 2024,
+      publishedDate: null,
+      extractedData: extracted({
+        detected_contaminants: [
+          contaminant({
+            contaminant_name: "First",
+            detected_level: 0.5,
+            mcl: null,
+            mcl_action_level: null,
+          }),
+          contaminant({
+            contaminant_name: "Second",
+            detected_level: 0.5,
+            mcl: null,
+            mcl_action_level: null,
+          }),
+        ],
+      }),
+    });
+    expect(out.contaminants?.map((c) => c.contaminant_name)).toEqual([
+      "First",
+      "Second",
+    ]);
+  });
+
+  it("sinks ratio'd-null rows below ratio'd rows within a tier", () => {
+    // Both rows tier as context (one by MCL ratio, one because MCL is
+    // missing). The ratio'd row floats above the null-ratio row even
+    // though it appeared LATER in extraction order.
+    const out = buildCcrFindings({
+      reportYear: 2024,
+      publishedDate: null,
+      extractedData: extracted({
+        detected_contaminants: [
+          contaminant({
+            contaminant_name: "No-MCL",
+            detected_level: 0.5,
+            mcl: null,
+            mcl_action_level: null,
+          }),
+          contaminant({
+            contaminant_name: "Has-MCL",
+            detected_level: 0.5,
+            mcl: 10,
+          }),
+        ],
+      }),
+    });
+    expect(out.contaminants?.map((c) => c.contaminant_name)).toEqual([
+      "Has-MCL",
+      "No-MCL",
     ]);
   });
 
@@ -693,6 +755,41 @@ describe("extractMostRecentYear", () => {
     // A bare "1899" is unlikely in a CCR period, but if it appears
     // we don't want it; the regex only accepts 19xx / 20xx / 21xx.
     expect(extractMostRecentYear("Period 1899")).toBeNull();
+  });
+});
+
+describe("mclRatio (issue #199 sort signal)", () => {
+  it("returns detected_level / mcl when both are present", () => {
+    expect(mclRatio(contaminant({ detected_level: 2, mcl: 10 }))).toBe(0.2);
+  });
+
+  it("falls back to mcl_action_level when MCL is null (LCR pattern)", () => {
+    expect(
+      mclRatio(
+        contaminant({ detected_level: 12, mcl: null, mcl_action_level: 15 }),
+      ),
+    ).toBeCloseTo(0.8);
+  });
+
+  it("returns null when detected_level is null", () => {
+    expect(mclRatio(contaminant({ detected_level: null }))).toBeNull();
+  });
+
+  it("returns null when neither MCL nor action level is present", () => {
+    expect(
+      mclRatio(
+        contaminant({
+          detected_level: 5,
+          mcl: null,
+          mcl_action_level: null,
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null when the limit is zero or negative (defensive)", () => {
+    expect(mclRatio(contaminant({ detected_level: 1, mcl: 0 }))).toBeNull();
+    expect(mclRatio(contaminant({ detected_level: 1, mcl: -1 }))).toBeNull();
   });
 });
 

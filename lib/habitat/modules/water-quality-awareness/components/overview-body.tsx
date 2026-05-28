@@ -1286,74 +1286,118 @@ function CcrContaminantList({ ccr }: { ccr: CcrFindings }) {
     );
   }
 
+  // Issue #199 item 2: collapse the context tier behind a disclosure
+  // when there are 2+ context rows so concern/caution headline rows
+  // stay visible above the fold and the long tail is one click away.
+  // A single context row stays inline — the disclosure overhead isn't
+  // worth it. Zero context rows means no disclosure renders at all.
+  const headlineRows: CcrSummarizedContaminant[] = [];
+  const contextRows: CcrSummarizedContaminant[] = [];
+  for (const c of contaminants) {
+    if (c.tier === "context") contextRows.push(c);
+    else headlineRows.push(c);
+  }
+  const collapseContext = contextRows.length >= 2;
+  const inlineRows = collapseContext ? headlineRows : contaminants;
+
   return (
-    <ul className="flex flex-col gap-2">
-      {contaminants.map((c, i) => (
-        <li
-          key={`${c.contaminant_name}-${i}`}
-          className="rounded-md p-3"
+    <div className="flex flex-col gap-2">
+      {inlineRows.length > 0 ? (
+        <ul className="flex flex-col gap-2">
+          {inlineRows.map((c, i) => (
+            <CcrContaminantRow
+              key={`${c.contaminant_name}-inline-${i}`}
+              c={c}
+            />
+          ))}
+        </ul>
+      ) : null}
+      {collapseContext ? (
+        <details>
+          <summary
+            className="text-small cursor-pointer"
+            style={{ color: "var(--color-accent)" }}
+          >
+            {contextRows.length} more contaminants detected at low levels
+          </summary>
+          <ul className="flex flex-col gap-2 mt-2">
+            {contextRows.map((c, i) => (
+              <CcrContaminantRow
+                key={`${c.contaminant_name}-context-${i}`}
+                c={c}
+              />
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function CcrContaminantRow({ c }: { c: CcrSummarizedContaminant }) {
+  return (
+    <li
+      className="rounded-md p-3"
+      style={{
+        border: "1px solid var(--color-border-subtle)",
+        backgroundColor: "var(--color-bg-surface-raised)",
+      }}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <CcrTierBadge tier={c.tier} />
+        <span
           style={{
-            border: "1px solid var(--color-border-subtle)",
-            backgroundColor: "var(--color-bg-surface-raised)",
+            fontSize: 14,
+            fontWeight: 500,
+            color: "var(--color-text-primary)",
           }}
         >
-          <div className="flex items-center gap-2 mb-1">
-            <CcrTierBadge tier={c.tier} />
-            <span
-              style={{
-                fontSize: 14,
-                fontWeight: 500,
-                color: "var(--color-text-primary)",
-              }}
-            >
-              {c.contaminant_name}
-            </span>
-          </div>
-          <div
-            className="mono text-small"
-            style={{ color: "var(--color-text-secondary)" }}
+          {c.contaminant_name}
+        </span>
+      </div>
+      <div
+        className="mono text-small"
+        style={{ color: "var(--color-text-secondary)" }}
+      >
+        {formatCcrLevel(c)}
+        {c.mcl !== null ? (
+          <span style={{ color: "var(--color-text-tertiary)" }}>
+            {" "}
+            • MCL {c.mcl}
+            {c.unit ? ` ${c.unit}` : ""}
+          </span>
+        ) : null}
+        {c.monitoring_period ? (
+          <span style={{ color: "var(--color-text-tertiary)" }}>
+            {" "}
+            • {c.monitoring_period}
+          </span>
+        ) : null}
+      </div>
+      {c.has_multiple_observations ? (
+        <CcrOtherObservations contaminant={c} />
+      ) : null}
+      {c.sources || c.notes ? (
+        <details className="mt-2">
+          <summary
+            className="text-small cursor-pointer"
+            style={{ color: "var(--color-accent)" }}
           >
-            {formatCcrLevel(c)}
-            {c.mcl !== null ? (
-              <span style={{ color: "var(--color-text-tertiary)" }}>
-                {" "}
-                • MCL {c.mcl}
-                {c.unit ? ` ${c.unit}` : ""}
-              </span>
-            ) : null}
-            {c.monitoring_period ? (
-              <span style={{ color: "var(--color-text-tertiary)" }}>
-                {" "}
-                • {c.monitoring_period}
-              </span>
-            ) : null}
+            What this means
+          </summary>
+          <div
+            className="text-small mt-2"
+            style={{
+              color: "var(--color-text-secondary)",
+              lineHeight: 1.55,
+            }}
+          >
+            {c.sources ? <p>Likely sources: {c.sources}</p> : null}
+            {c.notes ? <p>{c.notes}</p> : null}
           </div>
-          {c.has_multiple_observations ? (
-            <CcrOtherObservations contaminant={c} />
-          ) : null}
-          {c.sources || c.notes ? (
-            <details className="mt-2">
-              <summary
-                className="text-small cursor-pointer"
-                style={{ color: "var(--color-accent)" }}
-              >
-                What this means
-              </summary>
-              <div
-                className="text-small mt-2"
-                style={{
-                  color: "var(--color-text-secondary)",
-                  lineHeight: 1.55,
-                }}
-              >
-                {c.sources ? <p>Likely sources: {c.sources}</p> : null}
-                {c.notes ? <p>{c.notes}</p> : null}
-              </div>
-            </details>
-          ) : null}
-        </li>
-      ))}
-    </ul>
+        </details>
+      ) : null}
+    </li>
   );
 }
 
@@ -1438,6 +1482,17 @@ function formatCcrLevel(c: CcrSummarizedContaminant): string {
   return `Detected: ${c.detected_level}`;
 }
 
+// Per-tier explanations surfaced via tooltip on the CCR tier badge
+// (issue #199 item 4). The pill label alone isn't legible to a non-
+// expert — "Worth knowing" vs "Context" needs the underlying logic
+// surfaced in place so the user doesn't have to learn the schema.
+const CCR_TIER_TOOLTIP_COPY: Record<CcrContaminantTier, string> = {
+  concern: "Detected at or above the EPA's federal limit (MCL).",
+  caution:
+    "Detected at 80%+ of the MCL, or any detected level of a PFAS compound (federal PFAS limits are sub-part-per-trillion, so any positive detection is meaningful).",
+  context: "Detected, but well below the federal limit. Informational.",
+};
+
 function CcrTierBadge({ tier }: { tier: CcrContaminantTier }) {
   const label =
     tier === "concern"
@@ -1453,16 +1508,18 @@ function CcrTierBadge({ tier }: { tier: CcrContaminantTier }) {
           color: "#d97706",
         };
   return (
-    <span
-      className="rounded-full px-2 py-0.5 eyebrow"
-      style={{
-        backgroundColor: tone.bg,
-        color: tone.color,
-        fontSize: 10,
-      }}
-    >
-      {label}
-    </span>
+    <Tooltip content={CCR_TIER_TOOLTIP_COPY[tier]}>
+      <span
+        className="rounded-full px-2 py-0.5 eyebrow"
+        style={{
+          backgroundColor: tone.bg,
+          color: tone.color,
+          fontSize: 10,
+        }}
+      >
+        {label}
+      </span>
+    </Tooltip>
   );
 }
 

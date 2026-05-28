@@ -202,6 +202,22 @@ const TIER_ORDER: Record<CcrContaminantTier, number> = {
 };
 
 /**
+ * The `detected_level / mcl` ratio used as the within-tier sort signal
+ * (issue #199). Mirrors the comparator inside `classifyContaminantTier`:
+ * `mcl_action_level` substitutes when the row uses an action level
+ * (lead / copper LCR pattern); a missing or non-positive limit yields
+ * null so the caller can fall back to extraction order.
+ *
+ * Exported for the test suite.
+ */
+export function mclRatio(c: CcrDetectedContaminant): number | null {
+  const level = c.detected_level;
+  const limit = c.mcl ?? c.mcl_action_level;
+  if (level === null || limit === null || limit <= 0) return null;
+  return level / limit;
+}
+
+/**
  * Normalize a contaminant name into a grouping key (issue #200).
  *
  * Day-one rule: trim + lowercase. This works for the Kalamazoo PFAS
@@ -408,14 +424,25 @@ function groupAndSummarizeContaminants(
     };
   });
 
-  // Stable sort by tier; within a tier preserve the first-occurrence
-  // order from the extraction. Findings view renders concern → caution
-  // → context, matching the tile severity badge's ordering.
+  // Sort by tier (concern → caution → context) so the findings view
+  // renders the most-actionable rows first, matching the tile severity
+  // badge's ordering. Within a tier, sort by `detected_level / mcl`
+  // descending (issue #199) so the worst exceedance floats up — a row
+  // at 95% of MCL surfaces above a row at 81% regardless of the order
+  // the model emitted them. Rows whose ratio is uncomputable (no MCL
+  // on the row, or detected_level is null) sink below ratio'd rows in
+  // the same tier, ordered by extraction order amongst themselves.
   return summarized
     .sort((a, b) => {
       const tierDiff =
         TIER_ORDER[a.summarized.tier] - TIER_ORDER[b.summarized.tier];
       if (tierDiff !== 0) return tierDiff;
+      const ratioA = mclRatio(a.summarized);
+      const ratioB = mclRatio(b.summarized);
+      if (ratioA === null && ratioB === null) return a.firstIdx - b.firstIdx;
+      if (ratioA === null) return 1;
+      if (ratioB === null) return -1;
+      if (ratioA !== ratioB) return ratioB - ratioA;
       return a.firstIdx - b.firstIdx;
     })
     .map(({ summarized }) => summarized);
