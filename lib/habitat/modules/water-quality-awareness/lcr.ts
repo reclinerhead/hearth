@@ -224,22 +224,30 @@ export function summarizeLcr(
 
 /**
  * Severity inputs derived from the most-recent measurements. The
- * three flags payload.ts reads to decide between favorable / caution
- * / concern.
+ * flags payload.ts reads to decide between favorable / caution /
+ * concern.
  *
  * - lead_above_action / copper_above_action: at-or-above the federal
  *   action level on a measured (sign='=' or '>') value. A below-
  *   detection ('<') row never trips these.
- * - any_approaching: at least 80% of the action level but below.
- * - any_below_action: at least one measurement strictly below the
- *   action level. Used together with the absence of above-action
- *   measurements to support "favorable".
+ * - any_approaching: at least 80% of the action level but below
+ *   (sign='='|'>'). Subset of `any_detected`.
+ * - any_detected: at least one positive measurement (sign='='|'>'
+ *   with value > 0) regardless of its position relative to the
+ *   action level. This is the signal Hearth surfaces as "lead has
+ *   been detected" — see issue #188. Any detection is worth knowing
+ *   about because EPA action levels are regulatory thresholds, not
+ *   health-safety ones.
+ * - any_below_detection: at least one measurement strictly below the
+ *   detection limit (sign='<'). Reserved for the "favorable" case —
+ *   a utility where every sample is below detection.
  */
 export type LcrSeverityInputs = {
   lead_above_action: boolean;
   copper_above_action: boolean;
   any_approaching: boolean;
-  any_below_action: boolean;
+  any_detected: boolean;
+  any_below_detection: boolean;
 };
 
 export function computeLcrSeverityInputs(
@@ -250,22 +258,29 @@ export function computeLcrSeverityInputs(
       lead_above_action: false,
       copper_above_action: false,
       any_approaching: false,
-      any_below_action: false,
+      any_detected: false,
+      any_below_detection: false,
     };
   }
   const p = summary.most_recent_sampling_period;
   let lead_above_action = false;
   let copper_above_action = false;
   let any_approaching = false;
-  let any_below_action = false;
+  let any_detected = false;
+  let any_below_detection = false;
 
   const check = (m: LcrMeasurement | null, actionLevel: number, isLead: boolean) => {
     if (!m) return;
-    // '<' (below detection) is always below the action level by
-    // definition and is the strongest "favorable" signal.
     if (m.sign === "<") {
-      any_below_action = true;
+      // Below detection limit — the cleanest signal.
+      any_below_detection = true;
       return;
+    }
+    // sign === '=' or '>' with a positive value → the contaminant
+    // was detected at some level. Tier within the detection bucket
+    // (above action / approaching / sub-approaching) lands below.
+    if (m.value > 0) {
+      any_detected = true;
     }
     if (m.value >= actionLevel) {
       if (isLead) lead_above_action = true;
@@ -275,7 +290,6 @@ export function computeLcrSeverityInputs(
     if (m.value >= actionLevel * APPROACHING_THRESHOLD_RATIO) {
       any_approaching = true;
     }
-    any_below_action = true;
   };
 
   check(p.lead_90th_percentile, LEAD_ACTION_LEVEL_MG_L, true);
@@ -285,35 +299,41 @@ export function computeLcrSeverityInputs(
     lead_above_action,
     copper_above_action,
     any_approaching,
-    any_below_action,
+    any_detected,
+    any_below_detection,
   };
 }
 
 /**
  * Per-metal classification of the most-recent LCR measurements for
- * copy-layer use (issue #186). Sibling helper to `computeLcrSeverityInputs`
- * — same input, same thresholds, but per-metal granularity so the
- * onboarding-line builder can distinguish "lead approaching" from
- * "copper approaching" from "both approaching" without recomputing
- * the thresholds itself.
+ * copy-layer use (issue #186, extended by #188). Sibling helper to
+ * `computeLcrSeverityInputs` — same input, same thresholds, but
+ * per-metal granularity so the onboarding-line builder can
+ * distinguish "lead detected" from "lead approaching the action
+ * level" from "lead at or above" without recomputing the thresholds
+ * itself.
  *
- * `computeLcrSeverityInputs` already exposes per-metal *above*-action
- * booleans but only an aggregate `any_approaching`; this helper fills
- * that gap. It does NOT replace `computeLcrSeverityInputs` (which the
- * severity logic in payload.ts still owns); the two read the same data
- * for their own concerns.
- *
- * Per-metal states:
+ * Per-metal states (highest concern to lowest):
  *   above       — measurement at or above the federal action level.
  *   approaching — measurement between 80% and 100% of the action level.
- *   below       — measurement strictly below 80% (or below detection: '<').
+ *   detected    — measurement strictly below 80% but positive
+ *                 (sign='='|'>' with value > 0). Worth surfacing
+ *                 because EPA's action level is a regulatory cutoff,
+ *                 not a health-safety one — see #188.
+ *   below       — measurement strictly below the detection limit
+ *                 (sign='<'). The only state that supports favorable.
  *   absent      — EPA has no row of this contaminant for this system.
  *
  * Returns `{ kind: 'unknown' }` when LCR data isn't available
  * (`status !== 'available'`) — callers should drop any LCR clause
  * from their copy rather than fabricate a positive.
  */
-export type LcrMetalState = "above" | "approaching" | "below" | "absent";
+export type LcrMetalState =
+  | "above"
+  | "approaching"
+  | "detected"
+  | "below"
+  | "absent";
 export type LcrAxisClassification =
   | { kind: "available"; lead: LcrMetalState; copper: LcrMetalState }
   | { kind: "unknown" };
@@ -326,7 +346,15 @@ function classifyMeasurement(
   if (m.sign === "<") return "below";
   if (m.value >= actionLevel) return "above";
   if (m.value >= actionLevel * APPROACHING_THRESHOLD_RATIO) return "approaching";
-  return "below";
+  // Defensive: a sign='=' / '>' measurement of exactly zero is
+  // semantically the same as below the detection limit. EPA wouldn't
+  // normally send this combination — they'd use sign='<' instead —
+  // but treating zero as below detection is the honest fallback.
+  if (m.value <= 0) return "below";
+  // Positive value strictly below the approaching threshold — the
+  // contaminant is present at a sub-regulatory level. Worth
+  // surfacing under Hearth's "any detection is worth knowing" frame.
+  return "detected";
 }
 
 export function classifyLcrAxis(

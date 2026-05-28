@@ -301,17 +301,26 @@ export type SdwisEnrichment = {
  * over the SDWIS enrichment so the decision is testable independently
  * of the rest of the payload assembly.
  *
- *   favorable — no active violations AND at least one LCR
- *               measurement below the action level AND nothing
- *               above the action level. This is the "your utility
- *               looks clean" case worth celebrating quietly.
+ *   favorable — no active health-based violations AND every LCR
+ *               sample on file is below the detection limit
+ *               (sign='<'). The only state that earns the
+ *               "your utility looks clean" framing — see issue #188.
  *   concern   — at least one active health-based violation OR an LCR
- *               90th-percentile above the federal action level.
- *   caution   — at least one active non-health-based violation OR an
- *               LCR measurement >=80% of the action level.
+ *               90th-percentile at or above the federal action level.
+ *   caution   — any detected lead or copper below the action level
+ *               (sign='='|'>' with value > 0). Includes the
+ *               approaching tier. Hearth's framing: EPA action levels
+ *               are regulatory thresholds, not health-safety
+ *               thresholds — any detection is worth surfacing.
  *   neutral   — everything else (compliance "unknown", LCR
- *               "unavailable", or LCR "no_samples_on_file" without
- *               a concerning compliance signal).
+ *               "unavailable", LCR "no_samples_on_file", or no
+ *               positive signal on either axis).
+ *
+ * Note (#188): `has_active_non_health_based` is no longer a caution
+ * driver. Monitoring/reporting violations are an EPA-utility
+ * administrative concern, not a homeowner-relevant signal. The flag
+ * stays persisted on system_card because `recommended-actions.ts`
+ * reads it for its own card-emission logic.
  *
  * Exported for the test suite.
  */
@@ -324,13 +333,16 @@ export function deriveSeverity(input: SdwisEnrichment): HabitatSeverity {
   if (lcrInputs.lead_above_action || lcrInputs.copper_above_action) {
     return "concern";
   }
-  // caution next
-  if (compliance?.has_active_non_health_based) return "caution";
-  if (lcrInputs.any_approaching) return "caution";
-  // favorable only when we have positive signal on both axes
+  // any detected lead or copper below the action level (sign='='|'>'
+  // with positive value) → caution. Includes the approaching tier
+  // by definition.
+  if (lcrInputs.any_detected) return "caution";
+  // favorable only when compliance is clean AND every sample on file
+  // is below the detection limit. A utility with detected-but-low
+  // measurements falls into caution above, not here.
   if (
     compliance?.status === "no_active_violations" &&
-    lcrInputs.any_below_action
+    lcrInputs.any_below_detection
   ) {
     return "favorable";
   }

@@ -215,7 +215,8 @@ describe("computeLcrSeverityInputs", () => {
       expect(r.lead_above_action).toBe(false);
       expect(r.copper_above_action).toBe(false);
       expect(r.any_approaching).toBe(false);
-      expect(r.any_below_action).toBe(false);
+      expect(r.any_detected).toBe(false);
+      expect(r.any_below_detection).toBe(false);
     }
   });
 
@@ -226,6 +227,8 @@ describe("computeLcrSeverityInputs", () => {
       ]),
     );
     expect(r.lead_above_action).toBe(true);
+    // An at-or-above-action measurement is still a detection.
+    expect(r.any_detected).toBe(true);
   });
 
   it("flags copper_above_action when copper 90th percentile is at or above 1.3 mg/L", () => {
@@ -238,37 +241,57 @@ describe("computeLcrSeverityInputs", () => {
       ]),
     );
     expect(r.copper_above_action).toBe(true);
+    expect(r.any_detected).toBe(true);
   });
 
-  it("flags any_approaching when a measurement is at 80%+ of the action level but below", () => {
+  it("flags any_approaching AND any_detected when a measurement is at 80%+ of the action level but below", () => {
     const r = computeLcrSeverityInputs(
       summarizeLcr([
         sample({ sample_measure: 0.013 }),
       ]),
     );
     expect(r.any_approaching).toBe(true);
+    expect(r.any_detected).toBe(true);
     expect(r.lead_above_action).toBe(false);
   });
 
-  it("treats a < (below detection) measurement as below_action regardless of value", () => {
+  it("flags any_detected — but not any_approaching — for a positive sub-approaching measurement (issue #188)", () => {
+    // 0.005 mg/L = 33% of lead action level. Below the 80% approaching
+    // threshold but still a positive detection.
+    const r = computeLcrSeverityInputs(
+      summarizeLcr([sample({ sample_measure: 0.005 })]),
+    );
+    expect(r.any_detected).toBe(true);
+    expect(r.any_approaching).toBe(false);
+    expect(r.lead_above_action).toBe(false);
+    expect(r.any_below_detection).toBe(false);
+  });
+
+  it("treats a '<' (below detection) measurement as below_detection — not any_detected", () => {
     const r = computeLcrSeverityInputs(
       summarizeLcr([
         sample({ sample_measure: 0.001, result_sign_code: "<" }),
       ]),
     );
-    expect(r.any_below_action).toBe(true);
+    expect(r.any_below_detection).toBe(true);
+    expect(r.any_detected).toBe(false);
     expect(r.lead_above_action).toBe(false);
     expect(r.any_approaching).toBe(false);
   });
 
-  it("regression: Kalamazoo's most-recent 0.0053 mg/L lead is below_action, no_approach, not_above", () => {
+  it("regression: Kalamazoo's most-recent 0.0053 mg/L lead is detected (not approaching, not below_detection)", () => {
+    // This is the motivating case for issue #188 — Kalamazoo's lead is
+    // ~35% of the action level. Pre-#188 it landed in `any_below_action`
+    // and produced a `favorable` severity; now it lands in `any_detected`
+    // and drives `caution`.
     const summary = summarizeLcr([
       sample({ sample_id: "MI381874", sample_measure: 0.0053 }),
     ]);
     const r = computeLcrSeverityInputs(summary);
     expect(r.lead_above_action).toBe(false);
     expect(r.any_approaching).toBe(false);
-    expect(r.any_below_action).toBe(true);
+    expect(r.any_detected).toBe(true);
+    expect(r.any_below_detection).toBe(false);
   });
 });
 
@@ -308,6 +331,20 @@ describe("classifyLcrAxis", () => {
     });
   });
 
+  it("classifies a positive sub-approaching measurement as 'detected' (issue #188)", () => {
+    // 0.005 mg/L = 33% of lead action level. Pre-#188 the per-metal
+    // state collapsed this with '<' rows under 'below'; #188 splits
+    // them so the copy layer can speak to detection at any level.
+    const r = classifyLcrAxis(
+      summarizeLcr([sample({ sample_measure: 0.005 })]),
+    );
+    expect(r).toEqual({
+      kind: "available",
+      lead: "detected",
+      copper: "absent",
+    });
+  });
+
   it("treats a '<' (below detection) row as 'below' regardless of value", () => {
     const r = classifyLcrAxis(
       summarizeLcr([
@@ -323,24 +360,32 @@ describe("classifyLcrAxis", () => {
 
   it("returns 'absent' for a metal with no rows on file", () => {
     const r = classifyLcrAxis(
-      summarizeLcr([sample({ sample_measure: 0.005 })]),
+      // Only a copper row; lead is absent.
+      summarizeLcr([
+        sample({
+          contaminant_code: COPPER_CONTAMINANT_CODE,
+          sample_measure: 0.1,
+        }),
+      ]),
     );
     expect(r).toEqual({
       kind: "available",
-      lead: "below",
-      copper: "absent",
+      lead: "absent",
+      copper: "detected",
     });
   });
 
-  it("regression: Kalamazoo's 0.0053 mg/L lead reads as 'below', not 'approaching'", () => {
+  it("regression: Kalamazoo's 0.0053 mg/L lead now reads as 'detected', not 'below' (issue #188)", () => {
     // Same data the computeLcrSeverityInputs regression above uses, so
-    // the two helpers stay in lockstep on real EPA inputs.
+    // the two helpers stay in lockstep on real EPA inputs. The pre-#188
+    // behavior bundled positive sub-approaching into 'below' alongside
+    // '<' detections; #188 splits them apart.
     const r = classifyLcrAxis(
       summarizeLcr([sample({ sample_id: "MI381874", sample_measure: 0.0053 })]),
     );
     expect(r).toEqual({
       kind: "available",
-      lead: "below",
+      lead: "detected",
       copper: "absent",
     });
   });
@@ -354,5 +399,19 @@ describe("classifyLcrAxis", () => {
     if (r.kind === "available") {
       expect(r.lead).toBe("above");
     }
+  });
+
+  it("classifies a sign='=' value of exactly zero as 'below' (defensive)", () => {
+    // EPA shouldn't emit this combination — they'd use sign='<' for
+    // below-detection results — but treating zero as below the
+    // detection limit is the honest fallback.
+    const r = classifyLcrAxis(
+      summarizeLcr([sample({ sample_measure: 0 })]),
+    );
+    expect(r).toEqual({
+      kind: "available",
+      lead: "below",
+      copper: "absent",
+    });
   });
 });

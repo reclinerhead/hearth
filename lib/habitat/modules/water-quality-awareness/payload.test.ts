@@ -50,13 +50,33 @@ function complianceActiveHealth(): ComplianceSummary {
   };
 }
 
-const lcrAvailableBelow: LeadCopperSummary = {
+/**
+ * LCR fixtures keyed to the post-#188 severity model:
+ *   lcrBelowDetection — every sample below the detection limit (sign='<').
+ *                       The only LCR state that supports favorable.
+ *   lcrDetected       — positive measurement below the approaching tier.
+ *                       Triggers caution under #188 — Hearth flags any
+ *                       presence regardless of EPA's action threshold.
+ *   lcrApproaching    — 80%–100% of the action level.
+ *   lcrAbove          — at or above the action level.
+ */
+const lcrBelowDetection: LeadCopperSummary = {
   status: "available",
   sampling_period_count: 1,
   most_recent_sampling_period: {
     sampling_end_date: null,
-    lead_90th_percentile: { value: 0.003, unit: "MG/L", sign: "=", sample_id: "MI380000" },
-    copper_90th_percentile: { value: 0.2, unit: "MG/L", sign: "=", sample_id: "MI380001" },
+    lead_90th_percentile: { value: 0.001, unit: "MG/L", sign: "<", sample_id: "MI380000" },
+    copper_90th_percentile: { value: 0.05, unit: "MG/L", sign: "<", sample_id: "MI380001" },
+  },
+};
+
+const lcrDetected: LeadCopperSummary = {
+  status: "available",
+  sampling_period_count: 1,
+  most_recent_sampling_period: {
+    sampling_end_date: null,
+    lead_90th_percentile: { value: 0.005, unit: "MG/L", sign: "=", sample_id: "MI381874" },
+    copper_90th_percentile: null,
   },
 };
 
@@ -222,7 +242,7 @@ describe("deriveSeverity", () => {
     expect(
       deriveSeverity({
         compliance: complianceActiveHealth(),
-        leadCopper: lcrAvailableBelow,
+        leadCopper: lcrBelowDetection,
       }),
     ).toBe("concern");
   });
@@ -236,19 +256,7 @@ describe("deriveSeverity", () => {
     ).toBe("concern");
   });
 
-  it("returns caution when only a non-health-based violation is active", () => {
-    expect(
-      deriveSeverity({
-        compliance: {
-          ...complianceClean(),
-          has_active_non_health_based: true,
-        },
-        leadCopper: { status: "no_samples_on_file" },
-      }),
-    ).toBe("caution");
-  });
-
-  it("returns caution when an LCR measurement is approaching the action level", () => {
+  it("returns caution when an LCR measurement is approaching the action level (clean compliance)", () => {
     expect(
       deriveSeverity({
         compliance: complianceClean(),
@@ -257,11 +265,40 @@ describe("deriveSeverity", () => {
     ).toBe("caution");
   });
 
-  it("returns favorable only when compliance is clean AND LCR is below action level", () => {
+  it("returns caution when LCR has any detected lead below the approaching tier (issue #188)", () => {
+    // Sub-approaching detected — the Kalamazoo case. Pre-#188 this
+    // produced 'favorable'; #188 escalates it to caution because any
+    // lead detection is worth surfacing.
     expect(
       deriveSeverity({
         compliance: complianceClean(),
-        leadCopper: lcrAvailableBelow,
+        leadCopper: lcrDetected,
+      }),
+    ).toBe("caution");
+  });
+
+  it("returns neutral (NOT caution) when only a non-health-based violation is active (issue #188)", () => {
+    // Pre-#188 this was 'caution' via has_active_non_health_based.
+    // #188 drops monitoring/reporting violations from severity entirely —
+    // they're an EPA-utility administrative concern, not a homeowner
+    // signal. The flag stays persisted for recommended-actions but
+    // doesn't drive the dashboard tile or the discovery-modal pill.
+    expect(
+      deriveSeverity({
+        compliance: {
+          ...complianceClean(),
+          has_active_non_health_based: true,
+        },
+        leadCopper: { status: "no_samples_on_file" },
+      }),
+    ).toBe("neutral");
+  });
+
+  it("returns favorable only when compliance is clean AND every LCR sample is below the detection limit (issue #188)", () => {
+    expect(
+      deriveSeverity({
+        compliance: complianceClean(),
+        leadCopper: lcrBelowDetection,
       }),
     ).toBe("favorable");
   });
@@ -285,7 +322,7 @@ describe("deriveSeverity", () => {
     expect(
       deriveSeverity({
         compliance: null,
-        leadCopper: lcrAvailableBelow,
+        leadCopper: lcrBelowDetection,
       }),
     ).toBe("neutral");
   });
@@ -339,7 +376,7 @@ describe("buildSystemPayload — with SDWIS enrichment", () => {
   it("surfaces compliance_status_short and recent_violations on the system_card when compliance is populated", () => {
     const enrichment: SdwisEnrichment = {
       compliance: complianceClean(),
-      leadCopper: lcrAvailableBelow,
+      leadCopper: lcrBelowDetection,
     };
     const p = buildSystemPayload("cws_no_ccr", kalamazoo(), enrichment);
     expect(p.findings.system_card?.compliance_status_short).toBe(
@@ -352,7 +389,7 @@ describe("buildSystemPayload — with SDWIS enrichment", () => {
   it("attaches the lead_copper_summary onto the findings payload", () => {
     const enrichment: SdwisEnrichment = {
       compliance: complianceClean(),
-      leadCopper: lcrAvailableBelow,
+      leadCopper: lcrBelowDetection,
     };
     const p = buildSystemPayload("cws_no_ccr", kalamazoo(), enrichment);
     expect(p.findings.lead_copper_summary?.status).toBe("available");
@@ -380,7 +417,7 @@ describe("buildSystemPayload — with SDWIS enrichment", () => {
         ...complianceClean(),
         has_active_non_health_based: true,
       },
-      leadCopper: lcrAvailableBelow,
+      leadCopper: lcrBelowDetection,
     };
     const p = buildSystemPayload("cws_no_ccr", kalamazoo(), enrichment);
     expect(p.findings.system_card?.compliance_status_short).toBe(
@@ -392,7 +429,7 @@ describe("buildSystemPayload — with SDWIS enrichment", () => {
   it("persists has_active_non_health_based=false on the system_card on a fully clean utility", () => {
     const enrichment: SdwisEnrichment = {
       compliance: complianceClean(),
-      leadCopper: lcrAvailableBelow,
+      leadCopper: lcrBelowDetection,
     };
     const p = buildSystemPayload("cws_no_ccr", kalamazoo(), enrichment);
     expect(p.findings.system_card?.has_active_non_health_based).toBe(false);
@@ -401,7 +438,7 @@ describe("buildSystemPayload — with SDWIS enrichment", () => {
   it("computes a favorable severity for clean compliance + below-action LCR", () => {
     const enrichment: SdwisEnrichment = {
       compliance: complianceClean(),
-      leadCopper: lcrAvailableBelow,
+      leadCopper: lcrBelowDetection,
     };
     const p = buildSystemPayload("cws_no_ccr", kalamazoo(), enrichment);
     expect(p.severity).toBe("favorable");
@@ -418,13 +455,13 @@ describe("buildSystemPayload — with SDWIS enrichment", () => {
 });
 
 describe("buildCwsSummary", () => {
-  it("mentions clean compliance and below-action LCR values when both are present", () => {
+  it("mentions clean compliance and below-detection LCR values when both are present", () => {
     const summary = buildCwsSummary("Kalamazoo Public Water Supply", {
       compliance: complianceClean(),
-      leadCopper: lcrAvailableBelow,
+      leadCopper: lcrBelowDetection,
     });
     expect(summary).toMatch(/no violations/i);
-    expect(summary).toMatch(/lead below the federal action level/i);
+    expect(summary).toMatch(/lead below detection/i);
   });
 
   it("mentions active health-based violation when compliance is dirty", () => {

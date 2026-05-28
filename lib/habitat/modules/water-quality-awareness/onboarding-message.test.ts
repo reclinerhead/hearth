@@ -3,10 +3,10 @@ import {
   buildCwsOnboardingMessage,
   type CwsOnboardingMessageInput,
 } from "./onboarding-message";
-import type { LcrAxisClassification } from "./lcr";
+import type { LcrAxisClassification, LcrMetalState } from "./lcr";
 
 /**
- * Every row in issue #186's target-copy table has a test below. The
+ * Every row in issue #188's target-copy table has a test below. The
  * structure asserts the exact sentence we want users to read so future
  * edits surface as test-failures rather than silent voice drift.
  */
@@ -14,7 +14,7 @@ import type { LcrAxisClassification } from "./lcr";
 const NAME = "Kalamazoo Public Water Supply";
 
 function lcr(
-  partial: Partial<{ lead: "above" | "approaching" | "below" | "absent"; copper: "above" | "approaching" | "below" | "absent" }> = {},
+  partial: Partial<{ lead: LcrMetalState; copper: LcrMetalState }> = {},
 ): LcrAxisClassification {
   return {
     kind: "available",
@@ -30,15 +30,14 @@ function withInput(
     severity: "neutral",
     pwsName: NAME,
     complianceStatus: "no_active_violations",
-    hasActiveNonHealthBased: false,
     lcrAxis: { kind: "unknown" },
     ...overrides,
   };
 }
 
 describe("buildCwsOnboardingMessage", () => {
-  describe("favorable — clean compliance + LCR below action level", () => {
-    it("mentions lead and copper when both metals were sampled below action", () => {
+  describe("favorable — clean compliance + every LCR sample below the detection limit", () => {
+    it("mentions lead and copper when both metals are below detection", () => {
       expect(
         buildCwsOnboardingMessage(
           withInput({
@@ -47,7 +46,7 @@ describe("buildCwsOnboardingMessage", () => {
           }),
         ),
       ).toBe(
-        `Found your water utility — ${NAME} — EPA shows no active violations and recent lead and copper samples are below the action level.`,
+        `Found your water utility — ${NAME} — they're in active compliance with EPA and recent samples show no detectable lead and copper.`,
       );
     });
 
@@ -60,7 +59,7 @@ describe("buildCwsOnboardingMessage", () => {
           }),
         ),
       ).toBe(
-        `Found your water utility — ${NAME} — EPA shows no active violations and recent lead samples are below the action level.`,
+        `Found your water utility — ${NAME} — they're in active compliance with EPA and recent samples show no detectable lead.`,
       );
     });
 
@@ -73,12 +72,12 @@ describe("buildCwsOnboardingMessage", () => {
           }),
         ),
       ).toBe(
-        `Found your water utility — ${NAME} — EPA shows no active violations and recent copper samples are below the action level.`,
+        `Found your water utility — ${NAME} — they're in active compliance with EPA and recent samples show no detectable copper.`,
       );
     });
   });
 
-  describe("caution — clean compliance + LCR approaching action level", () => {
+  describe("caution — clean compliance + LCR approaching the action level", () => {
     it("names lead when only lead is approaching", () => {
       expect(
         buildCwsOnboardingMessage(
@@ -88,7 +87,7 @@ describe("buildCwsOnboardingMessage", () => {
           }),
         ),
       ).toBe(
-        `Found your water utility — ${NAME} — EPA shows no active violations, but recent lead samples are approaching the action level. We'll flag this for follow-up.`,
+        `Found your water utility — ${NAME} — they're in active compliance with EPA, but recent lead samples are approaching the action level. We'll flag this for follow-up.`,
       );
     });
 
@@ -101,7 +100,7 @@ describe("buildCwsOnboardingMessage", () => {
           }),
         ),
       ).toBe(
-        `Found your water utility — ${NAME} — EPA shows no active violations, but recent copper samples are approaching the action level. We'll flag this for follow-up.`,
+        `Found your water utility — ${NAME} — they're in active compliance with EPA, but recent copper samples are approaching the action level. We'll flag this for follow-up.`,
       );
     });
 
@@ -114,74 +113,64 @@ describe("buildCwsOnboardingMessage", () => {
           }),
         ),
       ).toBe(
-        `Found your water utility — ${NAME} — EPA shows no active violations, but recent lead and copper samples are approaching the action level. We'll flag this for follow-up.`,
+        `Found your water utility — ${NAME} — they're in active compliance with EPA, but recent lead and copper samples are approaching the action level. We'll flag this for follow-up.`,
       );
     });
   });
 
-  describe("caution — non-health-based violation", () => {
-    // `compliance_status_short` is health-based-only by design — it stays
-    // 'no_active_violations' even when has_active_non_health_based is
-    // true. The builder reads the separate flag for this branch.
-    it("uses monitoring-flavoured copy with no LCR clause when LCR is clean", () => {
+  describe("caution — clean compliance + any detected lead/copper below approaching (issue #188)", () => {
+    it("names lead when only lead is detected at sub-approaching levels", () => {
       expect(
         buildCwsOnboardingMessage(
           withInput({
             severity: "caution",
-            complianceStatus: "no_active_violations",
-            hasActiveNonHealthBased: true,
-            lcrAxis: lcr({ lead: "below", copper: "below" }),
+            lcrAxis: lcr({ lead: "detected", copper: "absent" }),
           }),
         ),
       ).toBe(
-        `Found your water utility — ${NAME} — EPA shows a non-health monitoring issue on file. We'll flag this for follow-up.`,
+        `Found your water utility — ${NAME} — they're in active compliance with EPA, but recent samples have detected lead. Any presence is worth knowing about.`,
       );
     });
 
-    it("uses monitoring-flavoured copy with no LCR clause when LCR is unavailable", () => {
+    it("names copper when only copper is detected at sub-approaching levels", () => {
       expect(
         buildCwsOnboardingMessage(
           withInput({
             severity: "caution",
-            complianceStatus: "no_active_violations",
-            hasActiveNonHealthBased: true,
-            lcrAxis: { kind: "unknown" },
+            lcrAxis: lcr({ lead: "below", copper: "detected" }),
           }),
         ),
       ).toBe(
-        `Found your water utility — ${NAME} — EPA shows a non-health monitoring issue on file. We'll flag this for follow-up.`,
+        `Found your water utility — ${NAME} — they're in active compliance with EPA, but recent samples have detected copper. Any presence is worth knowing about.`,
       );
     });
 
-    it("appends the LCR-approaching clause when both non-health and LCR axes flag caution", () => {
+    it("says 'lead and copper' when both are detected at sub-approaching levels", () => {
       expect(
         buildCwsOnboardingMessage(
           withInput({
             severity: "caution",
-            complianceStatus: "no_active_violations",
-            hasActiveNonHealthBased: true,
-            lcrAxis: lcr({ lead: "approaching", copper: "absent" }),
+            lcrAxis: lcr({ lead: "detected", copper: "detected" }),
           }),
         ),
       ).toBe(
-        `Found your water utility — ${NAME} — EPA shows a non-health monitoring issue on file and recent lead samples are approaching the action level. We'll flag this for follow-up.`,
+        `Found your water utility — ${NAME} — they're in active compliance with EPA, but recent samples have detected lead and copper. Any presence is worth knowing about.`,
       );
     });
 
-    it("falls back to neutral copy on legacy rows where hasActiveNonHealthBased is undefined (pre-#186 payloads)", () => {
-      // Old payloads don't carry the flag. We can't fabricate a
-      // monitoring issue we can't confirm, so the row degrades to the
-      // neutral fallback until the WQA cadence rewrites it.
+    it("prefers the 'approaching' wording over 'detected' when one metal is at the higher tier", () => {
+      // Approaching is more specific than detected; the more-specific
+      // copy wins when applicable.
       expect(
         buildCwsOnboardingMessage(
           withInput({
             severity: "caution",
-            complianceStatus: "no_active_violations",
-            hasActiveNonHealthBased: undefined,
-            lcrAxis: { kind: "unknown" },
+            lcrAxis: lcr({ lead: "approaching", copper: "detected" }),
           }),
         ),
-      ).toBe(`Found your water utility — ${NAME}.`);
+      ).toBe(
+        `Found your water utility — ${NAME} — they're in active compliance with EPA, but recent lead samples are approaching the action level. We'll flag this for follow-up.`,
+      );
     });
   });
 
@@ -222,7 +211,7 @@ describe("buildCwsOnboardingMessage", () => {
           }),
         ),
       ).toBe(
-        `Found your water utility — ${NAME} — EPA shows no active violations, but recent lead samples are at or above the action level. Worth a closer look.`,
+        `Found your water utility — ${NAME} — they're in active compliance with EPA, but recent lead samples are at or above the action level. Worth a closer look.`,
       );
     });
 
@@ -235,7 +224,7 @@ describe("buildCwsOnboardingMessage", () => {
           }),
         ),
       ).toBe(
-        `Found your water utility — ${NAME} — EPA shows no active violations, but recent copper samples are at or above the action level. Worth a closer look.`,
+        `Found your water utility — ${NAME} — they're in active compliance with EPA, but recent copper samples are at or above the action level. Worth a closer look.`,
       );
     });
 
@@ -248,7 +237,7 @@ describe("buildCwsOnboardingMessage", () => {
           }),
         ),
       ).toBe(
-        `Found your water utility — ${NAME} — EPA shows no active violations, but recent lead and copper samples are at or above the action level. Worth a closer look.`,
+        `Found your water utility — ${NAME} — they're in active compliance with EPA, but recent lead and copper samples are at or above the action level. Worth a closer look.`,
       );
     });
   });
@@ -289,7 +278,7 @@ describe("buildCwsOnboardingMessage", () => {
           }),
         ),
       ).toBe(
-        "Found your water utility on file with EPA — EPA shows no active violations and recent lead and copper samples are below the action level.",
+        "Found your water utility on file with EPA — they're in active compliance with EPA and recent samples show no detectable lead and copper.",
       );
     });
 
@@ -315,25 +304,33 @@ describe("buildCwsOnboardingMessage", () => {
           }),
         ),
       ).toBe(
-        "Found your water utility on file with EPA — EPA shows no active violations and recent lead samples are below the action level.",
+        "Found your water utility on file with EPA — they're in active compliance with EPA and recent samples show no detectable lead.",
       );
     });
   });
 
-  describe("regression — the issue's motivating case", () => {
-    it("Kalamazoo (clean compliance + lead approaching) reads as caution, not the old contradictory copy", () => {
+  describe("regression — the Kalamazoo motivating case (issue #188)", () => {
+    it("reads as caution-via-detected with both clauses landing in one sentence", () => {
+      // Kalamazoo: clean compliance, lead at 0.0053 mg/L (~35% of
+      // action level — well below approaching). Pre-#188 this row
+      // landed in either neutral (legacy onboarding-line) or in the
+      // awkward "non-health monitoring issue" branch (#186 fix).
+      // #188 routes it through the detected branch with the voice
+      // Todd asked for: positive on compliance + lead-detected caveat.
       const line = buildCwsOnboardingMessage(
         withInput({
           severity: "caution",
           complianceStatus: "no_active_violations",
-          lcrAxis: lcr({ lead: "approaching", copper: "absent" }),
+          lcrAxis: lcr({ lead: "detected", copper: "absent" }),
         }),
       );
-      expect(line).toContain("no active violations");
-      expect(line).toContain("approaching the action level");
-      expect(line).toContain("We'll flag this for follow-up");
-      // The pre-#186 wording must NOT appear.
+      expect(line).toContain("in active compliance with EPA");
+      expect(line).toContain("detected lead");
+      expect(line).toContain("Any presence is worth knowing about");
+      // Old wording must NOT appear.
       expect(line).not.toContain("no active compliance issues");
+      expect(line).not.toContain("non-health monitoring issue");
+      expect(line).not.toContain("approaching the action level");
     });
   });
 });
