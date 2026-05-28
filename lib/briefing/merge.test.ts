@@ -57,14 +57,67 @@ describe("buildBriefingSuccessUpdate", () => {
     expect(payload.year_built).toBe(1934);
   });
 
-  it("replaces an existing non-null value when the new value differs", () => {
+  it("preserves a sticky structural fact when a later run returns a different non-null value (issue #151)", () => {
+    // heating_summary is in STICKY_FACT_FIELDS. The "Sonar drifts between
+    // refreshes" pattern that motivated issue #151 means we'd rather hold
+    // the first value than let a later (possibly wrong) run silently
+    // rewrite it. The user can manually correct a wrong first run via a
+    // future edit affordance; the merge layer is for unattended refresh.
     const payload = buildBriefingSuccessUpdate({
       current: emptyRow({ heating_summary: "Forced air, Gas" }),
       result: emptyResult({ heating: "Heat pump" }),
       now: NOW,
     });
 
-    expect(payload.heating_summary).toBe("Heat pump");
+    expect(payload).not.toHaveProperty("heating_summary");
+  });
+
+  it("preserves year_built across a drifting refresh (issue #151 trust fix)", () => {
+    // The canonical reproduction from the issue: year_built shifts between
+    // refreshes. The first persisted value is the one we trust until the
+    // user explicitly overrides it.
+    const payload = buildBriefingSuccessUpdate({
+      current: emptyRow({ year_built: 1934 }),
+      result: emptyResult({ yearBuilt: 1936 }),
+      now: NOW,
+    });
+
+    expect(payload).not.toHaveProperty("year_built");
+  });
+
+  it("preserves lot size across a drifting refresh", () => {
+    // lot_size_sqft and lot_size_acres are both sticky — a refresh that
+    // returns a different lot must not move either column.
+    const payload = buildBriefingSuccessUpdate({
+      current: emptyRow({ lot_size_sqft: 7840, lot_size_acres: 0.18 }),
+      result: emptyResult({ lotSizeSqft: 10890, lotSizeAcres: 0.25 }),
+      now: NOW,
+    });
+
+    expect(payload).not.toHaveProperty("lot_size_sqft");
+    expect(payload).not.toHaveProperty("lot_size_acres");
+  });
+
+  it("replaces a description when the new value differs (description stays liquid)", () => {
+    // Description is intentionally NOT sticky: a later run that produces
+    // a richer description should still be allowed to replace a thinner
+    // one. description_source's provenance lock preserves the original
+    // copy for audit even when description itself updates.
+    const payload = buildBriefingSuccessUpdate({
+      current: emptyRow({
+        description: "Charming home.",
+        description_source: "Charming home.",
+      }),
+      result: emptyResult({
+        description: "Charming 1934 craftsman with original woodwork.",
+      }),
+      now: NOW,
+    });
+
+    expect(payload.description).toBe(
+      "Charming 1934 craftsman with original woodwork.",
+    );
+    expect(payload).not.toHaveProperty("description_source");
   });
 
   it("does not overwrite an existing non-null value when the new value is null", () => {

@@ -85,7 +85,33 @@ async function startBriefing(houseId: string): Promise<HouseAddress> {
 async function lookupZillow(address: HouseAddress): Promise<ZillowLookupResult> {
   "use step";
 
-  return lookupHouseOnZillow(address);
+  const { result, debug } = await lookupHouseOnZillow(address);
+
+  // Diagnostic log for issue #151. The briefing was producing different
+  // year_built / lot_size values across refreshes of the same property;
+  // before picking a model swap, prompt rework, or self-consistency
+  // pattern we need ground truth on what each individual call is actually
+  // returning (which Zillow page was cited, whether the model resolved to
+  // the right address, what raw text came back before validation). Logged
+  // as a single tagged line so the dev terminal can be grepped for
+  // `[briefing-zillow]` during a multi-refresh repro session. Verbose by
+  // design — this is the substrate for the issue's investigation flow,
+  // not a permanent production log.
+  console.log(
+    "[briefing-zillow]",
+    JSON.stringify({
+      address,
+      primaryModel: debug.primaryModel,
+      fallbackModels: debug.fallbackModels,
+      durationMs: debug.durationMs,
+      startedAt: debug.startedAt,
+      sourceUrl: result.sourceUrl,
+      parsed: result,
+      rawResponse: debug.rawResponse,
+    }),
+  );
+
+  return result;
 }
 
 /**

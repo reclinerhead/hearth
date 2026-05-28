@@ -25,6 +25,32 @@ export type ZillowLookupInput = {
   postalCode: string;
 };
 
+/**
+ * Diagnostic capture for a single Zillow lookup call. Returned alongside
+ * the validated result by `lookupHouseOnZillow` and logged by the workflow
+ * step so we can reconstruct *why* a refresh produced a particular value —
+ * which model answered, what URL the model cited, what raw text came back
+ * before validation clamped it, and how long the call took.
+ *
+ * Issue #151: the briefing was producing different `year_built` /
+ * `lot_size_*` values across refreshes of the same property. Before
+ * choosing between model A/B, prompt rework, or self-consistency, we need
+ * ground truth on whether the model is reading different Zillow sections
+ * per run, or resolving to a different property entirely. This capture is
+ * the substrate for that investigation.
+ */
+export type ZillowLookupDebug = {
+  startedAt: string;
+  durationMs: number;
+  primaryModel: string;
+  fallbackModels: string[];
+  prompt: string;
+  /** Raw text returned by the model, before fence/think stripping. */
+  rawResponse: string;
+  /** Validated result, copied here so the log has the full picture. */
+  parsed: ZillowLookupResult;
+};
+
 // The raw shape we expect back from the LLM. Field names are snake_case
 // because that's what the prompt asks for. Everything is optional/unknown
 // here because we re-validate before trusting any value.
@@ -245,13 +271,18 @@ function stripReasoningBlock(text: string): string {
 
 /**
  * Call the AI Gateway to look up a property on Zillow and return structured
- * facts. The function does not write to the database — that happens in the
- * workflow step that wraps this call. Keeping the lookup pure makes it easy
- * to test with a mocked AI Gateway.
+ * facts alongside a diagnostic capture. The function does not write to the
+ * database — that happens in the workflow step that wraps this call. The
+ * step is responsible for logging the debug capture (so the diagnostic
+ * survives across the multi-refresh investigation the issue describes)
+ * and then dropping it before persistence. Keeping the lookup pure makes
+ * it easy to test with a mocked AI Gateway.
  */
 export async function lookupHouseOnZillow(
   input: ZillowLookupInput,
-): Promise<ZillowLookupResult> {
+): Promise<{ result: ZillowLookupResult; debug: ZillowLookupDebug }> {
+  const startedAtMs = Date.now();
+  const startedAt = new Date(startedAtMs).toISOString();
   const primary = process.env.BRIEFING_PRIMARY_MODEL || DEFAULT_PRIMARY_MODEL;
   const fallbacks = (
     process.env.BRIEFING_FALLBACK_MODELS || DEFAULT_FALLBACK_MODELS
@@ -259,10 +290,11 @@ export async function lookupHouseOnZillow(
     .split(",")
     .map((m) => m.trim())
     .filter(Boolean);
+  const prompt = buildZillowPrompt(input);
 
   const { text } = await generateText({
     model: primary,
-    prompt: buildZillowPrompt(input),
+    prompt,
     providerOptions: {
       gateway: {
         // The full ordered list including the primary; the Gateway tries
@@ -280,5 +312,18 @@ export async function lookupHouseOnZillow(
     throw new Error("Zillow LLM response was not valid JSON", { cause });
   }
 
-  return validateZillowResponse(parsed);
+  const result = validateZillowResponse(parsed);
+
+  return {
+    result,
+    debug: {
+      startedAt,
+      durationMs: Date.now() - startedAtMs,
+      primaryModel: primary,
+      fallbackModels: fallbacks,
+      prompt,
+      rawResponse: text,
+      parsed: result,
+    },
+  };
 }
