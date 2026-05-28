@@ -30,10 +30,11 @@ export default async function Home() {
         src="/landing/hero.png"
         alt=""
         aria-hidden
-        fill
+        width={1360}
+        height={768}
         priority
         sizes="(min-width: 768px) 100vw, 0px"
-        className="hidden object-cover object-center md:block"
+        className="absolute left-0 top-1/2 hidden w-full h-auto -translate-y-1/2 md:block"
       />
 
       <div className="relative z-10 flex min-h-dvh items-center justify-center px-4">
