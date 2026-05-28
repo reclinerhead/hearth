@@ -742,11 +742,31 @@ function BriefingErrorBanner({ message }: { message: string | null }) {
  * specifically when both of these are true:
  *   1. house.briefing_generated_at IS NULL OR briefing is still
  *      pending / running (the briefing hasn't yet completed once).
- *   2. No completed habitat_findings rows exist for this house.
+ *   2. No habitat_findings rows exist for this house at all.
  *
  * The combination is sufficient — once either flips false, the modal is
  * gone for good even on subsequent visits / logout-login / refresh, which
  * is exactly the spec.
+ *
+ * The habitat-existence probe checks "any row exists" rather than
+ * "any *completed* row exists." The habitat orchestrator's per-module
+ * step upserts each row with `status='running'` before the check
+ * itself runs (`workflows/habitat.ts`), so during a Refresh House
+ * Facts run every habitat row briefly transitions
+ * completed → running → completed. Filtering by `status='completed'`
+ * would flip the probe to false in that window, which combined with
+ * the parallel `briefing_status='running'` would re-open the
+ * onboarding modal on top of the refresh modal for established users.
+ * "Any row exists" is the right signal: once the orchestrator has
+ * *ever* run for this house, rows exist and the user is not a
+ * first-run user, regardless of any subsequent refresh cycling them
+ * through `running`.
+ *
+ * The effect's dependency is `[houseId]`, not `[house]`, so the probe
+ * runs once per house rather than re-running on every Realtime push —
+ * the first-run determination is meant to be stable across the
+ * session, and re-querying on every house update was both wasteful and
+ * the mechanism that exposed the bug above.
  *
  * sessionStorage acts as a belt-and-suspenders dismissal flag against
  * re-mount loops within a single tab; the data conditions remain the
@@ -759,41 +779,39 @@ function useFirstRunDiscoveryModal(house: House | null): {
   ready: boolean;
   show: boolean;
 } {
-  const [hasCompletedHabitatRows, setHasCompletedHabitatRows] = useState<
-    boolean | null
-  >(null);
+  const [hasHabitatRows, setHasHabitatRows] = useState<boolean | null>(null);
   const [dismissedInSession, setDismissedInSession] = useState(false);
+  const houseId = house?.id ?? null;
 
   // sessionStorage check has to live in an effect — it's client-only and
   // we're SSR-safe by default.
   useEffect(() => {
-    if (!house) return;
+    if (!houseId) return;
     const flag = sessionStorage.getItem(
-      `onboardingDiscoveryDismissed:${house.id}`,
+      `onboardingDiscoveryDismissed:${houseId}`,
     );
     if (flag === "1") setDismissedInSession(true);
-  }, [house]);
+  }, [houseId]);
 
   useEffect(() => {
-    if (!house) return;
+    if (!houseId) return;
     let cancelled = false;
     (async () => {
       const supabase = createClient();
       const { count } = await supabase
         .from("habitat_findings")
         .select("id", { count: "exact", head: true })
-        .eq("house_id", house.id)
-        .eq("status", "completed");
+        .eq("house_id", houseId);
       if (cancelled) return;
-      setHasCompletedHabitatRows((count ?? 0) > 0);
+      setHasHabitatRows((count ?? 0) > 0);
     })();
     return () => {
       cancelled = true;
     };
-  }, [house]);
+  }, [houseId]);
 
   if (!house) return { ready: false, show: false };
-  if (hasCompletedHabitatRows === null) return { ready: false, show: false };
+  if (hasHabitatRows === null) return { ready: false, show: false };
   if (dismissedInSession) return { ready: true, show: false };
 
   const briefingNotFinished =
@@ -801,7 +819,7 @@ function useFirstRunDiscoveryModal(house: House | null): {
     house.briefing_status === "pending" ||
     house.briefing_status === "running";
 
-  const show = briefingNotFinished && !hasCompletedHabitatRows;
+  const show = briefingNotFinished && !hasHabitatRows;
   return { ready: true, show };
 }
 
