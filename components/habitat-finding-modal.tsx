@@ -355,14 +355,25 @@ export function HabitatFindingModal({
     }) ?? null;
   const hasCustomOverviewBody = overviewBody !== null;
 
-  // Issue #196 — Recheck affordance. The link is gated by status:
-  // enabled on completed/failed, disabled while running. We can't
-  // gate by `module.isApplicable(houseContext)` here without a context
-  // round-trip, but if the modal is open at all the user got here by
-  // clicking the tile — which only renders when the module produced a
-  // finding for this house, i.e. it was applicable. So we always show
-  // the link when status allows.
-  const isRunning = row.status === "running";
+  // Issue #196 — Recheck affordance. "Running" combines two signals:
+  //   * `row.status === 'running'` — the server has acknowledged the
+  //     trigger and the workflow is in flight.
+  //   * `pendingRecheck !== null` — we just fired a trigger locally
+  //     but haven't yet seen the row flip via Realtime.
+  //
+  // The second signal matters because some modules (radon, for one)
+  // run sub-second on the server, so the `status='running'` upsert
+  // and the `status='completed'` upsert can deliver inside a single
+  // React render batch — without local pendingRecheck we'd never
+  // visibly show the in-flight state. The local signal also gives
+  // immediate feedback on the click, eliminating the perceived
+  // network round-trip before anything happens.
+  //
+  // We don't gate by `module.isApplicable(houseContext)` here because
+  // if the modal is open at all, the user got here by clicking the
+  // tile — which only renders when the module produced a finding for
+  // this house, i.e. it was applicable.
+  const isRunning = row.status === "running" || pendingRecheck !== null;
   const recheckLabel = isRunning ? "Rechecking…" : "Recheck findings";
 
   const activeCard =
