@@ -492,6 +492,15 @@ export interface HabitatModule {
    * Imports `HabitatFindingRow` from `lib/hooks/use-habitat-findings`
    * as a type-only import, same discipline as `getOverviewCards` and
    * `renderDetail`.
+   *
+   * The `context` argument carries surface-level facts the module
+   * needs to render interactive affordances — currently `houseId` so
+   * the WQA module can spawn its CCR upload modal with the right
+   * scope. Optional second argument so existing callers (the modal
+   * shell) can keep working even before they thread context through.
    */
-  renderOverviewBody?: (row: HabitatFindingRow) => ReactNode;
+  renderOverviewBody?: (
+    row: HabitatFindingRow,
+    context: { houseId: string },
+  ) => ReactNode;
 }

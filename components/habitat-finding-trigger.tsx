@@ -17,12 +17,19 @@ import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 export function HabitatFindingTrigger({
   row,
   habitatModule,
+  houseId,
   children,
   className,
   title,
 }: {
   row: HabitatFindingRow;
   habitatModule: HabitatModule;
+  /**
+   * Threaded through to the modal's `renderOverviewBody` context so
+   * modules can spawn house-scoped affordances (e.g. WQA's CCR
+   * upload). Required.
+   */
+  houseId: string;
   children: ReactNode;
   className?: string;
   title?: string;
@@ -50,6 +57,7 @@ export function HabitatFindingTrigger({
         onClose={close}
         row={row}
         habitatModule={habitatModule}
+        houseId={houseId}
         getReturnFocusElement={getReturnFocus}
       />
     </>

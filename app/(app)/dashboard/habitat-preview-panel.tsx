@@ -91,6 +91,7 @@ export function HabitatPreviewPanel({
             key={row.module_key}
             row={row}
             habitatModule={habitatModule}
+            houseId={houseId}
             title="Click to see how Hearth determined this finding"
             className="surface-ai block w-full p-3 sm:p-4 cursor-pointer transition-colors hover:border-(--color-border-emphasis) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
           >

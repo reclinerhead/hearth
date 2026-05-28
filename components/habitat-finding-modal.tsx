@@ -75,12 +75,19 @@ export function HabitatFindingModal({
   onClose,
   row,
   habitatModule,
+  houseId,
   getReturnFocusElement,
 }: {
   open: boolean;
   onClose: () => void;
   row: HabitatFindingRow;
   habitatModule: HabitatModule;
+  /**
+   * Surface-level context the module's `renderOverviewBody` slot may
+   * need for house-scoped affordances (e.g. WQA's CCR upload modal).
+   * Forwarded as `{ houseId }` to that slot.
+   */
+  houseId: string;
   getReturnFocusElement?: () => HTMLElement | null;
 }) {
   const titleId = useId();
@@ -225,7 +232,8 @@ export function HabitatFindingModal({
   // banner / recommended-actions / overview-cards / generic-actions
   // sections are bypassed entirely — the module renders whatever it
   // wants. Activity log + footer still come from the modal shell.
-  const overviewBody = habitatModule.renderOverviewBody?.(row) ?? null;
+  const overviewBody =
+    habitatModule.renderOverviewBody?.(row, { houseId }) ?? null;
   const hasCustomOverviewBody = overviewBody !== null;
 
   const activeCard =

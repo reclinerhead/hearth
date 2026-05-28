@@ -160,6 +160,7 @@ describe("HabitatFindingModal", () => {
         onClose={() => {}}
         row={makeRow()}
         habitatModule={RADON_MODULE}
+        houseId="test-house-id"
       />,
     );
     expect(document.body.textContent).toContain(
@@ -182,6 +183,7 @@ describe("HabitatFindingModal", () => {
         onClose={() => {}}
         row={makeRow()}
         habitatModule={moduleWithIcon}
+        houseId="test-house-id"
       />,
     );
     const header = container.querySelector("header");
@@ -202,6 +204,7 @@ describe("HabitatFindingModal", () => {
         onClose={() => {}}
         row={makeRow()}
         habitatModule={RADON_MODULE}
+        houseId="test-house-id"
       />,
     );
     const header = container.querySelector("header");
@@ -215,6 +218,7 @@ describe("HabitatFindingModal", () => {
         onClose={() => {}}
         row={makeRow()}
         habitatModule={RADON_MODULE}
+        houseId="test-house-id"
       />,
     );
     // Activity log is collapsed by default — expand it first.
@@ -233,6 +237,7 @@ describe("HabitatFindingModal", () => {
         onClose={() => {}}
         row={makeRow()}
         habitatModule={RADON_MODULE}
+        houseId="test-house-id"
       />,
     );
     clickByText("How we got here");
@@ -261,6 +266,7 @@ describe("HabitatFindingModal", () => {
         onClose={() => {}}
         row={makeRow({ activity_log: null })}
         habitatModule={RADON_MODULE}
+        houseId="test-house-id"
       />,
     );
     clickByText("How we got here");
@@ -279,6 +285,7 @@ describe("HabitatFindingModal", () => {
           activity_log: { ...RADON_ACTIVITY_LOG, steps: [] },
         })}
         habitatModule={RADON_MODULE}
+        houseId="test-house-id"
       />,
     );
     clickByText("How we got here");
@@ -294,6 +301,7 @@ describe("HabitatFindingModal", () => {
         onClose={() => {}}
         row={makeRow()}
         habitatModule={RADON_MODULE}
+        houseId="test-house-id"
       />,
     );
     // The disclosure button is rendered, but no step list / placeholder
@@ -312,6 +320,7 @@ describe("HabitatFindingModal", () => {
         onClose={() => {}}
         row={makeRow({ actions: null })}
         habitatModule={RADON_MODULE}
+        houseId="test-house-id"
       />,
     );
     expect(document.body.textContent).not.toContain("What to do next");
@@ -324,6 +333,7 @@ describe("HabitatFindingModal", () => {
         onClose={() => {}}
         row={makeRow({ actions: [] })}
         habitatModule={RADON_MODULE}
+        houseId="test-house-id"
       />,
     );
     expect(document.body.textContent).not.toContain("What to do next");
@@ -339,6 +349,7 @@ describe("HabitatFindingModal", () => {
         }}
         row={makeRow()}
         habitatModule={RADON_MODULE}
+        houseId="test-house-id"
       />,
     );
     dispatchKey("Escape");
@@ -355,6 +366,7 @@ describe("HabitatFindingModal", () => {
         }}
         row={makeRow()}
         habitatModule={RADON_MODULE}
+        houseId="test-house-id"
       />,
     );
     const backdrop = document.querySelector<HTMLElement>(".fixed.inset-0");
@@ -365,7 +377,7 @@ describe("HabitatFindingModal", () => {
 
   it("focus returns to the trigger button after close", () => {
     render(
-      <HabitatFindingTrigger row={makeRow()} habitatModule={RADON_MODULE}>
+      <HabitatFindingTrigger row={makeRow()} habitatModule={RADON_MODULE} houseId="test-house-id">
         <span>open me</span>
       </HabitatFindingTrigger>,
     );
@@ -428,6 +440,7 @@ describe("HabitatFindingModal", () => {
           onClose={() => {}}
           row={makeRow()}
           habitatModule={makeSlottedModule()}
+          houseId="test-house-id"
         />,
       );
       expect(document.body.textContent).toContain("Sites near your home");
@@ -448,6 +461,7 @@ describe("HabitatFindingModal", () => {
           onClose={() => {}}
           row={makeRow()}
           habitatModule={makeSlottedModule()}
+          houseId="test-house-id"
         />,
       );
       const text = document.body.textContent ?? "";
@@ -466,6 +480,7 @@ describe("HabitatFindingModal", () => {
           onClose={() => {}}
           row={makeRow()}
           habitatModule={mod}
+          houseId="test-house-id"
         />,
       );
       expect(document.body.textContent).not.toContain("Sites near your home");
@@ -478,6 +493,7 @@ describe("HabitatFindingModal", () => {
           onClose={() => {}}
           row={makeRow()}
           habitatModule={RADON_MODULE}
+        houseId="test-house-id"
         />,
       );
       // No overview-cards section header should appear when the module
@@ -493,6 +509,7 @@ describe("HabitatFindingModal", () => {
           onClose={() => {}}
           row={makeRow()}
           habitatModule={makeSlottedModule()}
+          houseId="test-house-id"
         />,
       );
       clickByText("Alpha site");
@@ -520,6 +537,7 @@ describe("HabitatFindingModal", () => {
           onClose={() => {}}
           row={makeRow()}
           habitatModule={mod}
+          houseId="test-house-id"
         />,
       );
       clickByText("Solo site");
@@ -534,6 +552,7 @@ describe("HabitatFindingModal", () => {
           onClose={() => {}}
           row={makeRow()}
           habitatModule={makeSlottedModule()}
+          houseId="test-house-id"
         />,
       );
       clickByText("Alpha site");
@@ -551,6 +570,7 @@ describe("HabitatFindingModal", () => {
           onClose={() => {}}
           row={makeRow({ source_url: "https://example.com/row-source" })}
           habitatModule={makeSlottedModule()}
+          houseId="test-house-id"
         />,
       );
       const overviewLink = Array.from(
@@ -579,6 +599,7 @@ describe("HabitatFindingModal", () => {
           }}
           row={makeRow()}
           habitatModule={makeSlottedModule()}
+          houseId="test-house-id"
         />,
       );
       clickByText("Alpha site");
@@ -621,6 +642,7 @@ describe("HabitatFindingModal", () => {
           onClose={() => {}}
           row={makeRow()}
           habitatModule={mod}
+          houseId="test-house-id"
         />,
       );
       expect(document.body.textContent).toContain("Worth acting on");
@@ -637,6 +659,7 @@ describe("HabitatFindingModal", () => {
           onClose={() => {}}
           row={makeRow()}
           habitatModule={mod}
+          houseId="test-house-id"
         />,
       );
       const header = container.querySelector("header");
@@ -653,6 +676,7 @@ describe("HabitatFindingModal", () => {
           onClose={() => {}}
           row={makeRow()}
           habitatModule={mod}
+          houseId="test-house-id"
         />,
       );
       const header = container.querySelector("header");
@@ -668,6 +692,7 @@ describe("HabitatFindingModal", () => {
           onClose={() => {}}
           row={makeRow()}
           habitatModule={RADON_MODULE}
+        houseId="test-house-id"
         />,
       );
       const header = container.querySelector("header");
