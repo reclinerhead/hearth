@@ -23,7 +23,6 @@
  * — without it, no upload affordance can render.
  */
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { triggerHabitatModuleRecheck } from "@/app/(app)/dashboard/actions";
 import { CcrUploadModal } from "@/components/ccr-upload/CcrUploadModal";
@@ -68,7 +67,6 @@ export function WqaOverviewBody({
   notifyRecheckTriggered?: (source: HabitatRecheckSource) => void;
 }) {
   const f = (row.findings ?? null) as WqaFindings | null;
-  const router = useRouter();
   const [ccrModalOpen, setCcrModalOpen] = useState(false);
 
   if (!f) {
@@ -127,13 +125,24 @@ export function WqaOverviewBody({
             // dashboard tile and the finding modal the user is still
             // looking at — no manual refresh needed. Fire-and-forget:
             // the server action returns immediately because the
-            // workflow runs in the background. router.refresh() also
-            // runs to catch server-component surfaces.
+            // workflow runs in the background.
+            //
+            // NOTE: an earlier revision also called `router.refresh()`
+            // here as belt-and-suspenders for "server-component
+            // surfaces that read habitat_findings on initial render."
+            // Removed because in practice the App Router's refresh
+            // re-reconciled the client tree in a way that unmounted
+            // and remounted the CCR upload modal — which reset its
+            // useCcrUpload state from "done" back to "idle", swapping
+            // the green "Thanks for sharing" SuccessStage for the
+            // initial PickStage a beat after the user saw the
+            // acknowledgment. The realtime subscription on
+            // habitat_findings handles every consumer surface; the
+            // refresh was redundant.
             void triggerHabitatModuleRecheck(
               houseId,
               "water_quality_awareness",
             );
-            router.refresh();
           }}
         />
       ) : null}
