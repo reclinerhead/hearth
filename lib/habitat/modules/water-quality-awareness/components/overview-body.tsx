@@ -45,6 +45,7 @@ import type {
   CcrSummarizedContaminant,
   CcrContaminantTier,
 } from "../ccr";
+import type { CcrDetectedContaminant } from "@/lib/documents/ai/ccr-schema";
 import type { LcrMeasurement } from "../lcr";
 import {
   APPROACHING_THRESHOLD_RATIO,
@@ -1327,6 +1328,9 @@ function CcrContaminantList({ ccr }: { ccr: CcrFindings }) {
               </span>
             ) : null}
           </div>
+          {c.has_multiple_observations ? (
+            <CcrOtherObservations contaminant={c} />
+          ) : null}
           {c.sources || c.notes ? (
             <details className="mt-2">
               <summary
@@ -1351,6 +1355,81 @@ function CcrContaminantList({ ccr }: { ccr: CcrFindings }) {
       ))}
     </ul>
   );
+}
+
+/**
+ * Disclosure showing the alternate observations for an analyte that
+ * was reported in more than one CCR table (issue #200). The display
+ * value lives on the parent row; this surfaces the other levels with
+ * their monitoring context so the reader can see that what looks like
+ * "two PFBS rows" is actually one analyte measured under two
+ * programs.
+ */
+function CcrOtherObservations({
+  contaminant,
+}: {
+  contaminant: CcrSummarizedContaminant;
+}) {
+  const others = contaminant.other_observations;
+  if (others.length === 0) return null;
+  const headline = describeMonitoringContext(contaminant);
+  return (
+    <details className="mt-2">
+      <summary
+        className="text-small cursor-pointer"
+        style={{ color: "var(--color-accent)" }}
+      >
+        Measured under more than one program
+        {others.length === 1 ? " (1 other observation)" : ` (${others.length} other observations)`}
+      </summary>
+      <div
+        className="text-small mt-2"
+        style={{ color: "var(--color-text-secondary)", lineHeight: 1.55 }}
+      >
+        <p style={{ color: "var(--color-text-tertiary)" }}>
+          Showing: {headline}
+        </p>
+        <ul className="flex flex-col gap-2 mt-2">
+          {others.map((o, i) => (
+            <li
+              key={`${o.monitoring_period ?? "period"}-${o.source_table_label ?? "table"}-${i}`}
+              className="rounded-md p-2"
+              style={{
+                border: "1px solid var(--color-border-subtle)",
+                backgroundColor: "var(--color-bg-base)",
+              }}
+            >
+              <div className="mono text-small">
+                {formatOtherObservationLevel(o)}
+              </div>
+              <div
+                className="text-small mt-1"
+                style={{ color: "var(--color-text-tertiary)" }}
+              >
+                {describeMonitoringContext(o)}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </details>
+  );
+}
+
+function describeMonitoringContext(
+  c: CcrDetectedContaminant | CcrSummarizedContaminant,
+): string {
+  const parts: string[] = [];
+  if (c.source_table_label) parts.push(c.source_table_label);
+  if (c.monitoring_period) parts.push(c.monitoring_period);
+  if (parts.length === 0) return "Monitoring context not stated";
+  return parts.join(" • ");
+}
+
+function formatOtherObservationLevel(c: CcrDetectedContaminant): string {
+  if (c.detected_level === null) return "Detection level not reported";
+  if (c.unit) return `Detected: ${c.detected_level} ${c.unit}`;
+  return `Detected: ${c.detected_level}`;
 }
 
 function formatCcrLevel(c: CcrSummarizedContaminant): string {

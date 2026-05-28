@@ -15,4 +15,4 @@
 // log explains what changed). Small wording tweaks that preserve the
 // schema do NOT require a bump.
 
-export const CCR_EXTRACTION_VERSION = "v1";
+export const CCR_EXTRACTION_VERSION = "v2";

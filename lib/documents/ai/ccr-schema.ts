@@ -151,6 +151,17 @@ const ccrDetectedContaminantSchema = z.object({
   // short because the prompt is instructed not to absorb adjacent
   // paragraph text.
   notes: z.string().max(300).nullable(),
+
+  // Verbatim heading of the CCR table this row was extracted from
+  // (e.g. "2023-2024 EPA UCMR5 PFAS & LITHIUM MONITORING" vs
+  // "2024 PER- AND POLYFLUOROALKYL SUBSTANCES (PFAS) MONITORING").
+  // Captured verbatim — the model does NOT classify the program
+  // type into an enum. Provenance only: lets the summarizer keep
+  // multiple observations of the same analyte (one per table) as
+  // a single grouped finding and disambiguate them in the UI.
+  // Issue #200 (WQA-3a). Null on legacy v1 rows; the summarizer
+  // falls back to monitoring_period when this is absent.
+  source_table_label: z.string().max(200).nullable(),
 });
 
 // Lead and copper distribution. CCRs typically have a dedicated

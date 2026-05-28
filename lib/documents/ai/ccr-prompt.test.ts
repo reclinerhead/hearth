@@ -80,6 +80,7 @@ describe("buildCcrSystemPrompt", () => {
         "sources",
         "monitoring_period",
         "violation_in_period_ind",
+        "source_table_label",
       ]) {
         expect(prompt).toContain(field);
       }
@@ -202,6 +203,19 @@ describe("buildCcrSystemPrompt", () => {
     it("tells the model to skip non-detect rows", () => {
       const prompt = buildCcrSystemPrompt();
       expect(prompt).toMatch(/Skip rows for non-detect contaminants/i);
+    });
+
+    it("instructs verbatim source_table_label capture (issue #200, no enum classification)", () => {
+      const prompt = buildCcrSystemPrompt();
+      expect(prompt).toMatch(/source_table_label/);
+      expect(prompt).toMatch(/verbatim heading of the table/i);
+      expect(prompt).toMatch(/do NOT paraphrase, classify, or condense into an enum/);
+    });
+
+    it("instructs one row per table the contaminant appears in (issue #200, no cross-table merging)", () => {
+      const prompt = buildCcrSystemPrompt();
+      expect(prompt).toMatch(/Record one row per table the contaminant appears in/);
+      expect(prompt).toMatch(/Do NOT merge same-analyte rows across tables/);
     });
 
     it("distinguishes empty arrays from null", () => {
