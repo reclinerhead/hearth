@@ -65,6 +65,12 @@ import {
   type ViolationsCacheLookupResult,
 } from "./caches/violations-cache";
 import {
+  createSupabaseCcrCacheStore,
+  resolveLatestCcr,
+  type CcrCacheRow,
+} from "./caches/ccr-cache";
+import { buildCcrFindings } from "./ccr";
+import {
   COMPLIANCE_RECENT_YEARS,
   countUnmappedContaminants,
   summarizeCompliance,
@@ -81,6 +87,7 @@ import {
 } from "./payload";
 import {
   branchDecideNarration,
+  ccrCacheFetchNarration,
   complianceComputeNarration,
   EPA_CWS_SERVICE_AREAS_SOURCE,
   EPA_ENVIROFACTS_SOURCE,
@@ -89,6 +96,7 @@ import {
   envirofactsFetchNarration,
   findingStepNarration,
   HEARTH_BRANCH_SOURCE,
+  HEARTH_CCR_CACHE_SOURCE,
   HEARTH_COMPLIANCE_RULE_SOURCE,
   lcrFetchNarration,
   nearestPwsidFetchNarration,
@@ -314,6 +322,43 @@ const WaterQualityAwarenessModule: HabitatModule = {
       });
     }
 
+    // Step 2b — CCR shared-cache lookup. Runs whenever we have a PWSID
+    // to look up, regardless of the record's activity_code or type.
+    // The branch decision honors ccrCached only on the active-CWS path
+    // (see branch.ts), so a hit on an inactive or non-community
+    // system flows through harmlessly. Soft-fail: a Supabase outage
+    // on the cache lookup becomes a no-row result so the rest of
+    // the run proceeds with the cws_no_ccr branch. Issue #176 (WQA-3).
+    let ccrCacheRow: CcrCacheRow | null = null;
+    if (resolution.confidence !== "unmapped") {
+      const ccrStore = createSupabaseCcrCacheStore();
+      const ccrResolved = await resolveLatestCcr(resolution.pwsid, ccrStore);
+      ccrCacheRow = ccrResolved.row;
+      const ccrStep = ccrCacheFetchNarration({
+        pwsid: resolution.pwsid,
+        outcome:
+          ccrResolved.cache.kind === "hit"
+            ? {
+                kind: "hit",
+                reportYear: ccrResolved.cache.row.report_year,
+                // Contributor city hint is a later WQA-3 follow-up
+                // (joins through water_system_report_contributors →
+                // hearth.houses → city); for now the narration falls
+                // back to the generic "another homeowner on the same
+                // system" form.
+                cityHint: null,
+              }
+            : { kind: "miss", reason: ccrResolved.cache.reason },
+      });
+      log.step({
+        kind: "fetch",
+        narration: ccrStep.narration,
+        detail: ccrStep.detail,
+        result_summary: ccrStep.result_summary,
+        source: HEARTH_CCR_CACHE_SOURCE,
+      });
+    }
+
     // Step 3 — branch decision. The competing-utilities-nearby case is
     // special-cased here rather than in branch.ts: a user with
     // waterSource=null who has multiple utilities within 500m is
@@ -338,6 +383,7 @@ const WaterQualityAwarenessModule: HabitatModule = {
         waterSource: house.waterSource,
         pwsidResolved: resolution.confidence !== "unmapped",
         record,
+        ccrCached: ccrCacheRow !== null,
       });
     }
     const decideStep = branchDecideNarration({
@@ -559,11 +605,6 @@ const WaterQualityAwarenessModule: HabitatModule = {
         // 'stale'; if we land here something upstream is broken.
         return buildStalePayload("Internal: branch resolved but record is null.");
       }
-      // branch.ts never returns 'cws_with_ccr' until WQA-3 ships.
-      // Map it defensively to 'cws_no_ccr' here so the payload
-      // builder's type stays narrow.
-      const safeBranch =
-        decision.branch === "cws_with_ccr" ? "cws_no_ccr" : decision.branch;
       // When we reach the buildSystemPayload path the resolution
       // confidence is always "verified" or "inferred" — "unmapped"
       // routes to cws_unmapped via the branches above. TypeScript
@@ -571,12 +612,27 @@ const WaterQualityAwarenessModule: HabitatModule = {
       // the live resolution object directly.
       const confidence =
         resolution.confidence === "unmapped" ? "verified" : resolution.confidence;
+      // Build the CCR enrichment from the cache row when we landed on
+      // cws_with_ccr. The persisted row's coverage year is the
+      // authoritative report_year; published_date may be null.
+      const ccrEnrichment =
+        decision.branch === "cws_with_ccr" && ccrCacheRow
+          ? {
+              reportYear: ccrCacheRow.report_year,
+              findings: buildCcrFindings({
+                reportYear: ccrCacheRow.report_year,
+                publishedDate: ccrCacheRow.published_date,
+                extractedData: ccrCacheRow.extracted_data,
+              }),
+            }
+          : null;
       return buildSystemPayload(
-        safeBranch,
+        decision.branch,
         record,
         enrichment,
         confidence,
         recommendedActions,
+        ccrEnrichment,
       );
     })();
 

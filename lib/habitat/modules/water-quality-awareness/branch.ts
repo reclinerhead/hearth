@@ -44,11 +44,18 @@ import type { WqaBranch } from "./types";
  *                    PWSID. Null when no PWSID resolved, or when EPA
  *                    had no row for it, or when the fetch errored
  *                    upstream.
+ *   ccrCached      — Whether the shared CCR cache holds an extracted
+ *                    report for this PWSID. When true on an active
+ *                    CWS, the branch decision returns `cws_with_ccr`
+ *                    instead of `cws_no_ccr`. Defaults to `false` for
+ *                    callers (older tests, future module variants)
+ *                    that don't yet thread the CCR cache through. WQA-3.
  */
 export type BranchInputs = {
   waterSource: HouseContext["waterSource"];
   pwsidResolved: boolean;
   record: EnvirofactsWaterSystemRecord | null;
+  ccrCached?: boolean;
 };
 
 /**
@@ -111,7 +118,7 @@ export function decideBranch(inputs: BranchInputs): {
       return { branch: "non_community" };
     }
     if (record.pws_type_code === "CWS") {
-      return { branch: "cws_no_ccr" };
+      return { branch: inputs.ccrCached ? "cws_with_ccr" : "cws_no_ccr" };
     }
     return {
       branch: "stale",
@@ -146,7 +153,7 @@ export function decideBranch(inputs: BranchInputs): {
     return { branch: "non_community" };
   }
   if (record.pws_type_code === "CWS") {
-    return { branch: "cws_no_ccr" };
+    return { branch: inputs.ccrCached ? "cws_with_ccr" : "cws_no_ccr" };
   }
   return {
     branch: "stale",

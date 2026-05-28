@@ -350,6 +350,68 @@ export function complianceComputeNarration(input: {
   };
 }
 
+/**
+ * Activity-log source for the CCR shared cache. Points readers at the
+ * docs explaining the cache discipline rather than at a single CCR
+ * upload page — there isn't a stable utility-facing URL for "all
+ * CCRs that have ever been contributed."
+ */
+export const HEARTH_CCR_CACHE_SOURCE: ActivitySource = {
+  label: "Hearth Water Quality Report cache",
+  url: "/how-it-works#water-quality-awareness",
+};
+
+/**
+ * Activity-log narration for the CCR shared-cache lookup step.
+ * Runs on every active-CWS run after the WATER_SYSTEM fetch and before
+ * the branch decision; the cache's hit / miss outcome is what makes
+ * the branch decision between cws_with_ccr and cws_no_ccr possible.
+ *
+ * Three outcomes:
+ *   hit          — A CCR exists for this PWSID; surfaces the year and
+ *                  who contributed (when the contributor's house carries
+ *                  a city we can name). Branch will be cws_with_ccr.
+ *   miss/no-row  — No CCR has ever been contributed for this PWSID.
+ *                  Branch will be cws_no_ccr; the upload affordance
+ *                  surfaces in the findings view.
+ *   miss/error   — Supabase was unreachable on the cache lookup.
+ *                  Branch falls back to cws_no_ccr to keep the run
+ *                  honest; we don't claim "no CCR" when the cache
+ *                  itself errored.
+ */
+export function ccrCacheFetchNarration(input: {
+  pwsid: string;
+  outcome:
+    | { kind: "hit"; reportYear: number; cityHint: string | null }
+    | { kind: "miss"; reason: "no-row" | "lookup-error" };
+}): { narration: string; detail: string; result_summary: string } {
+  const o = input.outcome;
+  if (o.kind === "hit") {
+    const cityClause = o.cityHint
+      ? ` — a ${o.cityHint} homeowner contributed it, and the extraction is good for everyone on the system`
+      : " — another homeowner on the same system contributed it, and the extraction is good for everyone";
+    return {
+      narration: `Your utility's ${o.reportYear} Water Quality Report is already on file${cityClause}. I'm using that.`,
+      detail: `Cache hit on hearth.water_system_reports for ${input.pwsid}; report_year=${o.reportYear}, edition=primary`,
+      result_summary: "cache: hit",
+    };
+  }
+  if (o.reason === "no-row") {
+    return {
+      narration:
+        "I checked whether anyone has contributed your utility's annual Water Quality Report yet — not yet. You'll be able to upload one yourself once that flow ships.",
+      detail: `Cache miss on hearth.water_system_reports for ${input.pwsid}; no rows for this PWSID`,
+      result_summary: "cache: miss (no row)",
+    };
+  }
+  return {
+    narration:
+      "I tried to check whether anyone has contributed your utility's annual Water Quality Report, but our cache wasn't reachable on this run. I'll try again on your next visit.",
+    detail: `Cache miss on hearth.water_system_reports for ${input.pwsid}; lookup errored`,
+    result_summary: "cache: miss (lookup error)",
+  };
+}
+
 export function findingStepNarration(headline: string): {
   narration: string;
   result_summary: string;

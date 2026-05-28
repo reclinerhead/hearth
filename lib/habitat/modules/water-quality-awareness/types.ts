@@ -13,6 +13,7 @@
 
 import type { LeadCopperSummary } from "./lcr";
 import type { RecentViolationsSummary } from "./compliance";
+import type { CcrFindings } from "./ccr";
 
 /**
  * How confidently the module identified the user's water utility.
@@ -142,6 +143,19 @@ export type WqaFindings = {
    * and stale.
    */
   lead_copper_summary?: LeadCopperSummary;
+
+  /**
+   * Structured CCR findings derived from the shared `water_system_reports`
+   * cache. Populated only on the `cws_with_ccr` branch — when a CCR has
+   * been uploaded for the resolved PWSID and the orchestrator's cache
+   * lookup hit. The findings view's "Detected in your water" section
+   * reads the contaminant array off this field; the awareness payload's
+   * free-testing affordance reads `free_testing_offer`.
+   *
+   * Absent on every branch where the CCR cache didn't hit (cws_no_ccr,
+   * cws_unmapped, non_community, stale, private_well). Issue #176 (WQA-3).
+   */
+  ccr_findings?: CcrFindings;
 
   /**
    * "Recommended for your situation" cards, computed at check() time

@@ -91,7 +91,8 @@ export type AiExtraction =
   | AppliancePhotoExtraction
   | NotUsefulExtraction
   | DeltaExtraction
-  | ReceiptExtraction;
+  | ReceiptExtraction
+  | CcrExtraction;
 
 // The four inventory types backing the hearth.inventory.type CHECK
 // constraint. The name `EquipmentType` is historical — `property` is
@@ -213,4 +214,71 @@ export type ReceiptExtraction = {
   referenced_model_numbers: string[];
   notes: string | null;
   ai_confidence: number;
+};
+
+// CCR extraction (issue #176, WQA-3). The full structured shape from
+// the model is canonical on `hearth.water_system_reports.extracted_data`
+// — that's the shared cache row that benefits every house on the
+// utility. The per-document `ai_extraction` JSONB here is the
+// provenance breadcrumb: it carries the same extracted payload so the
+// document's own page lookup can re-render the extraction without a
+// join, plus the report-row id and the dedup reason so the Smart
+// Uploader review stage can show "thanks for contributing the first
+// upload" vs "matched an existing extraction" without another query.
+//
+// `extracted` carries the validated payload; see
+// lib/documents/ai/ccr-schema.ts for the strict five-section shape and
+// the rationale for the deliberately-narrow scope.
+import type { CcrExtractionResult } from "@/lib/documents/ai/ccr-schema";
+
+export type CcrDedupReason =
+  // First contribution for this (PWSID, year, edition). The
+  // extraction landed in water_system_reports under this document's
+  // contribution.
+  | "first-upload"
+  // Byte-identical re-upload of a contribution already on file. No
+  // model call ran; the existing extraction was reused. Contributor
+  // row was NOT duplicated (the existing one already covers this
+  // content_hash).
+  | "identical-bytes"
+  // Different bytes than any prior contribution, but the (PWSID,
+  // year, edition) matched an existing extraction. The existing
+  // extraction was reused; a new contributor row records this
+  // upload's distinct content_hash. Model call may or may not have
+  // run depending on the slice's optimization (today: yes, follow-up
+  // slice may skip when the user's UI flow declared the year up
+  // front).
+  | "same-ccr-different-bytes";
+
+export type CcrExtraction = {
+  mode: "ccr";
+  /**
+   * The shared-cache report this document contributed to. Null
+   * between the analyze step (when the model has run but the dedup
+   * orchestration hasn't) and the finalize step (when the report
+   * row is persisted and the contributor row recorded). Non-null
+   * once the document is attached.
+   */
+  report_id: string | null;
+  /** The PWSID that the orchestrator resolved for this document. */
+  pwsid: string;
+  /**
+   * Coverage year for the report. Read from the extracted header
+   * metadata during analyze; the finalize step uses it to look up
+   * the (PWSID, year, edition) row.
+   */
+  report_year: number | null;
+  /**
+   * How the dedup orchestration handled this upload. Null between
+   * analyze and finalize for the same reason as `report_id`. Drives
+   * the Smart Uploader review-stage acknowledgment copy once set.
+   */
+  dedup_reason: CcrDedupReason | null;
+  /**
+   * Validated extraction payload. Identical to
+   * `water_system_reports.extracted_data` for the report row. Stored
+   * here as a provenance copy so the per-document re-render path
+   * doesn't need a second query.
+   */
+  extracted: CcrExtractionResult;
 };
