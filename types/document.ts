@@ -14,6 +14,7 @@ export type DocumentKind =
   | "invoice"
   | "inspection"
   | "emergency_procedure_video"
+  | "water_quality_report"
   | "other";
 
 export type DocumentStatus =
