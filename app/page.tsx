@@ -22,8 +22,18 @@ export default async function Home() {
         width={832}
         height={1248}
         priority
-        sizes="100vw"
-        className="absolute left-0 top-1/2 w-full h-auto -translate-y-1/2"
+        sizes="(min-width: 768px) 0px, 100vw"
+        className="absolute left-0 top-1/2 w-full h-auto -translate-y-1/2 md:hidden"
+      />
+
+      <Image
+        src="/landing/hero.png"
+        alt=""
+        aria-hidden
+        fill
+        priority
+        sizes="(min-width: 768px) 100vw, 0px"
+        className="hidden object-cover object-center md:block"
       />
 
       <div className="relative z-10 flex min-h-dvh items-center justify-center px-4">
