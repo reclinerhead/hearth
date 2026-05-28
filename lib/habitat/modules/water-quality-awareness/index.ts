@@ -70,7 +70,8 @@ import {
   summarizeCompliance,
   type ComplianceSummary,
 } from "./compliance";
-import { summarizeLcr, type LeadCopperSummary } from "./lcr";
+import { classifyLcrAxis, summarizeLcr, type LeadCopperSummary } from "./lcr";
+import { buildCwsOnboardingMessage } from "./onboarding-message";
 import {
   buildCwsUnmappedPayload,
   buildPrivateWellPayload,
@@ -597,7 +598,17 @@ const WaterQualityAwarenessModule: HabitatModule = {
   },
 
   getOnboardingMessage(finding): string {
-    const f = finding.findings as { branch?: string; system_card?: { pws_name?: string; compliance_status_short?: string } };
+    const f = finding.findings as {
+      branch?: string;
+      system_card?: {
+        pws_name?: string;
+        compliance_status_short?:
+          | "unknown"
+          | "no_active_violations"
+          | "active_violations";
+      };
+      lead_copper_summary?: LeadCopperSummary;
+    };
     if (f?.branch === "private_well") {
       return "Your home is on a private water system — we'll add tailored guidance in an upcoming Hearth update.";
     }
@@ -608,25 +619,22 @@ const WaterQualityAwarenessModule: HabitatModule = {
       return "I couldn't confirm your water system with EPA on this run — we'll try again next time.";
     }
     const name = f?.system_card?.pws_name;
-    const compliance = f?.system_card?.compliance_status_short;
     if (f?.branch === "non_community") {
       return name
         ? `Your address is served by ${name}, a non-community water system.`
         : "Your address is served by a non-community water system.";
     }
-    if (compliance === "active_violations") {
-      return name
-        ? `Found your water utility — ${name} — and EPA shows an active compliance issue worth a closer look.`
-        : "Found your water utility on file with EPA, with an active compliance issue worth a closer look.";
-    }
-    if (compliance === "no_active_violations") {
-      return name
-        ? `Found your water utility — ${name} — and EPA shows no active compliance issues.`
-        : "Found your water utility on file with EPA, with no active compliance issues.";
-    }
-    return name
-      ? `Found your water utility — ${name}.`
-      : "Found your water utility on file with EPA.";
+    // CWS branches: build the line off severity + compliance + LCR axis
+    // so the message names the actual flag driver (issue #186). Helper is
+    // pure and unit-tested in `onboarding-message.test.ts`.
+    return buildCwsOnboardingMessage({
+      severity: finding.severity,
+      pwsName: name,
+      complianceStatus: f?.system_card?.compliance_status_short,
+      lcrAxis: classifyLcrAxis(
+        f?.lead_copper_summary ?? { status: "unavailable" },
+      ),
+    });
   },
 
   /**
