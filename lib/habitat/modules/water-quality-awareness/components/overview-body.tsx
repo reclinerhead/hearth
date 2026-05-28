@@ -493,7 +493,11 @@ function SystemCard({
           value={onUploadCcrRequest ? "Upload yours" : ccr.label}
           tone={onUploadCcrRequest ? "info" : ccr.tone}
           icon={onUploadCcrRequest ? "upload" : ccr.icon}
-          tooltip="A Consumer Confidence Report (CCR), also called an Annual Water Quality Report, is the federally-required annual disclosure of every regulated contaminant your utility tested for and detected last year. Utilities mail or email it by July 1 each year — upload yours to populate the rest of this finding."
+          tooltip={
+            card.latest_ccr_status === "not_uploaded"
+              ? "A Consumer Confidence Report (CCR), also called an Annual Water Quality Report, is the federally-required annual disclosure of every regulated contaminant your utility tested for and detected last year. Utilities mail or email it by July 1 each year — upload yours to populate the rest of this finding."
+              : `Your utility's ${card.latest_ccr_status.year} Consumer Confidence Report is on file. The contaminants listed below — along with any free-testing offer and the recommended actions — were extracted directly from that report.`
+          }
           onClick={onUploadCcrRequest ?? undefined}
           actionable={onUploadCcrRequest !== null}
         />
