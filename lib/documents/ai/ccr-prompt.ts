@@ -42,6 +42,8 @@
 //   * "source-water assessments"
 //   * "infrastructure improvement"
 //   * "customer tips"
+//   * "Record one row per table the contaminant appears in" (issue #200)
+//   * "verbatim heading of the table" (issue #200)
 
 export type CcrUserPromptInput = {
   // The PWSID resolved by the WQA-1 service-area lookup (or the
@@ -88,7 +90,9 @@ What to extract — exactly five sections, all top-level nullable:
    - monitoring_period: the period as printed ("<year>", "<quarter> <year>", "Annual")
    - violation_in_period_ind: true ONLY when the report itself flags this contaminant as in violation for the period. Set the violation_in_period_ind only when the report itself flags it — do not infer from comparing detected_level to mcl
    - notes: short qualifying text from the row (range expressions, footnotes, "below detection at most sites")
+   - source_table_label: the verbatim heading of the table the row was extracted from, as printed in the report (e.g. the table title, header banner, or section caption directly above the table). Copy it verbatim — do NOT paraphrase, classify, or condense into an enum. Null when the table has no visible heading.
    **Skip rows for non-detect contaminants** (printed as "ND", "<detection limit", or 0 with no measurable value). The summarizer cares about what was measurably detected; non-detects are noise here.
+   **Record one row per table the contaminant appears in.** When the same analyte is reported in more than one table — for example, a federal UCMR monitoring round AND the utility's own routine monitoring printed as separate tables — emit a separate detected_contaminants entry for each table, with the source_table_label distinguishing them. Do NOT merge same-analyte rows across tables, and do NOT pick one and drop the other; the downstream summarizer groups them.
 
 3. lead_copper_distribution — null when the CCR has no LCR section
    - lead: an entry { percentile_90, unit, action_level, samples_collected, samples_exceeding_action_level, monitoring_period } or null when lead isn't broken out
@@ -145,7 +149,8 @@ Example detected_contaminants entry:
     "sources": "<sources boilerplate as printed or null>",
     "monitoring_period": "<period as printed or null>",
     "violation_in_period_ind": <true only when flagged in report or null>,
-    "notes": "<short qualifier or null>"
+    "notes": "<short qualifier or null>",
+    "source_table_label": "<verbatim heading of the table this row came from, or null>"
   }
 
 Example lead entry:

@@ -52,10 +52,20 @@ export type CcrContaminantTier = "concern" | "caution" | "context";
 
 /**
  * One summarized contaminant row. Mirrors the extraction shape
- * one-for-one but adds the tier classification.
+ * one-for-one but adds the tier classification and a grouping shape
+ * that lets one row represent multiple observations of the same
+ * analyte (issue #200 — same analyte reported under different
+ * monitoring programs, e.g. UCMR5 + utility routine).
+ *
+ * For single-observation analytes (the overwhelming majority),
+ * `has_multiple_observations` is false and `other_observations` is
+ * an empty array — the type stays uniform so the findings view
+ * can branch on the flag without narrowing.
  */
 export type CcrSummarizedContaminant = CcrDetectedContaminant & {
   tier: CcrContaminantTier;
+  has_multiple_observations: boolean;
+  other_observations: CcrDetectedContaminant[];
 };
 
 /**
@@ -192,8 +202,133 @@ const TIER_ORDER: Record<CcrContaminantTier, number> = {
 };
 
 /**
+ * Normalize a contaminant name into a grouping key (issue #200).
+ *
+ * Day-one rule: trim + lowercase. This works for the Kalamazoo PFAS
+ * case where each analyte's printed name is consistent across both
+ * tables (PFBS / PFHxS / PFHxA / PFOA / PFOS). A canonical-code
+ * lookup against `data/contaminant-codes.ts` is the eventual upgrade
+ * for cross-utility aliasing edge cases.
+ *
+ * Exported for the test suite.
+ */
+export function normalizeContaminantGroupKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/**
+ * Extract the highest 4-digit year from a CCR monitoring_period
+ * string. CCR conventions vary wildly ("2024", "2023-2024", "Q3 2024",
+ * "Annual 2023") so we pick the latest year mentioned — the recency
+ * signal for `display_observation` selection within a multi-observation
+ * group. Returns null when no plausible year is present.
+ *
+ * Exported for the test suite.
+ */
+export function extractMostRecentYear(period: string | null): number | null {
+  if (period === null) return null;
+  const matches = period.match(/\b(?:19|20|21)\d{2}\b/g);
+  if (!matches || matches.length === 0) return null;
+  return Math.max(...matches.map((s) => Number.parseInt(s, 10)));
+}
+
+/**
+ * Extract the earliest 4-digit year from a CCR monitoring_period
+ * string. Used as the secondary recency signal: when two observations
+ * share the same end-year (e.g. "2024" vs "2023-2024" both end in
+ * 2024), the one with the higher start year is the more-recent
+ * observation. Returns null when no plausible year is present.
+ *
+ * Exported for the test suite.
+ */
+export function extractEarliestYear(period: string | null): number | null {
+  if (period === null) return null;
+  const matches = period.match(/\b(?:19|20|21)\d{2}\b/g);
+  if (!matches || matches.length === 0) return null;
+  return Math.min(...matches.map((s) => Number.parseInt(s, 10)));
+}
+
+/**
+ * Whether an observation reads like a running-annual-average
+ * measurement. CCRs label these inconsistently ("Highest Running
+ * Annual Average", "RAA", "HRAA"); we match against the period,
+ * notes, and source_table_label combined.
+ *
+ * Used as the tiebreaker when two observations share the same most-
+ * recent year — RAA is the regulatory-relevant headline value, so
+ * it wins the display slot.
+ */
+function looksLikeRunningAnnualAverage(c: CcrDetectedContaminant): boolean {
+  const haystack = [c.monitoring_period, c.notes, c.source_table_label]
+    .filter((s): s is string => typeof s === "string" && s.length > 0)
+    .join(" ")
+    .toLowerCase();
+  return (
+    haystack.includes("running annual average") ||
+    /\braa\b/.test(haystack) ||
+    /\bhraa\b/.test(haystack)
+  );
+}
+
+/**
+ * Choose which observation in a multi-observation group becomes the
+ * `display_observation` (the one whose values headline the card and
+ * drive tier classification).
+ *
+ * Rule (issue #200, deliberate call — see open question 1):
+ *   1. Highest end-year in monitoring_period.
+ *   2. Tie → highest start-year (so "2024" beats "2023-2024" when
+ *      both end in 2024, because the single-year observation is
+ *      narrower / more-recent).
+ *   3. Tie → running-annual-average observation (regulatory headline).
+ *   4. Further tie → first encountered in extraction order.
+ *
+ * Returns an index into the input array.
+ */
+function chooseDisplayObservationIndex(rows: CcrDetectedContaminant[]): number {
+  type Score = { endYear: number; startYear: number; isRaa: boolean };
+  const score = (row: CcrDetectedContaminant): Score => ({
+    endYear: extractMostRecentYear(row.monitoring_period) ?? -Infinity,
+    startYear: extractEarliestYear(row.monitoring_period) ?? -Infinity,
+    isRaa: looksLikeRunningAnnualAverage(row),
+  });
+  let best = 0;
+  let bestScore = score(rows[0]);
+  for (let i = 1; i < rows.length; i++) {
+    const s = score(rows[i]);
+    if (s.endYear !== bestScore.endYear) {
+      if (s.endYear > bestScore.endYear) {
+        best = i;
+        bestScore = s;
+      }
+      continue;
+    }
+    if (s.startYear !== bestScore.startYear) {
+      if (s.startYear > bestScore.startYear) {
+        best = i;
+        bestScore = s;
+      }
+      continue;
+    }
+    if (s.isRaa && !bestScore.isRaa) {
+      best = i;
+      bestScore = s;
+    }
+  }
+  return best;
+}
+
+/**
  * Build the persisted `ccr_findings` fragment from an extracted CCR
  * row. Pure.
+ *
+ * Issue #200 — group by normalized contaminant name BEFORE tiering
+ * and sorting. Multi-observation groups (same analyte reported in
+ * two or more tables, e.g. UCMR5 + utility routine) collapse into a
+ * single summarized row whose `display_observation` drives tier and
+ * sort, with the remaining observations preserved on
+ * `other_observations`. Single-observation contaminants are unchanged
+ * in shape, tier, and sort order.
  *
  * The `report_year` and `published_date` arguments come from the
  * `water_system_reports` row, not from `extractedData.header_metadata`
@@ -211,18 +346,7 @@ export function buildCcrFindings(input: {
   const contaminants: CcrSummarizedContaminant[] | null =
     extractedData.detected_contaminants === null
       ? null
-      : extractedData.detected_contaminants
-          .map((c) => ({ ...c, tier: classifyContaminantTier(c) }))
-          // Stable sort by tier; within tier preserve extraction order.
-          // The findings view renders concern rows first, then caution,
-          // then context — same ordering the tile severity badge uses.
-          .map((c, idx) => ({ c, idx }))
-          .sort((a, b) => {
-            const tierDiff = TIER_ORDER[a.c.tier] - TIER_ORDER[b.c.tier];
-            if (tierDiff !== 0) return tierDiff;
-            return a.idx - b.idx;
-          })
-          .map(({ c }) => c);
+      : groupAndSummarizeContaminants(extractedData.detected_contaminants);
 
   return {
     report_year: reportYear,
@@ -233,6 +357,68 @@ export function buildCcrFindings(input: {
     free_testing_offer: extractedData.free_testing_offer,
     ai_confidence: extractedData.ai_confidence,
   };
+}
+
+function groupAndSummarizeContaminants(
+  rows: CcrDetectedContaminant[],
+): CcrSummarizedContaminant[] {
+  // Group by normalized contaminant name, recording the first-
+  // occurrence extraction index so within-tier sort order remains
+  // deterministic and aligned with what the model emitted.
+  const groups = new Map<
+    string,
+    { firstIdx: number; rows: CcrDetectedContaminant[] }
+  >();
+  rows.forEach((row, idx) => {
+    const key = normalizeContaminantGroupKey(row.contaminant_name);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.rows.push(row);
+    } else {
+      groups.set(key, { firstIdx: idx, rows: [row] });
+    }
+  });
+
+  // Summarize each group: pick a display observation, classify and
+  // sort on THAT row only (so an analyte tiers once, not N times).
+  const summarized = Array.from(groups.values()).map(({ firstIdx, rows: groupRows }) => {
+    if (groupRows.length === 1) {
+      const only = groupRows[0];
+      return {
+        firstIdx,
+        summarized: {
+          ...only,
+          tier: classifyContaminantTier(only),
+          has_multiple_observations: false,
+          other_observations: [],
+        } satisfies CcrSummarizedContaminant,
+      };
+    }
+    const displayIdx = chooseDisplayObservationIndex(groupRows);
+    const display = groupRows[displayIdx];
+    const others = groupRows.filter((_, i) => i !== displayIdx);
+    return {
+      firstIdx,
+      summarized: {
+        ...display,
+        tier: classifyContaminantTier(display),
+        has_multiple_observations: true,
+        other_observations: others,
+      } satisfies CcrSummarizedContaminant,
+    };
+  });
+
+  // Stable sort by tier; within a tier preserve the first-occurrence
+  // order from the extraction. Findings view renders concern → caution
+  // → context, matching the tile severity badge's ordering.
+  return summarized
+    .sort((a, b) => {
+      const tierDiff =
+        TIER_ORDER[a.summarized.tier] - TIER_ORDER[b.summarized.tier];
+      if (tierDiff !== 0) return tierDiff;
+      return a.firstIdx - b.firstIdx;
+    })
+    .map(({ summarized }) => summarized);
 }
 
 /**

@@ -72,7 +72,10 @@ function cwsWithCcrFindings(args: {
     monitoring_period: null,
     violation_in_period_ind: null,
     notes: null,
+    source_table_label: null,
     tier: "context" as const,
+    has_multiple_observations: false,
+    other_observations: [],
   }));
   return {
     branch: "cws_with_ccr",

@@ -40,6 +40,7 @@ describe("ccrExtractionSchema", () => {
             monitoring_period: "2024",
             violation_in_period_ind: false,
             notes: null,
+            source_table_label: "<verbatim table heading>",
           },
         ],
         lead_copper_distribution: {
@@ -133,6 +134,44 @@ describe("ccrExtractionSchema", () => {
 
     it("accepts null for free_testing_offer", () => {
       const data = baseValid({ free_testing_offer: null });
+      expect(() => ccrExtractionSchema.parse(data)).not.toThrow();
+    });
+  });
+
+  describe("detected_contaminants.source_table_label (issue #200)", () => {
+    // source_table_label captures the verbatim heading of the CCR
+    // table this row came from. Nullable so legacy v1 extractions
+    // (no field) still validate, and so tables without a visible
+    // heading don't force the model to invent one.
+
+    function rowWith(label: string | null): Record<string, unknown> {
+      return {
+        contaminant_name: "<contaminant A>",
+        contaminant_code: null,
+        detected_level: 0.5,
+        unit: "ppt",
+        mcl: 100,
+        mclg: null,
+        mcl_action_level: null,
+        sources: null,
+        monitoring_period: "<period>",
+        violation_in_period_ind: null,
+        notes: null,
+        source_table_label: label,
+      };
+    }
+
+    it("accepts a verbatim table-heading string", () => {
+      const data = baseValid({
+        detected_contaminants: [rowWith("<verbatim heading as printed>")],
+      });
+      expect(() => ccrExtractionSchema.parse(data)).not.toThrow();
+    });
+
+    it("accepts null (legacy v1 row, or table without a visible heading)", () => {
+      const data = baseValid({
+        detected_contaminants: [rowWith(null)],
+      });
       expect(() => ccrExtractionSchema.parse(data)).not.toThrow();
     });
   });
@@ -306,6 +345,7 @@ describe("ccrExtractionSchema", () => {
             monitoring_period: null,
             violation_in_period_ind: null,
             notes: null,
+            source_table_label: null,
           } as unknown,
         ],
       });
