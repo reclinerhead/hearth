@@ -230,12 +230,15 @@ export function HabitatFindingModal({
       setRecheckBanner({ summary, source: pendingRecheck.source });
     } else if (pendingRecheck.source === "manual") {
       // The user explicitly asked for a recheck and the module had
-      // nothing surfaceable to report; we still acknowledge the click
-      // with a neutral confirmation so the action doesn't feel ignored.
+      // nothing surfaceable to report. We still acknowledge the click
+      // — but "nothing changed" IS the positive outcome here (it means
+      // the data the user is already looking at is current), so the
+      // banner uses the success tone (green) rather than reading as
+      // a flat "OK, nothing happened" neutral note.
       setRecheckBanner({
         summary: {
           headline: "Recheck complete — no new changes.",
-          tone: "neutral",
+          tone: "success",
         },
         source: pendingRecheck.source,
       });
@@ -1051,13 +1054,13 @@ function RecheckBanner({
     <div
       role="status"
       aria-live="polite"
-      className="rounded-md flex items-start gap-3 p-3"
+      className="rounded-md flex items-center gap-3 p-3"
       style={{
         border: `1px solid ${border}`,
         backgroundColor: background,
       }}
     >
-      <span aria-hidden className="shrink-0 mt-0.5" style={{ color: accent }}>
+      <span aria-hidden className="shrink-0" style={{ color: accent }}>
         <Icon name={iconName as never} size={18} />
       </span>
       <p
