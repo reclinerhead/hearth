@@ -1,4 +1,4 @@
-import type { HabitatModule } from "@/lib/habitat/types";
+import type { HabitatModule, HabitatSeverity } from "@/lib/habitat/types";
 
 /**
  * Pure row-building helpers for the onboarding discovery modal.
@@ -6,14 +6,18 @@ import type { HabitatModule } from "@/lib/habitat/types";
  * Extracted from onboarding-discovery-modal.tsx so the row-shape logic
  * can be unit-tested without spinning up React. The visual rendering
  * stays in the modal (DiscoveryRow); this file owns the mapping from
- * (phase, applicable modules, accumulated copy) to the list of rows
- * the modal renders.
+ * (phase, applicable modules, accumulated copy, accumulated severities)
+ * to the list of rows the modal renders.
  *
  * The list length is always `1 + modules.length` — one briefing row plus
  * one row per applicable habitat module — for every phase, including
  * `intro`. Reserving every slot up front (in `idle` state) keeps the
  * modal surface from growing or re-centering as briefing + habitat
  * results land. See issue #108.
+ *
+ * Issue #184 reshaped each row from `{ text }` to
+ * `{ lead, secondary?, severity? }` so the modal can render bordered
+ * card rows with a severity-coloured glyph + a derived relevance pill.
  */
 
 export type Phase =
@@ -38,7 +42,33 @@ export type DiscoveryRowState = "idle" | "checking" | "done";
 export type DiscoveryRowProps = {
   id: string;
   state: DiscoveryRowState;
-  text: string;
+  /** Bold lead line. Always present, in every state. */
+  lead: string;
+  /**
+   * Optional secondary line rendered below the lead in 13px secondary
+   * text. Only meaningful when the row is `done`; non-done rows render
+   * a single line and ignore this field.
+   */
+  secondary?: string;
+  /**
+   * Severity for habitat-module rows in the `done` state. Drives the
+   * glyph (alert-triangle for flagged severities, circle-check
+   * otherwise), the card border treatment, and the relevance pill +
+   * tooltip. Omitted on the briefing row and on non-done states.
+   */
+  severity?: HabitatSeverity;
+};
+
+/**
+ * Briefing result content captured by the modal at the briefing-result
+ * transition and held verbatim through every later phase. `secondary`
+ * is null when the workflow produced no concrete facts (Sonar couldn't
+ * resolve the address) — the lead line stays honest in that case and
+ * the modal renders the row as a single-line entry.
+ */
+export type BriefingRowContent = {
+  lead: string;
+  secondary: string | null;
 };
 
 /**
@@ -63,12 +93,21 @@ function checkingText(module: HabitatModule): string {
  * state that advances `idle → checking → done` as the corresponding
  * phase activates. The modal renders the list as-is — no slicing or
  * length manipulation downstream.
+ *
+ * `briefing` is captured at the briefing-result transition and held
+ * verbatim by the modal; `moduleLines` and `moduleSeverities` are both
+ * indexed by the module's position in `modules` so a late-arriving
+ * realtime update doesn't reorder anything. `moduleSeverities` is
+ * sparse — modules whose severity hasn't landed yet (or that finished
+ * `failed` / `not_applicable`) simply omit the key, and the row
+ * renders as non-flagged with no pill.
  */
 export function buildRowList(
   phase: Phase,
   modules: HabitatModule[],
-  briefingLine: string | null,
+  briefing: BriefingRowContent | null,
   moduleLines: Record<number, string>,
+  moduleSeverities: Record<number, HabitatSeverity> = {},
 ): DiscoveryRowProps[] {
   const rows: DiscoveryRowProps[] = [];
 
@@ -76,22 +115,25 @@ export function buildRowList(
     rows.push({
       id: "briefing",
       state: "idle",
-      text: "Checking public home records…",
+      lead: "Checking public home records…",
     });
   } else if (phase.kind === "briefing-checking") {
     rows.push({
       id: "briefing",
       state: "checking",
-      text: "Checking public home records…",
+      lead: "Checking public home records…",
     });
   } else {
     // Every phase after briefing-checking — briefing-result,
     // property-questions, module-checking, module-result, done —
-    // renders the briefing row as "done" with its result line.
+    // renders the briefing row as "done" with its result content.
+    const lead = briefing?.lead ?? "Public records checked";
+    const secondary = briefing?.secondary ?? null;
     rows.push({
       id: "briefing",
       state: "done",
-      text: briefingLine ?? "Looked up your home's public records",
+      lead,
+      ...(secondary !== null ? { secondary } : {}),
     });
   }
 
@@ -103,27 +145,28 @@ export function buildRowList(
         : -1;
 
   modules.forEach((m, i) => {
+    const doneLead = moduleLines[i] ?? fallbackOnboardingMessage(m);
+    const severity = moduleSeverities[i];
+    const doneRow: DiscoveryRowProps = {
+      id: m.key,
+      state: "done",
+      lead: doneLead,
+      ...(severity ? { severity } : {}),
+    };
+
     if (phase.kind === "done" || i < currentModuleIndex) {
-      rows.push({
-        id: m.key,
-        state: "done",
-        text: moduleLines[i] ?? fallbackOnboardingMessage(m),
-      });
+      rows.push(doneRow);
       return;
     }
     if (i === currentModuleIndex) {
       if (phase.kind === "module-checking") {
-        rows.push({ id: m.key, state: "checking", text: checkingText(m) });
+        rows.push({ id: m.key, state: "checking", lead: checkingText(m) });
       } else {
-        rows.push({
-          id: m.key,
-          state: "done",
-          text: moduleLines[i] ?? fallbackOnboardingMessage(m),
-        });
+        rows.push(doneRow);
       }
       return;
     }
-    rows.push({ id: m.key, state: "idle", text: checkingText(m) });
+    rows.push({ id: m.key, state: "idle", lead: checkingText(m) });
   });
 
   return rows;
