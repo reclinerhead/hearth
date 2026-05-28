@@ -265,6 +265,71 @@ describe("WqaOverviewBody — cws_no_ccr inferred (the 604 Norton case)", () => 
   });
 });
 
+describe("WqaOverviewBody — inferred prompt surfaces on every branch with a system card", () => {
+  it("renders the confirmation strip on cws_with_ccr when the PWSID is inferred", () => {
+    // Real-world regression case Todd hit while testing: a house
+    // whose CCR is already on file (cws_with_ccr) had the
+    // confirmation prompt suppressed because the original branch
+    // check was scoped to cws_no_ccr. The presence of a cached CCR
+    // doesn't validate which utility the user is on — they still
+    // need to confirm identity.
+    const findings = cwsNoCcrFindings();
+    findings.branch = "cws_with_ccr";
+    findings.system_card!.pwsid_confidence = "inferred";
+    findings.system_card!.latest_ccr_status = { year: 2023 };
+    render(findings);
+    expect(text()).toContain(
+      "We think your home is served by Kalamazoo Public Water Supply",
+    );
+    expect(text()).toContain("Yes, that's right");
+    expect(text()).toContain("No, my utility is different");
+  });
+
+  it("renders the confirmation strip on non_community when the PWSID is inferred", () => {
+    const findings: WqaFindings = {
+      branch: "non_community",
+      system_card: {
+        pws_name: "Some Camp Water System",
+        pwsid: "MI9999999",
+        description: "Non-community water system.",
+        source_type: "groundwater",
+        compliance_status_short: "no_active_violations",
+        pwsid_confidence: "inferred",
+        latest_ccr_status: "not_uploaded",
+        source_water_protection_since: null,
+      },
+      branch_metadata: {
+        branch: "non_community",
+        is_active: true,
+        system_type: "TNCWS",
+        admin_contact: null,
+      },
+    };
+    render(findings);
+    // The inferred prompt wins over the non-community framing:
+    // confirming the system identity comes before explaining what
+    // kind of system it is.
+    expect(text()).toContain(
+      "We think your home is served by Some Camp Water System",
+    );
+    expect(text()).toContain("Yes, that's right");
+    // Non-community framing is suppressed while the user hasn't
+    // confirmed the identity yet.
+    expect(text()).not.toContain("non-community water system");
+  });
+
+  it("returns to the branch-specific strip (or none) once confidence is settled", () => {
+    // cws_with_ccr + verified — no header strip, just the system card.
+    const findings = cwsNoCcrFindings();
+    findings.branch = "cws_with_ccr";
+    findings.system_card!.pwsid_confidence = "verified";
+    findings.system_card!.latest_ccr_status = { year: 2023 };
+    render(findings);
+    expect(text()).not.toContain("We think your home is served by");
+    expect(text()).not.toContain("Yes, that's right");
+  });
+});
+
 describe("WqaOverviewBody — issue #193 post-confirmation states", () => {
   it("suppresses the inferred header strip when pwsid_confidence is user_confirmed", () => {
     const findings = cwsNoCcrFindings();

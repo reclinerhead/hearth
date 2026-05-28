@@ -293,7 +293,15 @@ function BranchHeaderStrip({
   const card = findings.system_card;
   const confidence = card?.pwsid_confidence;
 
-  if (branch === "cws_no_ccr" && confidence === "inferred" && card) {
+  // Confirmation prompt takes priority over the branch-specific
+  // framing whenever the PWSID is inferred: getting the utility
+  // identity right is the precondition for trusting any downstream
+  // data on the system, including a cached CCR or a non-community
+  // designation. We show this on cws_no_ccr / cws_with_ccr /
+  // non_community — every branch where a system_card exists with
+  // `pwsid_confidence === "inferred"`. The branch-specific strips
+  // appear again once the user has confirmed or corrected.
+  if (confidence === "inferred" && card) {
     return (
       <InferredHeader
         pwsName={card.pws_name}
@@ -316,7 +324,8 @@ function BranchHeaderStrip({
     return <StaleHeader diagnostic={findings.branch_metadata.diagnostic_note} />;
   }
   // cws_no_ccr verified / user_confirmed / user_corrected, cws_with_ccr
-  // — no strip (the system card below carries the framing on its own).
+  // verified / user_confirmed / user_corrected — no strip (the system
+  // card below carries the framing on its own).
   return null;
 }
 
