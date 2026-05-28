@@ -39,9 +39,26 @@ export type Phase =
 
 export type DiscoveryRowState = "idle" | "checking" | "done";
 
+/**
+ * All-caps eyebrow rendered above the briefing row. The briefing isn't
+ * a habitat module so it has no `sourceLabel` to read — the modal would
+ * otherwise have to special-case the briefing row in two places. Lives
+ * here next to `buildRowList` so the row contract owns its own label
+ * text and tests can assert against it without reaching into the modal.
+ */
+export const BRIEFING_SOURCE_LABEL = "PUBLIC RECORD SEARCH";
+
 export type DiscoveryRowProps = {
   id: string;
   state: DiscoveryRowState;
+  /**
+   * All-caps source label rendered above the row's lead line as a
+   * subtle eyebrow ("EPA RADON CHECK", "PUBLIC RECORD SEARCH"). Always
+   * present in every state so the modal's vertical rhythm is stable
+   * from intro through done — the label signals what each tile will
+   * show before the result actually lands.
+   */
+  eyebrow: string;
   /** Bold lead line. Always present, in every state. */
   lead: string;
   /**
@@ -86,6 +103,15 @@ function checkingText(module: HabitatModule): string {
 }
 
 /**
+ * Eyebrow text for a habitat-module row. Prefers the module's
+ * hand-tuned `sourceLabel` and falls back to an uppercased `name` so
+ * a future module that forgets to set the label still renders.
+ */
+function moduleEyebrow(module: HabitatModule): string {
+  return module.sourceLabel ?? module.name.toUpperCase();
+}
+
+/**
  * Build the list of rows for the current phase.
  *
  * Every call returns exactly `1 + modules.length` rows, in stable order
@@ -115,12 +141,14 @@ export function buildRowList(
     rows.push({
       id: "briefing",
       state: "idle",
+      eyebrow: BRIEFING_SOURCE_LABEL,
       lead: "Checking public home records…",
     });
   } else if (phase.kind === "briefing-checking") {
     rows.push({
       id: "briefing",
       state: "checking",
+      eyebrow: BRIEFING_SOURCE_LABEL,
       lead: "Checking public home records…",
     });
   } else {
@@ -132,6 +160,7 @@ export function buildRowList(
     rows.push({
       id: "briefing",
       state: "done",
+      eyebrow: BRIEFING_SOURCE_LABEL,
       lead,
       ...(secondary !== null ? { secondary } : {}),
     });
@@ -145,11 +174,13 @@ export function buildRowList(
         : -1;
 
   modules.forEach((m, i) => {
+    const eyebrow = moduleEyebrow(m);
     const doneLead = moduleLines[i] ?? fallbackOnboardingMessage(m);
     const severity = moduleSeverities[i];
     const doneRow: DiscoveryRowProps = {
       id: m.key,
       state: "done",
+      eyebrow,
       lead: doneLead,
       ...(severity ? { severity } : {}),
     };
@@ -160,13 +191,23 @@ export function buildRowList(
     }
     if (i === currentModuleIndex) {
       if (phase.kind === "module-checking") {
-        rows.push({ id: m.key, state: "checking", lead: checkingText(m) });
+        rows.push({
+          id: m.key,
+          state: "checking",
+          eyebrow,
+          lead: checkingText(m),
+        });
       } else {
         rows.push(doneRow);
       }
       return;
     }
-    rows.push({ id: m.key, state: "idle", lead: checkingText(m) });
+    rows.push({
+      id: m.key,
+      state: "idle",
+      eyebrow,
+      lead: checkingText(m),
+    });
   });
 
   return rows;

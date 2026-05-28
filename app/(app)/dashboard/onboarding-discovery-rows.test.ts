@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HabitatModule, HabitatSeverity } from "@/lib/habitat/types";
 import {
+  BRIEFING_SOURCE_LABEL,
   buildRowList,
   fallbackOnboardingMessage,
   type BriefingRowContent,
@@ -103,6 +104,7 @@ describe("buildRowList", () => {
     expect(rows[0]).toEqual({
       id: "briefing",
       state: "idle",
+      eyebrow: BRIEFING_SOURCE_LABEL,
       lead: "Checking public home records…",
     });
     expect(rows[1].lead).toBe("Checking radon zone…");
@@ -120,6 +122,7 @@ describe("buildRowList", () => {
     expect(rows[0]).toEqual({
       id: "briefing",
       state: "checking",
+      eyebrow: BRIEFING_SOURCE_LABEL,
       lead: "Checking public home records…",
     });
     expect(rows.slice(1).every((r) => r.state === "idle")).toBe(true);
@@ -136,6 +139,7 @@ describe("buildRowList", () => {
     expect(rows[0]).toEqual({
       id: "briefing",
       state: "done",
+      eyebrow: BRIEFING_SOURCE_LABEL,
       lead: BRIEFING.lead,
       secondary: BRIEFING.secondary,
     });
@@ -157,6 +161,7 @@ describe("buildRowList", () => {
     expect(rows[0]).toEqual({
       id: "briefing",
       state: "done",
+      eyebrow: BRIEFING_SOURCE_LABEL,
       lead: "Public records checked",
     });
     expect(rows[0].secondary).toBeUndefined();
@@ -173,6 +178,7 @@ describe("buildRowList", () => {
     expect(rows[0]).toEqual({
       id: "briefing",
       state: "done",
+      eyebrow: BRIEFING_SOURCE_LABEL,
       lead: BRIEFING.lead,
       secondary: BRIEFING.secondary,
     });
@@ -190,6 +196,7 @@ describe("buildRowList", () => {
     expect(rows[0]).toEqual({
       id: "briefing",
       state: "done",
+      eyebrow: BRIEFING_SOURCE_LABEL,
       lead: "Public records checked",
     });
   });
@@ -206,17 +213,20 @@ describe("buildRowList", () => {
     expect(rows[1]).toEqual({
       id: "radon",
       state: "done",
+      eyebrow: "RADON ZONE",
       lead: MODULE_LINES[0],
       severity: "concern",
     });
     expect(rows[2]).toEqual({
       id: "flood",
       state: "checking",
+      eyebrow: "FEMA FLOOD ZONE",
       lead: "Checking fema flood zone…",
     });
     expect(rows[3]).toEqual({
       id: "superfund",
       state: "idle",
+      eyebrow: "SUPERFUND PROXIMITY",
       lead: "Checking superfund proximity…",
     });
   });
@@ -232,6 +242,7 @@ describe("buildRowList", () => {
     expect(rows[2]).toEqual({
       id: "flood",
       state: "done",
+      eyebrow: "FEMA FLOOD ZONE",
       lead: MODULE_LINES[1],
       severity: "favorable",
     });
@@ -315,5 +326,36 @@ describe("buildRowList", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0].id).toBe("briefing");
     }
+  });
+
+  it("always carries an eyebrow on every row in every phase (issue: source-label discoverability)", () => {
+    for (const phase of phasesToCheck()) {
+      const rows = buildRowList(
+        phase,
+        MODULES,
+        BRIEFING,
+        MODULE_LINES,
+        MODULE_SEVERITIES,
+      );
+      for (const row of rows) {
+        expect(row.eyebrow, `phase ${JSON.stringify(phase)} row ${row.id}`).toBeTruthy();
+      }
+    }
+  });
+
+  it("prefers module.sourceLabel over the uppercased name fallback", () => {
+    const withLabel: HabitatModule = {
+      ...RADON,
+      name: "Radon zone",
+      sourceLabel: "EPA RADON CHECK",
+    };
+    const rows = buildRowList(
+      { kind: "module-checking", index: 0 },
+      [withLabel],
+      BRIEFING,
+      {},
+      {},
+    );
+    expect(rows[1].eyebrow).toBe("EPA RADON CHECK");
   });
 });

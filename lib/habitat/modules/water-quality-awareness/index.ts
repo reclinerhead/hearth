@@ -120,6 +120,7 @@ const MODULE_KEY = "water_quality_awareness";
 const WaterQualityAwarenessModule: HabitatModule = {
   key: MODULE_KEY,
   name: "Water Quality Awareness",
+  sourceLabel: "WATER QUALITY CHECK",
   description:
     "Identifies which public water system serves your home, reads its EPA compliance record, and prepares the surface for your utility's annual Water Quality Report.",
   category: "environmental",

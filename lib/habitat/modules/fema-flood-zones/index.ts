@@ -372,6 +372,7 @@ function getStore(): FloodZonesCacheStore {
 const FemaFloodZonesModule: HabitatModule = {
   key: MODULE_KEY,
   name: "FEMA Flood Zones",
+  sourceLabel: "FEMA FLOOD ZONE CHECK",
   description:
     "Looks up your home's flood zone in FEMA's National Flood Hazard Layer.",
   category: "environmental",
