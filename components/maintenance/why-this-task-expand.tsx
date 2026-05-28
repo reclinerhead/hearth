@@ -6,8 +6,12 @@
 // cadence basis, the modifiers that adjusted the cadence for this home,
 // and the anchor that grounded the first occurrence.
 //
-// The expand defaults closed so the modal opens calm — the user sees
-// the header context first, and the depth is one tap away.
+// The expand defaults OPEN (issue #177). The reasoning is the second
+// most important thing on the page after the instructions callout, and
+// dashboard testing showed users were missing it because the closed
+// state read as "just metadata" — the brand-thesis of "we explain our
+// recommendations" only lands when the explanation is visible by
+// default. Users who want the calmer view can still tap to collapse.
 //
 // The collapsed label switches between "Why this task" and "Why this
 // practice" via the kind prop so per-use rows read naturally (a
@@ -60,7 +64,7 @@ export function WhyThisTaskExpand({
   cadenceSeasonalAnchor,
   variant = "task",
 }: WhyThisTaskExpandProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const hasModifiers = reasoning.modifiers.length > 0;
   const cadenceLine = formatCadenceLine(
     cadenceKind,
