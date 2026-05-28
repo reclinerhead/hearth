@@ -288,3 +288,58 @@ export function computeLcrSeverityInputs(
     any_below_action,
   };
 }
+
+/**
+ * Per-metal classification of the most-recent LCR measurements for
+ * copy-layer use (issue #186). Sibling helper to `computeLcrSeverityInputs`
+ * — same input, same thresholds, but per-metal granularity so the
+ * onboarding-line builder can distinguish "lead approaching" from
+ * "copper approaching" from "both approaching" without recomputing
+ * the thresholds itself.
+ *
+ * `computeLcrSeverityInputs` already exposes per-metal *above*-action
+ * booleans but only an aggregate `any_approaching`; this helper fills
+ * that gap. It does NOT replace `computeLcrSeverityInputs` (which the
+ * severity logic in payload.ts still owns); the two read the same data
+ * for their own concerns.
+ *
+ * Per-metal states:
+ *   above       — measurement at or above the federal action level.
+ *   approaching — measurement between 80% and 100% of the action level.
+ *   below       — measurement strictly below 80% (or below detection: '<').
+ *   absent      — EPA has no row of this contaminant for this system.
+ *
+ * Returns `{ kind: 'unknown' }` when LCR data isn't available
+ * (`status !== 'available'`) — callers should drop any LCR clause
+ * from their copy rather than fabricate a positive.
+ */
+export type LcrMetalState = "above" | "approaching" | "below" | "absent";
+export type LcrAxisClassification =
+  | { kind: "available"; lead: LcrMetalState; copper: LcrMetalState }
+  | { kind: "unknown" };
+
+function classifyMeasurement(
+  m: LcrMeasurement | null,
+  actionLevel: number,
+): LcrMetalState {
+  if (!m) return "absent";
+  if (m.sign === "<") return "below";
+  if (m.value >= actionLevel) return "above";
+  if (m.value >= actionLevel * APPROACHING_THRESHOLD_RATIO) return "approaching";
+  return "below";
+}
+
+export function classifyLcrAxis(
+  summary: LeadCopperSummary,
+): LcrAxisClassification {
+  if (summary.status !== "available") return { kind: "unknown" };
+  const p = summary.most_recent_sampling_period;
+  return {
+    kind: "available",
+    lead: classifyMeasurement(p.lead_90th_percentile, LEAD_ACTION_LEVEL_MG_L),
+    copper: classifyMeasurement(
+      p.copper_90th_percentile,
+      COPPER_ACTION_LEVEL_MG_L,
+    ),
+  };
+}

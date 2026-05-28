@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyLcrAxis,
   computeLcrSeverityInputs,
   COPPER_ACTION_LEVEL_MG_L,
   COPPER_CONTAMINANT_CODE,
@@ -268,5 +269,90 @@ describe("computeLcrSeverityInputs", () => {
     expect(r.lead_above_action).toBe(false);
     expect(r.any_approaching).toBe(false);
     expect(r.any_below_action).toBe(true);
+  });
+});
+
+describe("classifyLcrAxis", () => {
+  it("returns { kind: 'unknown' } when the summary isn't available", () => {
+    expect(classifyLcrAxis({ status: "no_samples_on_file" })).toEqual({
+      kind: "unknown",
+    });
+    expect(classifyLcrAxis({ status: "unavailable" })).toEqual({
+      kind: "unknown",
+    });
+  });
+
+  it("classifies lead and copper independently — both above action", () => {
+    const r = classifyLcrAxis(
+      summarizeLcr([
+        sample({ sample_measure: LEAD_ACTION_LEVEL_MG_L }),
+        sample({
+          contaminant_code: COPPER_CONTAMINANT_CODE,
+          sample_measure: COPPER_ACTION_LEVEL_MG_L,
+        }),
+      ]),
+    );
+    expect(r).toEqual({ kind: "available", lead: "above", copper: "above" });
+  });
+
+  it("classifies a metal as 'approaching' between 80% and 100% of action", () => {
+    const r = classifyLcrAxis(
+      summarizeLcr([
+        sample({ sample_measure: 0.013 }), // 87% of lead action level
+      ]),
+    );
+    expect(r).toEqual({
+      kind: "available",
+      lead: "approaching",
+      copper: "absent",
+    });
+  });
+
+  it("treats a '<' (below detection) row as 'below' regardless of value", () => {
+    const r = classifyLcrAxis(
+      summarizeLcr([
+        sample({ sample_measure: 0.5, result_sign_code: "<" }),
+      ]),
+    );
+    expect(r).toEqual({
+      kind: "available",
+      lead: "below",
+      copper: "absent",
+    });
+  });
+
+  it("returns 'absent' for a metal with no rows on file", () => {
+    const r = classifyLcrAxis(
+      summarizeLcr([sample({ sample_measure: 0.005 })]),
+    );
+    expect(r).toEqual({
+      kind: "available",
+      lead: "below",
+      copper: "absent",
+    });
+  });
+
+  it("regression: Kalamazoo's 0.0053 mg/L lead reads as 'below', not 'approaching'", () => {
+    // Same data the computeLcrSeverityInputs regression above uses, so
+    // the two helpers stay in lockstep on real EPA inputs.
+    const r = classifyLcrAxis(
+      summarizeLcr([sample({ sample_id: "MI381874", sample_measure: 0.0053 })]),
+    );
+    expect(r).toEqual({
+      kind: "available",
+      lead: "below",
+      copper: "absent",
+    });
+  });
+
+  it("ranks 'above' above 'approaching' when a metal has a single row at the boundary", () => {
+    // At the exact action level the sample is 'above', not 'approaching'.
+    const r = classifyLcrAxis(
+      summarizeLcr([sample({ sample_measure: LEAD_ACTION_LEVEL_MG_L })]),
+    );
+    expect(r.kind).toBe("available");
+    if (r.kind === "available") {
+      expect(r.lead).toBe("above");
+    }
   });
 });

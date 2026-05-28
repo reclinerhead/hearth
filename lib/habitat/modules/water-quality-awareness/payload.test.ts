@@ -366,7 +366,36 @@ describe("buildSystemPayload — with SDWIS enrichment", () => {
     const p = buildSystemPayload("cws_no_ccr", kalamazoo(), enrichment);
     expect(p.findings.system_card?.compliance_status_short).toBe("unknown");
     expect(p.findings.system_card?.recent_violations).toBeUndefined();
+    expect(p.findings.system_card?.has_active_non_health_based).toBeUndefined();
     expect(p.findings.lead_copper_summary?.status).toBe("unavailable");
+  });
+
+  it("persists has_active_non_health_based on the system_card when a monitoring violation is active (issue #186)", () => {
+    // compliance_status_short is health-based-only by design — it
+    // stays 'no_active_violations' even when there's an active
+    // non-health-based violation. has_active_non_health_based is the
+    // disambiguator the discovery-modal onboarding line reads.
+    const enrichment: SdwisEnrichment = {
+      compliance: {
+        ...complianceClean(),
+        has_active_non_health_based: true,
+      },
+      leadCopper: lcrAvailableBelow,
+    };
+    const p = buildSystemPayload("cws_no_ccr", kalamazoo(), enrichment);
+    expect(p.findings.system_card?.compliance_status_short).toBe(
+      "no_active_violations",
+    );
+    expect(p.findings.system_card?.has_active_non_health_based).toBe(true);
+  });
+
+  it("persists has_active_non_health_based=false on the system_card on a fully clean utility", () => {
+    const enrichment: SdwisEnrichment = {
+      compliance: complianceClean(),
+      leadCopper: lcrAvailableBelow,
+    };
+    const p = buildSystemPayload("cws_no_ccr", kalamazoo(), enrichment);
+    expect(p.findings.system_card?.has_active_non_health_based).toBe(false);
   });
 
   it("computes a favorable severity for clean compliance + below-action LCR", () => {

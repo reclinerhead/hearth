@@ -95,6 +95,21 @@ export type WqaFindings = {
       | "no_active_violations"
       | "active_violations";
     /**
+     * Whether the system has at least one currently-active non-health-based
+     * (monitoring / reporting) violation. Tracked separately because
+     * `compliance_status_short` is health-based-only by design — the
+     * homeowner-facing "is there an active compliance issue?" surface
+     * doesn't escalate on paperwork lapses. The discovery-modal
+     * onboarding line (issue #186) reads this to distinguish a clean
+     * utility from one with an active non-health-based violation, so the
+     * line can name the actual flag driver when severity is `caution`.
+     *
+     * Populated by WQA-2's compliance summarization. Absent on payloads
+     * persisted before #186 (back-compat: callers treat `undefined` as
+     * `false`).
+     */
+    has_active_non_health_based?: boolean;
+    /**
      * How confidently the module resolved the PWSID for this finding.
      * Present on cws_no_ccr / non_community / cws_with_ccr branches;
      * absent on cws_unmapped, private_well, and stale (where no PWSID

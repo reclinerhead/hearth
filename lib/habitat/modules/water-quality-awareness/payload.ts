@@ -412,6 +412,13 @@ export function buildSystemPayload(
   // nothing recent" from "we couldn't read it".
   if (enrichment.compliance) {
     findings.system_card!.recent_violations = enrichment.compliance.recent;
+    // Mirror the non-health-based active flag onto the persisted
+    // system_card so the discovery-modal onboarding line can name
+    // the actual flag driver. `compliance_status_short` is
+    // health-based-only by design (see compliance.ts), so a
+    // monitoring/reporting violation is invisible without this.
+    findings.system_card!.has_active_non_health_based =
+      enrichment.compliance.has_active_non_health_based;
   }
 
   const severity = deriveSeverity(enrichment);
