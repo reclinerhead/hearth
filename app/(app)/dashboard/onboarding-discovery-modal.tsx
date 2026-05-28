@@ -673,7 +673,13 @@ function PropertyQuestionsSection({
  * rows render as a single-line entry with the previous pulsing-dot /
  * hollow-circle treatment so the reveal sequence is preserved.
  */
-function DiscoveryRow({ state, lead, secondary, severity }: DiscoveryRowProps) {
+function DiscoveryRow({
+  state,
+  eyebrow,
+  lead,
+  secondary,
+  severity,
+}: DiscoveryRowProps) {
   const flagged = state === "done" && isFlaggedSeverity(severity);
   const borderColor = flagged
     ? "color-mix(in oklab, var(--color-warning) 22%, var(--color-border-subtle))"
@@ -700,74 +706,91 @@ function DiscoveryRow({ state, lead, secondary, severity }: DiscoveryRowProps) {
 
   return (
     <li
-      className="flex items-start gap-3"
+      className="flex flex-col"
       style={{
         backgroundColor: "var(--color-bg-surface)",
         border: `1px solid ${borderColor}`,
         borderRadius: "var(--radius-md)",
-        padding: "13px 14px",
+        padding: "11px 14px 13px",
       }}
     >
-      <span
-        aria-hidden
-        className="flex h-5 w-5 shrink-0 items-center justify-center"
+      {/*
+        Source eyebrow: full-width above the glyph+content row so the
+        tile self-identifies its data source ("EPA RADON CHECK",
+        "PUBLIC RECORD SEARCH"). Idle rows dim the eyebrow alongside
+        the lead so the not-yet-started rows still read as muted.
+      */}
+      <div
+        className="eyebrow"
         style={{
-          color: glyphColor,
-          // Sit with the lead line, not centred on the whole card —
-          // the secondary line should grow downward from the lead
-          // without dragging the glyph with it.
-          marginTop: 1,
+          marginBottom: 6,
+          opacity: state === "idle" ? 0.7 : 1,
         }}
       >
-        {state === "checking" ? (
-          <span
-            className="inline-block h-2.5 w-2.5 rounded-full animate-pulse"
-            style={{ backgroundColor: "currentColor" }}
-          />
-        ) : state === "done" ? (
-          <Icon name={discoveryRowGlyph(severity)} size={16} />
-        ) : (
-          <span
-            className="inline-block h-2.5 w-2.5 rounded-full"
-            style={{
-              border: "1px solid currentColor",
-              backgroundColor: "transparent",
-            }}
-          />
-        )}
-      </span>
-      <div className="flex-1 min-w-0">
-        <div
+        {eyebrow}
+      </div>
+      <div className="flex items-start gap-3">
+        <span
+          aria-hidden
+          className="flex h-5 w-5 shrink-0 items-center justify-center"
           style={{
-            fontSize: 14,
-            fontWeight: 500,
-            lineHeight: 1.4,
-            color: leadColor,
-            opacity: idleLeadOpacity,
+            color: glyphColor,
+            // Sit with the lead line, not centred on the whole card —
+            // the secondary line should grow downward from the lead
+            // without dragging the glyph with it.
+            marginTop: 1,
           }}
         >
-          {lead}
-        </div>
-        {state === "done" && secondary ? (
+          {state === "checking" ? (
+            <span
+              className="inline-block h-2.5 w-2.5 rounded-full animate-pulse"
+              style={{ backgroundColor: "currentColor" }}
+            />
+          ) : state === "done" ? (
+            <Icon name={discoveryRowGlyph(severity)} size={16} />
+          ) : (
+            <span
+              className="inline-block h-2.5 w-2.5 rounded-full"
+              style={{
+                border: "1px solid currentColor",
+                backgroundColor: "transparent",
+              }}
+            />
+          )}
+        </span>
+        <div className="flex-1 min-w-0">
           <div
             style={{
-              fontSize: 13,
-              lineHeight: 1.45,
-              color: "var(--color-text-secondary)",
-              marginTop: 1,
+              fontSize: 14,
+              fontWeight: 500,
+              lineHeight: 1.4,
+              color: leadColor,
+              opacity: idleLeadOpacity,
             }}
           >
-            {secondary}
+            {lead}
           </div>
+          {state === "done" && secondary ? (
+            <div
+              style={{
+                fontSize: 13,
+                lineHeight: 1.45,
+                color: "var(--color-text-secondary)",
+                marginTop: 1,
+              }}
+            >
+              {secondary}
+            </div>
+          ) : null}
+        </div>
+        {pillLabel && pillTooltip ? (
+          <span className="shrink-0 self-center">
+            <Tooltip content={pillTooltip}>
+              <RelevancePill label={pillLabel} />
+            </Tooltip>
+          </span>
         ) : null}
       </div>
-      {pillLabel && pillTooltip ? (
-        <span className="shrink-0 self-center">
-          <Tooltip content={pillTooltip}>
-            <RelevancePill label={pillLabel} />
-          </Tooltip>
-        </span>
-      ) : null}
     </li>
   );
 }

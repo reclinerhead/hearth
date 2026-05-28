@@ -427,6 +427,7 @@ export function buildOnboardingMessage(finding: HabitatFinding): string {
 const EpaSuperfundProximityModule: HabitatModule = {
   key: MODULE_KEY,
   name: "EPA Superfund proximity",
+  sourceLabel: "EPA SUPERFUND CHECK",
   description:
     "Looks up EPA Superfund sites within 5 miles of the house and ranks them by a three-tier proximity model.",
   category: "environmental",

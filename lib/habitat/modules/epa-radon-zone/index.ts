@@ -384,6 +384,7 @@ export function buildOnboardingMessage(finding: HabitatFinding): string {
 const EpaRadonZoneModule: HabitatModule = {
   key: MODULE_KEY,
   name: "EPA Radon Zone",
+  sourceLabel: "EPA RADON CHECK",
   description:
     "Looks up the county's EPA radon potential classification (Zone 1, 2, or 3).",
   category: "environmental",

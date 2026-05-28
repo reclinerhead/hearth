@@ -279,6 +279,18 @@ export interface HabitatModule {
   /** Short, human-readable name. Shown in admin/debug views. */
   name: string;
 
+  /**
+   * Optional all-caps eyebrow label rendered above each tile in the
+   * onboarding / refresh discovery modal to surface the data source
+   * ("EPA RADON CHECK", "FEMA FLOOD ZONE CHECK"). Falls back to
+   * `name.toUpperCase()` when omitted, so legacy modules still render
+   * a sensible label — but module authors should prefer a hand-tuned
+   * label that reads as an action ("EPA RADON CHECK") rather than a
+   * dataset slug ("EPA RADON ZONE"). Plain string, no punctuation;
+   * the modal handles styling via the global `.eyebrow` class.
+   */
+  sourceLabel?: string;
+
   /** One-sentence "what this checks." Used in "what we're watching" UI. */
   description: string;
 
