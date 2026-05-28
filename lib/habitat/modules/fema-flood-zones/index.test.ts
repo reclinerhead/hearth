@@ -1,15 +1,119 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HabitatFinding, HouseContext } from "@/lib/habitat/types";
 import FemaFloodZonesModule, {
+  __setFloodZonesCacheStoreForTests,
+  __setFloodZonesResolveOptionsForTests,
   buildActions,
   buildBfeSentence,
   buildCopy,
   buildMscAddressQuery,
   buildOnboardingMessage,
+  buildUnreachableActions,
   type FemaFloodZoneFindings,
 } from "./index";
 import { classifyFloodZone } from "./classify";
+import {
+  CACHE_TTL_DAYS,
+  deriveCacheKey,
+  type CacheKeyStrategy,
+  type FloodZonesCacheLookupResult,
+  type FloodZonesCacheStore,
+} from "./cache";
 import type { NormalizedFloodZone } from "./fetch";
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * In-memory cache store mirrored from cache.test.ts. Re-implemented
+ * here rather than imported because the test-suite-only shape can
+ * diverge from production code freely without risking a circular
+ * import path.
+ */
+class InMemoryCacheStore implements FloodZonesCacheStore {
+  rows = new Map<
+    string,
+    {
+      keyStrategy: CacheKeyStrategy;
+      queriedLatitude: number;
+      queriedLongitude: number;
+      zones: NormalizedFloodZone[];
+      rawPayload: unknown;
+      sourceUrl: string;
+      refreshedAt: Date;
+    }
+  >();
+  upsertCalls = 0;
+
+  async lookup(cacheKey: string): Promise<FloodZonesCacheLookupResult> {
+    const row = this.rows.get(cacheKey);
+    if (!row) return { kind: "miss", reason: "no-row" };
+    const ageMs = Date.now() - row.refreshedAt.getTime();
+    const ageDays = Math.floor(ageMs / MS_PER_DAY);
+    if (ageMs > CACHE_TTL_DAYS * MS_PER_DAY) {
+      return { kind: "miss", reason: "expired" };
+    }
+    return {
+      kind: "hit",
+      zones: row.zones,
+      rawPayload: row.rawPayload,
+      sourceUrl: row.sourceUrl,
+      keyStrategy: row.keyStrategy,
+      fetchedAt: row.refreshedAt,
+      refreshedAt: row.refreshedAt,
+      ageDays,
+    };
+  }
+
+  async lookupAny(cacheKey: string): Promise<FloodZonesCacheLookupResult> {
+    const row = this.rows.get(cacheKey);
+    if (!row) return { kind: "miss", reason: "no-row" };
+    const ageMs = Date.now() - row.refreshedAt.getTime();
+    const ageDays = Math.floor(ageMs / MS_PER_DAY);
+    if (ageMs > CACHE_TTL_DAYS * MS_PER_DAY) {
+      return {
+        kind: "stale",
+        zones: row.zones,
+        rawPayload: row.rawPayload,
+        sourceUrl: row.sourceUrl,
+        keyStrategy: row.keyStrategy,
+        fetchedAt: row.refreshedAt,
+        refreshedAt: row.refreshedAt,
+        ageDays,
+      };
+    }
+    return {
+      kind: "hit",
+      zones: row.zones,
+      rawPayload: row.rawPayload,
+      sourceUrl: row.sourceUrl,
+      keyStrategy: row.keyStrategy,
+      fetchedAt: row.refreshedAt,
+      refreshedAt: row.refreshedAt,
+      ageDays,
+    };
+  }
+
+  async upsert(input: {
+    cacheKey: string;
+    keyStrategy: CacheKeyStrategy;
+    queriedLatitude: number;
+    queriedLongitude: number;
+    zones: NormalizedFloodZone[];
+    rawPayload: unknown;
+    sourceUrl: string;
+  }): Promise<void> {
+    this.upsertCalls++;
+    this.rows.set(input.cacheKey, {
+      keyStrategy: input.keyStrategy,
+      queriedLatitude: input.queriedLatitude,
+      queriedLongitude: input.queriedLongitude,
+      zones: input.zones,
+      rawPayload: input.rawPayload,
+      sourceUrl: input.sourceUrl,
+      refreshedAt: new Date(),
+    });
+  }
+}
 
 /**
  * Minimal HouseContext for tests — 604 Norton Dr, Kalamazoo MI per the
@@ -26,6 +130,8 @@ function makeHouse(overrides: Partial<HouseContext> = {}): HouseContext {
     latitude: 42.262,
     longitude: -85.589,
     parcelId: null,
+    waterSource: null,
+    basementPresent: null,
     ...overrides,
   };
 }
@@ -105,8 +211,22 @@ function stubFetchWithFeatures(
   );
 }
 
+let testStore: InMemoryCacheStore;
+
+beforeEach(() => {
+  testStore = new InMemoryCacheStore();
+  __setFloodZonesCacheStoreForTests(testStore);
+  // Keep retries off and skip the real setTimeout so tests stay fast.
+  __setFloodZonesResolveOptionsForTests({
+    retryPolicy: { attempts: 1, baseDelayMs: 0, factor: 1, jitter: 0 },
+    sleepImpl: async () => {},
+  });
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  __setFloodZonesCacheStoreForTests(null);
+  __setFloodZonesResolveOptionsForTests({});
 });
 
 describe("FemaFloodZonesModule metadata", () => {
@@ -397,8 +517,8 @@ describe("FemaFloodZonesModule.check — unknown FLD_ZONE", () => {
   });
 });
 
-describe("FemaFloodZonesModule.check — fetch failure", () => {
-  it("throws with the underlying error message on HTTP failure", async () => {
+describe("FemaFloodZonesModule.check — FEMA unreachable, no cache", () => {
+  it("returns a neutral unreachable finding instead of throwing", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({
@@ -409,9 +529,189 @@ describe("FemaFloodZonesModule.check — fetch failure", () => {
         },
       })) as unknown as typeof fetch,
     );
-    await expect(FemaFloodZonesModule.check(makeHouse())).rejects.toThrow(
-      /HTTP 503/,
+    const finding = await FemaFloodZonesModule.check(makeHouse());
+    expect(finding.severity).toBe("neutral");
+    expect(finding.headline).toBe(
+      "We couldn't reach FEMA's flood maps right now",
     );
+    const f = finding.findings as FemaFloodZoneFindings;
+    expect(f.coverage).toBe(false);
+    expect(f.zone).toBeUndefined();
+  });
+
+  it("emits a 4-step log (fetch / compute / decide / finding) on unreachable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("ECONNRESET");
+      }) as unknown as typeof fetch,
+    );
+    const finding = await FemaFloodZonesModule.check(makeHouse());
+    expect(finding.activityLog?.steps).toHaveLength(4);
+    expect(finding.activityLog?.steps.map((s) => s.kind)).toEqual([
+      "fetch",
+      "compute",
+      "decide",
+      "finding",
+    ]);
+    const compute = finding.activityLog?.steps.find((s) => s.kind === "compute");
+    expect(compute?.narration).toContain("couldn't reach FEMA");
+  });
+
+  it("keeps the FEMA Map Service Center deep-link in the unreachable action shelf", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("ECONNRESET");
+      }) as unknown as typeof fetch,
+    );
+    const finding = await FemaFloodZonesModule.check(makeHouse());
+    expect(finding.actions).toHaveLength(2);
+    expect(finding.actions?.[0].label).toBe(
+      "Check FEMA's flood map directly",
+    );
+    expect(finding.actions?.[0].url).toContain(
+      "https://msc.fema.gov/portal/search?AddressQuery=",
+    );
+  });
+});
+
+describe("FemaFloodZonesModule.check — cache hit", () => {
+  it("returns the cached zone without calling fetch", async () => {
+    const house = makeHouse();
+    const key = deriveCacheKey({
+      parcelId: house.parcelId,
+      latitude: house.latitude!,
+      longitude: house.longitude!,
+    });
+    testStore.rows.set(key.cacheKey, {
+      keyStrategy: key.strategy,
+      queriedLatitude: house.latitude!,
+      queriedLongitude: house.longitude!,
+      zones: [
+        {
+          objectId: 1,
+          dfirmId: "26077C",
+          fldArId: "26077C_3766",
+          studyType: "NP",
+          fldZone: "X",
+          zoneSubty: "AREA OF MINIMAL FLOOD HAZARD",
+          isSfha: false,
+          staticBfe: null,
+          vDatum: null,
+          depth: null,
+          lenUnit: null,
+          velocity: null,
+          velUnit: null,
+          floodway: false,
+          sourceCitation: "26077C_STUDY2",
+        },
+      ],
+      rawPayload: {},
+      sourceUrl: "cached",
+      refreshedAt: new Date(),
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy as unknown as typeof fetch);
+
+    const finding = await FemaFloodZonesModule.check(house);
+    expect(finding.severity).toBe("favorable");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const fetchStep = finding.activityLog?.steps.find((s) => s.kind === "fetch");
+    expect(fetchStep?.narration).toContain("shared cache");
+    expect(fetchStep?.result_summary).toBe("Cache hit");
+  });
+});
+
+describe("FemaFloodZonesModule.check — retry recovery", () => {
+  it("narrates a retried fetch when the second attempt succeeds", async () => {
+    // Allow retries for this test; keep sleep a no-op.
+    __setFloodZonesResolveOptionsForTests({
+      retryPolicy: { attempts: 3, baseDelayMs: 0, factor: 1, jitter: 0 },
+      sleepImpl: async () => {},
+    });
+    let call = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        call++;
+        if (call === 1) {
+          return {
+            ok: false,
+            status: 503,
+            async json() {
+              return {};
+            },
+          } as unknown as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              features: [{ attributes: makeAttrs() }],
+            };
+          },
+        } as unknown as Response;
+      }) as unknown as typeof fetch,
+    );
+    const finding = await FemaFloodZonesModule.check(makeHouse());
+    expect(finding.severity).toBe("favorable");
+    const fetchStep = finding.activityLog?.steps.find((s) => s.kind === "fetch");
+    expect(fetchStep?.narration).toContain("tried again");
+    expect(call).toBe(2);
+  });
+});
+
+describe("FemaFloodZonesModule.check — stale-cache fallback", () => {
+  it("serves the stale row when FEMA is unreachable and a cached row exists", async () => {
+    const house = makeHouse();
+    const key = deriveCacheKey({
+      parcelId: house.parcelId,
+      latitude: house.latitude!,
+      longitude: house.longitude!,
+    });
+    testStore.rows.set(key.cacheKey, {
+      keyStrategy: key.strategy,
+      queriedLatitude: house.latitude!,
+      queriedLongitude: house.longitude!,
+      zones: [
+        {
+          objectId: 1,
+          dfirmId: "26077C",
+          fldArId: "26077C_3766",
+          studyType: "NP",
+          fldZone: "AE",
+          zoneSubty: null,
+          isSfha: true,
+          staticBfe: 645.5,
+          vDatum: "NAVD88",
+          depth: null,
+          lenUnit: "Feet",
+          velocity: null,
+          velUnit: null,
+          floodway: false,
+          sourceCitation: "26077C_STUDY99",
+        },
+      ],
+      rawPayload: {},
+      sourceUrl: "https://example/old",
+      refreshedAt: new Date(Date.now() - 200 * MS_PER_DAY),
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("ECONNRESET");
+      }) as unknown as typeof fetch,
+    );
+
+    const finding = await FemaFloodZonesModule.check(house);
+    // Stale cache served a real AE zone, so severity reflects the AE
+    // classification rather than the unreachable-neutral fallback.
+    expect(finding.severity).toBe("concern");
+    const fetchStep = finding.activityLog?.steps.find((s) => s.kind === "fetch");
+    expect(fetchStep?.narration).toContain("unreachable");
+    expect(fetchStep?.narration).toContain("most recent designation");
   });
 });
 

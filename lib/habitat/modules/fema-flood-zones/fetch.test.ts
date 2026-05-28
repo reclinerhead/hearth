@@ -2,10 +2,30 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildNfhlQueryUrl,
   coerceFemaNullSentinel,
+  computeBackoffDelayMs,
+  DEFAULT_RETRY_POLICY,
   fetchFloodZonesAtPoint,
+  NfhlFetchError,
   normalizeFloodZone,
+  type FetchFloodZonesOptions,
   type NfhlFloodZoneAttributes,
+  type RetryPolicy,
 } from "./fetch";
+
+/**
+ * Single-attempt retry policy used by every test that's exercising
+ * non-retry behavior. Keeps the historical 1-shot semantics so
+ * pre-retry tests don't accidentally probe FEMA three times.
+ */
+const SINGLE_SHOT: RetryPolicy = {
+  attempts: 1,
+  baseDelayMs: 0,
+  factor: 1,
+  jitter: 0,
+};
+
+/** No-op sleep so retry tests don't actually wait 300ms+ between attempts. */
+const NO_SLEEP: FetchFloodZonesOptions["sleepImpl"] = async () => {};
 
 describe("buildNfhlQueryUrl", () => {
   it("uses the FEMA NFHL MapServer/28 endpoint", () => {
@@ -153,7 +173,7 @@ function fakeResponse(
   } as unknown as Response;
 }
 
-describe("fetchFloodZonesAtPoint", () => {
+describe("fetchFloodZonesAtPoint (single-attempt behavior)", () => {
   it("returns a normalized array on a single-feature response", async () => {
     const fetchImpl = vi.fn(async () =>
       fakeResponse({
@@ -183,7 +203,10 @@ describe("fetchFloodZonesAtPoint", () => {
       }),
     ) as unknown as typeof fetch;
 
-    const zones = await fetchFloodZonesAtPoint(42.262, -85.589, { fetchImpl });
+    const zones = await fetchFloodZonesAtPoint(42.262, -85.589, {
+      fetchImpl,
+      retryPolicy: SINGLE_SHOT,
+    });
     expect(zones).toHaveLength(1);
     expect(zones[0].fldZone).toBe("X");
     expect(zones[0].staticBfe).toBeNull();
@@ -193,7 +216,10 @@ describe("fetchFloodZonesAtPoint", () => {
     const fetchImpl = vi.fn(async () =>
       fakeResponse({ features: [] }),
     ) as unknown as typeof fetch;
-    const zones = await fetchFloodZonesAtPoint(35.0, -90.0, { fetchImpl });
+    const zones = await fetchFloodZonesAtPoint(35.0, -90.0, {
+      fetchImpl,
+      retryPolicy: SINGLE_SHOT,
+    });
     expect(zones).toEqual([]);
   });
 
@@ -202,7 +228,10 @@ describe("fetchFloodZonesAtPoint", () => {
       fakeResponse({}, { ok: false, status: 503 }),
     ) as unknown as typeof fetch;
     await expect(
-      fetchFloodZonesAtPoint(42.262, -85.589, { fetchImpl }),
+      fetchFloodZonesAtPoint(42.262, -85.589, {
+        fetchImpl,
+        retryPolicy: SINGLE_SHOT,
+      }),
     ).rejects.toThrow(/HTTP 503/);
   });
 
@@ -211,7 +240,10 @@ describe("fetchFloodZonesAtPoint", () => {
       fakeResponse({ displayFieldName: "FLD_ZONE" }),
     ) as unknown as typeof fetch;
     await expect(
-      fetchFloodZonesAtPoint(42.262, -85.589, { fetchImpl }),
+      fetchFloodZonesAtPoint(42.262, -85.589, {
+        fetchImpl,
+        retryPolicy: SINGLE_SHOT,
+      }),
     ).rejects.toThrow(/unexpected response shape/);
   });
 
@@ -220,7 +252,10 @@ describe("fetchFloodZonesAtPoint", () => {
       fakeResponse("not an object"),
     ) as unknown as typeof fetch;
     await expect(
-      fetchFloodZonesAtPoint(42.262, -85.589, { fetchImpl }),
+      fetchFloodZonesAtPoint(42.262, -85.589, {
+        fetchImpl,
+        retryPolicy: SINGLE_SHOT,
+      }),
     ).rejects.toThrow(/unexpected response shape/);
   });
 
@@ -231,7 +266,11 @@ describe("fetchFloodZonesAtPoint", () => {
       throw err;
     }) as unknown as typeof fetch;
     await expect(
-      fetchFloodZonesAtPoint(42.262, -85.589, { fetchImpl, timeoutMs: 100 }),
+      fetchFloodZonesAtPoint(42.262, -85.589, {
+        fetchImpl,
+        timeoutMs: 100,
+        retryPolicy: SINGLE_SHOT,
+      }),
     ).rejects.toThrow(/timed out after 100ms/);
   });
 
@@ -240,7 +279,10 @@ describe("fetchFloodZonesAtPoint", () => {
       throw new Error("ENOTFOUND hazards.fema.gov");
     }) as unknown as typeof fetch;
     await expect(
-      fetchFloodZonesAtPoint(42.262, -85.589, { fetchImpl }),
+      fetchFloodZonesAtPoint(42.262, -85.589, {
+        fetchImpl,
+        retryPolicy: SINGLE_SHOT,
+      }),
     ).rejects.toThrow(/ENOTFOUND/);
   });
 
@@ -274,9 +316,212 @@ describe("fetchFloodZonesAtPoint", () => {
         ],
       }),
     ) as unknown as typeof fetch;
-    const zones = await fetchFloodZonesAtPoint(42.262, -85.589, { fetchImpl });
+    const zones = await fetchFloodZonesAtPoint(42.262, -85.589, {
+      fetchImpl,
+      retryPolicy: SINGLE_SHOT,
+    });
     expect(zones).toHaveLength(1);
     expect(zones[0].fldZone).toBe("AE");
     expect(zones[0].staticBfe).toBe(645.5);
+  });
+});
+
+describe("DEFAULT_RETRY_POLICY", () => {
+  it("attempts the initial fetch plus 2 retries", () => {
+    expect(DEFAULT_RETRY_POLICY.attempts).toBe(3);
+  });
+
+  it("uses a short exponential schedule (300ms base)", () => {
+    expect(DEFAULT_RETRY_POLICY.baseDelayMs).toBe(300);
+    expect(DEFAULT_RETRY_POLICY.factor).toBe(3);
+  });
+});
+
+describe("computeBackoffDelayMs", () => {
+  it("returns ~baseDelayMs on attempt 1 with zero-jitter random", () => {
+    // random=0.5 → 2*0.5-1 = 0 → no jitter contribution
+    expect(
+      computeBackoffDelayMs(1, DEFAULT_RETRY_POLICY, () => 0.5),
+    ).toBe(300);
+  });
+
+  it("grows by `factor` each attempt", () => {
+    expect(
+      computeBackoffDelayMs(2, DEFAULT_RETRY_POLICY, () => 0.5),
+    ).toBe(900);
+  });
+
+  it("applies upper jitter bound when random=1", () => {
+    // random=1 → 2*1-1 = +1 → +jitter (20%) → 300 * 1.2 = 360
+    expect(
+      computeBackoffDelayMs(1, DEFAULT_RETRY_POLICY, () => 1),
+    ).toBe(360);
+  });
+
+  it("applies lower jitter bound when random=0", () => {
+    // random=0 → 2*0-1 = -1 → -jitter (20%) → 300 * 0.8 = 240
+    expect(
+      computeBackoffDelayMs(1, DEFAULT_RETRY_POLICY, () => 0),
+    ).toBe(240);
+  });
+
+  it("never returns a negative value", () => {
+    const policy: RetryPolicy = {
+      attempts: 3,
+      baseDelayMs: 1,
+      factor: 1,
+      jitter: 5,
+    };
+    expect(
+      computeBackoffDelayMs(1, policy, () => 0),
+    ).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("fetchFloodZonesAtPoint — retry behavior", () => {
+  it("retries on 503 and succeeds on the second attempt", async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call++;
+      if (call === 1) return fakeResponse({}, { ok: false, status: 503 });
+      return fakeResponse({ features: [] });
+    }) as unknown as typeof fetch;
+    const onAttempt = vi.fn();
+    const zones = await fetchFloodZonesAtPoint(42.262, -85.589, {
+      fetchImpl,
+      sleepImpl: NO_SLEEP,
+      onAttempt,
+    });
+    expect(zones).toEqual([]);
+    expect(call).toBe(2);
+    expect(onAttempt).toHaveBeenCalledTimes(2);
+    expect(onAttempt).toHaveBeenNthCalledWith(1, {
+      attempt: 1,
+      outcome: "retryable-error",
+    });
+    expect(onAttempt).toHaveBeenNthCalledWith(2, {
+      attempt: 2,
+      outcome: "success",
+    });
+  });
+
+  it("retries on 429 (rate-limit)", async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call++;
+      if (call === 1) return fakeResponse({}, { ok: false, status: 429 });
+      return fakeResponse({ features: [] });
+    }) as unknown as typeof fetch;
+    const zones = await fetchFloodZonesAtPoint(42.262, -85.589, {
+      fetchImpl,
+      sleepImpl: NO_SLEEP,
+    });
+    expect(zones).toEqual([]);
+    expect(call).toBe(2);
+  });
+
+  it("retries on network errors", async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call++;
+      if (call === 1) throw new Error("ECONNRESET");
+      return fakeResponse({ features: [] });
+    }) as unknown as typeof fetch;
+    const zones = await fetchFloodZonesAtPoint(42.262, -85.589, {
+      fetchImpl,
+      sleepImpl: NO_SLEEP,
+    });
+    expect(zones).toEqual([]);
+    expect(call).toBe(2);
+  });
+
+  it("retries on AbortError (timeout)", async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call++;
+      if (call === 1) {
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        throw err;
+      }
+      return fakeResponse({ features: [] });
+    }) as unknown as typeof fetch;
+    const zones = await fetchFloodZonesAtPoint(42.262, -85.589, {
+      fetchImpl,
+      timeoutMs: 100,
+      sleepImpl: NO_SLEEP,
+    });
+    expect(zones).toEqual([]);
+    expect(call).toBe(2);
+  });
+
+  it("does NOT retry on 404 (deterministic client error)", async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call++;
+      return fakeResponse({}, { ok: false, status: 404 });
+    }) as unknown as typeof fetch;
+    await expect(
+      fetchFloodZonesAtPoint(42.262, -85.589, {
+        fetchImpl,
+        sleepImpl: NO_SLEEP,
+      }),
+    ).rejects.toThrow(/HTTP 404/);
+    expect(call).toBe(1);
+  });
+
+  it("does NOT retry on unexpected response shape", async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call++;
+      return fakeResponse({ displayFieldName: "FLD_ZONE" });
+    }) as unknown as typeof fetch;
+    await expect(
+      fetchFloodZonesAtPoint(42.262, -85.589, {
+        fetchImpl,
+        sleepImpl: NO_SLEEP,
+      }),
+    ).rejects.toThrow(/unexpected response shape/);
+    expect(call).toBe(1);
+  });
+
+  it("gives up after 3 attempts when every retry fails (5xx)", async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call++;
+      return fakeResponse({}, { ok: false, status: 502 });
+    }) as unknown as typeof fetch;
+    const onAttempt = vi.fn();
+    await expect(
+      fetchFloodZonesAtPoint(42.262, -85.589, {
+        fetchImpl,
+        sleepImpl: NO_SLEEP,
+        onAttempt,
+      }),
+    ).rejects.toThrow(NfhlFetchError);
+    expect(call).toBe(3);
+    expect(onAttempt).toHaveBeenLastCalledWith({
+      attempt: 3,
+      outcome: "fatal-error",
+    });
+  });
+
+  it("throws NfhlFetchError carrying the final attempt number and status", async () => {
+    const fetchImpl = vi.fn(async () =>
+      fakeResponse({}, { ok: false, status: 502 }),
+    ) as unknown as typeof fetch;
+    try {
+      await fetchFloodZonesAtPoint(42.262, -85.589, {
+        fetchImpl,
+        sleepImpl: NO_SLEEP,
+      });
+      expect.fail("expected NfhlFetchError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(NfhlFetchError);
+      const e = err as NfhlFetchError;
+      expect(e.attempt).toBe(3);
+      expect(e.status).toBe(502);
+      expect(e.retryable).toBe(true);
+    }
   });
 });
