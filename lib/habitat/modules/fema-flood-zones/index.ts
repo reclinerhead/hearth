@@ -70,7 +70,6 @@ import type {
 } from "@/lib/habitat/types";
 import {
   buildNfhlQueryUrl,
-  fetchFloodZonesAtPoint,
   type NormalizedFloodZone,
 } from "./fetch";
 import {
@@ -79,9 +78,16 @@ import {
   type FloodZoneClassification,
 } from "./classify";
 import {
+  createSupabaseFloodZonesCacheStore,
+  resolveFloodZones,
+  type FloodZonesCacheStore,
+  type ResolveFloodZonesResult,
+} from "./cache";
+import {
   FEMA_NFHL_SOURCE,
   FEMA_ZONE_DEFINITIONS_SOURCE,
   HEARTH_CLASSIFICATION_SOURCE,
+  cacheHitFetchNarration,
   computeStepNarration,
   decideStepNarration,
   fetchStepNarration,
@@ -90,8 +96,13 @@ import {
   noCoverageComputeNarration,
   noCoverageDecideNarration,
   noCoverageFindingNarration,
+  retriedFetchNarration,
   ruleStepNarration,
+  staleCacheFallbackNarration,
   unknownZoneComputeNarration,
+  unreachableComputeNarration,
+  unreachableDecideNarration,
+  unreachableFindingNarration,
 } from "./narration";
 
 const MODULE_KEY = "fema_flood_zones";
@@ -272,6 +283,13 @@ const NO_COVERAGE_SUMMARY =
   "10% includes some rural and remote areas. Your local floodplain " +
   "administrator likely has the best information for your area.";
 
+const UNREACHABLE_HEADLINE = "We couldn't reach FEMA's flood maps right now";
+const UNREACHABLE_SUMMARY =
+  "FEMA's National Flood Hazard Layer service didn't respond when we tried " +
+  "to look up your home's flood zone. This usually clears up on its own — " +
+  "we'll re-check on your next visit. In the meantime, FEMA's Map Service " +
+  "Center has the live polygon view for your address.";
+
 /**
  * Onboarding-modal one-liner. Read from the persisted finding shape so
  * the modal can call this off any row, not just the live result of the
@@ -322,6 +340,35 @@ export function buildOnboardingMessage(finding: HabitatFinding): string {
   return `FEMA returned a flood zone we don't recognize (Zone ${zoneCode}).`;
 }
 
+/**
+ * Test seams. Production calls allocate the real Supabase-backed
+ * store on every check() and use the default retry policy; tests
+ * inject an in-memory store and a single-shot/no-sleep options
+ * bundle via these setters so neither real network calls nor
+ * sleep timers leak into the test suite.
+ *
+ * Exported for the test suite only — production code must not call
+ * these. Behavior on unset: fresh Supabase store + default retry
+ * policy on every check().
+ */
+let storeOverride: FloodZonesCacheStore | null = null;
+let resolveOptionsOverride: ResolveOptionsForTests = {};
+type ResolveOptionsForTests = Parameters<typeof resolveFloodZones>[2];
+
+export function __setFloodZonesCacheStoreForTests(
+  store: FloodZonesCacheStore | null,
+): void {
+  storeOverride = store;
+}
+export function __setFloodZonesResolveOptionsForTests(
+  opts: ResolveOptionsForTests,
+): void {
+  resolveOptionsOverride = opts ?? {};
+}
+function getStore(): FloodZonesCacheStore {
+  return storeOverride ?? createSupabaseFloodZonesCacheStore();
+}
+
 const FemaFloodZonesModule: HabitatModule = {
   key: MODULE_KEY,
   name: "FEMA Flood Zones",
@@ -365,14 +412,73 @@ const FemaFloodZonesModule: HabitatModule = {
     const lat = house.latitude;
     const lon = house.longitude;
 
-    log.step({
-      kind: "fetch",
-      narration: fetchStepNarration(),
-      detail: `GET ${buildNfhlQueryUrl(lat, lon)}`,
-      source: FEMA_NFHL_SOURCE,
-    });
+    const resolved = await resolveFloodZones(
+      house,
+      getStore(),
+      resolveOptionsOverride,
+    );
 
-    const zones = await fetchFloodZonesAtPoint(lat, lon);
+    // Step 1 (fetch): three variants depending on where the data
+    // came from — cache hit, fresh fetch (possibly after retries),
+    // or stale-cache fallback when FEMA was unreachable.
+    if (resolved.source === "cache") {
+      const cacheStep = cacheHitFetchNarration({
+        ageDays: resolved.ageDays,
+        keyStrategy: resolved.keyStrategy,
+      });
+      log.step({
+        kind: "fetch",
+        narration: cacheStep.narration,
+        detail: cacheStep.detail,
+        result_summary: cacheStep.result_summary,
+        source: FEMA_NFHL_SOURCE,
+      });
+    } else if (resolved.source === "fetch") {
+      const narration =
+        resolved.retryCount > 0
+          ? retriedFetchNarration(resolved.retryCount)
+          : fetchStepNarration();
+      log.step({
+        kind: "fetch",
+        narration,
+        detail: `GET ${buildNfhlQueryUrl(lat, lon)}`,
+        source: FEMA_NFHL_SOURCE,
+      });
+    } else if (resolved.source === "stale") {
+      const stale = staleCacheFallbackNarration({
+        refreshedAt: resolved.refreshedAt,
+        attempts: resolved.attempts,
+      });
+      log.step({
+        kind: "fetch",
+        narration: stale.narration,
+        detail: stale.detail,
+        result_summary: stale.result_summary,
+        source: FEMA_NFHL_SOURCE,
+      });
+    } else {
+      // 'unreachable' — no zones to classify, no cached data. Emit
+      // the fetch step (so the activity log still shows what we
+      // tried) and then the unreachable compute / decide / finding
+      // arc, returning the neutral coverage:false finding instead
+      // of throwing.
+      log.step({
+        kind: "fetch",
+        narration: fetchStepNarration(),
+        detail: `GET ${buildNfhlQueryUrl(lat, lon)} (failed after ${resolved.attempts} attempt${resolved.attempts === 1 ? "" : "s"})`,
+        source: FEMA_NFHL_SOURCE,
+      });
+      return buildUnreachableFinding({
+        log,
+        house,
+        lat,
+        lon,
+        attempts: resolved.attempts,
+        errorMessage: resolved.fetchError.message,
+      });
+    }
+
+    const zones = resolved.zones;
 
     if (zones.length === 0) {
       return buildNoCoverageFinding({ log, house, lat, lon });
@@ -570,6 +676,100 @@ function buildNoCoverageFinding(input: {
     actions: buildActions(house, false),
     activityLog: log.finalize(),
   };
+}
+
+/**
+ * Build the unreachable finding. 4-step log identical in shape to the
+ * no-coverage finding (fetch / compute / decide / finding — no rule
+ * step because there's no zone to apply a rule to). Severity stays
+ * `neutral` so the dashboard doesn't claim either all-clear or
+ * concern, and the status stays `completed` so the orchestrator
+ * doesn't surface "we hit a snag" copy.
+ *
+ * The action shelf drops the FEMA Map Service Center deep-link
+ * because... actually it KEEPS the MSC link here — the user needs a
+ * way to check FEMA directly, and the MSC search page works even
+ * when our ArcGIS query path is failing (different infrastructure).
+ * Same `coverage: false` shape as the no-coverage path so the
+ * existing modal renderers Just Work.
+ */
+function buildUnreachableFinding(input: {
+  log: ReturnType<typeof createActivityLogger>;
+  house: HouseContext;
+  lat: number;
+  lon: number;
+  attempts: number;
+  errorMessage: string;
+}): HabitatFinding {
+  const { log, house, lat, lon, attempts, errorMessage } = input;
+
+  const compute = unreachableComputeNarration({ attempts, errorMessage });
+  log.step({
+    kind: "compute",
+    narration: compute.narration,
+    detail: compute.detail,
+    result_summary: compute.result_summary,
+  });
+
+  const decide = unreachableDecideNarration();
+  log.step({
+    kind: "decide",
+    narration: decide.narration,
+    detail: decide.detail,
+    result_summary: decide.result_summary,
+    source: HEARTH_CLASSIFICATION_SOURCE,
+  });
+
+  const finding = unreachableFindingNarration(UNREACHABLE_HEADLINE);
+  log.step({
+    kind: "finding",
+    narration: finding.narration,
+    result_summary: finding.result_summary,
+  });
+
+  const findings: FemaFloodZoneFindings = {
+    coverage: false,
+    source: {
+      dfirm_id: null,
+      fld_ar_id: null,
+      study_type: null,
+      source_citation: null,
+      queried_coordinates: { lat, lon },
+    },
+  };
+
+  return {
+    severity: "neutral",
+    headline: UNREACHABLE_HEADLINE,
+    summary: UNREACHABLE_SUMMARY,
+    findings: findings as unknown as Record<string, unknown>,
+    sourceUrl: SOURCE_URL,
+    actions: buildUnreachableActions(house),
+    activityLog: log.finalize(),
+  };
+}
+
+/**
+ * Unreachable-path action shelf. Keeps both the FEMA Map Service
+ * Center deep-link and the learn-more link — the MSC page is a
+ * different FEMA service from the NFHL ArcGIS endpoint that just
+ * failed, so it's still a useful next step for the user. Exported
+ * for the test suite.
+ */
+export function buildUnreachableActions(house: HouseContext): FindingAction[] {
+  const addressQuery = encodeURIComponent(buildMscAddressQuery(house));
+  return [
+    {
+      kind: "link",
+      label: "Check FEMA's flood map directly",
+      url: `https://msc.fema.gov/portal/search?AddressQuery=${addressQuery}`,
+    },
+    {
+      kind: "link",
+      label: "Learn about flood zones",
+      url: "https://www.fema.gov/glossary/flood-zones",
+    },
+  ];
 }
 
 export default FemaFloodZonesModule;

@@ -215,3 +215,136 @@ export function noCoverageFindingNarration(headline: string): {
 export function severityWord(severity: HabitatSeverity): string {
   return severity;
 }
+
+/**
+ * Narration for a cache hit. Replaces the live fetch step entirely
+ * on a fresh hit — the user sees "I had this in our shared cache"
+ * instead of "I looked up your home in FEMA's NFHL" so the activity
+ * log honestly describes what happened.
+ *
+ * Used by `check()` when `resolveFloodZones` returns
+ * `source: 'cache'`.
+ */
+export function cacheHitFetchNarration(input: {
+  ageDays: number;
+  keyStrategy: "parcel" | "coordinate";
+}): { narration: string; detail: string; result_summary: string } {
+  const keyword =
+    input.keyStrategy === "parcel"
+      ? "your parcel's flood zone"
+      : "a flood zone for these coordinates";
+  // "0 days ago" reads awkwardly; collapse same-day hits to "earlier today".
+  const when =
+    input.ageDays <= 0
+      ? "earlier today"
+      : input.ageDays === 1
+        ? "yesterday"
+        : `${input.ageDays} days ago`;
+  return {
+    narration:
+      `I had ${keyword} in our shared cache from ${when} — using that ` +
+      `instead of asking FEMA again.`,
+    detail: `cache_key_strategy=${input.keyStrategy}; age_days=${input.ageDays}; ttl_days=180`,
+    result_summary: "Cache hit",
+  };
+}
+
+/**
+ * Narration for the successful-but-retried fetch. Inserted as the
+ * fetch step (replacing the default fetchStepNarration) when the
+ * fetcher needed more than one attempt to get a response.
+ */
+export function retriedFetchNarration(retryCount: number): string {
+  if (retryCount === 1) {
+    return "FEMA's flood maps were slow to respond, so I tried again — that worked.";
+  }
+  return `FEMA's flood maps were slow to respond on my first ${retryCount} attempts, but the next one came through.`;
+}
+
+/**
+ * Narration for the stale-cache fallback step. Emitted as a `fetch`
+ * step (the cache lookup is the data acquisition) when FEMA was
+ * unreachable after all retries but we still have a previously
+ * cached row for this point.
+ */
+export function staleCacheFallbackNarration(input: {
+  refreshedAt: Date;
+  attempts: number;
+}): { narration: string; detail: string; result_summary: string } {
+  const date = input.refreshedAt.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const attemptsClause =
+    input.attempts === 1
+      ? "on my one attempt"
+      : `across ${input.attempts} attempts`;
+  return {
+    narration:
+      `FEMA's flood maps are unreachable right now ${attemptsClause}, ` +
+      `so I'm showing your most recent designation from ${date}. ` +
+      `I'll re-check on your next visit.`,
+    detail: `FEMA unreachable after ${input.attempts} attempts; serving cached row refreshed at ${input.refreshedAt.toISOString()}.`,
+    result_summary: `Stale cache (from ${date})`,
+  };
+}
+
+/**
+ * Narration for the unreachable compute step. Used when FEMA failed
+ * every retry AND no cache row exists — the finding still completes
+ * with a coverage:false neutral row pointing the user at FEMA's
+ * own Map Service Center, rather than throwing into a 'failed' row.
+ */
+export function unreachableComputeNarration(input: {
+  attempts: number;
+  errorMessage: string;
+}): { narration: string; detail: string; result_summary: string } {
+  const attemptsClause =
+    input.attempts === 1
+      ? "on my first attempt"
+      : `after ${input.attempts} attempts`;
+  return {
+    narration:
+      `I couldn't reach FEMA's National Flood Hazard Layer ${attemptsClause}, ` +
+      `and I don't have a cached designation for your address yet. ` +
+      `I'll try again on your next visit.`,
+    detail: `FEMA NFHL unreachable; final error: ${input.errorMessage}`,
+    result_summary: "FEMA NFHL unreachable",
+  };
+}
+
+/**
+ * Narration for the unreachable decide step. Severity is `neutral`
+ * for this path — we don't know whether the home is at risk, so we
+ * don't claim either favorable or concern. Mirrors the no-coverage
+ * decide narration's tone.
+ */
+export function unreachableDecideNarration(): {
+  narration: string;
+  detail: string;
+  result_summary: string;
+} {
+  return {
+    narration:
+      "Without a designation I can't tell you a zone, so I'm marking " +
+      "this as 'neutral' in Hearth's classification — neither all-clear " +
+      "nor a concern — and pointing you at FEMA's own Map Service " +
+      "Center for the live polygon view.",
+    detail: "unreachable → severity('neutral')",
+    result_summary: "Severity: neutral",
+  };
+}
+
+/**
+ * Narration for the unreachable finding step.
+ */
+export function unreachableFindingNarration(headline: string): {
+  narration: string;
+  result_summary: string;
+} {
+  return {
+    narration: "I put the finding together for your dashboard.",
+    result_summary: headline,
+  };
+}
