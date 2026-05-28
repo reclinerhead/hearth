@@ -32,7 +32,12 @@
       "Skill(frontend-design:frontend-design)",
       "Skill(frontend-design:frontend-design:*)",
       "Bash(xxd)",
-      "PowerShell(npx tsc --noEmit; echo \"exit=$LASTEXITCODE\")"
+      "PowerShell(npx tsc --noEmit; echo \"exit=$LASTEXITCODE\")",
+      "Bash(python -c \"import json,sys; print\\(json.dumps\\(json.load\\(sys.stdin\\).get\\('scripts', {}\\), indent=2\\)\\)\")",
+      "WebFetch(domain:enviro.epa.gov)",
+      "WebFetch(domain:cumulis.epa.gov)",
+      "Bash(python -c \"import json,sys; d=json.loads\\(sys.stdin.read\\(\\)\\); print\\(f'{len\\(d\\)} sites'\\); [print\\(f\\\\\"  {r['site_id']:>10} | {r['name'][:60]}\\\\\"\\) for r in d[:5]]\")",
+      "Bash(findstr /i \"test\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\toddw\\AppData\\Local\\Temp",
