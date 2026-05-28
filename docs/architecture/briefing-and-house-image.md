@@ -1,0 +1,163 @@
+# Briefing and house image
+
+The Day One Briefing pipeline — the durable workflow that fills out a house's facts the moment it's created, plus the discovery modal that narrates briefing and habitat in real time and the helpers that shape its copy. And the house image surface: a generated architectural sketch by default, replaced when the user uploads their own photo, both private-bucket-backed and signed-URL-cached.
+
+Read this spoke when working on the briefing pipeline, the Zillow prompt, the discovery modal's briefing row, the briefing message helpers, the house-image generation workflow, or signed URL caching for either surface.
+
+The Realtime publication migrations and the service-role client that the briefing and house-image workflows use both live in [data-and-auth.md](data-and-auth.md#realtime-publication).
+
+---
+
+## Day One Briefing
+
+When a user submits an address through onboarding, the house row is inserted and a **briefing workflow** is started in the background. The dashboard subscribes to that row via Supabase Realtime, so house facts appear in place as the workflow discovers them — no manual refresh, no second round trip. The same workflow can be re-run on demand from the dashboard; results merge into the existing row rather than overwriting it, so re-running accumulates fields rather than risking the loss of a value the previous run found.
+
+### Pipeline
+
+```
+onboarding action (server)        workflows/briefing.ts (durable)            dashboard (client)
+  insert hearth.houses     ──▶    start(runBriefing, [houseId])
+  redirect /dashboard             │
+                                  ├─▶ step: startBriefing
+                                  │     read address, set status='running'
+                                  ├─▶ step: lookupZillow
+                                  │     AI Gateway → Zillow JSON
+                                  │     pure validation (clamp to ranges)
+                                  ├─▶ step: persistBriefingSuccess
+                                  │     read current row, merge non-destructively,
+                                  │     write payload, status='completed'
+                                  └─▶ on throw → markBriefingFailed
+                                                                  ──▶  useHouseRealtime
+                                                                       re-renders on UPDATE
+
+dashboard refresh action (server) ─▶ start(runBriefing, [houseId])
+  verify session + ownership          (same workflow as onboarding)
+```
+
+### Files
+
+- **`lib/briefing/zillow.ts`** — `lookupHouseOnZillow(input)` calls the AI Gateway via `generateText` and returns a typed `ZillowLookupResult`. The exported `validateZillowResponse` is a pure helper that clamps year/sqft/bedroom/bathroom values to plausible ranges and is the unit-tested surface (`zillow.test.ts`). The validator also reconciles lot-size units: the prompt asks the model to copy what Zillow displays (acres or sqft, not converted by the model itself), and the validator derives whichever is missing using `1 acre = 43560 sqft`. Heating, cooling, and parcel number flow through string validators — parcel numbers are explicitly kept as strings (leading zeros are part of the identifier) and capped at 64 chars to reject obvious junk.
+- **`lib/briefing/merge.ts`** — `buildBriefingSuccessUpdate({ current, result, now })` is the pure helper the persist step uses to turn a fresh `ZillowLookupResult` into a Supabase update payload. A new non-null value writes only when it differs from the current row value; a new null never overwrites an existing non-null value; equal old/new values produce no field at all (a no-op). `description_source` is provenance-locked — once set, it is never overwritten, even by a different non-null description. Run-lifecycle fields (`briefing_status`, `briefing_generated_at`, `briefing_error`) always update unconditionally. Covered by `merge.test.ts`.
+- **`workflows/briefing.ts`** — `runBriefing(houseId)` is the `"use workflow"` orchestrator. It calls three `"use step"` functions (`startBriefing`, `lookupZillow`, `persistBriefingSuccess`) and falls back to `markBriefingFailed` on any throw. The persist step reads the current row, hands it to `buildBriefingSuccessUpdate`, and writes only the diff — so a re-run can fill in gaps without clobbering anything the previous run already found. Steps retry automatically — by default three attempts — before the workflow's catch handler marks the row failed. Step functions use the service-role Supabase client (`lib/supabase/service.ts`) because the workflow runs outside a request context.
+- **`app/(app)/onboarding/actions.ts`** — after the house insert, calls `start(runBriefing, [houseId])` from `workflow/api`. The call is not awaited; a `start()` failure is logged but never blocks the user from reaching the dashboard.
+- **`app/(app)/dashboard/actions.ts`** — `refreshBriefing(houseId)` is the server action behind the dashboard's Refresh affordance. It verifies the session, confirms the house exists for the signed-in user (RLS is the load-bearing check; the explicit lookup gives a clean error message), short-circuits if `briefing_status` is already `running`, and calls `start(runBriefing, [houseId])` AND `start(runHabitatChecks, [houseId])` in parallel. The dual-start is the explicit orchestration that replaced the briefing workflow's old internal habitat kickoff (see "Habitat kickoff moved to the property-questions phase" under the onboarding section in [data-and-auth.md](data-and-auth.md#property-situation-prompt-issue-142)). `triggerHabitatRecheck(houseId)` is the sibling action the discovery modal's property-questions Save/Skip handlers call — habitat-only kickoff with no briefing run. The client component disables its button while the action is pending and while the realtime row reports a non-terminal status, so double-starts are guarded both client- and server-side.
+- **`lib/hooks/use-house-realtime.ts`** — generic single-row subscription. Fetches the house once on mount, then re-renders on every UPDATE event. Reusable for any future "live row" pattern; not Zillow-specific.
+- **`lib/hooks/use-habitat-findings.ts`** — sibling hook for the `hearth.habitat_findings` table. Subscribes to all INSERT/UPDATE events for a given house and merges them into local state keyed by `module_key`, with a 2.5s polling fallback for environments where the realtime websocket is blocked. Accepts an optional `initialRows` seed so a server-component parent can hydrate the panel with zero first-paint flash. Used by both `HabitatPreviewPanel` and `OnboardingDiscoveryModal`.
+- **`app/(app)/dashboard/dashboard-live.tsx`** — client component that renders the hero, the five house-facts cards, and the description from the realtime row, with three states per field: skeleton pulse (`briefing_status = 'running' | 'pending'` + null value), em-dash with "Not found" meta (`completed` + null value), and a soft error banner (`failed`). The hero exposes a Refresh button that calls `refreshBriefing` via `useTransition`; while the call is in flight or the briefing is running, the button is disabled and the metric cards naturally fall back to the skeleton state because the workflow flips `briefing_status` to `running`.
+- **`next.config.ts`** — wrapped with `withWorkflow()`. Required for the `"use workflow"` and `"use step"` directives to compile.
+- **`proxy.ts`** — matcher excludes `.well-known/workflow/*` so the Workflow SDK's internal endpoints aren't intercepted by session refresh.
+
+### Model selection
+
+Two env vars, read at call time so models can be swapped without redeploying:
+
+- `BRIEFING_PRIMARY_MODEL` — default `perplexity/sonar-pro`
+- `BRIEFING_FALLBACK_MODELS` — comma-separated, default `perplexity/sonar`
+
+These are passed to the AI Gateway as `providerOptions.gateway.models`, which gives automatic model-level fallback if the primary errors.
+
+**Why Perplexity Sonar.** Zillow lookup requires *live web access* — the model has to actually open Zillow's site and read what's there. Claude / GPT-5 / Grok through the AI Gateway don't have web access enabled by default, so they answer from training data and return `data_found=false` for any real address they haven't memorized. Perplexity's Sonar family is search-grounded: every answer cites and synthesizes from live web pages. For a "find facts on Zillow" task that's exactly the capability we need; the trade-off is slightly less raw reasoning than the frontier models, which doesn't matter here.
+
+**What Sonar can and can't surface.** Sonar reads search-engine snippets — it doesn't execute JavaScript. Zillow's modern site is a React SPA where the "Facts & features" panel (heating, cooling, parcel number, sometimes lot size and year built) is hydrated client-side, so those fields aren't in the bytes Sonar receives and come back `null` more often than not. Fields that do land in indexed HTML or schema.org metadata (bedrooms, bathrooms, living area, listing description) are reliable. The prompt lets the model fall back to Realtor.com / Redfin / Trulia / Compass / Homes.com / public records when Zillow is silent, which recovers some of the missing fields (notably year built and heating) when those sites have less JS-heavy pages. Parcel number in particular is rarely retrievable via Sonar; the canonical source is the county assessor (BS&A for Michigan), tracked as a follow-up rather than a Sonar prompt problem. The right long-term fix for the JS-rendered fields is either a headless-browser fetcher (Browserbase, Tavily Extract) or going straight to authoritative sources for each field.
+
+### First-run discovery modal
+
+The dashboard's first-time experience is a streaming modal that narrates the briefing + habitat lookups as they happen, rather than the quiet inline skeletons used on the steady-state dashboard and on manual Refresh. The intent is for the user to see *what Hearth is actually doing for them* — a Zillow lookup, then each habitat module — instead of watching cards fill in silently. After the modal walks through every applicable check, the user clicks **Start Managing my Home** to dismiss it and lands on the fully populated dashboard.
+
+- **Lives at `app/(app)/dashboard/onboarding-discovery-modal.tsx`** and is mounted by `dashboard-live.tsx` when the first-run preconditions hold.
+- **First-run preconditions** (both must be true): `houses.briefing_generated_at IS NULL` or `briefing_status` is `pending`/`running`, AND no `habitat_findings` rows exist for this house *at all*. Once either flips false, the modal is gone for good — no schema column tracks "dismissed," because the data conditions already do. The habitat probe checks row existence, not `status = 'completed'`, because the habitat orchestrator upserts each row to `status = 'running'` before the check runs (`workflows/habitat.ts`); during a Refresh House Facts every row cycles `completed → running → completed`, and a status-filtered probe would re-open the onboarding modal on top of the refresh modal in that window. Once the orchestrator has ever run for a house, rows exist permanently — that's the right signal for "not a first-run user."
+- **sessionStorage** is a re-mount safety net keyed by `houseId` (`onboardingDiscoveryDismissed:<id> = "1"`), so a fast nav back to the dashboard immediately after dismissal doesn't briefly flash the modal back open while the habitat read catches up. It is not the source of truth.
+- **Sequencing is visual only.** The briefing and habitat workflows are already running in parallel — the modal just waits for each piece of data to land and paces the reveal. A short `RESULT_DISPLAY_MIN_MS` keeps fast modules (radon resolves sub-millisecond) on screen long enough to read.
+- **Row count is fixed from first paint.** The modal renders one row per applicable check (briefing + every applicable habitat module) from the moment it mounts, with not-yet-reached rows held in a muted `idle` state (hollow circle, `--color-text-tertiary` label). Each row advances `idle → checking → done` as its phase activates. This keeps the modal surface from growing or re-centering as results stream in — adding a new habitat module to `HABITAT_MODULES` does not re-introduce jumping because the row list always equals `1 + applicableModules.length`. The pure `buildRowList` mapping from `(phase, applicable modules, accumulated copy, accumulated severities)` to rendered rows lives in `app/(app)/dashboard/onboarding-discovery-rows.ts` and is unit-tested in the sibling `.test.ts` — extracted out of the `.tsx` so the row-shape logic can be exercised without React.
+- **Source eyebrow above each row.** Every card renders an 11px/uppercase eyebrow above the glyph + lead block ("PUBLIC RECORD SEARCH" for the briefing row, "EPA RADON CHECK" / "FEMA FLOOD ZONE CHECK" / etc. for habitat modules) so each tile self-identifies its data source from intro through done. Habitat-module rows read the label from an optional `sourceLabel` field on `HabitatModule` (`lib/habitat/types.ts`); when a module omits it the row falls back to `module.name.toUpperCase()`. The briefing row has no module, so its label lives as `BRIEFING_SOURCE_LABEL` next to `buildRowList` in `app/(app)/dashboard/onboarding-discovery-rows.ts`. Idle rows dim the eyebrow's opacity in lockstep with the lead line so not-yet-started tiles still read as muted.
+- **Card rows with severity awareness.** Each row renders as a bordered card with a 14px/500 lead line and an optional 13px secondary line beneath it. Done-state rows derived from a habitat module carry the module's persisted `severity` and drive three things from it: the glyph (alert triangle in the severity colour for flagged severities — caution / concern / critical — and a green check otherwise), the card border (a warm `color-mix` of `--color-warning` and `--color-border-subtle` when flagged, plain subtle otherwise), and a right-aligned "Worth knowing" relevance pill wrapped in the project `Tooltip` primitive so hover, keyboard focus, and screen readers all reach the same explanation. The pill label is uniform across every flagged severity — the visual differentiation already lives in the glyph + border, and the tone-of-voice escalation lives in the tooltip body ("we'll surface this on your dashboard with our findings and suggested follow-ups." for concern/critical, "worth being aware of. You'll find this on your dashboard with the full details." for caution). The pure derivation helpers (`isFlaggedSeverity`, `discoveryRowGlyph`, `pillLabelForSeverity`, `pillTooltipForSeverity`) live in `components/habitat-severity.tsx` alongside `SEVERITY_COLOR`, so the modal never invents a parallel severity vocabulary and the helpers can be reused by the dashboard tiles and detail modal in the future. The briefing row never carries a severity — it always renders as a green-check, non-flagged card. The subtitle slot beneath the headline stays mounted in every phase so the surface height is stable; in non-`done` phases it carries the existing copy ("This typically takes 20 to 30 seconds." / property-questions help text) and in `done` it carries a summary chip — "{total} facts found · {N} worth a closer look" with a `--color-warning` dot — where `N` is the number of flagged habitat findings shown (the briefing row never counts toward `N`) and the chip omits the second clause when `N === 0`.
+- **The Refresh button on the dashboard does not re-open the modal.** Once any habitat module has completed once, the preconditions are false; the existing inline-skeleton flow takes over for re-runs.
+
+### `HabitatModule.getOnboardingMessage`
+
+The modal's per-module result line is authored by each module via an optional `getOnboardingMessage(finding) => string` on the `HabitatModule` contract (`lib/habitat/types.ts`). The string should lead with what was found, not what was checked, because the modal already renders "Checking <module.name>…" before this fires. Modules that don't implement it get a generic "Checked <name> for your area" fallback. The radon module's implementation lives alongside its `check()` in `lib/habitat/modules/epa-radon-zone/index.ts` and branches three ways on zone — Zone 1 leads with concern, Zone 2 with moderate, Zone 3 with positive framing. Unit-tested in `index.test.ts`.
+
+The WQA module's onboarding line is a richer case: it has *two* independent axes (EPA compliance violations and Lead and Copper Rule sample results) and the severity is the worse of the two. The pre-#186 implementation read only the compliance axis, which produced a contradictory row in the discovery modal whenever LCR alone pushed severity to `caution` ("no active compliance issues." next to a warning glyph and a "Worth knowing" pill). Issue #186 replaced that with a pure builder at [`lib/habitat/modules/water-quality-awareness/onboarding-message.ts`](../../lib/habitat/modules/water-quality-awareness/onboarding-message.ts) that reads `finding.severity` + `system_card.compliance_status_short` + `classifyLcrAxis(lead_copper_summary)` and produces a two-clause sentence — clean axis as reassurance, flagged axis as the honest call-out. Issue #188 expanded the model so any detected lead/copper drives caution (not only ≥80% of the action level) and dropped monitoring/reporting violations from severity, so the builder now has three caution tiers — `above` (concern, "at or above the action level"), `approaching` ("approaching the action level. We'll flag this for follow-up."), and `detected` ("recent samples have detected lead. Any presence is worth knowing about."). The voice across all flagged-caution branches leads with "they're in active compliance with EPA" — celebrating the regulator-side positive — and pairs it with the actual LCR-axis call-out. Lead vs. copper is distinguished when a single metal is responsible; "lead and copper" appears only when both axes are at the same tier. Favorable only fires when every sample is below the detection limit and reads as "no detectable lead and copper." The builder is unit-tested per-row in `onboarding-message.test.ts`. The non-CWS branches (private well / cws_unmapped / stale / non_community) stay shaped by their own copy and don't go through this builder.
+
+### Briefing message helper
+
+`lib/briefing/getBriefingMessage.ts` exports two helpers. `getBriefingMessageParts(house) => { lead, secondary }` is the canonical form the discovery modal consumes — `{ lead: "Home data found", secondary: "built in 1934, 2,210 sq ft, 3 bed / 3 bath" }` when concrete facts came back, `{ lead: "Public records checked", secondary: null }` when nothing did. `getBriefingMessage(house) => string` composes from the parts and stays the legacy single-string surface ("Found your home data — built in 1934, ..." / "Looked up your home's public records") for callers that need a sentence. Both are unit-tested across field-presence permutations in `getBriefingMessage.test.ts`, with a composition test asserting the two forms can't drift. The output is not persisted — the modal calls `getBriefingMessageParts` against the realtime house row at the briefing-result transition and holds the result through every later phase.
+
+---
+
+## House image: generated sketch + user-uploaded photo
+
+The dashboard's hero image surface shows one of two assets:
+
+- **User-uploaded photo** (`hearth.houses.user_image_url`, bucket `house-photos`) — the user's own photo of their house. Takes priority when present.
+- **Generated architectural sketch** (`hearth.houses.generated_image_url`, bucket `house-images`) — a pencil-style illustration of a typical home of the same era and style as the user's house, not a depiction of the actual property. The default placeholder until the user uploads their own photo. Generated by a workflow appended to the Day One Briefing pipeline once `year_built` and `description` are populated, and re-rollable from the dashboard via a Regenerate button.
+
+Both assets co-exist on the row, so the user can remove their photo and revert to the generated sketch without re-running the image workflow. The two live in different buckets with different RLS shapes — users write directly to `house-photos` but cannot write to `house-images`.
+
+**The "not a photo of your home" framing is load-bearing whenever the generated illustration is on screen.** It is wrong to imply the illustration depicts the actual property. The disclaimer beneath the image ("Stylized illustration — not a photo of your home.") and the deliberately generic prompt (era + style + stories, never literal description details) both encode this contract. The disclaimer is intentionally dropped only when a real user-uploaded photo replaces the sketch — at that point the figure caption reads "Your photo." instead. Any change that makes the generated illustration look more "real" or removes the disclaimer is a regression.
+
+### Pipeline
+
+```
+workflows/briefing.ts persistBriefingSuccess
+  └─▶ start(runHouseImage, [houseId])
+                    │
+                    ├─▶ step: loadHouseForImage
+                    │     read year_built + description from hearth.houses
+                    ├─▶ step: generateSketch
+                    │     buildHouseImagePrompt({ yearBuilt, description })
+                    │     generateImage({ model: $HOUSE_IMAGE_MODEL })
+                    │       → 1024x1024 PNG bytes
+                    └─▶ step: persistHouseImage
+                          upload to `house-images/{house_id}/generated-sketch.png` (upsert)
+                          write generated_image_url / prompt / created_at on hearth.houses
+
+dashboard regenerate action
+  └─▶ start(runHouseImage, [houseId])     (same workflow; overwrites in place)
+```
+
+Errors are logged but do NOT taint a status column on `hearth.houses` — unlike the briefing, image generation is a best-effort enrichment. The dashboard's placeholder + Regenerate button cover the failure surface; a stuck status flag would only add noise.
+
+### Files
+
+- **`lib/house-image/prompt.ts`** — `buildHouseImagePrompt({ yearBuilt, description })`, the pure builder that turns the row's era/style/stories signals into the final prompt string. Era is derived from `year_built` via fixed buckets (pre-1920 → "early 20th century"; 1920–1945 → "1930s-era"; 1946–1965 → "mid-century"; 1966–1985 → "1970s-era"; 1986–2005 → "late 20th century"; 2006+ → "contemporary"). Style hint is extracted by keyword match against the description (Craftsman, Cape Cod, Colonial, Victorian, Farmhouse, Bungalow, Cottage, Tudor, Ranch, Contemporary) — multi-word styles ordered before single-word prefixes. Stories ("single-story" / "two-story" / "three-story") is extracted by pattern match. Any of the three signals can be null and the assembled prompt stays well-formed (no leaked literal details, no dangling phrases). Unit-tested in `prompt.test.ts` across era boundaries, style positive/negative matches, stories variants, and the "no literal description leak" contract.
+- **`lib/house-image/signed-url.ts`** — `createCachedSignedUrl(supabase, bucket, path, stamp)` issues a signed URL for any supported private bucket (`house-images`, `house-photos`, or `hearth-documents`; type `CachedSignedUrlBucket`) and caches the resulting URL string in `sessionStorage` keyed by `(bucket, path, stamp)`. The cache is what gives the browser a stable URL across navigations — without it, a remount would mint a fresh signed URL on every visit, and the browser's HTTP cache (which keys on URL) would miss the previous bytes. The signed URL TTL is 7 days; cache entries expire at 90% of that. The `stamp` argument is the cache-bust knob for buckets where bytes can change in place (house-images uses `generated_image_created_at`, house-photos uses `user_image_uploaded_at`); `hearth-documents` paths embed a `{document_id}` segment that is unique per upload, so callers pass `stamp: null` and rely on the path itself as the version key. The module also exports `HOUSE_IMAGE_CACHE_CONTROL = "31536000, immutable"`, used as the `cacheControl` on every upload so the bytes themselves are forever-cacheable behind the stable URL.
+- **`lib/house-image/use-cached-signed-url.ts`** — `useCachedSignedUrl(bucket, path, stamp)` is the React hook wrapper around `createCachedSignedUrl`. Returns `null` while resolving (or when `path` is null) so consumers can render a placeholder, then re-renders with the URL once the helper resolves. Used by `InventoryDetailView` and the dashboard's `<InventoryThumbnail>`; the `HouseImageSurface` in `dashboard-live.tsx` uses the underlying helper directly because it tracks more state (the active bucket/path/stamp tuple as the user swaps between generated sketch and uploaded photo).
+- **`workflows/house-image.ts`** — `runHouseImage(houseId)` is the `"use workflow"` orchestrator. Three `"use step"` functions (`loadHouseForImage`, `generateSketch`, `persistHouseImage`); top-level try/catch logs and exits rather than writing a failure column. The image step uses the service-role client because the workflow runs outside a request context, and uploads with `cacheControl: HOUSE_IMAGE_CACHE_CONTROL` so the bytes carry the right Cache-Control header into the browser.
+- **`workflows/briefing.ts`** — calls `start(runHouseImage, [houseId])` in `persistBriefingSuccess` alongside the habitat kickoff. Fire-and-forget — a `start()` failure is logged but the briefing itself is already user-visible at that point. The kickoff is **skipped when `user_image_url` is already set** on the row: a user who has uploaded their own photo doesn't see the generated sketch, so re-running the sketch workflow on every Refresh would burn image-model credits with no visible benefit. The dashboard's explicit Regenerate button still calls `runHouseImage` directly, so a user who wants a fresh sketch under their uploaded photo can still trigger one.
+- **`app/(app)/dashboard/actions.ts`** — `regenerateHouseImage(houseId)` is the Regenerate-button server action. Verifies the session, confirms the house exists for the user (RLS does the load-bearing check), and calls `start(runHouseImage, [houseId])`. The dashboard observes `generated_image_created_at` advancing via Realtime and refreshes the signed URL.
+- **`app/(app)/dashboard/dashboard-live.tsx`** — `HouseImageSurface` renders the active image (user photo if present, otherwise the generated sketch) via a signed URL, plus the figcaption row whose copy + actions swap based on which image is on screen. The component also owns the hidden `<input type="file">` and triggers it via a ref from either the "Upload your own photo" or "Replace" affordance. `accept="image/*"` (no `capture` attribute) lets mobile browsers offer both camera and photo-library natively. Upload and remove handlers live in `DashboardLive` and call Supabase Storage + `hearth.houses` UPDATE directly from the browser; RLS on both surfaces is the load-bearing ownership check. The `GeneratingIllustrationSkeleton` covers the first-time-waiting state for the generated image and is suppressed during the brief user-photo URL fetch so its copy doesn't lie about what's happening.
+
+### Storage layout
+
+Two private buckets, one per asset:
+
+- **`house-images`** — AI-generated sketches. Path layout `{house_id}/generated-sketch.png`. One object per house, written exclusively by the workflow's service-role client. Read-only from the user's perspective.
+- **`house-photos`** — user-uploaded photos. Path layout `{house_id}/photo` (no extension; the stored content-type is the source of truth for the MIME). One object per house. Owners can read, insert, update (upsert), and delete via RLS. The "Remove photo" affordance deletes the object and clears the columns; deletion is best-effort while the row update is authoritative (an orphan object will be overwritten on the next upload).
+
+Both buckets follow the same upload contract: `upsert: true` so a replace overwrites in place (no version history), and `cacheControl: '31536000, immutable'` so the bytes carry a Cache-Control header that the browser respects for one year. The stable storage path combined with the immutable header lets the browser HTTP cache hit reliably across navigations once the signed URL string is itself stable (see "Signed URL caching" below).
+
+RLS on `storage.objects`:
+
+- **`house-images` SELECT** — `authenticated` role can read an object when the first folder segment of the path matches a `hearth.houses` row they own. INSERT/UPDATE/DELETE have no `authenticated` policies; only the service-role client (workflow steps) writes.
+- **`house-photos` SELECT / INSERT / UPDATE / DELETE** — all four scoped to the owner of the matching `hearth.houses` row, using the same folder-name → house_id → owner_id join. The dashboard uses the browser's RLS-bound client for every operation; no service-role path exists for user photos.
+
+### Path vs URL
+
+`generated_image_url` and `user_image_url` on `hearth.houses` hold storage **paths** within their respective buckets, not public URLs — both buckets are private, and a permanent URL doesn't exist. The dashboard derives a signed URL whenever the active `(bucket, path, stamp)` tuple changes; the path is stable across regenerates / replaces but the stamp (`generated_image_created_at` or `user_image_uploaded_at`) moves, which forces a fresh signed-URL fetch and a new cache-key when the user genuinely wants to see different bytes.
+
+### Signed URL caching
+
+The signed URL is what the browser actually uses as the `<img src>` — but Supabase's `createSignedUrl()` returns a fresh URL string every time it's called (a new JWT signature). On a dashboard remount the helper would otherwise mint a brand-new URL, and the browser's HTTP cache (keyed on the full URL) would miss the bytes from the previous visit.
+
+`createCachedSignedUrl` solves this by caching the issued URL string in `sessionStorage` under `hearthSignedUrl:{bucket}:{path}:{stamp}` with an explicit expiration timestamp. A remount with the same `(bucket, path, stamp)` reads the cached URL string synchronously — the browser sees the same URL it saw before, the HTTP cache hits the previously-downloaded bytes, and the image renders without a network round trip. When the row's stamp moves (a regenerate, a photo replace), the cache key changes and the helper mints (and caches) a fresh URL.
+
+Two values are tuned together here: a 7-day signed-URL TTL so the cached URL stays valid through a long active session, and `cacheControl: '31536000, immutable'` on the bucket objects so the bytes themselves stay in the browser cache for the cached URL's whole lifetime. Either alone would still miss; together they give effectively-forever caching for the duration of normal usage.
+
+`sessionStorage` (not `localStorage`) is the right scope because it dies with the tab — which avoids accumulating dead URLs forever and bounds the worst-case staleness to a single browsing session.
+
+The same caching contract applies to the `hearth-documents` bucket, which backs every appliance / inventory hero photo and thumbnail. The dashboard inventory tiles and the inventory detail page sign client-side via the `useCachedSignedUrl` hook so the same URL is reused across navigations — without that, the 1-hour server-signed URLs the surfaces formerly used were fresh on every render and the immutable bucket bytes were re-downloaded on each reload. For `hearth-documents` the cache key's `stamp` is `null`: each path embeds a `{document_id}` segment that is unique per upload, so the path itself is the version key.
+
+### Model selection
+
+`HOUSE_IMAGE_MODEL` env var, read at call time. Default `openai/dall-e-3`. The Vercel AI Gateway's GA OpenAI image model is `openai/gpt-image-1` — if the gateway returns "unknown model" for DALL-E 3, flip the env var without a code change. The `providerOptions.openai` settings (`quality: "standard"`, `style: "natural"`) are DALL-E 3-specific and are silently ignored by `gpt-image-1`.
