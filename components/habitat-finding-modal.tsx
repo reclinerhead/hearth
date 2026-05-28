@@ -838,16 +838,12 @@ function OverviewCardButton({
 }
 
 function ActivityLogTimeline({ steps }: { steps: ActivityStep[] }) {
+  // The decorative centerline rule lives in a wrapper div instead of
+  // inside the <ol> — the HTML spec forbids non-<li> direct children of
+  // <ol>. Wrapper is the positioning context for the rule; the <ol>'s
+  // padding-left still owns the badge column so the math is unchanged.
   return (
-    <ol
-      className="relative flex flex-col gap-4"
-      style={{
-        // 1px rule running down the centerline of the step badges. Left
-        // offset matches the badge's half-width so the rule passes
-        // through the badge center.
-        paddingLeft: "var(--space-6)",
-      }}
-    >
+    <div className="relative">
       <span
         aria-hidden
         style={{
@@ -859,10 +855,15 @@ function ActivityLogTimeline({ steps }: { steps: ActivityStep[] }) {
           backgroundColor: "var(--color-border-subtle)",
         }}
       />
-      {steps.map((step) => (
-        <ActivityLogStep key={step.step} step={step} />
-      ))}
-    </ol>
+      <ol
+        className="flex flex-col gap-4"
+        style={{ paddingLeft: "var(--space-6)" }}
+      >
+        {steps.map((step) => (
+          <ActivityLogStep key={step.step} step={step} />
+        ))}
+      </ol>
+    </div>
   );
 }
 
