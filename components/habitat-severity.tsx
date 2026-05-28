@@ -88,28 +88,28 @@ export function discoveryRowGlyph(
 }
 
 /**
- * Two-bucket pill label for flagged severities. "concern" and "critical"
- * read heavier than "caution", so the label escalates with them. Returns
- * null for non-flagged severities — callers should not render a pill in
- * that case.
+ * Pill label for flagged severities. A single uniform "Worth knowing"
+ * across caution / concern / critical — the alert-triangle glyph and
+ * warm border already carry the "this is flagged" signal at a glance,
+ * and the escalation in tone happens in the tooltip body rather than
+ * in the short pill text. Returns null for non-flagged severities so
+ * callers don't render a pill.
  */
 export function pillLabelForSeverity(
   severity: HabitatSeverity | null | undefined,
 ): string | null {
-  if (severity === "concern" || severity === "critical") {
-    return "Worth a closer look";
-  }
-  if (severity === "caution") {
+  if (isFlaggedSeverity(severity)) {
     return "Worth knowing";
   }
   return null;
 }
 
 /**
- * Tooltip copy paired with the relevance pill. Same two-bucket split as
- * the label so future copy edits keep the heavier vs lighter framing
- * aligned. Awareness-first voice — "you'll find this on your dashboard,"
- * not "you must act."
+ * Tooltip copy paired with the relevance pill. Two buckets so the
+ * weight of a "concern"-class finding (Zone 1 radon) reads heavier in
+ * the explanation than a "caution"-class one — the pill label stays
+ * uniform but the tooltip carries the differentiation. Awareness-first
+ * voice — "you'll find this on your dashboard," not "you must act."
  */
 export function pillTooltipForSeverity(
   severity: HabitatSeverity | null | undefined,

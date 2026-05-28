@@ -55,13 +55,10 @@ describe("discoveryRowGlyph", () => {
 });
 
 describe("pillLabelForSeverity", () => {
-  it("escalates label for concern and critical", () => {
-    expect(pillLabelForSeverity("concern")).toBe("Worth a closer look");
-    expect(pillLabelForSeverity("critical")).toBe("Worth a closer look");
-  });
-
-  it("uses lighter label for caution", () => {
-    expect(pillLabelForSeverity("caution")).toBe("Worth knowing");
+  it("uses the uniform 'Worth knowing' label for every flagged severity", () => {
+    for (const s of FLAGGED) {
+      expect(pillLabelForSeverity(s), s).toBe("Worth knowing");
+    }
   });
 
   it("returns null for non-flagged severities and absent severity", () => {
