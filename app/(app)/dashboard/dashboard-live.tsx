@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { useHouseRealtime } from "@/lib/hooks/use-house-realtime";
 import {
   EditHomeDetailsModal,
@@ -517,6 +518,7 @@ export function DashboardLive({
     houseId,
     initialHouse,
   );
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [modalManuallyDismissed, setModalManuallyDismissed] = useState(false);
@@ -629,6 +631,13 @@ export function DashboardLive({
         return;
       }
       await refetch();
+      // refetch() updates this client tree's house (the hero), but the
+      // onboarding-milestones panel is server-rendered from page.tsx, so it
+      // only re-derives the `hasHomePhoto` signal on a server refresh. Without
+      // this the "home photo" milestone tile wouldn't flip to its done state
+      // until a manual reload (matching the emergency/appliance/habitat paths,
+      // which all refresh on completion).
+      router.refresh();
     } catch (err) {
       console.error("user photo upload failed", err);
       setImageError("Something went wrong uploading your photo. Try again.");
@@ -658,6 +667,10 @@ export function DashboardLive({
         return;
       }
       await refetch();
+      // Keep the server-rendered milestone panel in sync: removing the photo
+      // clears `hasHomePhoto`, so the "home photo" milestone re-surfaces as
+      // pending (detect-don't-track is self-healing) on the same refresh.
+      router.refresh();
     } catch (err) {
       console.error("user photo remove failed", err);
       setImageError("Something went wrong removing your photo. Try again.");
