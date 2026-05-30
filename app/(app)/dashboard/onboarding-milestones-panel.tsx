@@ -12,6 +12,7 @@ import {
   RETIRE_BEAT_LINE,
   type Milestone,
   type MilestoneAction,
+  type MilestoneId,
 } from "./onboarding-milestones";
 
 /**
@@ -78,6 +79,46 @@ export function OnboardingMilestonesPanel({
     }
   }, [allComplete, houseId]);
 
+  // A milestone that just flipped to complete gets one "you did it" beat: it
+  // renders with the completed treatment for this load, then drops on the next
+  // one. The panel otherwise shows only the *pending* subset, so without this
+  // a completion would simply vanish (the bug behind issue #218's completed
+  // criterion).
+  //
+  // To tell a *just*-flipped milestone from one that was already complete when
+  // the tab opened (e.g. a photo added last week — which must NOT get a false
+  // beat), we persist the set of milestones that were pending as of the last
+  // render/load, per house per tab. A complete milestone that was in that set
+  // is one that flipped since; anything complete on a cold tab has no baseline
+  // and so is never celebrated. The reveal is client-only (start empty so SSR
+  // and the first client render agree on pending-only), mirroring the retire
+  // beat. This also covers the no-live-refresh paths (photo / habitat), whose
+  // completion only surfaces on the next page load.
+  const [justFlipped, setJustFlipped] = useState<MilestoneId[]>([]);
+
+  useEffect(() => {
+    if (allComplete) return; // the all-complete grid is the retire beat's job
+    const key = `hearthMilestonesLastPending:${houseId}`;
+    const currentPending = milestones
+      .filter((m) => m.state === "pending")
+      .map((m) => m.id);
+    const completeNow = milestones
+      .filter((m) => m.state === "complete")
+      .map((m) => m.id);
+    try {
+      const raw = sessionStorage.getItem(key);
+      const prevPending: MilestoneId[] | null = raw ? JSON.parse(raw) : null;
+      if (prevPending) {
+        const flipped = completeNow.filter((id) => prevPending.includes(id));
+        if (flipped.length > 0) setJustFlipped(flipped);
+      }
+      // Re-baseline so this load's beat drops on the next one.
+      sessionStorage.setItem(key, JSON.stringify(currentPending));
+    } catch {
+      // sessionStorage parse/quota failure — skipping the beat is safe.
+    }
+  }, [allComplete, milestones, houseId]);
+
   function runAction(action: MilestoneAction) {
     switch (action) {
       case "open-uploader-appliance":
@@ -98,6 +139,15 @@ export function OnboardingMilestonesPanel({
   const view = resolvePanelView(milestones, retireBeatShown);
   const pending = pendingMilestones(milestones);
 
+  // What the grid renders this load: the pending milestones, plus any that
+  // just flipped to complete (their one-load "you did it" beat). `milestones`
+  // is already in fixed display order, so filtering it preserves that order.
+  const visibleIds = new Set<MilestoneId>([
+    ...pending.map((m) => m.id),
+    ...justFlipped,
+  ]);
+  const visible = milestones.filter((m) => visibleIds.has(m.id));
+
   return (
     <>
       {view === "cards" ? (
@@ -115,7 +165,7 @@ export function OnboardingMilestonesPanel({
             </p>
           </div>
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
-            {pending.map((milestone) => (
+            {visible.map((milestone) => (
               <MilestoneCard
                 key={milestone.id}
                 milestone={milestone}
@@ -189,7 +239,10 @@ function MilestoneCard({
     <li className="min-w-0">
       <button
         type="button"
-        onClick={onAction}
+        // A completed tile is a momentary confirmation, not an action — its
+        // click is a no-op so it can't re-open the uploader / re-scroll.
+        onClick={complete ? undefined : onAction}
+        aria-disabled={complete || undefined}
         // `block w-full` so the button fills its grid cell — without it a
         // `<button>` is inline-block and the aspect-ratio + min-height combo
         // overflows the viewport on iOS Safari (same fix as `PrimaryTile`).
