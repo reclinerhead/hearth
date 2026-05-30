@@ -107,15 +107,6 @@ export async function LifecycleOutlookPanel({ houseId }: { houseId: string }) {
           <OutlookRow key={entry.id} entry={entry} />
         ))}
       </div>
-      {rankableCount < bigTicketCount ? (
-        <p
-          className="text-small mt-3"
-          style={{ color: "var(--color-text-tertiary)" }}
-        >
-          {rankableCount} of {bigTicketCount} big-ticket items have an install
-          date. Add the rest and Hearth can sharpen what&rsquo;s coming.
-        </p>
-      ) : null}
     </PanelShell>
   );
 }
