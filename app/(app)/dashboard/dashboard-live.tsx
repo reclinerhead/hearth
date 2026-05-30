@@ -284,19 +284,32 @@ function HouseImageSurface({
   return (
     <figure className="surface overflow-hidden flex flex-col">
       <div className="relative" style={{ aspectRatio: "4 / 3" }}>
-        {isUserPhoto && imageUrl ? (
-          // next/image would gain us little here — the URL is per-signed
-          // (it changes when the path/stamp changes) and the bytes are
-          // already cache-friendly via the bucket's immutable
-          // Cache-Control header + sessionStorage URL stability.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imageUrl}
-            alt="Photo of your home"
-            width={1200}
-            height={900}
-            className="absolute inset-0 h-full w-full object-cover"
-          />
+        {isUserPhoto ? (
+          imageUrl ? (
+            // next/image would gain us little here — the URL is per-signed
+            // (it changes when the path/stamp changes) and the bytes are
+            // already cache-friendly via the bucket's immutable
+            // Cache-Control header + sessionStorage URL stability.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imageUrl}
+              alt="Photo of your home"
+              width={1200}
+              height={900}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          ) : (
+            // Photo IS on the row but the signed URL hasn't resolved
+            // client-side yet (SSR / first paint pre-effect). Render a
+            // neutral surface — NOT the SVG — so the user doesn't see
+            // a stylized illustration of a different house flash in
+            // and immediately swap out for their actual photo.
+            <div
+              aria-hidden
+              className="absolute inset-0"
+              style={{ backgroundColor: "var(--color-bg-surface)" }}
+            />
+          )
         ) : (
           <StaticHouseIllustration />
         )}
