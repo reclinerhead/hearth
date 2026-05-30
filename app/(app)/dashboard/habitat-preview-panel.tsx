@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { markHabitatReviewedAction } from "@/app/actions/houses/mark-habitat-reviewed";
 import { HabitatFindingTileCompact } from "@/components/habitat-finding-tile-compact";
 import { HabitatFindingTrigger } from "@/components/habitat-finding-trigger";
@@ -40,6 +41,7 @@ export function HabitatPreviewPanel({
   houseId: string;
   initialRows: HabitatFindingRow[];
 }) {
+  const router = useRouter();
   const rows = useHabitatFindings(houseId, initialRows);
 
   // Sticky filter: show any row that has a severity populated, regardless
@@ -97,10 +99,14 @@ export function HabitatPreviewPanel({
             className="surface-ai block w-full p-3 sm:p-4 cursor-pointer transition-colors hover:border-(--color-border-emphasis) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
             // Opening any finding stamps the "review your habitat findings"
             // onboarding milestone (issue #216). Fire-and-forget — the modal
-            // opens immediately; the milestone clears on the next dashboard
-            // load.
+            // opens immediately and doesn't wait on the write. When the stamp
+            // actually lands (the not-reviewed → reviewed transition), refresh
+            // the route so the sibling milestone panel recomputes server-side
+            // and the card drops / retire beat shows without a manual reload.
             onFirstOpen={() => {
-              void markHabitatReviewedAction(houseId);
+              void markHabitatReviewedAction(houseId).then((result) => {
+                if (result.ok && result.changed) router.refresh();
+              });
             }}
           >
             <HabitatFindingTileCompact

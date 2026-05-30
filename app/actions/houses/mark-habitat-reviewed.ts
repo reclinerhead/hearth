@@ -21,7 +21,7 @@ import type { OnboardingState } from "@/types/house";
  * no rows.
  */
 export type MarkHabitatReviewedResult =
-  | { ok: true }
+  | { ok: true; changed: boolean }
   | { ok: false; error: string };
 
 export async function markHabitatReviewedAction(
@@ -46,7 +46,8 @@ export async function markHabitatReviewedAction(
   const current = (house.onboarding_state ?? {}) as OnboardingState;
   if (current.habitat_reviewed === true) {
     // Already reviewed — skip the write to avoid churning the row.
-    return { ok: true };
+    // `changed: false` lets the caller skip a redundant refresh.
+    return { ok: true, changed: false };
   }
 
   const { error: updateError } = await supabase
@@ -58,5 +59,5 @@ export async function markHabitatReviewedAction(
     return { ok: false, error: updateError.message };
   }
 
-  return { ok: true };
+  return { ok: true, changed: true };
 }
