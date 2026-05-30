@@ -22,6 +22,22 @@ export type WaterSource = "well" | "municipal" | "shared" | "unknown";
  */
 export type WaterSystemPwsidConfidence = "user_confirmed" | "user_corrected";
 
+/**
+ * Issue #216 — Onboarding-milestone state for *view-event* milestones
+ * that have no natural data signal to derive from. Stored in the
+ * `onboarding_state jsonb` column on hearth.houses. Write-event
+ * milestones (home photo, emergency video, first appliance) are derived
+ * from their own tables and never live here.
+ *
+ * `habitat_reviewed` is set true (fire-and-forget) the first time the
+ * user opens a habitat finding modal. The blob shape is deliberately
+ * open-ended so future view-event milestones extend it without a new
+ * column — read keys defensively (a freshly-migrated row is `{}`).
+ */
+export type OnboardingState = {
+  habitat_reviewed?: boolean;
+};
+
 export type House = {
   id: string;
   owner_id: string;
@@ -89,6 +105,11 @@ export type House = {
   // Null when the user hasn't uploaded a photo (or has removed it).
   user_image_url: string | null;
   user_image_uploaded_at: string | null;
+
+  // Issue #216 — Onboarding-milestone view-event state. NOT NULL DEFAULT
+  // '{}' in the DB, so this is always an object, but read individual keys
+  // defensively (an un-migrated read or a fresh row is `{}`).
+  onboarding_state: OnboardingState;
 
   created_at: string;
   updated_at: string;

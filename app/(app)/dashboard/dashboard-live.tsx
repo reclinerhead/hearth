@@ -767,7 +767,15 @@ export function DashboardLive({
 
   return (
     <>
-      <section className="grid gap-6 md:grid-cols-2">
+      {/*
+        `id` + scroll-mt anchor the onboarding-milestones "Add a photo" CTA
+        (issue #216), which scrolls here so the user lands on the hero image
+        surface that owns the photo picker.
+      */}
+      <section
+        id="dashboard-hero"
+        className="grid gap-6 md:grid-cols-2 scroll-mt-20"
+      >
         {/* min-w-0 on grid items: see comment in app/(app)/dashboard/page.tsx. */}
         <div className="flex flex-col gap-2 min-w-0">
           <HouseImageSurface
