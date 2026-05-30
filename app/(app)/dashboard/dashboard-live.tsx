@@ -819,11 +819,6 @@ export function DashboardLive({
             ))}
           </div>
 
-          <AboutYourHouseCard
-            description={house.description}
-            onEdit={() => setEditOpen(true)}
-          />
-
           {/*
             Lifecycle outlook fills the dead space the removed Zillow
             description left beneath the facts cards (issue #212). It's a
@@ -892,70 +887,5 @@ function toEditableHouseRow(house: House): EditableHouseRow {
     purchase_date: house.purchase_date,
     water_source: house.water_source,
     basement_present: house.basement_present,
-    description: house.description,
   };
-}
-
-/**
- * "About your house" card — user-authored paragraph that lives in
- * `hearth.houses.description`. Issue #210 removed the Zillow-backed
- * briefing pipeline that used to populate this column, so the field is
- * now null on every new house. The empty state prompts the user to fill
- * it in through the edit modal (the only edit surface for the column).
- *
- * Plain `surface` rather than `surface-ai` — the content is the user's
- * own words now, not AI output, so the sparkles eyebrow would be
- * misleading.
- */
-function AboutYourHouseCard({
-  description,
-  onEdit,
-}: {
-  description: string | null;
-  onEdit: () => void;
-}) {
-  if (description) {
-    return (
-      <section className="surface p-4 sm:p-5">
-        <div className="eyebrow mb-2">About your house</div>
-        <div
-          className="text-small"
-          style={{
-            color: "var(--color-text-secondary)",
-            whiteSpace: "pre-line",
-          }}
-        >
-          {description}
-        </div>
-      </section>
-    );
-  }
-  return (
-    <section
-      className="surface p-4 sm:p-5"
-      style={{
-        borderStyle: "dashed",
-        borderColor:
-          "color-mix(in oklab, var(--color-border-subtle) 70%, transparent)",
-      }}
-    >
-      <div className="eyebrow mb-2">About your house</div>
-      <p
-        className="text-small"
-        style={{ color: "var(--color-text-secondary)" }}
-      >
-        Add a short paragraph in your own words — what makes this home
-        yours, the layout, the quirks worth remembering.
-      </p>
-      <button
-        type="button"
-        onClick={onEdit}
-        className="btn btn-ghost mt-3"
-        style={{ color: "var(--color-accent)" }}
-      >
-        <Icon name="edit" size={14} />
-        Add a description
-      </button>
-    </section>
-  );
 }
