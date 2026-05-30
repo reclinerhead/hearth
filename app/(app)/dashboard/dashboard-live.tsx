@@ -7,19 +7,17 @@ import {
   type EditableHouseRow,
 } from "@/components/edit-home-details-modal";
 import { Icon, type IconName } from "@/components/icon";
+import { StaticHouseIllustration } from "@/components/static-house-illustration";
 import { Toast } from "@/components/toast";
-import { AICard, MetricCard, PlaceholderImage } from "@/components/ui";
-import { diffHouseFacts } from "@/lib/briefing/diff";
-import type { MergeableHouseFacts } from "@/lib/briefing/merge";
+import { AICard, MetricCard } from "@/components/ui";
 import { downscaleImage } from "@/lib/house-image/downscale";
 import {
   createCachedSignedUrl,
   HOUSE_IMAGE_CACHE_CONTROL,
-  type CachedSignedUrlBucket,
 } from "@/lib/house-image/signed-url";
 import { createClient } from "@/lib/supabase/client";
-import type { BriefingStatus, House } from "@/types/house";
-import { refreshBriefing, regenerateHouseImage } from "./actions";
+import type { House } from "@/types/house";
+import { refreshBriefing } from "./actions";
 import { OnboardingDiscoveryModal } from "./onboarding-discovery-modal";
 
 // 15 MB. Modern phone photos can hit 8-12 MB, so this gives headroom
@@ -29,43 +27,6 @@ import { OnboardingDiscoveryModal } from "./onboarding-discovery-modal";
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 const MAX_UPLOAD_MB = 15;
 const USER_PHOTO_PATH = "photo";
-
-// While the briefing is finishing up, the image step is kicked off but
-// hasn't written generated_image_url yet. Keep the skeleton visible for
-// a short window after briefing_generated_at lands so we don't flash the
-// placeholder before the image arrives. Image generation typically lands
-// well inside this window; anything past it we assume failed silently
-// and surface the placeholder + regenerate affordance.
-const IMAGE_GENERATION_GRACE_MS = 90_000;
-
-type RefreshSummary =
-  | { kind: "updated"; fields: string[] }
-  | { kind: "nothing_new" };
-
-// Aggressive polling cadence while a manual refresh is in flight. Faster
-// than the hook's idle polling because the user is actively watching the
-// page and a fresh briefing typically resolves in 10-30 seconds.
-const REFRESH_POLL_INTERVAL_MS = 2000;
-// Hard cap on the active refresh window. Two minutes is well past the
-// typical workflow runtime — if we hit it, something is wedged and the
-// user should know the spinner isn't reliable.
-const REFRESH_POLL_TIMEOUT_MS = 120_000;
-
-function snapshotFacts(house: House): MergeableHouseFacts {
-  return {
-    year_built: house.year_built,
-    living_area_sqft: house.living_area_sqft,
-    lot_size_sqft: house.lot_size_sqft,
-    lot_size_acres: house.lot_size_acres,
-    bedrooms: house.bedrooms,
-    bathrooms: house.bathrooms,
-    heating_summary: house.heating_summary,
-    cooling_summary: house.cooling_summary,
-    parcel_id: house.parcel_id,
-    description: house.description,
-    description_source: house.description_source,
-  };
-}
 
 type HouseFact = {
   eyebrow: string;
@@ -164,12 +125,6 @@ function HeroAddress({
 }) {
   const display = house.nickname ?? house.address_line1;
   const region = `${house.city}, ${house.state}`;
-  // Edit sits immediately to the left of Refresh per issue #110: when
-  // the admin-only Refresh button eventually goes away, Edit reads
-  // naturally next to the address without a layout shuffle. Both are
-  // icon-only on mobile (44px tap target via the .btn min height) and
-  // gain a text label at sm+ for refresh; edit stays icon-only across
-  // viewports so it doesn't dominate the address row.
   return (
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
@@ -226,12 +181,6 @@ function EditPropertyButton({
   );
 }
 
-/**
- * Re-runs the Day One Briefing on demand. Sonar's results are stochastic,
- * so a second run usually fills in fields the first run missed. The merge
- * step (lib/briefing/merge.ts) guarantees a null from a fresh run never
- * clobbers an existing non-null value, so re-rolling is always safe.
- */
 function RefreshBriefingButton({
   onClick,
   refreshing,
@@ -267,230 +216,59 @@ function RefreshBriefingButton({
 }
 
 /**
- * Renders a metric value in one of three states depending on briefing
- * progress and whether we got a real value back:
- *  - running + no value: a small pulsing skeleton inline
- *  - completed + no value: an em-dash in tertiary text
- *  - any state with a value: render the value
+ * Metric value. With Zillow-backed briefing removed (issue #210) these
+ * cards no longer pulse a skeleton waiting on a workflow — facts now
+ * arrive only from the home-details edit modal, so the empty state IS
+ * the default and renders as a tertiary em-dash until the user fills
+ * the field in.
  */
-function FactValue({
-  value,
-  status,
-}: {
-  value: string | null;
-  status: BriefingStatus;
-}) {
+function FactValue({ value }: { value: string | null }) {
   if (value !== null) return <span>{value}</span>;
-  if (status === "running" || status === "pending") {
-    return (
-      <span
-        aria-label="Discovering"
-        className="inline-block animate-pulse rounded-sm align-middle"
-        style={{
-          width: "3.5rem",
-          height: "1em",
-          backgroundColor: "var(--color-bg-surface-raised)",
-        }}
-      />
-    );
-  }
   return <span style={{ color: "var(--color-text-tertiary)" }}>{EMPTY}</span>;
 }
 
 function FactMeta({
   meta,
   hasValue,
-  status,
 }: {
   meta: string | null | undefined;
   hasValue: boolean;
-  status: BriefingStatus;
 }) {
   if (meta) return <>{meta}</>;
-  if (!hasValue && status === "completed") return <>Not found</>;
+  if (!hasValue) return <>Add via edit</>;
   return null;
 }
 
 /**
- * Summarizes the result of a manual refresh. Uses the surface-ai treatment
- * so it visually reads as an AI-driven update, matching the AICard pattern
- * used elsewhere for assistant output.
- */
-function RefreshSummaryBanner({
-  summary,
-  onDismiss,
-}: {
-  summary: RefreshSummary;
-  onDismiss: () => void;
-}) {
-  const isUpdated = summary.kind === "updated";
-  const title = isUpdated
-    ? `Refresh found ${summary.fields.length} new ${
-        summary.fields.length === 1 ? "fact" : "facts"
-      } about your house.`
-    : "We couldn't find anything new — your house facts are up to date.";
-
-  return (
-    <div
-      className="surface-ai flex items-start gap-3 p-3 sm:p-4"
-      style={{ borderRadius: "var(--radius-lg)" }}
-      role="status"
-    >
-      <span
-        aria-hidden
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
-        style={{
-          backgroundColor:
-            "color-mix(in oklab, var(--color-accent) 16%, transparent)",
-          color: "var(--color-accent)",
-        }}
-      >
-        <Icon name={isUpdated ? "sparkles" : "circle-check"} size={16} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 500,
-            color: "var(--color-text-primary)",
-          }}
-        >
-          {title}
-        </div>
-        {isUpdated ? (
-          <div
-            className="text-small mt-0.5"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            {summary.fields.join(" · ")}
-          </div>
-        ) : null}
-      </div>
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="Dismiss"
-        className="btn btn-ghost btn-icon shrink-0"
-      >
-        <Icon name="x" size={14} />
-      </button>
-    </div>
-  );
-}
-
-/**
- * Skeleton shown in place of the generated illustration while it's
- * being produced — both during the very first generation (after a new
- * house is created) and during an explicit regenerate when no prior
- * image exists. The sparkles dot + "Generating illustration…" copy
- * makes it clear that something is actively happening, rather than
- * looking like a permanent empty state.
- */
-function GeneratingIllustrationSkeleton() {
-  return (
-    <div className="surface-raised absolute inset-0 flex items-center justify-center overflow-hidden">
-      <div
-        aria-hidden
-        className="absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(circle at 30% 25%, color-mix(in oklab, var(--color-accent) 14%, transparent), transparent 55%), radial-gradient(circle at 70% 75%, color-mix(in oklab, var(--color-info) 10%, transparent), transparent 60%)",
-        }}
-      />
-      <div className="relative flex flex-col items-center gap-3 text-center px-4">
-        <span
-          aria-hidden
-          className="inline-flex h-8 w-8 items-center justify-center rounded-full animate-pulse"
-          style={{
-            backgroundColor:
-              "color-mix(in oklab, var(--color-accent) 22%, transparent)",
-            color: "var(--color-accent)",
-          }}
-        >
-          <Icon name="sparkles" size={16} />
-        </span>
-        <span
-          className="text-small"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          Generating illustration…
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The hero image surface. Renders, in priority order:
- *  - the user-uploaded photo (when one exists for this house)
- *  - the generated illustration (when a signed URL is in hand)
- *  - the "Generating illustration…" skeleton (while we're still waiting
- *    on the first sketch to land, or a regenerate is in flight with no
- *    prior image to keep on screen)
- *  - the original placeholder (terminal state with no image — failure
- *    or pre-briefing; surfaces the regenerate button as the way out)
+ * The hero image surface. Renders one of two states:
+ *   - The user-uploaded photo when `imageUrl` is non-null (we only fetch
+ *     a signed URL for the user-photo bucket; the figcaption reads
+ *     "Your photo." and surfaces Replace / Remove affordances).
+ *   - The static SVG illustration otherwise, with the load-bearing
+ *     "Stylized illustration — not a photo of your home." disclaimer
+ *     and a prominent "Upload your own photo" CTA.
  *
- * The figcaption disclaimer + action row swaps based on which image is
- * showing:
- *   - generated → "Stylized illustration — not a photo of your home."
- *     plus an "Upload your own photo" affordance.
- *   - user photo → "Your photo." plus "Replace" / "Remove" affordances.
- *
- * The "not a photo of your home" framing is load-bearing whenever the
- * generated illustration is on screen — see TechnicalGuide.md
- * ("Generated house illustration"). The disclaimer is intentionally
- * dropped only when a real user photo replaces the sketch.
- *
- * The regenerate affordance is a floating icon button overlaid on the
- * image bottom-right. Shown only when displaying the generated image;
- * regenerating a user photo doesn't make sense, so the button hides
- * once a user photo is in place.
+ * Issue #210 removed the AI-generated architectural sketch. The disclaimer
+ * still has to be present whenever the illustration is on screen because
+ * the SVG is intentionally generic and does NOT depict the user's actual
+ * home — the contract is the same as it was with the generated sketch.
  */
 function HouseImageSurface({
-  house,
   imageUrl,
   isUserPhoto,
-  briefingJustFinished,
-  regenerating,
-  regenerateDisabled,
-  onRegenerate,
   onSelectFile,
   onRemoveUserPhoto,
   uploading,
   removing,
 }: {
-  house: House;
   imageUrl: string | null;
   isUserPhoto: boolean;
-  // Whether the briefing finished recently enough that we're still
-  // expecting the image step to land — derived in DashboardLive via a
-  // setTimeout-driven effect so the value updates without depending on
-  // an impure Date.now() read during render.
-  briefingJustFinished: boolean;
-  regenerating: boolean;
-  regenerateDisabled: boolean;
-  onRegenerate: () => void;
   onSelectFile: (file: File) => void;
   onRemoveUserPhoto: () => void;
   uploading: boolean;
   removing: boolean;
 }) {
-  const altLabel = house.nickname ?? house.address_line1;
-  const hasImage = imageUrl !== null;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const briefingActive =
-    house.briefing_status === "pending" || house.briefing_status === "running";
-
-  // "Generating illustration…" skeleton is specific to the generated
-  // illustration flow — user-photo uploads have their own overlay and
-  // the briefing's image step has no bearing on them. Suppress the
-  // skeleton during the (brief) user-photo signed-URL fetch so the
-  // copy doesn't lie about what's happening.
-  const showSkeleton =
-    !isUserPhoto &&
-    !hasImage &&
-    (regenerating || briefingActive || briefingJustFinished);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -503,41 +281,24 @@ function HouseImageSurface({
     fileInputRef.current?.click();
   }
 
-  const altText = isUserPhoto
-    ? `Photo of ${altLabel}`
-    : `Stylized architectural illustration for ${altLabel}`;
-
-  // The regenerate overlay is only meaningful while we're showing the
-  // generated illustration — replacing a user photo happens via the
-  // file picker, not via re-running the image workflow.
-  const showRegenerateOverlay = !isUserPhoto && !(showSkeleton && !hasImage);
-
   return (
     <figure className="surface overflow-hidden flex flex-col">
       <div className="relative" style={{ aspectRatio: "4 / 3" }}>
-        {hasImage ? (
+        {isUserPhoto && imageUrl ? (
           // next/image would gain us little here — the URL is per-signed
           // (it changes when the path/stamp changes) and the bytes are
           // already cache-friendly via the bucket's immutable
           // Cache-Control header + sessionStorage URL stability.
-          //
-          // width/height declare the image's intrinsic 4:3 ratio so the
-          // browser's preload scanner can prioritize it before layout
-          // resolves. Values match the upload downscale target in
-          // lib/house-image/downscale.ts; the rendered size is still
-          // driven by the parent's aspect-ratio + h-full w-full.
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={imageUrl ?? ""}
-            alt={altText}
+            src={imageUrl}
+            alt="Photo of your home"
             width={1200}
             height={900}
             className="absolute inset-0 h-full w-full object-cover"
           />
-        ) : showSkeleton ? (
-          <GeneratingIllustrationSkeleton />
         ) : (
-          <PlaceholderImage ratio="4 / 3" label={altLabel} icon="home" />
+          <StaticHouseIllustration />
         )}
 
         {uploading || removing ? (
@@ -553,10 +314,7 @@ function HouseImageSurface({
             aria-live="polite"
           >
             <div className="flex items-center gap-2">
-              <span
-                aria-hidden
-                className="animate-spin inline-flex"
-              >
+              <span aria-hidden className="animate-spin inline-flex">
                 <Icon name="refresh-cw" size={16} />
               </span>
               <span
@@ -567,36 +325,6 @@ function HouseImageSurface({
               </span>
             </div>
           </div>
-        ) : null}
-
-        {showRegenerateOverlay ? (
-          <button
-            type="button"
-            onClick={onRegenerate}
-            disabled={regenerateDisabled}
-            aria-label="Regenerate illustration"
-            title={
-              regenerating
-                ? "Regenerating illustration…"
-                : "Regenerate illustration"
-            }
-            className="btn btn-ghost btn-icon absolute bottom-2 right-2"
-            style={{
-              backgroundColor:
-                "color-mix(in oklab, var(--color-bg-base) 70%, transparent)",
-              backdropFilter: "blur(8px)",
-              WebkitBackdropFilter: "blur(8px)",
-              opacity: regenerateDisabled ? 0.7 : 1,
-            }}
-          >
-            <span
-              aria-hidden
-              className={regenerating ? "animate-spin" : undefined}
-              style={{ display: "inline-flex" }}
-            >
-              <Icon name="refresh-cw" size={14} />
-            </span>
-          </button>
         ) : null}
       </div>
       <figcaption
@@ -670,13 +398,12 @@ function HouseImageSurface({
               type="button"
               onClick={openFilePicker}
               disabled={uploading || removing}
-              className="text-small inline-flex items-center gap-1 underline underline-offset-2"
+              className="btn btn-primary"
               style={{
-                color: "var(--color-text-secondary)",
                 opacity: uploading || removing ? 0.6 : 1,
               }}
             >
-              <Icon name="upload" size={12} />
+              <Icon name="upload" size={14} />
               Upload your own photo
             </button>
           </>
@@ -686,94 +413,32 @@ function HouseImageSurface({
   );
 }
 
-function BriefingErrorBanner({ message }: { message: string | null }) {
-  return (
-    <div
-      className="surface flex items-start gap-3 p-3 sm:p-4"
-      style={{
-        backgroundColor:
-          "color-mix(in oklab, var(--color-danger) 10%, var(--color-bg-surface))",
-        borderColor:
-          "color-mix(in oklab, var(--color-danger) 28%, var(--color-border-subtle))",
-      }}
-    >
-      <span
-        aria-hidden
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
-        style={{
-          backgroundColor:
-            "color-mix(in oklab, var(--color-danger) 16%, transparent)",
-          color: "var(--color-danger)",
-        }}
-      >
-        <Icon name="alert-triangle" size={16} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 500,
-            color: "var(--color-text-primary)",
-          }}
-        >
-          We had trouble pulling all the public data for your house.
-        </div>
-        <div
-          className="text-small mt-0.5"
-          style={{ color: "var(--color-text-tertiary)" }}
-        >
-          Use Refresh above to try again.
-          {message ? (
-            <>
-              {" "}
-              <span title={message}>{message}</span>
-            </>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /**
  * First-run discovery modal mount decision.
  *
  * The modal renders on the very first dashboard visit after onboarding —
- * specifically when both of these are true:
- *   1. house.briefing_generated_at IS NULL OR briefing is still
- *      pending / running (the briefing hasn't yet completed once).
- *   2. No habitat_findings rows exist for this house at all.
+ * specifically when no habitat_findings rows exist for this house at all.
+ * Once any row exists, the modal is gone for good. Issue #210 removed the
+ * briefing_status condition that used to gate this — the Zillow-backed
+ * briefing pipeline is gone, so habitat row existence is the only signal
+ * we still need.
  *
- * The combination is sufficient — once either flips false, the modal is
- * gone for good even on subsequent visits / logout-login / refresh, which
- * is exactly the spec.
- *
- * The habitat-existence probe checks "any row exists" rather than
- * "any *completed* row exists." The habitat orchestrator's per-module
- * step upserts each row with `status='running'` before the check
- * itself runs (`workflows/habitat.ts`), so during a Refresh House
- * Facts run every habitat row briefly transitions
+ * The probe checks "any row exists" rather than "any *completed* row
+ * exists." The habitat orchestrator's per-module step upserts each row
+ * with `status='running'` before the check itself runs, so during a
+ * Refresh run every habitat row briefly transitions
  * completed → running → completed. Filtering by `status='completed'`
- * would flip the probe to false in that window, which combined with
- * the parallel `briefing_status='running'` would re-open the
- * onboarding modal on top of the refresh modal for established users.
- * "Any row exists" is the right signal: once the orchestrator has
- * *ever* run for this house, rows exist and the user is not a
- * first-run user, regardless of any subsequent refresh cycling them
- * through `running`.
- *
- * The effect's dependency is `[houseId]`, not `[house]`, so the probe
- * runs once per house rather than re-running on every Realtime push —
- * the first-run determination is meant to be stable across the
- * session, and re-querying on every house update was both wasteful and
- * the mechanism that exposed the bug above.
+ * would flip the probe to false in that window and re-open the
+ * onboarding modal on top of the refresh modal. "Any row exists" is the
+ * right signal: once the orchestrator has *ever* run for this house,
+ * rows exist and the user is not a first-run user.
  *
  * sessionStorage acts as a belt-and-suspenders dismissal flag against
- * re-mount loops within a single tab; the data conditions remain the
- * source of truth. Returns `undefined` while we're still checking
- * habitat_findings — the modal mounts only once we've confirmed it
- * should — so a stale "no findings yet" race doesn't briefly flash the
- * modal for a returning user.
+ * re-mount loops within a single tab; habitat row existence is still
+ * the source of truth. Returns `ready: false` while we're still
+ * checking habitat_findings — the modal mounts only once we've
+ * confirmed it should — so a stale "no findings yet" race doesn't
+ * briefly flash the modal for a returning user.
  */
 function useFirstRunDiscoveryModal(house: House | null): {
   ready: boolean;
@@ -783,8 +448,6 @@ function useFirstRunDiscoveryModal(house: House | null): {
   const [dismissedInSession, setDismissedInSession] = useState(false);
   const houseId = house?.id ?? null;
 
-  // sessionStorage check has to live in an effect — it's client-only and
-  // we're SSR-safe by default.
   useEffect(() => {
     if (!houseId) return;
     const flag = sessionStorage.getItem(
@@ -814,13 +477,7 @@ function useFirstRunDiscoveryModal(house: House | null): {
   if (hasHabitatRows === null) return { ready: false, show: false };
   if (dismissedInSession) return { ready: true, show: false };
 
-  const briefingNotFinished =
-    house.briefing_generated_at === null ||
-    house.briefing_status === "pending" ||
-    house.briefing_status === "running";
-
-  const show = briefingNotFinished && !hasHabitatRows;
-  return { ready: true, show };
+  return { ready: true, show: !hasHabitatRows };
 }
 
 export function DashboardLive({
@@ -831,8 +488,8 @@ export function DashboardLive({
   // Server-rendered snapshot of the house row. Seeding the hook with
   // this skips the client-side initial fetch and lets first paint be
   // the final dashboard layout — no "Loading your house" flicker. The
-  // hook's Realtime subscription, polling fallback, and same-tab
-  // refresh listener still run normally on top of the seed.
+  // hook's Realtime subscription and same-tab refresh listener still
+  // run normally on top of the seed.
   initialHouse: House;
 }) {
   const { house, loading, error, refetch } = useHouseRealtime(
@@ -845,8 +502,7 @@ export function DashboardLive({
   const firstRun = useFirstRunDiscoveryModal(house);
 
   // Property Details edit modal — opened from the pencil button next
-  // to the address. Moved here from the top-nav account dropdown per
-  // issue #110. The delete-property flow lives inside this modal's
+  // to the address. The delete-property flow lives inside this modal's
   // danger zone; on a failed delete the modal closes itself and
   // bubbles the error up via `setDeleteToast` so the user lands back
   // on the dashboard with a top-center toast.
@@ -855,157 +511,46 @@ export function DashboardLive({
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   // The image surface shows the user's uploaded photo when one exists,
-  // and falls back to the generated illustration. Either way the
-  // dashboard fetches a signed URL for the active bucket+path, keyed by
-  // a stamp (uploaded_at or generated_at) so a replace / regenerate
-  // forces a refetch.
+  // and falls back to the static SVG illustration otherwise (issue #210
+  // dropped the AI-generated sketch). We only need to resolve a signed
+  // URL when there is a user photo — the SVG is inline and stamp-free.
   const userImagePath = house?.user_image_url ?? null;
   const userImageStamp = house?.user_image_uploaded_at ?? null;
-  const generatedImagePath = house?.generated_image_url ?? null;
-  const generatedImageStamp = house?.generated_image_created_at ?? null;
   const isUserPhoto = userImagePath !== null;
-  const activeBucket: CachedSignedUrlBucket = isUserPhoto
-    ? "house-photos"
-    : "house-images";
-  const activePath = isUserPhoto ? userImagePath : generatedImagePath;
-  const activeStamp = isUserPhoto ? userImageStamp : generatedImageStamp;
 
-  // Signed URL for whichever image is active. Stored as a
-  // (bucket, path, stamp, url) tuple so a stale URL (any field doesn't
-  // match the current row) never renders. The createCachedSignedUrl
-  // helper itself caches per (bucket, path, stamp) in sessionStorage,
-  // so nav-away-and-back reuses the same URL and the browser HTTP
-  // cache actually hits.
   const [imageUrlEntry, setImageUrlEntry] = useState<{
-    bucket: CachedSignedUrlBucket;
     path: string;
     stamp: string | null;
     url: string;
   } | null>(null);
   useEffect(() => {
-    if (!activePath) return;
+    if (!userImagePath) return;
     let cancelled = false;
     (async () => {
       const supabase = createClient();
       const url = await createCachedSignedUrl(
         supabase,
-        activeBucket,
-        activePath,
-        activeStamp,
+        "house-photos",
+        userImagePath,
+        userImageStamp,
       );
       if (cancelled || !url) return;
       setImageUrlEntry({
-        bucket: activeBucket,
-        path: activePath,
-        stamp: activeStamp,
+        path: userImagePath,
+        stamp: userImageStamp,
         url,
       });
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeBucket, activePath, activeStamp]);
+  }, [userImagePath, userImageStamp]);
   const imageUrl =
     imageUrlEntry &&
-    imageUrlEntry.bucket === activeBucket &&
-    imageUrlEntry.path === activePath &&
-    imageUrlEntry.stamp === activeStamp
+    imageUrlEntry.path === userImagePath &&
+    imageUrlEntry.stamp === userImageStamp
       ? imageUrlEntry.url
       : null;
-
-  // "Briefing just finished" — true for IMAGE_GENERATION_GRACE_MS after
-  // briefing_generated_at lands, which is the window during which we
-  // expect the image step to be running. Driven by a timer so the value
-  // updates without an impure Date.now() call during render.
-  const briefingGeneratedAt = house?.briefing_generated_at ?? null;
-  const [briefingJustFinished, setBriefingJustFinished] = useState(false);
-  useEffect(() => {
-    if (!briefingGeneratedAt) {
-      setBriefingJustFinished(false);
-      return;
-    }
-    const elapsed = Date.now() - new Date(briefingGeneratedAt).getTime();
-    if (elapsed >= IMAGE_GENERATION_GRACE_MS) {
-      setBriefingJustFinished(false);
-      return;
-    }
-    setBriefingJustFinished(true);
-    const remaining = IMAGE_GENERATION_GRACE_MS - elapsed;
-    const t = setTimeout(() => setBriefingJustFinished(false), remaining);
-    return () => clearTimeout(t);
-  }, [briefingGeneratedAt]);
-
-  // Regenerate state. We snapshot the generated_image_created_at at
-  // click time so we can detect when the realtime row advances past it
-  // — that's the moment we know the new image landed and we can drop
-  // the "regenerating" indicator. The transition handles the in-flight
-  // span of the server action call itself.
-  const [isRegeneratePending, startRegenerateTransition] = useTransition();
-  const [regenerateError, setRegenerateError] = useState<string | null>(null);
-  const [regenerateSnapshot, setRegenerateSnapshot] = useState<string | null>(
-    null,
-  );
-  const regenerateRowStamp = house?.generated_image_created_at ?? null;
-  useEffect(() => {
-    if (regenerateSnapshot === null) return;
-    // Row stamp moved past the snapshot — the new image landed and we
-    // can clear the "regenerating" indicator. This is the legitimate
-    // "synchronize with external system (row updated)" pattern that
-    // useEffect+setState exists for.
-    if (regenerateRowStamp && regenerateRowStamp !== regenerateSnapshot) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setRegenerateSnapshot(null);
-    }
-  }, [regenerateRowStamp, regenerateSnapshot]);
-  const regenerating = isRegeneratePending || regenerateSnapshot !== null;
-  function handleRegenerate() {
-    if (!house) return;
-    setRegenerateError(null);
-    setRegenerateSnapshot(house.generated_image_created_at);
-    startRegenerateTransition(async () => {
-      const result = await regenerateHouseImage(houseId);
-      if (!result.ok) {
-        setRegenerateError(result.error);
-        setRegenerateSnapshot(null);
-      }
-    });
-  }
-
-  // Drive the image swap even when Realtime is dead. The hook's status-
-  // based polling fallback only activates while briefing_status is non-
-  // terminal — regenerate doesn't touch briefing_status, so nothing
-  // would otherwise pick up the new generated_image_created_at on a
-  // browser blocking the realtime websocket. Mirrors the briefing-
-  // refresh polling loop. Bounded so a stuck workflow doesn't pin the
-  // spinner forever.
-  useEffect(() => {
-    if (regenerateSnapshot === null) return;
-
-    const startTime = Date.now();
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function tick() {
-      if (cancelled) return;
-      if (Date.now() - startTime > REFRESH_POLL_TIMEOUT_MS) {
-        setRegenerateError(
-          "Regeneration is taking longer than expected. You can try again.",
-        );
-        setRegenerateSnapshot(null);
-        return;
-      }
-      await refetch();
-      if (cancelled) return;
-      timer = setTimeout(tick, REFRESH_POLL_INTERVAL_MS);
-    }
-
-    timer = setTimeout(tick, 800);
-
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [regenerateSnapshot, refetch]);
 
   // User-photo upload + remove state. We do the storage upload from the
   // browser via the RLS-bound client and follow with the
@@ -1100,182 +645,49 @@ export function DashboardLive({
     }
   }
 
-  // Same polling-fallback story for the first-time generation. Once the
-  // briefing flips to 'completed', the hook's status-based polling shuts
-  // off — but the image step is still running for another 10-30s, and a
-  // browser with a blocked Realtime socket would otherwise not pick up
-  // the row's eventual generated_image_url stamp. Polls while we're in
-  // the post-briefing grace window AND no image has landed yet; the
-  // briefingJustFinished timer naturally stops this when the window
-  // expires, and the image landing flips the condition false the moment
-  // a refetch() returns the populated row.
-  const isAwaitingFirstImage =
-    briefingJustFinished && generatedImagePath === null;
-  useEffect(() => {
-    if (!isAwaitingFirstImage) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    async function tick() {
-      if (cancelled) return;
-      await refetch();
-      if (cancelled) return;
-      timer = setTimeout(tick, REFRESH_POLL_INTERVAL_MS);
-    }
-    timer = setTimeout(tick, 800);
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [isAwaitingFirstImage, refetch]);
-
   // One-shot latch for the discovery modal. The first-run detection in
   // useFirstRunDiscoveryModal computes `show` from live data conditions —
-  // but those conditions flip false the moment the briefing workflow
-  // completes (briefing_generated_at gets set in the same write that
-  // marks status='completed'), which would unmount the modal mid-narration
-  // and never let the user see the radon line or click the button. The
-  // data conditions are the right gate for "should this open?" but once
-  // open, the button is the only thing that closes it (per spec).
+  // those conditions flip false the moment the habitat orchestrator
+  // writes its first row, which would unmount the modal mid-narration and
+  // never let the user see the radon line or click the button. The data
+  // conditions are the right gate for "should this open?" but once open,
+  // the button is the only thing that closes it (per spec).
   const [hasOpenedDiscoveryModal, setHasOpenedDiscoveryModal] = useState(false);
   useEffect(() => {
     if (firstRun.ready && firstRun.show) setHasOpenedDiscoveryModal(true);
   }, [firstRun.ready, firstRun.show]);
-  // Snapshot of the row at click time, kept until the workflow reaches a
-  // terminal state so we can diff before vs after and tell the user what
-  // the refresh actually changed. We also capture briefing_generated_at
-  // so we can tell "the workflow has actually completed a new run" apart
-  // from "briefing_status is still 'completed' from the previous run."
-  // Without that guard the effect below would fire immediately on click.
-  const [pendingRefresh, setPendingRefresh] = useState<{
-    snapshot: MergeableHouseFacts;
-    generatedAt: string | null;
-  } | null>(null);
-  const [summary, setSummary] = useState<RefreshSummary | null>(null);
+
   // Click-time baseline for the refresh-mode discovery modal. Non-null
   // when the modal should mount; cleared when the user dismisses or
-  // the refresh action errors. Holds the ISO timestamp captured
-  // immediately before the refreshBriefing call so the modal can gate
-  // its phase advances on the rows' timestamps exceeding this.
+  // the refresh action errors. The modal compares habitat-finding
+  // `checked_at` timestamps against this baseline to know "this is
+  // the new run that just started" vs. "the previous run's terminal
+  // status."
   const [refreshModalSessionStartedAt, setRefreshModalSessionStartedAt] =
     useState<string | null>(null);
 
-  // Refresh is "in flight" while we're waiting for a new run to finish OR
-  // the realtime row currently shows a non-terminal status. pendingRefresh
-  // is the authoritative signal for "we clicked Refresh and haven't seen
-  // it complete yet" — using it (instead of only briefingInFlight) means
-  // the spinner stays on even if Realtime is blocked and we haven't yet
-  // observed the status flip to 'running'.
-  const briefingInFlight =
-    house?.briefing_status === "running" ||
-    house?.briefing_status === "pending";
   // The refresh modal is the user-facing "this is in progress" signal
   // once it mounts — keep the button disabled while it's open so a
   // double-click can't fire a second refresh on top of the first.
-  // Server-side already guards via the briefing_status === 'running'
-  // short-circuit in refreshBriefing, but this avoids the UI flicker
-  // entirely.
-  const refreshing =
-    isPending ||
-    briefingInFlight ||
-    pendingRefresh !== null ||
-    refreshModalSessionStartedAt !== null;
+  const refreshing = isPending || refreshModalSessionStartedAt !== null;
 
   function handleRefresh() {
     if (!house) return;
     setRefreshError(null);
-    setSummary(null);
-    setPendingRefresh({
-      snapshot: snapshotFacts(house),
-      generatedAt: house.briefing_generated_at,
-    });
     // Capture the click timestamp BEFORE firing the action. The
     // discovery modal in refresh mode uses this as its baseline to
-    // tell "this is the new run that just started" apart from "this
-    // is the previous run's still-terminal status." Without the
-    // baseline the modal would see the row currently shows
-    // briefing_status=completed (from the prior run) and skip the
-    // briefing-checking phase the moment it mounted.
+    // tell "this is the new run that just started" apart from "the
+    // previous run's still-terminal habitat findings."
     setRefreshModalSessionStartedAt(new Date().toISOString());
     startTransition(async () => {
       const result = await refreshBriefing(houseId);
       if (!result.ok) {
         setRefreshError(result.error);
-        // The workflow never started, so there's nothing to diff against.
-        setPendingRefresh(null);
-        // Also tear down the modal — nothing for it to wait on.
+        // Action never started — tear down the modal, nothing to wait on.
         setRefreshModalSessionStartedAt(null);
       }
     });
   }
-
-  // Watch for the workflow reaching a terminal state. On 'completed', diff
-  // the snapshot we captured at click time against the current row and
-  // surface a summary — but only when briefing_generated_at has actually
-  // moved forward, so the click itself doesn't fire the summary against
-  // the still-stale 'completed' from the previous run. On 'failed', drop
-  // the snapshot — the failed banner already covers the error case.
-  useEffect(() => {
-    if (!house || !pendingRefresh) return;
-    if (house.briefing_status === "completed") {
-      if (house.briefing_generated_at === pendingRefresh.generatedAt) return;
-      const changes = diffHouseFacts(
-        pendingRefresh.snapshot,
-        snapshotFacts(house),
-      );
-      setSummary(
-        changes.length > 0
-          ? { kind: "updated", fields: changes }
-          : { kind: "nothing_new" },
-      );
-      setPendingRefresh(null);
-    } else if (house.briefing_status === "failed") {
-      setPendingRefresh(null);
-    }
-  }, [house, pendingRefresh]);
-
-  // Drive the page through a manual refresh even when Realtime is dead.
-  // The hook's own status-based polling can't help here because at click
-  // time the row still shows briefing_status='completed' from the previous
-  // run, so the hook has nothing to react to. We poll aggressively for the
-  // whole pending-refresh window, which (a) discovers the transition to
-  // 'running' so briefingInFlight flips and skeletons appear, and (b)
-  // discovers the eventual transition back to 'completed' with a fresh
-  // generated_at, which is what fires the summary banner.
-  //
-  // Bounded at REFRESH_POLL_TIMEOUT_MS so a stuck workflow can't pin the
-  // spinner forever — on timeout we surface a soft error and let the user
-  // try again.
-  useEffect(() => {
-    if (!pendingRefresh) return;
-
-    const start = Date.now();
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function tick() {
-      if (cancelled) return;
-      if (Date.now() - start > REFRESH_POLL_TIMEOUT_MS) {
-        setRefreshError(
-          "Refresh is taking longer than expected. You can try again.",
-        );
-        setPendingRefresh(null);
-        return;
-      }
-      await refetch();
-      if (cancelled) return;
-      timer = setTimeout(tick, REFRESH_POLL_INTERVAL_MS);
-    }
-
-    // Fire the first poll quickly — the workflow's startBriefing step
-    // typically flips status within a second or two and we want the
-    // skeletons to appear without a long visual lag.
-    timer = setTimeout(tick, 800);
-
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [pendingRefresh, refetch]);
 
   if (loading) {
     return (
@@ -1312,7 +724,6 @@ export function DashboardLive({
   }
 
   const facts = buildFacts(house);
-  const status = house.briefing_status;
 
   function handleDiscoveryModalDismiss() {
     // sessionStorage is a re-mount safety net — the data conditions stay
@@ -1339,15 +750,8 @@ export function DashboardLive({
         {/* min-w-0 on grid items: see comment in app/(app)/dashboard/page.tsx. */}
         <div className="flex flex-col gap-2 min-w-0">
           <HouseImageSurface
-            house={house}
             imageUrl={imageUrl}
             isUserPhoto={isUserPhoto}
-            briefingJustFinished={briefingJustFinished}
-            regenerating={regenerating}
-            regenerateDisabled={
-              regenerating || isPending || imageActionState !== "idle"
-            }
-            onRegenerate={handleRegenerate}
             onSelectFile={handleUploadFile}
             onRemoveUserPhoto={handleRemoveUserPhoto}
             uploading={imageActionState === "uploading"}
@@ -1364,13 +768,6 @@ export function DashboardLive({
           ) : null}
         </div>
         <div className="flex flex-col gap-3 min-w-0">
-          {summary ? (
-            <RefreshSummaryBanner
-              summary={summary}
-              onDismiss={() => setSummary(null)}
-            />
-          ) : null}
-
           <HeroAddress
             house={house}
             onRefresh={handleRefresh}
@@ -1378,10 +775,6 @@ export function DashboardLive({
             onEdit={() => setEditOpen(true)}
             editTriggerRef={editTriggerRef}
           />
-
-          {status === "failed" ? (
-            <BriefingErrorBanner message={house.briefing_error} />
-          ) : null}
 
           {refreshError ? (
             <div
@@ -1393,47 +786,20 @@ export function DashboardLive({
             </div>
           ) : null}
 
-          {regenerateError ? (
-            <div
-              className="text-small"
-              style={{ color: "var(--color-danger)" }}
-              role="status"
-            >
-              {regenerateError}
-            </div>
-          ) : null}
-
           <div className="grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-3">
             {facts.map((f) => (
               <MetricCard
                 key={f.eyebrow}
                 eyebrow={f.eyebrow}
                 icon={f.icon}
-                value={<FactValue value={f.value} status={status} />}
-                meta={
-                  <FactMeta
-                    meta={f.meta}
-                    hasValue={f.value !== null}
-                    status={status}
-                  />
-                }
+                value={<FactValue value={f.value} />}
+                meta={<FactMeta meta={f.meta} hasValue={f.value !== null} />}
               />
             ))}
           </div>
 
           {house.description ? (
             <AICard eyebrow="About your house">{house.description}</AICard>
-          ) : status === "running" || status === "pending" ? (
-            <div
-              className="surface p-4 text-small flex items-center gap-2"
-              style={{ color: "var(--color-text-tertiary)" }}
-            >
-              <span
-                className="inline-block h-2 w-2 animate-pulse rounded-full"
-                style={{ backgroundColor: "var(--color-accent)" }}
-              />
-              Discovering details about your house…
-            </div>
           ) : null}
         </div>
       </section>

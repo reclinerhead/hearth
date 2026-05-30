@@ -4,7 +4,6 @@ import {
   BRIEFING_SOURCE_LABEL,
   buildRowList,
   fallbackOnboardingMessage,
-  type BriefingRowContent,
   type Phase,
 } from "./onboarding-discovery-rows";
 
@@ -33,10 +32,9 @@ const SUPERFUND = mod("superfund", "Superfund proximity");
 const MODULES: HabitatModule[] = [RADON, FLOOD, SUPERFUND];
 const EXPECTED_LENGTH = 1 + MODULES.length;
 
-const BRIEFING: BriefingRowContent = {
-  lead: "Home data found",
-  secondary: "built in 1934, 2,210 sq ft",
-};
+const BRIEFING_CHECKING_LEAD = "Setting up your home…";
+const BRIEFING_DONE_LEAD = "Your home has been set up.";
+
 const MODULE_LINES = {
   0: "Zone 1 radon — adding to your home's concerns",
   1: "Outside the FEMA flood plain — good news",
@@ -65,12 +63,11 @@ function phasesToCheck(): Phase[] {
 }
 
 describe("buildRowList", () => {
-  it("returns 1 briefing row + 1 row per module in every phase (issue #108)", () => {
+  it("returns 1 setup row + 1 row per module in every phase (issue #108)", () => {
     for (const phase of phasesToCheck()) {
       const rows = buildRowList(
         phase,
         MODULES,
-        BRIEFING,
         MODULE_LINES,
         MODULE_SEVERITIES,
       );
@@ -80,12 +77,11 @@ describe("buildRowList", () => {
     }
   });
 
-  it("preserves row order (briefing first, then modules in registry order)", () => {
+  it("preserves row order (setup first, then modules in registry order)", () => {
     for (const phase of phasesToCheck()) {
       const rows = buildRowList(
         phase,
         MODULES,
-        BRIEFING,
         MODULE_LINES,
         MODULE_SEVERITIES,
       );
@@ -99,113 +95,56 @@ describe("buildRowList", () => {
   });
 
   it("renders every row idle during intro so the surface locks at first paint", () => {
-    const rows = buildRowList({ kind: "intro" }, MODULES, null, {}, {});
+    const rows = buildRowList({ kind: "intro" }, MODULES, {}, {});
     expect(rows.every((r) => r.state === "idle")).toBe(true);
     expect(rows[0]).toEqual({
       id: "briefing",
       state: "idle",
       eyebrow: BRIEFING_SOURCE_LABEL,
-      lead: "Checking public home records…",
+      lead: BRIEFING_CHECKING_LEAD,
     });
     expect(rows[1].lead).toBe("Checking radon zone…");
     expect(rows[2].lead).toBe("Checking fema flood zone…");
   });
 
-  it("flips only the briefing row to checking during briefing-checking", () => {
-    const rows = buildRowList(
-      { kind: "briefing-checking" },
-      MODULES,
-      null,
-      {},
-      {},
-    );
+  it("flips only the setup row to checking during briefing-checking", () => {
+    const rows = buildRowList({ kind: "briefing-checking" }, MODULES, {}, {});
     expect(rows[0]).toEqual({
       id: "briefing",
       state: "checking",
       eyebrow: BRIEFING_SOURCE_LABEL,
-      lead: "Checking public home records…",
+      lead: BRIEFING_CHECKING_LEAD,
     });
     expect(rows.slice(1).every((r) => r.state === "idle")).toBe(true);
   });
 
-  it("renders the briefing row with lead + secondary in briefing-result and keeps modules idle", () => {
-    const rows = buildRowList(
-      { kind: "briefing-result" },
-      MODULES,
-      BRIEFING,
-      {},
-      {},
-    );
+  it("renders the setup row done with the static confirmation copy in briefing-result", () => {
+    const rows = buildRowList({ kind: "briefing-result" }, MODULES, {}, {});
     expect(rows[0]).toEqual({
       id: "briefing",
       state: "done",
       eyebrow: BRIEFING_SOURCE_LABEL,
-      lead: BRIEFING.lead,
-      secondary: BRIEFING.secondary,
-    });
-    expect(rows.slice(1).every((r) => r.state === "idle")).toBe(true);
-  });
-
-  it("omits the secondary line when the briefing has no concrete facts to surface", () => {
-    const thin: BriefingRowContent = {
-      lead: "Public records checked",
-      secondary: null,
-    };
-    const rows = buildRowList(
-      { kind: "briefing-result" },
-      MODULES,
-      thin,
-      {},
-      {},
-    );
-    expect(rows[0]).toEqual({
-      id: "briefing",
-      state: "done",
-      eyebrow: BRIEFING_SOURCE_LABEL,
-      lead: "Public records checked",
+      lead: BRIEFING_DONE_LEAD,
     });
     expect(rows[0].secondary).toBeUndefined();
-  });
-
-  it("renders the same row state in property-questions as in briefing-result (briefing done, modules idle) — issue #142", () => {
-    const rows = buildRowList(
-      { kind: "property-questions" },
-      MODULES,
-      BRIEFING,
-      {},
-      {},
-    );
-    expect(rows[0]).toEqual({
-      id: "briefing",
-      state: "done",
-      eyebrow: BRIEFING_SOURCE_LABEL,
-      lead: BRIEFING.lead,
-      secondary: BRIEFING.secondary,
-    });
     expect(rows.slice(1).every((r) => r.state === "idle")).toBe(true);
   });
 
-  it("falls back to a single-line lead when the briefing content is null", () => {
-    const rows = buildRowList(
-      { kind: "briefing-result" },
-      MODULES,
-      null,
-      {},
-      {},
-    );
+  it("renders the same row state in property-questions as in briefing-result (setup done, modules idle) — issue #142", () => {
+    const rows = buildRowList({ kind: "property-questions" }, MODULES, {}, {});
     expect(rows[0]).toEqual({
       id: "briefing",
       state: "done",
       eyebrow: BRIEFING_SOURCE_LABEL,
-      lead: "Public records checked",
+      lead: BRIEFING_DONE_LEAD,
     });
+    expect(rows.slice(1).every((r) => r.state === "idle")).toBe(true);
   });
 
   it("marks the active module as checking and all later modules as idle (module-checking)", () => {
     const rows = buildRowList(
       { kind: "module-checking", index: 1 },
       MODULES,
-      BRIEFING,
       { 0: MODULE_LINES[0] },
       { 0: "concern" },
     );
@@ -235,7 +174,6 @@ describe("buildRowList", () => {
     const rows = buildRowList(
       { kind: "module-result", index: 1 },
       MODULES,
-      BRIEFING,
       { 0: MODULE_LINES[0], 1: MODULE_LINES[1] },
       { 0: "concern", 1: "favorable" },
     );
@@ -253,7 +191,6 @@ describe("buildRowList", () => {
     const rows = buildRowList(
       { kind: "done" },
       MODULES,
-      BRIEFING,
       MODULE_LINES,
       MODULE_SEVERITIES,
     );
@@ -267,14 +204,13 @@ describe("buildRowList", () => {
     const rows = buildRowList(
       { kind: "done" },
       MODULES,
-      BRIEFING,
       MODULE_LINES,
       MODULE_SEVERITIES,
     );
     expect(rows[1].severity).toBe("concern");
     expect(rows[2].severity).toBe("favorable");
     expect(rows[3].severity).toBe("favorable");
-    // Briefing row never carries severity.
+    // Setup row never carries severity.
     expect(rows[0].severity).toBeUndefined();
   });
 
@@ -282,7 +218,6 @@ describe("buildRowList", () => {
     const rows = buildRowList(
       { kind: "done" },
       MODULES,
-      BRIEFING,
       MODULE_LINES,
       // Only index 0 has a severity — the others (e.g. 'failed' rows
       // that never produced one, or rows mid-write) get no severity.
@@ -297,7 +232,6 @@ describe("buildRowList", () => {
     const rows = buildRowList(
       { kind: "done" },
       MODULES,
-      BRIEFING,
       // No moduleLines at all — covers the realtime-late-arrival edge case
       // where the modal jumps to done before every line was captured.
       {},
@@ -309,20 +243,15 @@ describe("buildRowList", () => {
   });
 
   it("treats moduleSeverities as optional (defaults to no severity on any row)", () => {
-    const rows = buildRowList(
-      { kind: "done" },
-      MODULES,
-      BRIEFING,
-      MODULE_LINES,
-    );
+    const rows = buildRowList({ kind: "done" }, MODULES, MODULE_LINES);
     for (const row of rows) {
       expect(row.severity).toBeUndefined();
     }
   });
 
-  it("returns just the briefing row when no modules are applicable", () => {
+  it("returns just the setup row when no modules are applicable", () => {
     for (const phase of phasesToCheck()) {
-      const rows = buildRowList(phase, [], BRIEFING, {}, {});
+      const rows = buildRowList(phase, [], {}, {});
       expect(rows).toHaveLength(1);
       expect(rows[0].id).toBe("briefing");
     }
@@ -333,7 +262,6 @@ describe("buildRowList", () => {
       const rows = buildRowList(
         phase,
         MODULES,
-        BRIEFING,
         MODULE_LINES,
         MODULE_SEVERITIES,
       );
@@ -352,7 +280,6 @@ describe("buildRowList", () => {
     const rows = buildRowList(
       { kind: "module-checking", index: 0 },
       [withLabel],
-      BRIEFING,
       {},
       {},
     );

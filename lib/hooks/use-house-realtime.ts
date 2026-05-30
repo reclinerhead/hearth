@@ -9,23 +9,13 @@ type UseHouseRealtimeResult = {
   loading: boolean;
   error: string | null;
   /**
-   * Imperative refetch. Lets callers drive polling for cases the hook's
-   * status-based polling can't reach on its own — most notably, polling
-   * during a just-clicked manual refresh while briefing_status is still
-   * 'completed' from the previous run, so the hook hasn't yet observed
-   * the transition that would kick its own polling on.
+   * Imperative refetch. Write paths inside the hook's subtree call this
+   * after their own UPDATE lands so the local row reflects the change
+   * without depending on the Realtime broadcast (which is documented as
+   * unreliable in some browsers — see docs/TechnicalGuide.md).
    */
   refetch: () => Promise<void>;
 };
-
-// Polling cadence for the fallback. Realtime is the primary path, but if
-// the websocket is blocked (browser extensions, tracking-prevention) or
-// flakes for any other reason, polling fills in. The interval is short
-// enough that a manual refresh feels responsive even when the websocket
-// is dead.
-const POLL_INTERVAL_MS = 2500;
-
-const TERMINAL_STATUSES = new Set(["completed", "failed"]);
 
 /**
  * Same-tab refresh signal for hearth.houses writes that happen outside
@@ -40,8 +30,8 @@ const TERMINAL_STATUSES = new Set(["completed", "failed"]);
  * dead, without forcing the caller to plumb refetch through context.
  *
  * Write paths already inside DashboardLive (photo upload/remove,
- * regenerate-image, refresh-briefing) keep calling refetch() inline —
- * they don't need the event because the hook is already in scope.
+ * refresh) keep calling refetch() inline — they don't need the event
+ * because the hook is already in scope.
  */
 export const HOUSE_UPDATED_EVENT = "hearth:house-updated";
 export type HouseUpdatedEventDetail = { houseId: string };
@@ -56,17 +46,11 @@ export function dispatchHouseUpdated(houseId: string): void {
 }
 
 /**
- * Subscribe to a single hearth.houses row over Supabase Realtime, with a
- * polling fallback that activates whenever briefing_status is non-terminal.
- * Fetches the row once on mount, re-renders on every UPDATE event, and
- * polls every few seconds while the briefing is in flight.
- *
- * The polling effect is keyed on briefing_status, so it naturally restarts
- * each time the row transitions from a terminal state ('completed' /
- * 'failed') back to a non-terminal state — e.g., after a manual refresh
- * kicks the workflow off again. That means users on flaky realtime
- * transports still see the updated row within a poll interval, not
- * "never until they reload the page."
+ * Subscribe to a single hearth.houses row over Supabase Realtime.
+ * Fetches the row once on mount, re-renders on every UPDATE event,
+ * and exposes an imperative `refetch` for write paths that need to
+ * pick up their own change immediately. Write paths outside the
+ * hook's subtree can dispatch `HOUSE_UPDATED_EVENT` instead.
  *
  * Realtime broadcasts require the table to be in the `supabase_realtime`
  * publication (see migration 20260514180500). RLS on hearth.houses scopes
@@ -74,8 +58,11 @@ export function dispatchHouseUpdated(houseId: string): void {
  * pass the policy check on broadcast — that auth propagation is handled
  * by the cached singleton client in lib/supabase/client.ts.
  *
- * This hook is intentionally generic to a single row, not Zillow-specific
- * — every future "live dashboard data" feature will reuse it.
+ * Issue #210 removed the briefing-status-driven polling fallback that
+ * used to live here — the Zillow workflow it was bridging for is gone,
+ * and the row only changes now from user-driven writes (the photo
+ * upload/remove + the home-details modal), all of which call `refetch`
+ * directly or dispatch HOUSE_UPDATED_EVENT.
  */
 export function useHouseRealtime(
   houseId: string,
@@ -84,12 +71,11 @@ export function useHouseRealtime(
   // Seed from the server-passed snapshot when provided so first paint
   // is the final layout — no "Loading your house" flicker between the
   // server-rendered shell and the first client-side fetch. The
-  // Realtime subscription, polling fallback, and same-tab refresh
-  // listener below all run identically either way.
+  // Realtime subscription and same-tab refresh listener below all run
+  // identically either way.
   const [house, setHouse] = useState<House | null>(initialHouse ?? null);
   const [loading, setLoading] = useState(initialHouse === undefined);
   const [error, setError] = useState<string | null>(null);
-  const briefingStatus = house?.briefing_status;
 
   const refetch = useCallback(async () => {
     const supabase = createClient();
@@ -183,41 +169,6 @@ export function useHouseRealtime(
     window.addEventListener(HOUSE_UPDATED_EVENT, onUpdated);
     return () => window.removeEventListener(HOUSE_UPDATED_EVENT, onUpdated);
   }, [houseId, refetch]);
-
-  // Polling fallback. Active only while briefing_status is non-terminal,
-  // and re-triggered each time status transitions back into a non-terminal
-  // state. The effect tears down (cleanup clears the timer) when status
-  // reaches a terminal value or the component unmounts.
-  useEffect(() => {
-    if (!briefingStatus) return;
-    if (TERMINAL_STATUSES.has(briefingStatus)) return;
-
-    const supabase = createClient();
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function poll() {
-      if (cancelled) return;
-      const { data } = await supabase
-        .from("houses")
-        .select("*")
-        .eq("id", houseId)
-        .single();
-      if (cancelled || !data) return;
-      const fresh = data as House;
-      setHouse(fresh);
-      if (!TERMINAL_STATUSES.has(fresh.briefing_status)) {
-        timer = setTimeout(poll, POLL_INTERVAL_MS);
-      }
-    }
-
-    timer = setTimeout(poll, POLL_INTERVAL_MS);
-
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [houseId, briefingStatus]);
 
   return { house, loading, error, refetch };
 }

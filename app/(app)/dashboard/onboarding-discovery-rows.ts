@@ -9,15 +9,21 @@ import type { HabitatModule, HabitatSeverity } from "@/lib/habitat/types";
  * (phase, applicable modules, accumulated copy, accumulated severities)
  * to the list of rows the modal renders.
  *
- * The list length is always `1 + modules.length` — one briefing row plus
- * one row per applicable habitat module — for every phase, including
- * `intro`. Reserving every slot up front (in `idle` state) keeps the
- * modal surface from growing or re-centering as briefing + habitat
- * results land. See issue #108.
+ * The list length is always `1 + modules.length` — one home-setup
+ * confirmation row plus one row per applicable habitat module — for
+ * every phase, including `intro`. Reserving every slot up front (in
+ * `idle` state) keeps the modal surface from growing or re-centering
+ * as habitat results land. See issue #108.
  *
  * Issue #184 reshaped each row from `{ text }` to
  * `{ lead, secondary?, severity? }` so the modal can render bordered
  * card rows with a severity-coloured glyph + a derived relevance pill.
+ *
+ * Issue #210 dropped the Zillow-backed briefing workflow. The first
+ * row is no longer "PUBLIC RECORD SEARCH — built in 1934, 2,210 sq ft"
+ * — it's a fixed "HOME SETUP — Your home has been set up." confirmation
+ * that lets the modal's pacing rhythm survive without burning AI
+ * Gateway credits on stochastic, ToS-violating scraping.
  */
 
 export type Phase =
@@ -26,12 +32,10 @@ export type Phase =
   | { kind: "briefing-result" }
   // Issue #142 — interstitial prompt for the two property-situation
   // questions (water source, basement). Inserted between
-  // `briefing-result` and `module-checking` so the user sees the
-  // briefing result land first, then answers (or skips), and only
-  // then watches the habitat modules check in. No auto-advance:
-  // the user's Skip / Save click drives the next transition. Skipped
-  // on the briefing-failure path so a failed first step isn't
-  // immediately followed by a form prompt.
+  // `briefing-result` and `module-checking` so the home-setup beat
+  // lands first, then the user answers (or skips), and only then do
+  // the habitat modules check in. No auto-advance: the user's Skip /
+  // Save click drives the next transition.
   | { kind: "property-questions" }
   | { kind: "module-checking"; index: number }
   | { kind: "module-result"; index: number }
@@ -40,23 +44,33 @@ export type Phase =
 export type DiscoveryRowState = "idle" | "checking" | "done";
 
 /**
- * All-caps eyebrow rendered above the briefing row. The briefing isn't
- * a habitat module so it has no `sourceLabel` to read — the modal would
- * otherwise have to special-case the briefing row in two places. Lives
- * here next to `buildRowList` so the row contract owns its own label
- * text and tests can assert against it without reaching into the modal.
+ * All-caps eyebrow rendered above the home-setup confirmation row.
+ * The setup beat isn't a habitat module so it has no `sourceLabel` to
+ * read — the modal would otherwise have to special-case it in two
+ * places. Lives here next to `buildRowList` so the row contract owns
+ * its own label text and tests can assert against it without reaching
+ * into the modal.
  */
-export const BRIEFING_SOURCE_LABEL = "PUBLIC RECORD SEARCH";
+export const BRIEFING_SOURCE_LABEL = "HOME SETUP";
+
+/**
+ * Copy for the home-setup confirmation row across its three states.
+ * Inlined here (rather than threaded through props) because the row is
+ * fully static — no facts, no async, no per-house variation — so the
+ * rows module owns the text and the modal renders it as-is.
+ */
+const BRIEFING_CHECKING_LEAD = "Setting up your home…";
+const BRIEFING_DONE_LEAD = "Your home has been set up.";
 
 export type DiscoveryRowProps = {
   id: string;
   state: DiscoveryRowState;
   /**
    * All-caps source label rendered above the row's lead line as a
-   * subtle eyebrow ("EPA RADON CHECK", "PUBLIC RECORD SEARCH"). Always
-   * present in every state so the modal's vertical rhythm is stable
-   * from intro through done — the label signals what each tile will
-   * show before the result actually lands.
+   * subtle eyebrow ("EPA RADON CHECK", "HOME SETUP"). Always present in
+   * every state so the modal's vertical rhythm is stable from intro
+   * through done — the label signals what each tile will show before
+   * the result actually lands.
    */
   eyebrow: string;
   /** Bold lead line. Always present, in every state. */
@@ -74,18 +88,6 @@ export type DiscoveryRowProps = {
    * tooltip. Omitted on the briefing row and on non-done states.
    */
   severity?: HabitatSeverity;
-};
-
-/**
- * Briefing result content captured by the modal at the briefing-result
- * transition and held verbatim through every later phase. `secondary`
- * is null when the workflow produced no concrete facts (Sonar couldn't
- * resolve the address) — the lead line stays honest in that case and
- * the modal renders the row as a single-line entry.
- */
-export type BriefingRowContent = {
-  lead: string;
-  secondary: string | null;
 };
 
 /**
@@ -115,23 +117,21 @@ function moduleEyebrow(module: HabitatModule): string {
  * Build the list of rows for the current phase.
  *
  * Every call returns exactly `1 + modules.length` rows, in stable order
- * (briefing first, then modules in registry order). Each row carries a
- * state that advances `idle → checking → done` as the corresponding
- * phase activates. The modal renders the list as-is — no slicing or
- * length manipulation downstream.
+ * (home-setup row first, then modules in registry order). Each row
+ * carries a state that advances `idle → checking → done` as the
+ * corresponding phase activates. The modal renders the list as-is — no
+ * slicing or length manipulation downstream.
  *
- * `briefing` is captured at the briefing-result transition and held
- * verbatim by the modal; `moduleLines` and `moduleSeverities` are both
- * indexed by the module's position in `modules` so a late-arriving
- * realtime update doesn't reorder anything. `moduleSeverities` is
- * sparse — modules whose severity hasn't landed yet (or that finished
- * `failed` / `not_applicable`) simply omit the key, and the row
- * renders as non-flagged with no pill.
+ * `moduleLines` and `moduleSeverities` are both indexed by the module's
+ * position in `modules` so a late-arriving realtime update doesn't
+ * reorder anything. `moduleSeverities` is sparse — modules whose
+ * severity hasn't landed yet (or that finished `failed` /
+ * `not_applicable`) simply omit the key, and the row renders as
+ * non-flagged with no pill.
  */
 export function buildRowList(
   phase: Phase,
   modules: HabitatModule[],
-  briefing: BriefingRowContent | null,
   moduleLines: Record<number, string>,
   moduleSeverities: Record<number, HabitatSeverity> = {},
 ): DiscoveryRowProps[] {
@@ -142,27 +142,25 @@ export function buildRowList(
       id: "briefing",
       state: "idle",
       eyebrow: BRIEFING_SOURCE_LABEL,
-      lead: "Checking public home records…",
+      lead: BRIEFING_CHECKING_LEAD,
     });
   } else if (phase.kind === "briefing-checking") {
     rows.push({
       id: "briefing",
       state: "checking",
       eyebrow: BRIEFING_SOURCE_LABEL,
-      lead: "Checking public home records…",
+      lead: BRIEFING_CHECKING_LEAD,
     });
   } else {
     // Every phase after briefing-checking — briefing-result,
     // property-questions, module-checking, module-result, done —
-    // renders the briefing row as "done" with its result content.
-    const lead = briefing?.lead ?? "Public records checked";
-    const secondary = briefing?.secondary ?? null;
+    // renders the home-setup row as "done" with the fixed confirmation
+    // copy. No facts, no secondary line.
     rows.push({
       id: "briefing",
       state: "done",
       eyebrow: BRIEFING_SOURCE_LABEL,
-      lead,
-      ...(secondary !== null ? { secondary } : {}),
+      lead: BRIEFING_DONE_LEAD,
     });
   }
 

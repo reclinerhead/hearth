@@ -49,13 +49,10 @@ app/                       # Next.js App Router
   .well-known/workflow/    # Auto-generated Workflow SDK endpoints (gitignored)
 components/                # Shared UI primitives (see "Design system")
 lib/
-  briefing/
-    zillow.ts              # AI Gateway lookup + pure validation
-    zillow.test.ts         # Vitest coverage of validation helper
   house-image/
-    prompt.ts              # Pure builder for the generated-sketch prompt
-    prompt.test.ts         # Vitest coverage of era/style/stories derivation
-    signed-url.ts          # createSignedUrl helper for the house-images bucket
+    downscale.ts           # Browser-side image downscale before upload
+    signed-url.ts          # createCachedSignedUrl helper for private buckets
+    use-cached-signed-url.ts # React hook wrapper around the helper
   hooks/
     use-house-realtime.ts  # Supabase Realtime subscription for one house row
   supabase/
@@ -63,9 +60,9 @@ lib/
     server.ts              # Server component / action client (hearth schema)
     service.ts             # Service-role client for background work (workflow steps)
     proxy.ts               # Edge-style session refresh + route guards
+components/
+  static-house-illustration.tsx  # Inline SVG hero placeholder (replaces the generated sketch — issue #210)
 workflows/
-  briefing.ts              # Day One Briefing workflow (use workflow + use step)
-  house-image.ts           # Generated architectural-sketch workflow (use workflow + use step)
 proxy.ts                   # Next entry that calls lib/supabase/proxy.ts
 next.config.ts             # Wrapped with withWorkflow() to enable directives
 supabase/
@@ -201,7 +198,7 @@ The schema-level grant story for Realtime (the load-bearing migration that lets 
 These appear in the schema or the dashboard mockup but are not real flows. Treat as roadmap, not as currently-working features:
 
 - **Public-records sources beyond EPA radon, EPA Superfund proximity, and FEMA flood zones** — BS&A assessor data, lead-disclosure heuristics, water-system violations, etc. Each is a new habitat module under `lib/habitat/modules/<key>/`; the orchestrator already iterates the registry, so adding a module is a contained change. The finding detail modal renders these out of the box from the generic `HabitatFinding` shape; richer per-module structured content (flood-history timeline, soil testing panels, etc.) is deferred until a module forces a slotted-shell contract.
-- **Description synthesis** — for v1 we show `description_source` (Zillow's raw copy) as `description`. A future LLM step will rewrite `description` in Hearth's voice while leaving `description_source` intact.
+- **Description synthesis** — `hearth.houses.description` is editable via the home-details modal but otherwise null on new houses since issue #210 removed the Zillow-backed briefing that used to populate it (along with `description_source`). A future surface for user-authored or LLM-rewritten description copy is on the roadmap; today the AICard hides itself when the column is null.
 - **Free-tier upsell surface.** When a free user has one house and would otherwise see an "Add a property" action, the action is gated off entirely. Showing an upsell prompt in its place is its own focused work.
 - **Inventory CRUD**. Schema exists; the Smart Uploader (#51) covers the create path through photo capture, the `/inventory/[id]` detail route (#53) covers the read path with hero photo, structured pills, and the Research panel, the edit / delete modal (#54) covers update + destroy, and the `/inventory` list page (#67) covers browse across all items. The `/entities/[id]` and `/documents/[id]` routes are vestigial placeholder shells from the original dashboard mockup — kept around because nothing references them anymore.
 - **OCR + extraction routing for non-nameplate documents** (receipts, manuals, permits, invoices) — the `kind` discriminator and Grok pipeline are in place from phase 1.3, but the Smart Uploader only writes `nameplate` / `photo` today. The disabled "Document or receipt" and "Emergency procedure video" entries on the path-picker exist as the future surface for those flows.
@@ -220,4 +217,4 @@ The deeper architectural detail is split across six domain spokes under [`docs/a
 | [habitat.md](architecture/habitat.md) | Habitat finding / tile / trigger / modal (including the generic-by-default-slotted-on-demand contract, `getOverviewCards` / `renderDetail` slots, `renderOverviewBody`), module `check()` contract, orchestrator error semantics (terminal vs. retryable), activity-log discipline, methodology page governance, FEMA flood-zone resilience pattern, shared-cache table pattern (`water_systems` / `water_system_violations` / `water_system_lcr_samples` / `water_system_data_fetches`), EPA Superfund Proximity, Canonical contaminants table, Water Quality Awareness | Working on a habitat module, the finding modal, severity, activity logs, the canonical contaminants table, or the shared-cache tables. | habitat, finding modal, module check contract, orchestrator, terminal error, shared cache, FEMA, WQA framework, Superfund, EPA, contaminants, severity, activity log |
 | [maintenance.md](architecture/maintenance.md) | The `hearth.maintenance_tasks` event-log semantics, the `reasoning` and `last_synthesis_run` jsonb shapes, the synthesis workflow (`lib/maintenance/*`, why-a-workflow rationale, Build/Rebuild button), the direct-event pipeline (renewal classifier, idempotency chain), the habitat→maintenance synthesis bridge, the dashboard / inventory-detail "On your plate" panel, the History section, the task detail modal and completion sheets | Working on the maintenance module — synthesis prompt, direct-event classifier, tier grouping, completion flows, or the history view. | maintenance, synthesis, direct-event, renewal, reasoning, tier grouping, complete task, mark renewed |
 | [inventory-and-reports.md](architecture/inventory-and-reports.md) | Inventory detail page (stat tiles, pill cluster, "What we know" / Research panel, AI Insights, `"unknown"` model_number convention), inventory edit and delete (modal mechanics, manufacture-date input, hero photo selection, research re-run on key-field edits), Property type (vehicles and pets, VIN decode), custom date and month pickers, the Reports hub mockup | Working on inventory rendering, the edit/delete modal, the property subtype, the date pickers, or the Reports page. | inventory detail, photo-as-tile, research panel, edit modal, property, vehicle, pet, VIN decode, date picker, month picker, reports |
-| [briefing-and-house-image.md](architecture/briefing-and-house-image.md) | Day One Briefing workflow (Zillow lookup via Perplexity Sonar, non-destructive merge), first-run discovery modal, `HabitatModule.getOnboardingMessage`, the `getBriefingMessage` / `getBriefingMessageParts` helpers, generated architectural sketch + user-uploaded house image (two private buckets, signed-URL caching contract) | Working on the briefing pipeline, the Zillow prompt, the discovery modal's briefing row, briefing copy helpers, or the house-image surface. | Day One Briefing, Zillow, Perplexity Sonar, discovery modal, getBriefingMessage, house image, generated sketch, signed URL caching |
+| [briefing-and-house-image.md](architecture/briefing-and-house-image.md) | Onboarding action and the first-run discovery modal (phase machine, refresh mode, `HabitatModule.getOnboardingMessage`), the dashboard hero image surface (static SVG illustration when no user photo is present, user-uploaded photo otherwise), the `house-photos` bucket and signed-URL caching contract, and the vestigial `briefing_*` / `generated_image_*` columns left behind by issue #210. | Working on the discovery modal, the house-image surface, or the user-photo upload flow. | onboarding, discovery modal, home setup, house image, static SVG, user photo, signed URL caching, vestigial briefing columns |

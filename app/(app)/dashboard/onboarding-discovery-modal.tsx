@@ -29,14 +29,12 @@ import type {
   HabitatSeverity,
   HouseContext,
 } from "@/lib/habitat/types";
-import { getBriefingMessageParts } from "@/lib/briefing/getBriefingMessage";
 import { createClient } from "@/lib/supabase/client";
 import type { House } from "@/types/house";
 import { triggerHabitatRecheck } from "./actions";
 import {
   buildRowList,
   fallbackOnboardingMessage,
-  type BriefingRowContent,
   type DiscoveryRowProps,
   type Phase,
 } from "./onboarding-discovery-rows";
@@ -102,10 +100,12 @@ function modulesApplicableTo(house: House): HabitatModule[] {
  *   - `mode === "refresh"` skips the `property-questions` phase (the
  *     user's water source / basement answers were captured during their
  *     original onboarding and don't need to be re-asked on refresh).
- *   - `mode === "refresh"` gates each phase's advance on the row's
- *     timestamps EXCEEDING `sessionStartedAt`. Without that, the modal
- *     would see the previous run's terminal status the moment it
- *     mounted and skip straight through.
+ *   - `mode === "refresh"` gates module-row advances on the row's
+ *     `checked_at` EXCEEDING `sessionStartedAt`. Without that, the modal
+ *     would see the previous run's terminal status the moment it mounted
+ *     and skip straight through. The briefing row is a static
+ *     client-side beat in both modes (issue #210 dropped the Zillow
+ *     workflow it used to wait on), so no row gating is needed there.
  *   - Copy and the dismiss-button text are swapped for the refresh
  *     framing ("Refreshing your home" vs. "Setting up your home";
  *     "Done" vs. "Start Managing my Home").
@@ -113,9 +113,8 @@ function modulesApplicableTo(house: House): HabitatModule[] {
  * In refresh mode the caller (dashboard-live's refresh-button click
  * handler) records `sessionStartedAt = new Date().toISOString()` BEFORE
  * the refresh server action fires, and passes that down. The workflow
- * stamps `briefing_started_at` on its running-status upsert and
- * `checked_at` on each habitat-finding upsert, so comparing those
- * against `sessionStartedAt` is a clean "did the row update after
+ * stamps `checked_at` on each habitat-finding upsert, so comparing
+ * those against `sessionStartedAt` is a clean "did the row update after
  * this click?" gate.
  */
 export type DiscoveryModalMode = "onboarding" | "refresh";
@@ -143,15 +142,6 @@ export function OnboardingDiscoveryModal({
   const [buttonEnabled, setButtonEnabled] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
 
-  // Briefing result is captured once on transition into briefing-result
-  // and held — recomputing from the live row would make the line flicker
-  // if a later realtime update lands while it's still on screen. Stored
-  // as { lead, secondary } so the card-row treatment (issue #184) can
-  // split the headline ("Home data found") from the facts on the
-  // secondary line. The failure branch fills secondary = null so the
-  // row renders as a single-line entry.
-  const [briefingContent, setBriefingContent] =
-    useState<BriefingRowContent | null>(null);
   // Module result lines are stored by index so navigating forward through
   // phases doesn't recompute (and never reads stale finding state).
   const [moduleLines, setModuleLines] = useState<Record<number, string>>({});
@@ -189,13 +179,13 @@ export function OnboardingDiscoveryModal({
   }, [modules.length]);
 
   const handlePropertyQuestionsSkip = useCallback(() => {
-    // The habitat workflow no longer fires from the briefing's persist
-    // step on the new-onboarding path (see workflows/briefing.ts for
-    // the timing rationale). Skip needs to kick off habitat itself,
-    // otherwise the user dismisses the modal without ever getting
-    // habitat findings. Soft-fail: a recheck-start failure is logged
-    // and the phase still advances; "Refresh House Facts" provides
-    // manual recovery if it ever bites.
+    // Skip is the only kickoff point for habitat on the new-onboarding
+    // path — the previous Day One Briefing workflow used to fire it
+    // from a persist step, but issue #210 deleted that workflow.
+    // Without this call the user would dismiss the modal without ever
+    // getting habitat findings. Soft-fail: a recheck-start failure is
+    // logged and the phase still advances; "Refresh House Facts"
+    // provides manual recovery if it ever bites.
     void triggerHabitatRecheck(house.id).then((result) => {
       if (!result.ok) {
         console.warn(
@@ -226,15 +216,13 @@ export function OnboardingDiscoveryModal({
         );
         return;
       }
-      // Issue #144: the briefing's persist step no longer fires
-      // habitat (see workflows/briefing.ts for the timing rationale).
-      // The Save / Skip handler is the single kickoff point on the
-      // new-onboarding path — so this call is what actually starts
-      // habitat for new users, not a "recheck" against an earlier
-      // run. The houses UPDATE above completed first, so when the
-      // workflow's loadHouseContext step runs it sees the user's
-      // freshly-saved water_source and basement_present. The modal
-      // immediately advances to module-checking, which waits on
+      // The Save / Skip handler is the single kickoff point for
+      // habitat on the new-onboarding path — so this call is what
+      // actually starts habitat for new users, not a "recheck" against
+      // an earlier run. The houses UPDATE above completed first, so
+      // when the workflow's loadHouseContext step runs it sees the
+      // user's freshly-saved water_source and basement_present. The
+      // modal immediately advances to module-checking, which waits on
       // habitat findings to land — same end-user flow as before.
       // Soft-fail: a start() failure is logged and the phase still
       // advances; "Refresh House Facts" provides manual recovery.
@@ -270,27 +258,6 @@ export function OnboardingDiscoveryModal({
     return map;
   }, [findings]);
 
-  const briefingStatus = house.briefing_status;
-  const briefingTerminal =
-    briefingStatus === "completed" || briefingStatus === "failed";
-
-  /**
-   * In refresh mode, "ready" requires more than terminal status — the
-   * row's `briefing_started_at` must have advanced past
-   * `sessionStartedAt` so we know this is the NEW run that fired on
-   * the user's click and not the prior completed run. In onboarding
-   * mode the row is fresh so terminal status is enough.
-   */
-  const briefingReadyForPhase =
-    mode === "refresh"
-      ? briefingTerminal &&
-        Boolean(
-          sessionStartedAt &&
-            house.briefing_started_at &&
-            house.briefing_started_at > sessionStartedAt,
-        )
-      : briefingTerminal;
-
   // Intro hold → briefing-checking.
   useEffect(() => {
     if (phase.kind !== "intro") return;
@@ -301,42 +268,27 @@ export function OnboardingDiscoveryModal({
     return () => clearTimeout(t);
   }, [phase.kind]);
 
-  // briefing-checking → briefing-result when the briefing row reaches a
-  // terminal status. We compute the result content at the transition
-  // point so it's stable for the whole RESULT_DISPLAY_MIN_MS window.
+  // briefing-checking → briefing-result on a short timer beat. Issue
+  // #210 removed the Zillow lookup the briefing row used to wait on;
+  // it now resolves to a static "your home is set up" confirmation in
+  // both onboarding and refresh modes. The beat keeps the pacing
+  // rhythm so the row reads as something Hearth did, not a flash.
   useEffect(() => {
     if (phase.kind !== "briefing-checking") return;
-    if (!briefingReadyForPhase) return;
-    if (briefingStatus === "failed") {
-      setBriefingContent({
-        lead: "We couldn't find some details — that's OK, you can still get started.",
-        secondary: null,
-      });
-    } else {
-      setBriefingContent(getBriefingMessageParts(house));
-    }
-    setPhase({ kind: "briefing-result" });
-  }, [phase.kind, briefingReadyForPhase, briefingStatus, house]);
+    const t = setTimeout(
+      () => setPhase({ kind: "briefing-result" }),
+      RESULT_DISPLAY_MIN_MS,
+    );
+    return () => clearTimeout(t);
+  }, [phase.kind]);
 
-  // briefing-result hold → property-questions (or straight to done if
-  // briefing failed). On briefing failure the orchestrator never kicks
-  // off habitat (see workflows/briefing.ts — persistBriefingSuccess is the
-  // step that calls start(runHabitatChecks)), so we skip both the
-  // property-questions prompt and the module-checking phases — the
-  // failure message is the last thing the user sees before the Start
-  // button enables. Users who skip the form here can fill water_source
-  // and basement_present in via the home-details edit modal later.
+  // briefing-result hold → property-questions (or straight to
+  // module-checking in refresh mode, since those answers were captured
+  // during the user's original onboarding).
   useEffect(() => {
     if (phase.kind !== "briefing-result") return;
-    const briefingFailed = briefingStatus === "failed";
     const t = setTimeout(() => {
-      if (briefingFailed) {
-        setPhase({ kind: "done" });
-      } else if (mode === "refresh") {
-        // Refresh path skips the property-questions phase — those
-        // values were captured during the user's original onboarding
-        // and don't need to be re-asked on every refresh. Go straight
-        // to module-checking (or done if no modules apply).
+      if (mode === "refresh") {
         setPhase(
           modules.length === 0
             ? { kind: "done" }
@@ -347,7 +299,7 @@ export function OnboardingDiscoveryModal({
       }
     }, RESULT_DISPLAY_MIN_MS);
     return () => clearTimeout(t);
-  }, [phase.kind, briefingStatus, mode, modules.length]);
+  }, [phase.kind, mode, modules.length]);
 
   // property-questions has no auto-advance — the user's Skip / Save
   // click is what drives the next transition. See the form section
@@ -457,13 +409,7 @@ export function OnboardingDiscoveryModal({
   // Build the line list that's been revealed so far. We render previous
   // phases as completed lines and the current phase as the live row, so
   // the user sees the discovery accumulating rather than jumping.
-  const rows = buildRowList(
-    phase,
-    modules,
-    briefingContent,
-    moduleLines,
-    moduleSeverities,
-  );
+  const rows = buildRowList(phase, modules, moduleLines, moduleSeverities);
 
   // Summary chip for the done phase: total rows shown (briefing + each
   // habitat module that landed) and the subset flagged as "worth a
