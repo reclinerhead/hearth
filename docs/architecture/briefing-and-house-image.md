@@ -123,11 +123,22 @@ The same caching contract applies to the `hearth-documents` bucket, which backs 
 
 ---
 
+## About-your-house description
+
+`hearth.houses.description` used to be populated by the Zillow workflow as a raw scrape of the listing's "About this home" copy (and `description_source` held the same string for provenance). Issue #210 removed that pipeline and repurposed the column as a **user-authored paragraph** edited through `EditHomeDetailsModal`:
+
+- The modal exposes an "About your home" textarea (`FieldDescription` in [components/edit-home-details-modal.tsx](../../components/edit-home-details-modal.tsx)), soft-capped at 2000 characters with a live remaining-count.
+- The dashboard surface is `AboutYourHouseCard` in [dashboard-live.tsx](../../app/(app)/dashboard/dashboard-live.tsx). When `description` is non-null it renders a plain `surface` card (NOT `surface-ai` — the content is user-authored now, so the sparkles eyebrow would be misleading) with `white-space: pre-line` so the user's paragraph breaks survive. When null it renders a dashed-border empty-state card that prompts the user to add a description and includes an "Add a description" button that opens the edit modal directly.
+- `description_source` is now meaningless (the column held Zillow's raw copy verbatim) and joins the vestigial list below — nothing reads or writes it.
+
+---
+
 ## Vestigial columns and buckets
 
 Issue #210 removed the Day One Briefing workflow and the AI-generated sketch but left their database surfaces in place. The schema and storage state below is no longer written or read by the application — flagged here so a future reader doesn't mistake "this column exists" for "this code path runs."
 
 - `hearth.houses.briefing_status`, `briefing_started_at`, `briefing_generated_at`, `briefing_error` — Originally tracked the Zillow lookup's lifecycle. The application no longer transitions these columns or reads them; the default value sits on new rows untouched. A follow-up cleanup migration will drop them.
+- `hearth.houses.description_source` — Originally held Zillow's raw "About this home" copy as provenance for `description`. With `description` now user-authored, provenance is meaningless and the column is unread.
 - `hearth.houses.generated_image_url`, `generated_image_prompt`, `generated_image_created_at` — Originally held the storage path + prompt for the AI-generated architectural sketch. Nothing reads or writes them now; the dashboard hero falls back to `components/static-house-illustration.tsx` instead.
 - `house-images` bucket and its `storage.objects` RLS policies — Originally held the generated sketches. Empty for new houses post-#210; the cleanup migration will drop the bucket alongside the columns.
 - **`BRIEFING_PRIMARY_MODEL`, `BRIEFING_FALLBACK_MODELS` env vars** — Originally selected the Perplexity Sonar model for the Zillow lookup. The briefing workflow is gone, but `lib/inventory-insights/research.ts` and `lib/habitat/modules/epa-superfund-proximity/portfolio-summary/generate.ts` still read `BRIEFING_PRIMARY_MODEL` as a fallback after their feature-specific env vars (`INVENTORY_INSIGHTS_MODEL`, `SUPERFUND_SUMMARY_MODEL`). The name no longer matches the use; a future cleanup should rename it to a feature-neutral default or scope each consumer to its own env var.

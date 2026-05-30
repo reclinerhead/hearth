@@ -56,7 +56,19 @@ export type EditableHouseRow = {
   // step that captures these for new houses.
   water_source: RowWaterSource;
   basement_present: boolean | null;
+  // Issue #210 — `description` used to be populated by the Zillow-backed
+  // briefing workflow. With that pipeline gone, the field is now the
+  // user's own "About your home" paragraph, edited here. Null means
+  // "the user hasn't written one yet"; the dashboard surfaces an
+  // empty-state prompt in that case.
+  description: string | null;
 };
+
+// Description column on hearth.houses is `text` with no length cap, but
+// we soft-limit through the textarea to keep the dashboard card from
+// growing unboundedly. Longer than this and we'd want a "Read more"
+// affordance, which is its own follow-up.
+const DESCRIPTION_MAX_LENGTH = 2000;
 
 const FOCUSABLE_SELECTOR =
   'a[href], area[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), iframe, [tabindex]:not([tabindex="-1"])';
@@ -133,6 +145,7 @@ export function EditHomeDetailsModal({
   const [basementPresent, setBasementPresent] = useState<BasementChoice>(() =>
     basementToChoice(house.basement_present),
   );
+  const [description, setDescription] = useState(house.description ?? "");
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -205,6 +218,7 @@ export function EditHomeDetailsModal({
     setSaving(true);
     try {
       const supabase = createClient();
+      const trimmedDescription = description.trim();
       const update = {
         year_built: toIntegerOrNull(yearBuilt),
         living_area_sqft: toIntegerOrNull(livingArea),
@@ -214,6 +228,7 @@ export function EditHomeDetailsModal({
         purchase_date: purchaseDate.trim() === "" ? null : purchaseDate,
         water_source: choiceToWaterSource(waterSource),
         basement_present: choiceToBasement(basementPresent),
+        description: trimmedDescription === "" ? null : trimmedDescription,
       };
       const { error: updateError } = await supabase
         .from("houses")
@@ -435,6 +450,12 @@ export function EditHomeDetailsModal({
               />
             </div>
 
+            <FieldDescription
+              value={description}
+              onChange={setDescription}
+              maxLength={DESCRIPTION_MAX_LENGTH}
+            />
+
             <DangerZone
               triggerRef={deleteTriggerRef}
               disabled={saving}
@@ -463,8 +484,7 @@ export function EditHomeDetailsModal({
               className="text-small"
               style={{ color: "var(--color-text-tertiary)" }}
             >
-              Some of this came from public records — edit anything we got
-              wrong.
+              These details power your dashboard and habitat checks.
             </p>
             <div className="flex items-center gap-2 ml-auto">
               <button
@@ -558,8 +578,8 @@ function DangerZone({
             style={{ color: "var(--color-text-secondary)" }}
           >
             Removes this property and everything tied to it &mdash; rooms,
-            inventory, documents, habitat findings, and Day One Briefing
-            data. Your other properties are not affected.
+            inventory, documents, and habitat findings. Your other
+            properties are not affected.
           </div>
         </div>
         <button
@@ -609,6 +629,57 @@ function FieldNumber({
         placeholder={placeholder}
         className="input"
       />
+    </div>
+  );
+}
+
+/**
+ * Free-text "About your home" field. Soft-capped at `maxLength` so the
+ * dashboard's description card stays a reasonable size — anything
+ * longer than a few short paragraphs and we'd want a "Read more"
+ * affordance, which is its own follow-up.
+ *
+ * Issue #210 — this field replaces the Zillow-scraped description
+ * that used to live on `hearth.houses.description`. Now user-authored.
+ */
+function FieldDescription({
+  value,
+  onChange,
+  maxLength,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  maxLength: number;
+}) {
+  const remaining = maxLength - value.length;
+  return (
+    <div>
+      <label className="label">About your home</label>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value.slice(0, maxLength))}
+        rows={6}
+        maxLength={maxLength}
+        placeholder="A short paragraph in your own words — what's special about the house, the neighborhood, the layout, the quirks you'd want to remember."
+        className="input"
+        style={{
+          height: "auto",
+          minHeight: "8.5rem",
+          lineHeight: 1.5,
+          paddingTop: 10,
+          paddingBottom: 10,
+          resize: "vertical",
+        }}
+      />
+      <div
+        className="text-small mt-1 flex items-center justify-between"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        <span>This appears on your dashboard.</span>
+        <span aria-live="polite">
+          {remaining} character{remaining === 1 ? "" : "s"} left
+        </span>
+      </div>
     </div>
   );
 }
