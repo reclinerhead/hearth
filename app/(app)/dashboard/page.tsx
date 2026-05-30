@@ -9,6 +9,8 @@ import { EmergencyReferencePanel } from "./emergency-reference-panel";
 import { HabitatPreviewPanel } from "./habitat-preview-panel";
 import { LifecycleOutlookPanel } from "./lifecycle-outlook-panel";
 import { MaintenancePanelDashboard } from "./maintenance-panel-dashboard";
+import { buildMilestones } from "./onboarding-milestones";
+import { OnboardingMilestonesPanel } from "./onboarding-milestones-panel";
 
 // Issue #139 replaced the hardcoded EMERGENCIES placeholder with the
 // EmergencyReferencePanel, which fetches real hearth.documents rows of
@@ -63,8 +65,49 @@ export default async function DashboardPage() {
 
   const initialHabitatRows = (habitatRows ?? []) as HabitatFindingRow[];
 
+  // Onboarding milestones (issue #216). "Detect, don't track" — three of the
+  // four completion signals are existence reads against tables that already
+  // exist, and the fourth (habitat_reviewed) is a key off the house row we
+  // already have in hand. Two cheap head:true counts cover inventory and
+  // emergency videos; the home-photo and habitat signals read off `house`
+  // directly. The panel itself renders nothing once everything is complete,
+  // so this work is skipped visually for established users with no cost
+  // beyond the two counts.
+  const [{ count: inventoryCount }, { count: emergencyVideoCount }] =
+    await Promise.all([
+      supabase
+        .from("inventory")
+        .select("id", { count: "exact", head: true })
+        .eq("house_id", data.id),
+      supabase
+        .from("documents")
+        .select("id", { count: "exact", head: true })
+        .eq("house_id", data.id)
+        .eq("kind", "emergency_procedure_video"),
+    ]);
+
+  const milestones = buildMilestones({
+    hasHomePhoto: house.user_image_url !== null,
+    hasEmergencyVideo: (emergencyVideoCount ?? 0) > 0,
+    hasAppliance: (inventoryCount ?? 0) > 0,
+    habitatReviewed: house.onboarding_state?.habitat_reviewed === true,
+  });
+
   return (
     <div className="flex flex-col gap-6">
+      {/*
+        Onboarding milestones sit above the hero (issue #216): they're the
+        first thing a new user should see post-setup, they're transient
+        (gone once complete), and placing them above the hero means they
+        don't permanently displace the hero/facts layout that is the
+        dashboard's stable identity. The panel keys on house id so a
+        property switch recomputes against the new house's signals.
+      */}
+      <OnboardingMilestonesPanel
+        key={`milestones-${house.id}`}
+        houseId={house.id}
+        milestones={milestones}
+      />
       {/*
         Key the two client components below on the active house id so a
         property switch or property delete forces a full remount rather
@@ -100,7 +143,7 @@ export default async function DashboardPage() {
         <div className="flex flex-col gap-4 min-w-0">
           <EmergencyReferencePanel houseId={data.id} />
 
-          <div className="min-w-0">
+          <div id="dashboard-habitat" className="min-w-0 scroll-mt-20">
             <SectionHeader
               eyebrow="The world around your house"
               title="Habitat"

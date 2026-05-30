@@ -21,6 +21,7 @@ export function HabitatFindingTrigger({
   children,
   className,
   title,
+  onFirstOpen,
 }: {
   row: HabitatFindingRow;
   habitatModule: HabitatModule;
@@ -33,19 +34,37 @@ export function HabitatFindingTrigger({
   children: ReactNode;
   className?: string;
   title?: string;
+  /**
+   * Fired once, the first time this trigger opens its modal. The
+   * dashboard preview uses it to stamp the "review your habitat findings"
+   * onboarding milestone (issue #216) — opening any finding counts as
+   * having seen them. Kept as an opt-in callback so this generic trigger
+   * stays decoupled from the onboarding action; fire-and-forget, the open
+   * doesn't wait on it.
+   */
+  onFirstOpen?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const hasFiredFirstOpen = useRef(false);
 
   const close = useCallback(() => setOpen(false), []);
   const getReturnFocus = useCallback(() => triggerRef.current, []);
+
+  const handleOpen = useCallback(() => {
+    setOpen(true);
+    if (!hasFiredFirstOpen.current) {
+      hasFiredFirstOpen.current = true;
+      onFirstOpen?.();
+    }
+  }, [onFirstOpen]);
 
   return (
     <>
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={handleOpen}
         className={className}
         aria-haspopup="dialog"
         title={title}

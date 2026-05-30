@@ -74,6 +74,42 @@ The WQA module's onboarding line is a richer case: it has *two* independent axes
 
 ---
 
+## Onboarding milestones panel
+
+A **separate, post-modal** surface (issue #216). Once the discovery modal closes, a new user is alone with a mostly-empty dashboard; this panel sits above the hero and nudges them toward the handful of high-value first actions, then retires permanently once they're done. It is *not* part of the discovery modal's phase machine — the two share no state.
+
+- **Lives at `app/(app)/dashboard/onboarding-milestones-panel.tsx`** (client) with pure derivation helpers in `onboarding-milestones.ts` (unit-tested in the sibling `.test.ts`, mirroring the `onboarding-discovery-rows.ts` split). Mounted at the top of `app/(app)/dashboard/page.tsx`'s `flex flex-col gap-6` wrapper, above `<DashboardLive>`, keyed on house id so a property switch recomputes against the new house's signals.
+- **Four milestones, in fixed order:** add a home photo (`YOUR HOME`), record an emergency video (`EMERGENCIES`), add a first appliance (`INVENTORY`), review habitat findings (`HABITAT`). Each card mirrors the discovery modal's bordered card-row idiom — area eyebrow, scene-based outline glyph, awareness-framed lead + secondary line, and a trailing CTA.
+
+### Detect, don't track
+
+Each milestone's done-state is **derived from data that already exists**, not a separate completion table or a checklist the app keeps in sync. This mirrors the lazy-reanalysis principle — let the real data be the source of truth, so a milestone can never drift out of sync (a user who added an appliance before this panel shipped still gets credit; a direct DB insert or future bulk-import can't leave the panel lying).
+
+| Milestone | Completion signal | Source |
+| --- | --- | --- |
+| Home photo | `user_image_url is not null` | `hearth.houses` row (already in hand) |
+| Emergency video | ≥1 row, `kind='emergency_procedure_video'` | `hearth.documents` (`head:true` count) |
+| First appliance | ≥1 row, this house | `hearth.inventory` (`head:true` count) |
+| Review habitat | `onboarding_state->>'habitat_reviewed' = 'true'` | `hearth.houses` row (already in hand) |
+
+`page.tsx` computes the four booleans server-side — two cheap `head:true` counts run in parallel; the photo and habitat signals read off the house row already fetched — and hands them to `buildMilestones(signals)`, which resolves each card's `pending`/`complete` state. The panel renders only the pending subset. Completion is one-way: a completed milestone is never re-surfaced even if the underlying data later changes (the learning moment already happened); there is no per-card dismiss.
+
+### Why only habitat needs stored state
+
+*Viewing* habitat findings is not a write, so it has no natural data signal. That one milestone reads `habitat_reviewed` off the **`hearth.houses.onboarding_state jsonb`** column (migration `20260530180000_add_onboarding_state_to_houses.sql`, `not null default '{}'`). The blob is reserved strictly for view-event milestones — write-event milestones are deliberately *not* stored there, because deriving them is self-healing while a JSONB stamp every add-path has to remember is a drift risk. The shape is open-ended (`{ habitat_reviewed?: boolean }` today) so future view-event milestones extend it without another migration.
+
+The stamp is set by [`app/actions/houses/mark-habitat-reviewed.ts`](../../app/actions/houses/mark-habitat-reviewed.ts) — a fire-and-forget, idempotent server action (skips the write when already true) wired into `HabitatFindingTrigger` via an optional `onFirstOpen` callback. The dashboard's `HabitatPreviewPanel` passes `() => markHabitatReviewedAction(houseId)`; the generic trigger stays decoupled from the onboarding action, and the modal opens immediately without awaiting the write. Opening *any* finding counts as having reviewed them (per the issue's lean: requiring an expand risks a milestone that feels stuck).
+
+### CTA deep-links
+
+The CTAs route to each action's surface. The two upload milestones open the **Smart Uploader** directly (hosted as a single instance in the panel — emergency video pre-routes to `initialEmergencyEntry="category-picker"`; first appliance lands on the path-picker), since those surfaces are modals with nowhere to scroll. The photo and habitat CTAs **scroll** to their inline surfaces (`#dashboard-hero`, where `HouseImageSurface` owns the photo picker, and `#dashboard-habitat`, where opening a finding modal stamps the milestone). After a Smart Uploader save the panel calls `router.refresh()` so the completed card drops without a manual reload.
+
+### Retire beat
+
+When the final pending milestone completes, the panel shows a single quiet "foundation set" reward line on that load before retiring — gratitude/noticing, no badges/points/streaks (the rewards principle). It's gated by a per-session `sessionStorage` flag (`hearthMilestonesRetireBeat:<houseId>`), not persisted server state — re-showing it in a brand-new session is an accepted non-goal. The panel starts assuming the beat was already seen so SSR and the first client render agree (both `null` when all-complete), then an effect reveals it once. With everything complete and the beat already shown, the panel renders nothing — no layout hole.
+
+---
+
 ## House image surface
 
 The dashboard's hero image renders one of two assets:
