@@ -31,7 +31,7 @@ export default async function AppGroupLayout({
       ? supabase
           .from("houses")
           .select(
-            "id, address_line1, address_line2, city, state, postal_code, year_built, living_area_sqft, lot_size_sqft, bedrooms, bathrooms, purchase_date, water_source, basement_present",
+            "id, address_line1, address_line2, city, state, postal_code, year_built, living_area_sqft, lot_size_sqft, bedrooms, bathrooms, purchase_date, water_source, basement_present, description",
           )
           .eq("id", activeHouseId)
           .maybeSingle()

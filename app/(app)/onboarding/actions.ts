@@ -2,9 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { start } from "workflow/api";
 import { createClient } from "@/lib/supabase/server";
-import { runBriefing } from "@/workflows/briefing";
 import {
   extractAddress,
   type MapboxRetrievedFeature,
@@ -81,18 +79,6 @@ export async function createHouseFromMapboxFeature(
       .eq("id", user.id);
     if (profileError) {
       console.error("set active_house_id on new house failed", profileError);
-    }
-
-    // Kick off the Day One Briefing in the background. The dashboard
-    // subscribes to row updates via Realtime and shows progress in
-    // place, so we don't await here. If start() throws (workflow
-    // infrastructure issue), log and continue — the dashboard handles
-    // the resulting 'pending' status gracefully and the user shouldn't
-    // be blocked from reaching their dashboard.
-    try {
-      await start(runBriefing, [inserted.id]);
-    } catch (briefingError) {
-      console.error("briefing workflow start failed", briefingError);
     }
   }
 

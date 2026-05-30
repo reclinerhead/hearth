@@ -11,8 +11,8 @@
 // cancellation to the function, so if the user navigates away
 // mid-stream the call is killed and the result is discarded. That's
 // the known Phase-1 trade-off; a fully decoupled Phase-2 implementation
-// would lift the call into Vercel Workflow (see workflows/briefing.ts
-// for the pattern).
+// would lift the call into Vercel Workflow (see workflows/habitat.ts
+// for the durable-workflow pattern).
 //
 // Auth is the same RLS pattern as every other server-side data access:
 // createClient() reads the user's Supabase session from cookies, and

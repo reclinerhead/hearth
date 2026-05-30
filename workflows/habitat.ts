@@ -18,8 +18,8 @@ import type {
  *
  * Modules don't write to the database — module.check() returns a
  * HabitatFinding and the step around it owns all DB writes, including
- * status transitions. Matches the lookupZillow + persistBriefingSuccess
- * separation in workflows/briefing.ts.
+ * status transitions. Keeps each module's pure check logic separable
+ * from the persistence concerns the workflow step layer owns.
  */
 export async function runHabitatChecks(houseId: string): Promise<void> {
   "use workflow";
