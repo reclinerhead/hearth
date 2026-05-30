@@ -99,6 +99,7 @@ const MILESTONE_CONTENT: Array<Omit<Milestone, "state">> = [
     id: "home_photo",
     eyebrow: "YOUR HOME",
     icon: "camera",
+    imageSrc: "/onboarding/house.jpg",
     lead: "See your own home every time you land here.",
     secondary:
       "Add a photo and your dashboard greets you with your house, not a placeholder.",
@@ -109,10 +110,7 @@ const MILESTONE_CONTENT: Array<Omit<Milestone, "state">> = [
     id: "emergency_video",
     eyebrow: "EMERGENCIES",
     icon: "video",
-    // Reuse the emergency Water category art so the milestone visually rhymes
-    // with the Emergencies panel it points at. The other three milestones use
-    // the flat-field fallback until sibling art is commissioned.
-    imageSrc: "/document_icons/emergency_water.jpg",
+    imageSrc: "/onboarding/emergency.jpg",
     lead: "Know how to shut off your water in a hurry.",
     secondary:
       "Record where your shutoffs and panels are now, while everything is calm.",
@@ -123,6 +121,7 @@ const MILESTONE_CONTENT: Array<Omit<Milestone, "state">> = [
     id: "first_appliance",
     eyebrow: "INVENTORY",
     icon: "fridge",
+    imageSrc: "/onboarding/inventory.jpg",
     lead: "Start the record of what keeps your home running.",
     secondary:
       "Snap an appliance label — Hearth reads the make, model, and age for you.",
@@ -133,6 +132,7 @@ const MILESTONE_CONTENT: Array<Omit<Milestone, "state">> = [
     id: "habitat_reviewed",
     eyebrow: "HABITAT",
     icon: "leaf",
+    imageSrc: "/onboarding/habitat.jpg",
     lead: "See what the world around your home holds.",
     secondary:
       "Radon, flood risk, and more — already gathered for your address.",
