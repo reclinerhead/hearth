@@ -56,6 +56,13 @@ export type Milestone = {
   eyebrow: string;
   /** Visceral, scene-based glyph (a fridge for inventory, not a checkmark). */
   icon: IconName;
+  /**
+   * Full-bleed category art for the image tile, in the painterly amber/sepia
+   * style of the emergency tiles. Optional: when absent the tile falls back to
+   * a flat warm field with the glyph chip, so the layout ships before the art
+   * does and a missing asset never shows a broken image.
+   */
+  imageSrc?: string;
   /** Awareness-framed lead line — what the user will learn / gain. */
   lead: string;
   /** Optional supporting line in secondary text. */
@@ -92,6 +99,7 @@ const MILESTONE_CONTENT: Array<Omit<Milestone, "state">> = [
     id: "home_photo",
     eyebrow: "YOUR HOME",
     icon: "camera",
+    imageSrc: "/onboarding/house.jpg",
     lead: "See your own home every time you land here.",
     secondary:
       "Add a photo and your dashboard greets you with your house, not a placeholder.",
@@ -102,6 +110,7 @@ const MILESTONE_CONTENT: Array<Omit<Milestone, "state">> = [
     id: "emergency_video",
     eyebrow: "EMERGENCIES",
     icon: "video",
+    imageSrc: "/onboarding/emergency.jpg",
     lead: "Know how to shut off your water in a hurry.",
     secondary:
       "Record where your shutoffs and panels are now, while everything is calm.",
@@ -112,6 +121,7 @@ const MILESTONE_CONTENT: Array<Omit<Milestone, "state">> = [
     id: "first_appliance",
     eyebrow: "INVENTORY",
     icon: "fridge",
+    imageSrc: "/onboarding/inventory.jpg",
     lead: "Start the record of what keeps your home running.",
     secondary:
       "Snap an appliance label — Hearth reads the make, model, and age for you.",
@@ -122,6 +132,7 @@ const MILESTONE_CONTENT: Array<Omit<Milestone, "state">> = [
     id: "habitat_reviewed",
     eyebrow: "HABITAT",
     icon: "leaf",
+    imageSrc: "/onboarding/habitat.jpg",
     lead: "See what the world around your home holds.",
     secondary:
       "Radon, flood risk, and more — already gathered for your address.",

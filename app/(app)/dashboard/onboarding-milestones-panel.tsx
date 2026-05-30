@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Icon } from "@/components/icon";
 import { SmartUploader } from "@/components/smart-uploader/SmartUploader";
 import {
   isAllComplete,
-  pendingMilestones,
   resolvePanelView,
   RETIRE_BEAT_LINE,
   type Milestone,
@@ -19,10 +19,11 @@ import {
  * A small set of awareness-framed cards that appear after setup, nudging the
  * user toward the handful of high-value first actions (record an emergency
  * video, add a first appliance, add a home photo, review habitat findings).
- * Each card disappears as its milestone completes — derived server-side from
- * real data, never a tracked checklist — and the whole panel retires once
- * every milestone is done, leaving the dashboard in its normal shape with no
- * layout hole.
+ * As each milestone completes — derived server-side from real data, never a
+ * tracked checklist — its card flips to a green "done" tile and persists in
+ * the grid so the user sees their progress; the whole panel retires once every
+ * milestone is done, leaving the dashboard in its normal shape with no layout
+ * hole.
  *
  * Render-nothing-when-empty makes this safe to ship un-flagged: an empty
  * `milestones` list (or an all-complete one whose reward beat has already
@@ -95,7 +96,12 @@ export function OnboardingMilestonesPanel({
   }
 
   const view = resolvePanelView(milestones, retireBeatShown);
-  const pending = pendingMilestones(milestones);
+
+  // While any milestone is still pending (the "cards" view), the grid shows
+  // *all four* in fixed order — completed ones persist as green "done" tiles
+  // alongside the pending ones, so the user always sees their progress and the
+  // grid stays full. The whole panel only leaves once every milestone is
+  // complete, when `resolvePanelView` hands off to the retire beat.
 
   return (
     <>
@@ -113,8 +119,8 @@ export function OnboardingMilestonesPanel({
               A few first steps that help Hearth understand your home.
             </p>
           </div>
-          <ul className="grid gap-3 sm:grid-cols-2">
-            {pending.map((milestone) => (
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
+            {milestones.map((milestone) => (
               <MilestoneCard
                 key={milestone.id}
                 milestone={milestone}
@@ -137,9 +143,9 @@ export function OnboardingMilestonesPanel({
           onOpenChange={(open) => {
             if (!open) {
               setUploader(null);
-              // Pull the freshly-derived milestone states so the completed
-              // card drops on the spot rather than waiting for a manual
-              // reload.
+              // Pull the freshly-derived milestone states so the just-added
+              // milestone flips to its green "done" tile on the spot rather
+              // than waiting for a manual reload.
               router.refresh();
             }
           }}
@@ -151,8 +157,30 @@ export function OnboardingMilestonesPanel({
 }
 
 /**
- * One milestone card. Mirrors the discovery modal's bordered card-row idiom
- * (source eyebrow, outline glyph, lead + secondary) with a trailing CTA.
+ * The completed-state verb per milestone — the muted-green pill label shown on
+ * a tile once its milestone is complete. Completed tiles persist in the grid
+ * alongside the pending ones until every milestone is done (then the whole
+ * panel retires), so the user always sees their progress. Kept here as
+ * presentation, not in the pure content map, since it only matters to this
+ * tile treatment.
+ */
+const COMPLETED_VERB: Record<Milestone["id"], string> = {
+  home_photo: "Added",
+  emergency_video: "Recorded",
+  first_appliance: "Added",
+  habitat_reviewed: "Reviewed",
+};
+
+/**
+ * One milestone tile. A full-bleed image card modeled on the Emergency panel's
+ * `PrimaryTile` (issue #218): category art under a bottom gradient scrim, a
+ * prominent top-left glyph chip, white overlay text, and a solid amber CTA
+ * pill. The whole tile is the click target (matching `PrimaryTile` /
+ * `InventoryTile`); the pill is the visible affordance.
+ *
+ * When `imageSrc` is absent the art layer is skipped and the glyph sits over a
+ * flat warm `--color-bg-surface-raised` field, so the layout ships before the
+ * commissioned art does and a missing asset never shows a broken image.
  */
 function MilestoneCard({
   milestone,
@@ -161,63 +189,137 @@ function MilestoneCard({
   milestone: Milestone;
   onAction: () => void;
 }) {
+  const complete = milestone.state === "complete";
+
   return (
-    <li
-      className="flex flex-col gap-3"
-      style={{
-        backgroundColor: "var(--color-bg-surface)",
-        border: "1px solid var(--color-border-subtle)",
-        borderRadius: "var(--radius-md)",
-        padding: "12px 14px 14px",
-      }}
-    >
-      <div className="eyebrow">{milestone.eyebrow}</div>
-      <div className="flex items-start gap-3">
+    <li className="min-w-0">
+      <button
+        type="button"
+        // A completed tile is a momentary confirmation, not an action — its
+        // click is a no-op so it can't re-open the uploader / re-scroll.
+        onClick={complete ? undefined : onAction}
+        aria-disabled={complete || undefined}
+        // `block w-full` so the button fills its grid cell — without it a
+        // `<button>` is inline-block and the aspect-ratio + min-height combo
+        // overflows the viewport on iOS Safari (same fix as `PrimaryTile`).
+        // The image itself does not move on hover; only the chrome lifts.
+        className="group relative block w-full overflow-hidden text-left transition-[transform,box-shadow] hover:-translate-y-px hover:shadow-[0_0_0_1px_var(--color-accent)] focus-visible:-translate-y-px focus-visible:shadow-[0_0_0_2px_var(--color-accent)] focus-visible:outline-none"
+        style={{
+          aspectRatio: "3 / 4",
+          minHeight: 300,
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--color-border-subtle)",
+          backgroundColor: "var(--color-bg-surface-raised)",
+        }}
+      >
+        {milestone.imageSrc ? (
+          <Image
+            src={milestone.imageSrc}
+            alt=""
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, 25vw"
+            style={{
+              objectFit: "cover",
+              filter: complete ? "grayscale(0.55) brightness(0.7)" : undefined,
+            }}
+          />
+        ) : null}
+
+        {/* Prominent glyph chip — semi-opaque over the art, top-left. */}
         <span
           aria-hidden
-          className="flex h-7 w-7 shrink-0 items-center justify-center"
+          className="absolute left-3 top-3 flex items-center justify-center"
           style={{
-            color: "var(--color-accent)",
+            width: 56,
+            height: 56,
             borderRadius: "var(--radius-md)",
-            backgroundColor:
-              "color-mix(in oklab, var(--color-accent) 12%, transparent)",
+            color: "#fff",
+            backgroundColor: complete
+              ? "color-mix(in oklab, var(--color-success) 30%, #000)"
+              : "color-mix(in oklab, #000 28%, transparent)",
           }}
         >
-          <Icon name={milestone.icon} size={16} />
+          <Icon name={milestone.icon} size={30} />
         </span>
-        <div className="min-w-0 flex-1">
+
+        {/* Bottom scrim carrying the overlay text (slightly stronger than the
+            emergency tile's, since we stack eyebrow + title + sub + CTA). */}
+        <div
+          aria-hidden
+          className="absolute inset-x-0 bottom-0"
+          style={{
+            height: "62%",
+            background:
+              "linear-gradient(to top, color-mix(in oklab,#000 88%, transparent) 0%, color-mix(in oklab,#000 70%, transparent) 45%, transparent 100%)",
+          }}
+        />
+
+        <div className="absolute inset-x-0 bottom-0 flex flex-col px-4 pb-4 pt-8">
           <div
             style={{
-              fontSize: 14,
+              color: "color-mix(in oklab, #fff 70%, transparent)",
+              letterSpacing: 0.5,
+              textTransform: "uppercase",
+              fontSize: 11,
+            }}
+          >
+            {milestone.eyebrow}
+          </div>
+          <div
+            style={{
+              color: "#fff",
+              fontSize: 17,
               fontWeight: 500,
-              lineHeight: 1.4,
-              color: "var(--color-text-primary)",
+              lineHeight: 1.3,
+              marginTop: 4,
             }}
           >
             {milestone.lead}
           </div>
           <div
-            className="text-small"
             style={{
-              color: "var(--color-text-secondary)",
-              marginTop: 2,
+              color: "color-mix(in oklab, #fff 72%, transparent)",
+              fontSize: 13,
               lineHeight: 1.45,
+              marginTop: 6,
             }}
           >
             {milestone.secondary}
           </div>
+          {complete ? (
+            <span
+              className="mt-3 inline-flex items-center gap-1.5 self-start"
+              style={{
+                color: "var(--color-success)",
+                backgroundColor:
+                  "color-mix(in oklab, var(--color-success) 16%, transparent)",
+                borderRadius: 999,
+                padding: "8px 14px",
+                fontSize: 13,
+                fontWeight: 500,
+              }}
+            >
+              <Icon name="circle-check" size={14} />
+              {COMPLETED_VERB[milestone.id]}
+            </span>
+          ) : (
+            <span
+              className="mt-3 inline-flex items-center gap-1.5 self-start"
+              style={{
+                color: "var(--color-bg-base)",
+                backgroundColor: "var(--color-accent)",
+                borderRadius: 999,
+                padding: "8px 14px",
+                fontSize: 13,
+                fontWeight: 500,
+              }}
+            >
+              {milestone.cta}
+              <Icon name="arrow-right" size={14} />
+            </span>
+          )}
         </div>
-      </div>
-      <div className="mt-auto">
-        <button
-          type="button"
-          onClick={onAction}
-          className="btn btn-ghost"
-        >
-          {milestone.cta}
-          <Icon name="arrow-right" size={14} />
-        </button>
-      </div>
+      </button>
     </li>
   );
 }
