@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   buildMilestones,
+  GO_DEEPER_CARDS,
   isAllComplete,
   pendingMilestones,
   resolvePanelView,
+  type GoDeeperAction,
   type MilestoneId,
   type MilestoneSignals,
 } from "./onboarding-milestones";
@@ -122,5 +124,34 @@ describe("resolvePanelView", () => {
   it("hides entirely once all complete and the retire beat has been seen", () => {
     const milestones = buildMilestones(ALL);
     expect(resolvePanelView(milestones, true)).toBe("hidden");
+  });
+});
+
+describe("GO_DEEPER_CARDS", () => {
+  // Static go-deeper suggestions (issue #220). These are presentation data,
+  // decoupled from milestone logic — assert only the shape and that each card
+  // routes to a known action.
+  const VALID_ACTIONS = new Set<GoDeeperAction>([
+    "open-uploader-appliance",
+    "open-uploader-emergency",
+    "open-home-details",
+  ]);
+
+  it("ships three cards, each with id/icon/title/description/action", () => {
+    expect(GO_DEEPER_CARDS).toHaveLength(3);
+    for (const card of GO_DEEPER_CARDS) {
+      expect(card.id, card.id).toBeTruthy();
+      expect(card.icon, card.id).toBeTruthy();
+      expect(card.title, card.id).toBeTruthy();
+      expect(card.description, card.id).toBeTruthy();
+      expect(VALID_ACTIONS.has(card.action), card.action).toBe(true);
+    }
+  });
+
+  it("uses a distinct id and action per card", () => {
+    const ids = GO_DEEPER_CARDS.map((c) => c.id);
+    const actions = GO_DEEPER_CARDS.map((c) => c.action);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(new Set(actions).size).toBe(actions.length);
   });
 });

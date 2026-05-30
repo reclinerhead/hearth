@@ -6,9 +6,13 @@ import Image from "next/image";
 import { Icon } from "@/components/icon";
 import { SmartUploader } from "@/components/smart-uploader/SmartUploader";
 import {
+  GO_DEEPER_CARDS,
+  GO_DEEPER_HEADER,
+  GO_DEEPER_NEXT_EYEBROW,
   isAllComplete,
   resolvePanelView,
-  RETIRE_BEAT_LINE,
+  type GoDeeperAction,
+  type GoDeeperMode,
   type Milestone,
   type MilestoneAction,
 } from "./onboarding-milestones";
@@ -36,6 +40,13 @@ import {
  *   - Home photo / habitat scroll to their inline surfaces (the hero image
  *     surface owns the photo picker; opening any habitat finding modal is
  *     what stamps `habitat_reviewed`). They live just below this panel.
+ *
+ * Once every milestone is complete the panel hands off to the **go-deeper
+ * panel** (issue #220) — the old single-line retire beat grown into a
+ * re-openable "ways to go deeper" surface. It shows in `celebration` mode on
+ * the final-flip load (auto, dismissible) and in `reopen` mode when the user
+ * clicks the dashboard `?` trigger later (`reopened` / `onCloseReopen` props,
+ * owned by the coordinator that also hosts `DashboardLive`).
  */
 
 function scrollToAnchor(id: string) {
@@ -46,9 +57,18 @@ function scrollToAnchor(id: string) {
 export function OnboardingMilestonesPanel({
   houseId,
   milestones,
+  reopened = false,
+  onCloseReopen,
+  onOpenHomeDetails,
 }: {
   houseId: string;
   milestones: Milestone[];
+  /** True when the dashboard `?` trigger has opened the go-deeper panel. */
+  reopened?: boolean;
+  /** Close the reopened go-deeper panel (the `?`-opened one). */
+  onCloseReopen?: () => void;
+  /** Open the home-details edit modal (go-deeper card 3), owned by DashboardLive. */
+  onOpenHomeDetails?: () => void;
 }) {
   const router = useRouter();
 
@@ -95,13 +115,37 @@ export function OnboardingMilestonesPanel({
     }
   }
 
+  function runGoDeeper(action: GoDeeperAction) {
+    switch (action) {
+      case "open-uploader-appliance":
+        setUploader("appliance");
+        break;
+      case "open-uploader-emergency":
+        setUploader("emergency");
+        break;
+      case "open-home-details":
+        onOpenHomeDetails?.();
+        break;
+    }
+  }
+
   const view = resolvePanelView(milestones, retireBeatShown);
+
+  // The go-deeper panel: `reopen` (manual `?` override) takes precedence over
+  // the auto `celebration` beat on the final-flip load. It's independent of
+  // the milestone cards — `reopen` can show while cards are still pending, and
+  // the `?` never restores dismissed cards (per #216 semantics).
+  const goDeeperMode: GoDeeperMode | null = reopened
+    ? "reopen"
+    : view === "retire-beat"
+      ? "celebration"
+      : null;
 
   // While any milestone is still pending (the "cards" view), the grid shows
   // *all four* in fixed order — completed ones persist as green "done" tiles
   // alongside the pending ones, so the user always sees their progress and the
   // grid stays full. The whole panel only leaves once every milestone is
-  // complete, when `resolvePanelView` hands off to the retire beat.
+  // complete, when `resolvePanelView` hands off to the go-deeper panel.
 
   return (
     <>
@@ -129,8 +173,23 @@ export function OnboardingMilestonesPanel({
             ))}
           </ul>
         </section>
-      ) : view === "retire-beat" ? (
-        <RetireBeat />
+      ) : null}
+
+      {goDeeperMode ? (
+        <GoDeeperPanel
+          mode={goDeeperMode}
+          onAction={runGoDeeper}
+          onDismiss={() => {
+            if (goDeeperMode === "reopen") {
+              onCloseReopen?.();
+            } else {
+              // Celebration dismiss: the reveal effect has already written the
+              // session flag, so flipping this hides the beat now and it stays
+              // hidden on reload this tab (existing retire mechanics).
+              setRetireBeatShown(true);
+            }
+          }}
+        />
       ) : null}
 
       {uploader ? (
@@ -325,21 +384,204 @@ function MilestoneCard({
 }
 
 /**
- * The quiet, momentary reward line shown on the final-flip load — gratitude /
- * noticing, no badges or scores. Gone on the next load (see panel header).
+ * The go-deeper panel (issue #220) — the upgraded retire beat. A lit, bordered
+ * card with a warm top-right glow, a state-aware header (celebration vs.
+ * reopen), a recessed hairline divider, and three "ways to go deeper" cards.
+ * Both modes share the divider + cards; only the header copy differs.
  */
-function RetireBeat() {
+function GoDeeperPanel({
+  mode,
+  onAction,
+  onDismiss,
+}: {
+  mode: GoDeeperMode;
+  onAction: (action: GoDeeperAction) => void;
+  onDismiss: () => void;
+}) {
+  const header = GO_DEEPER_HEADER[mode];
   return (
-    <div
-      className="surface-ai flex items-center gap-3 p-4 sm:p-5"
-      role="status"
+    <section
+      aria-label={
+        mode === "celebration" ? "Foundation complete" : "Ways to go deeper"
+      }
+      className="relative p-5 sm:p-6"
+      style={{
+        borderRadius: "var(--radius-lg)",
+        border:
+          "1px solid color-mix(in oklab, var(--color-accent) 28%, var(--color-border-subtle))",
+        // Subtle warm radial glow from the top-right corner over the base
+        // surface — the "lit, not flat" signal that makes the moment land.
+        background:
+          "radial-gradient(140% 120% at 85% -10%, color-mix(in oklab, var(--color-accent) 16%, transparent) 0%, transparent 55%), var(--color-bg-surface)",
+      }}
     >
-      <span aria-hidden style={{ color: "var(--color-accent)" }}>
-        <Icon name="sparkles" size={18} />
-      </span>
-      <p style={{ color: "var(--color-text-primary)", fontWeight: 500 }}>
-        {RETIRE_BEAT_LINE}
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        title="Dismiss"
+        className="btn btn-ghost btn-icon absolute right-3 top-3"
+      >
+        <Icon name="x" size={16} />
+      </button>
+
+      {/* Header block — the only part that differs by mode. */}
+      <div className="flex items-center gap-3" style={{ paddingRight: 40 }}>
+        <span
+          aria-hidden
+          className="flex shrink-0 items-center justify-center"
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: "var(--radius-md)",
+            color: "var(--color-accent)",
+            backgroundColor:
+              "color-mix(in oklab, var(--color-accent) 18%, transparent)",
+          }}
+        >
+          <Icon name="flame" size={22} />
+        </span>
+        <div
+          style={{
+            color: "var(--color-accent)",
+            textTransform: "uppercase",
+            fontSize: 11,
+            letterSpacing: "0.09em",
+            fontWeight: 500,
+          }}
+        >
+          {header.eyebrow}
+        </div>
+      </div>
+      {/* Styled as a headline but rendered as a div, not a heading: this panel
+          sits above the hero's <h1>, so an <h2> here would invert the heading
+          order. Matches the milestone tiles, which also avoid headings. */}
+      <div
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontSize: 25,
+          fontWeight: 500,
+          lineHeight: 1.15,
+          color: "var(--color-text-primary)",
+          marginTop: 14,
+        }}
+      >
+        {header.headline}
+      </div>
+      <p
+        className="text-small"
+        style={{
+          color: "var(--color-text-secondary)",
+          fontSize: 14.5,
+          lineHeight: 1.5,
+          marginTop: 8,
+          maxWidth: "62ch",
+        }}
+      >
+        {header.sub}
       </p>
-    </div>
+
+      {/* Recessed hairline divider — a clean 1px rule, not a heavy one. */}
+      <div
+        aria-hidden
+        style={{
+          borderTop: "1px solid var(--color-border-subtle)",
+          marginTop: 20,
+          marginBottom: 18,
+        }}
+      />
+
+      <div
+        style={{
+          color: "var(--color-text-tertiary)",
+          textTransform: "uppercase",
+          fontSize: 11,
+          letterSpacing: "0.08em",
+          marginBottom: 12,
+        }}
+      >
+        {GO_DEEPER_NEXT_EYEBROW}
+      </div>
+
+      {/* Three cards across; collapse to one column under ~820px. */}
+      <div className="grid grid-cols-1 gap-3 min-[820px]:grid-cols-3">
+        {GO_DEEPER_CARDS.map((card) => (
+          <GoDeeperCardItem
+            key={card.id}
+            card={card}
+            onClick={() => onAction(card.action)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** One "go deeper" suggestion card. The whole card is the click target. */
+function GoDeeperCardItem({
+  card,
+  onClick,
+}: {
+  card: (typeof GO_DEEPER_CARDS)[number];
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex w-full items-start gap-3 text-left transition-[transform,box-shadow] hover:-translate-y-px hover:shadow-[0_0_0_1px_var(--color-accent)] focus-visible:-translate-y-px focus-visible:shadow-[0_0_0_2px_var(--color-accent)] focus-visible:outline-none"
+      style={{
+        backgroundColor: "var(--color-bg-surface-raised)",
+        border: "1px solid var(--color-border-subtle)",
+        borderRadius: "var(--radius-md)",
+        padding: 14,
+      }}
+    >
+      <span
+        aria-hidden
+        className="flex shrink-0 items-center justify-center"
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: "var(--radius-md)",
+          color: "var(--color-accent)",
+          backgroundColor:
+            "color-mix(in oklab, var(--color-accent) 16%, transparent)",
+        }}
+      >
+        <Icon name={card.icon} size={18} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <span
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              lineHeight: 1.3,
+              color: "var(--color-text-primary)",
+            }}
+          >
+            {card.title}
+          </span>
+          <span
+            aria-hidden
+            className="shrink-0"
+            style={{ color: "var(--color-text-tertiary)", marginTop: 2 }}
+          >
+            <Icon name="arrow-right" size={13} />
+          </span>
+        </div>
+        <div
+          style={{
+            color: "var(--color-text-secondary)",
+            fontSize: 12.5,
+            lineHeight: 1.45,
+            marginTop: 4,
+          }}
+        >
+          {card.description}
+        </div>
+      </div>
+    </button>
   );
 }

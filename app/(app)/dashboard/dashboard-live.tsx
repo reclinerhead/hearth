@@ -116,12 +116,14 @@ function HeroAddress({
   onRefresh,
   refreshing,
   onEdit,
+  onHelp,
   editTriggerRef,
 }: {
   house: House;
   onRefresh: () => void;
   refreshing: boolean;
   onEdit: () => void;
+  onHelp: () => void;
   editTriggerRef: React.RefObject<HTMLButtonElement | null>;
 }) {
   const display = house.nickname ?? house.address_line1;
@@ -140,11 +142,35 @@ function HeroAddress({
           {region}
         </p>
       </div>
+      {/* Help first, then the two house-facts actions: [?] [✏️] [↻]. The
+          dashboard has no separate page header — this address row is the
+          dashboard title — so it's the right home for a dashboard-scoped
+          help affordance (issue #220). */}
       <div className="flex items-center gap-2 shrink-0">
+        <HelpButton onClick={onHelp} />
         <EditPropertyButton onClick={onEdit} triggerRef={editTriggerRef} />
         <RefreshBriefingButton onClick={onRefresh} refreshing={refreshing} />
       </div>
     </div>
+  );
+}
+
+/**
+ * Icon-only `?` button that (re)opens the onboarding go-deeper panel in reopen
+ * mode (issue #220). Same `btn-icon` 36px square as the edit pencil, so the
+ * cluster stays visually balanced and clears the 44px touch target.
+ */
+function HelpButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="What can I do here?"
+      title="What can I do here?"
+      className="btn btn-ghost btn-icon"
+    >
+      <Icon name="help-circle" size={16} />
+    </button>
   );
 }
 
@@ -498,6 +524,9 @@ export function DashboardLive({
   houseId,
   initialHouse,
   lifecycleOutlookSlot,
+  editOpen,
+  onEditOpenChange,
+  onOpenHelp,
 }: {
   houseId: string;
   // Server-rendered snapshot of the house row. Seeding the hook with
@@ -513,6 +542,17 @@ export function DashboardLive({
   // Same server-component-inside-client pattern the inventory detail page
   // uses for its maintenance panel slot.
   lifecycleOutlookSlot?: React.ReactNode;
+  // Home-details edit-modal open state, lifted to the dashboard coordinator
+  // (issue #220) so the go-deeper panel's "house facts" card can open the
+  // same modal the address-row pencil opens. DashboardLive still owns the
+  // modal itself (the delete flow, focus return, the EditableHouseRow
+  // projection) — only the open boolean is controlled from above.
+  editOpen: boolean;
+  onEditOpenChange: (open: boolean) => void;
+  // Opens the go-deeper panel in reopen mode. The `?` trigger lives here in
+  // the address row, but the panel is rendered by the sibling milestones
+  // panel, so the coordinator routes this up and back down.
+  onOpenHelp: () => void;
 }) {
   const { house, loading, error, refetch } = useHouseRealtime(
     houseId,
@@ -524,12 +564,12 @@ export function DashboardLive({
   const [modalManuallyDismissed, setModalManuallyDismissed] = useState(false);
   const firstRun = useFirstRunDiscoveryModal(house);
 
-  // Property Details edit modal — opened from the pencil button next
-  // to the address. The delete-property flow lives inside this modal's
-  // danger zone; on a failed delete the modal closes itself and
-  // bubbles the error up via `setDeleteToast` so the user lands back
-  // on the dashboard with a top-center toast.
-  const [editOpen, setEditOpen] = useState(false);
+  // Property Details edit modal — opened from the pencil button next to the
+  // address (and now the go-deeper "house facts" card). Open state is lifted
+  // to the coordinator (see props); the delete-property flow still lives
+  // inside this modal's danger zone — on a failed delete the modal closes
+  // itself and bubbles the error up via `setDeleteToast` so the user lands
+  // back on the dashboard with a top-center toast.
   const [deleteToast, setDeleteToast] = useState<string | null>(null);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -814,7 +854,8 @@ export function DashboardLive({
             house={house}
             onRefresh={handleRefresh}
             refreshing={refreshing}
-            onEdit={() => setEditOpen(true)}
+            onEdit={() => onEditOpenChange(true)}
+            onHelp={onOpenHelp}
             editTriggerRef={editTriggerRef}
           />
 
@@ -868,7 +909,7 @@ export function DashboardLive({
         <EditHomeDetailsModal
           open
           house={toEditableHouseRow(house)}
-          onClose={() => setEditOpen(false)}
+          onClose={() => onEditOpenChange(false)}
           onDeleteError={(message) => setDeleteToast(message)}
           getReturnFocusElement={() => editTriggerRef.current}
         />
