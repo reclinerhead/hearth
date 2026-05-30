@@ -819,11 +819,6 @@ export function DashboardLive({
             ))}
           </div>
 
-          <AboutYourHouseCard
-            description={house.description}
-            onEdit={() => setEditOpen(true)}
-          />
-
           {/*
             Lifecycle outlook fills the dead space the removed Zillow
             description left beneath the facts cards (issue #212). It's a
