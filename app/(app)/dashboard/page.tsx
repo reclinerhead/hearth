@@ -7,6 +7,7 @@ import type { House } from "@/types/house";
 import { DashboardLive } from "./dashboard-live";
 import { EmergencyReferencePanel } from "./emergency-reference-panel";
 import { HabitatPreviewPanel } from "./habitat-preview-panel";
+import { LifecycleOutlookPanel } from "./lifecycle-outlook-panel";
 import { MaintenancePanelDashboard } from "./maintenance-panel-dashboard";
 
 // Issue #139 replaced the hardcoded EMERGENCIES placeholder with the
@@ -82,6 +83,7 @@ export default async function DashboardPage() {
         key={house.id}
         houseId={house.id}
         initialHouse={house}
+        lifecycleOutlookSlot={<LifecycleOutlookPanel houseId={house.id} />}
       />
 
       {/*

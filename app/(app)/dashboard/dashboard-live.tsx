@@ -496,6 +496,7 @@ function useFirstRunDiscoveryModal(house: House | null): {
 export function DashboardLive({
   houseId,
   initialHouse,
+  lifecycleOutlookSlot,
 }: {
   houseId: string;
   // Server-rendered snapshot of the house row. Seeding the hook with
@@ -504,6 +505,13 @@ export function DashboardLive({
   // hook's Realtime subscription and same-tab refresh listener still
   // run normally on top of the seed.
   initialHouse: House;
+  // Server-rendered lifecycle outlook panel (issue #212), passed in as a
+  // ReactNode slot from page.tsx. DashboardLive is a client component, so
+  // the panel — which runs a server Supabase query — is rendered on the
+  // server and handed down rather than fetched inside the client tree.
+  // Same server-component-inside-client pattern the inventory detail page
+  // uses for its maintenance panel slot.
+  lifecycleOutlookSlot?: React.ReactNode;
 }) {
   const { house, loading, error, refetch } = useHouseRealtime(
     houseId,
@@ -815,6 +823,13 @@ export function DashboardLive({
             description={house.description}
             onEdit={() => setEditOpen(true)}
           />
+
+          {/*
+            Lifecycle outlook fills the dead space the removed Zillow
+            description left beneath the facts cards (issue #212). It's a
+            server-rendered slot — see the prop comment above.
+          */}
+          {lifecycleOutlookSlot}
         </div>
       </section>
       {showDiscoveryModal ? (
