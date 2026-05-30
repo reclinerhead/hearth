@@ -56,6 +56,13 @@ export type Milestone = {
   eyebrow: string;
   /** Visceral, scene-based glyph (a fridge for inventory, not a checkmark). */
   icon: IconName;
+  /**
+   * Full-bleed category art for the image tile, in the painterly amber/sepia
+   * style of the emergency tiles. Optional: when absent the tile falls back to
+   * a flat warm field with the glyph chip, so the layout ships before the art
+   * does and a missing asset never shows a broken image.
+   */
+  imageSrc?: string;
   /** Awareness-framed lead line — what the user will learn / gain. */
   lead: string;
   /** Optional supporting line in secondary text. */
@@ -102,6 +109,10 @@ const MILESTONE_CONTENT: Array<Omit<Milestone, "state">> = [
     id: "emergency_video",
     eyebrow: "EMERGENCIES",
     icon: "video",
+    // Reuse the emergency Water category art so the milestone visually rhymes
+    // with the Emergencies panel it points at. The other three milestones use
+    // the flat-field fallback until sibling art is commissioned.
+    imageSrc: "/document_icons/emergency_water.jpg",
     lead: "Know how to shut off your water in a hurry.",
     secondary:
       "Record where your shutoffs and panels are now, while everything is calm.",
