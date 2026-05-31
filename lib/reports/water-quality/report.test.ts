@@ -4,8 +4,10 @@ import type { CcrFreeTestingOffer } from "@/lib/documents/ai/ccr-schema";
 import type { DetectedContaminantInput } from "@/lib/habitat/water-quality/remediation/recommend";
 import { TODDTECH_HEARTH_URL } from "../constants";
 import { buildReportFooterTemplate } from "../theme";
+import { PFAS_FAMILY } from "@/lib/habitat/water-quality/contaminants/data";
 import {
   buildWaterQualityReport,
+  groupPfasFamily,
   waterQualityReportSignature,
   type WaterQualityReportInput,
 } from "./report";
@@ -164,6 +166,82 @@ describe("buildWaterQualityReport", () => {
   it("renders a clean-water message when nothing was detected", () => {
     const html = buildWaterQualityReport(baseInput({ contaminants: [], detected: [] }));
     expect(html).toContain("no measurable detections");
+  });
+});
+
+function pfas(name: string, level: number, mcl: number): CcrSummarizedContaminant {
+  return contaminant(name, "caution", level, "ppt", mcl);
+}
+
+describe("groupPfasFamily (issue #234)", () => {
+  it("folds 2+ PFAS analytes into one family entry at the first PFAS position", () => {
+    const items = groupPfasFamily([
+      contaminant("Lead", "concern", 9, "ppb", 15),
+      pfas("Perfluorooctanoic acid (PFOA)", 6, 4),
+      pfas("Perfluorooctane sulfonic acid (PFOS)", 10, 4),
+      contaminant("Total Trihalomethanes", "context", 20, "ppb", 80),
+    ]);
+    expect(items.map((i) => i.kind)).toEqual(["single", "pfasFamily", "single"]);
+    const family = items[1];
+    if (family.kind !== "pfasFamily") throw new Error("expected family");
+    expect(family.analytes).toHaveLength(2);
+  });
+
+  it("orders analytes within the family by detected level, descending", () => {
+    const items = groupPfasFamily([
+      pfas("Perfluorooctanoic acid (PFOA)", 6, 4),
+      pfas("Perfluorohexane sulfonic acid (PFHxS)", 10, 51),
+    ]);
+    const family = items[0];
+    if (family.kind !== "pfasFamily") throw new Error("expected family");
+    expect(family.analytes[0].contaminant_name).toContain("PFHxS");
+  });
+
+  it("leaves a lone PFAS analyte as a normal single card (0/1-row guard)", () => {
+    const items = groupPfasFamily([
+      contaminant("Lead", "concern", 9, "ppb", 15),
+      pfas("Perfluorooctanoic acid (PFOA)", 6, 4),
+    ]);
+    expect(items.every((i) => i.kind === "single")).toBe(true);
+  });
+});
+
+describe("PFAS family card rendering", () => {
+  function withFivePfas(): WaterQualityReportInput {
+    return baseInput({
+      contaminants: [
+        contaminant("Copper", "caution", 1, "ppm", 1.3),
+        contaminant("Lead", "caution", 9, "ppb", 15),
+        pfas("Perfluorooctanoic acid (PFOA)", 6, 4),
+        pfas("Perfluorooctane sulfonic acid (PFOS)", 10, 4),
+        pfas("Perfluorohexane sulfonic acid (PFHxS)", 4, 51),
+        pfas("Perfluorobutane sulfonic acid (PFBS)", 3, 2000),
+        pfas("Perfluorohexanoic acid (PFHxA)", 5, 400000),
+      ],
+    });
+  }
+
+  it("renders one family card (body + all five analytes + a single EPA link)", () => {
+    const html = buildWaterQualityReport(withFivePfas());
+    // Heading + family body present.
+    expect(html).toContain(PFAS_FAMILY.label);
+    expect(html).toContain("forever chemicals");
+    // All five analytes listed by their printed names.
+    for (const a of ["PFOA", "PFOS", "PFHxS", "PFBS", "PFHxA"]) {
+      expect(html).toContain(a);
+    }
+    // Exactly one EPA reference link for the family.
+    const links = html.split(`href="${PFAS_FAMILY.learn_more_url}"`).length - 1;
+    expect(links).toBe(1);
+    // Non-PFAS contaminants still render their own cards.
+    expect(html).toContain("Copper");
+    expect(html).toContain("Lead");
+  });
+
+  it("does not render a family wrapper when only one PFAS analyte is present", () => {
+    // baseInput has a single PFAS analyte (PFOA).
+    const html = buildWaterQualityReport(baseInput());
+    expect(html).not.toContain(PFAS_FAMILY.label);
   });
 });
 

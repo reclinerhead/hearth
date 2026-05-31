@@ -413,3 +413,21 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
   },
 ];
+
+/**
+ * Family-level reference for PFAS. The per-analyte entries above
+ * (PFOA, PFOS) carry their own descriptions, but a CCR can detect several
+ * PFAS compounds at once — and the homeowner-relevant story is the family,
+ * not the individual molecules. This is the canonical home for that
+ * family-level copy, consumed by surfaces that group PFAS into one card
+ * (the Water Quality Report, issue #234). Not part of `WQA_CONTAMINANTS`
+ * because it isn't a detectable analyte with aliases — it's editorial copy
+ * for the group.
+ */
+export const PFAS_FAMILY = {
+  /** Plain-language family heading. */
+  label: "PFAS — the “forever chemicals”",
+  description:
+    "PFAS are a large family of synthetic “forever chemicals” that don't break down in the environment or the body and build up over time. EPA finalized enforceable limits for several of them in 2024 (utilities must comply by 2029), set at just a few parts per trillion — so low that any detected amount is worth knowing about. The health concerns (developmental, immune, and cancer effects) come from long-term accumulation across these compounds together, which is why they're best understood as one exposure rather than separate chemicals. A carbon-block filter certified to NSF P473, or reverse osmosis, removes them; ordinary carafe pitchers are unreliable.",
+  learn_more_url: "https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas",
+} as const;
