@@ -188,4 +188,228 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
       "Copper, like lead, comes from corrosion of household plumbing rather than the water source. Short-term exposure to elevated copper can cause stomach upset; long-term exposure can affect liver and kidney function in people with copper-sensitive conditions like Wilson's disease. The same flushing and filtration steps that address lead generally address copper too — copper is comparatively easier to remove and most household carbon filters handle it.",
     learn_more_url: "https://www.epa.gov/ground-water-and-drinking-water/national-primary-drinking-water-regulations",
   },
+
+  // -- Disinfection byproducts (the CCR pair every chlorinated system reports) --
+  {
+    canonical_name: "Total Trihalomethanes",
+    common_name: "TTHMs",
+    aliases: [
+      "Total Trihalomethanes",
+      "Total Trihalomethanes (TTHM)",
+      "Total Trihalomethanes (TTHMs)",
+      "Trihalomethanes",
+      "TTHM",
+      "TTHMs",
+      "2950",
+    ],
+    category: "disinfection_byproducts",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 0.08, label: "0.080 mg/L (80 ppb) MCL" },
+    ],
+    description:
+      "Trihalomethanes form when the chlorine a utility uses to disinfect reacts with naturally occurring organic matter in the water. They're a near-universal tradeoff of safe, disinfected tap water — the federal limit balances disinfection-byproduct risk against the much larger risk of waterborne disease. A carbon filter removes them readily; counterintuitively, boiling concentrates them rather than removing them.",
+    learn_more_url: "https://www.epa.gov/dwreginfo/stage-1-and-stage-2-disinfectants-and-disinfection-byproducts-rules",
+  },
+  {
+    canonical_name: "Haloacetic Acids",
+    common_name: "HAA5",
+    aliases: [
+      "Haloacetic Acids",
+      "Haloacetic Acids (HAA5)",
+      "Haloacetic acids (HAA5)",
+      "HAA5",
+      "HAA",
+      "2456",
+    ],
+    category: "disinfection_byproducts",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 0.06, label: "0.060 mg/L (60 ppb) MCL" },
+    ],
+    description:
+      "Haloacetic acids are the second regulated family of disinfection byproducts, formed the same way as trihalomethanes — chlorine reacting with organic matter. Like TTHMs they're a byproduct of the disinfection that makes tap water safe, removed effectively by carbon filtration and concentrated rather than removed by boiling.",
+    learn_more_url: "https://www.epa.gov/dwreginfo/stage-1-and-stage-2-disinfectants-and-disinfection-byproducts-rules",
+  },
+
+  // -- PFAS (2024 final MCLs; any detection is meaningful) -----------------
+  {
+    canonical_name: "PFOA",
+    common_name: "PFOA",
+    aliases: [
+      "PFOA",
+      "Perfluorooctanoic acid",
+      "Perfluorooctanoic Acid",
+      "2810",
+    ],
+    category: "pfas",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 0.000004, label: "4.0 ng/L (ppt) MCL — effective 2029" },
+      { kind: "mclg", value_mg_l: 0, label: "0 ng/L MCLG (no safe amount)" },
+    ],
+    description:
+      "PFOA is one of the 'forever chemicals' — synthetic compounds that don't break down in the environment or the body and accumulate over time. EPA finalized an enforceable limit of 4 parts per trillion in 2024, with utilities required to comply by 2029. Because the limit is so low and the health concerns (developmental, immune, and cancer effects) attach to long-term accumulation, any detected level is worth knowing about. A carbon-block filter certified to NSF P473, or reverse osmosis, removes it.",
+    learn_more_url: "https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas",
+  },
+  {
+    canonical_name: "PFOS",
+    common_name: "PFOS",
+    aliases: [
+      "PFOS",
+      "Perfluorooctane sulfonic acid",
+      "Perfluorooctanesulfonic acid",
+      "2811",
+    ],
+    category: "pfas",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 0.000004, label: "4.0 ng/L (ppt) MCL — effective 2029" },
+      { kind: "mclg", value_mg_l: 0, label: "0 ng/L MCLG (no safe amount)" },
+    ],
+    description:
+      "PFOS is the other most-studied 'forever chemical', regulated alongside PFOA under EPA's 2024 PFAS rule at 4 parts per trillion with a 2029 compliance deadline. The same persistence and accumulation concerns apply, and the same treatments address it — a carbon-block filter certified to NSF P473, or reverse osmosis. Ordinary carafe pitchers are unreliable for PFAS.",
+    learn_more_url: "https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas",
+  },
+
+  // -- Inorganic chemicals commonly printed on CCRs ------------------------
+  {
+    canonical_name: "Arsenic",
+    common_name: "Arsenic",
+    aliases: ["Arsenic", "1005"],
+    category: "inorganic",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 0.01, label: "0.010 mg/L (10 ppb) MCL" },
+      { kind: "mclg", value_mg_l: 0, label: "0 mg/L MCLG" },
+    ],
+    description:
+      "Arsenic occurs naturally in many rock formations and enters groundwater as it dissolves — so it's primarily a concern for groundwater systems and private wells. Long-term exposure is linked to several cancers and cardiovascular effects. Carbon filters only partially address it; reverse osmosis or distillation is the reliable household treatment.",
+    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+  },
+  {
+    canonical_name: "Nitrate",
+    common_name: "Nitrate",
+    aliases: ["Nitrate", "Nitrate (as N)", "Nitrate-Nitrite", "1038", "1040"],
+    category: "inorganic",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 10, label: "10 mg/L (as nitrogen) MCL" },
+    ],
+    description:
+      "Nitrate enters water mainly from fertilizer runoff, septic systems, and animal waste, so it tends to be elevated in agricultural areas. It's the one common contaminant with an acute rather than cumulative risk: high nitrate is dangerous for infants under six months ('blue baby syndrome'). Carbon filters do not remove it — reverse osmosis, distillation, or a nitrate-selective ion-exchange unit is required.",
+    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+  },
+  {
+    canonical_name: "Fluoride",
+    common_name: "Fluoride",
+    aliases: ["Fluoride", "1025"],
+    category: "inorganic",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 4, label: "4.0 mg/L MCL (enforceable)" },
+    ],
+    description:
+      "Most utilities add fluoride deliberately, targeting roughly 0.7 mg/L for dental health — so a detected level in that range is intentional, not contamination. The federal MCL of 4 mg/L guards against the skeletal effects of much higher long-term exposure. Removing fluoride is a personal/values choice rather than a safety necessity at typical added levels, and it requires reverse osmosis or distillation; carbon filters don't touch it.",
+    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+  },
+  {
+    canonical_name: "Chromium",
+    common_name: "Chromium (total)",
+    aliases: ["Chromium", "Chromium (total)", "Total Chromium", "1020"],
+    category: "inorganic",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 0.1, label: "0.1 mg/L (100 ppb) MCL" },
+    ],
+    description:
+      "Total chromium covers both the benign trivalent form (a dietary nutrient) and hexavalent chromium-6 (the industrial form of 'Erin Brockovich' fame). EPA regulates total chromium; California and others have pushed for a separate chromium-6 standard. Reverse osmosis is the reliable household treatment.",
+    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+  },
+  {
+    canonical_name: "Barium",
+    common_name: "Barium",
+    aliases: ["Barium", "1010"],
+    category: "inorganic",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 2, label: "2 mg/L MCL" },
+    ],
+    description:
+      "Barium occurs naturally in mineral deposits and can dissolve into groundwater. At levels above the federal limit, long-term exposure can raise blood pressure. Reverse osmosis, ion exchange, and distillation all address it.",
+    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+  },
+  {
+    canonical_name: "Selenium",
+    common_name: "Selenium",
+    aliases: ["Selenium", "1045"],
+    category: "inorganic",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 0.05, label: "0.05 mg/L (50 ppb) MCL" },
+    ],
+    description:
+      "Selenium is an essential trace nutrient at low levels but harmful in excess; it enters water from natural deposits and some industrial discharge. Reverse osmosis or distillation removes it.",
+    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+  },
+  {
+    canonical_name: "Uranium",
+    common_name: "Uranium",
+    aliases: ["Uranium", "4000"],
+    category: "radionuclide",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 0.03, label: "0.030 mg/L (30 µg/L) MCL" },
+    ],
+    description:
+      "Uranium occurs naturally in granitic and sedimentary rock and dissolves into groundwater — a concern chiefly for groundwater systems and private wells. The health concern is kidney toxicity from the metal itself more than radioactivity at typical levels. Reverse osmosis, ion exchange, and distillation remove it.",
+    learn_more_url: "https://www.epa.gov/radiation/radionuclides-drinking-water",
+  },
+
+  // -- Volatile organic compounds (the chlorinated-solvent set the matrix
+  //    groups as "VOCs"; co-occur with nearby Superfund plumes, WQA-7) -----
+  {
+    canonical_name: "1,2-Dichloroethane",
+    common_name: "1,2-DCE",
+    aliases: ["1,2-Dichloroethane", "1,2-DCE", "12DCA", "2968"],
+    category: "organic",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 0.005, label: "0.005 mg/L (5 ppb) MCL" },
+    ],
+    description:
+      "1,2-Dichloroethane is an industrial solvent and a volatile organic compound — when it shows up in drinking water it usually traces back to an industrial release or a contaminated-site plume rather than the water source. Carbon filtration removes it well. Where it co-occurs with a nearby Superfund chlorinated-solvent site, the connection is worth understanding even when the treated water tests compliant.",
+    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+  },
+  {
+    canonical_name: "cis-1,2-Dichloroethylene",
+    common_name: "cis-1,2-DCE",
+    aliases: [
+      "cis-1,2-Dichloroethylene",
+      "cis-1,2-DCE",
+      "cis-1,2-Dichloroethene",
+      "2380",
+    ],
+    category: "organic",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 0.07, label: "0.07 mg/L (70 ppb) MCL" },
+    ],
+    description:
+      "cis-1,2-Dichloroethylene is a breakdown product of industrial solvents like trichloroethylene, so it commonly appears alongside other VOCs near contaminated sites. It's a volatile organic compound that carbon filtration addresses effectively.",
+    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+  },
+  {
+    canonical_name: "Trichloroethylene",
+    common_name: "TCE",
+    aliases: ["Trichloroethylene", "TCE", "2984"],
+    category: "organic",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 0.005, label: "0.005 mg/L (5 ppb) MCL" },
+    ],
+    description:
+      "Trichloroethylene (TCE) is a widely used industrial degreasing solvent and a common groundwater contaminant near manufacturing and dry-cleaning sites. Long-term exposure carries cancer and developmental concerns. As a volatile organic compound it's removed well by carbon filtration or air stripping.",
+    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+  },
+
+  // -- Synthetic organic compounds (common agricultural detection) ---------
+  {
+    canonical_name: "Atrazine",
+    common_name: "Atrazine",
+    aliases: ["Atrazine", "2050"],
+    category: "organic",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 0.003, label: "0.003 mg/L (3 ppb) MCL" },
+    ],
+    description:
+      "Atrazine is one of the most widely used agricultural herbicides in the U.S., so it shows up seasonally in surface-water systems drawing from farmland watersheds. It's an endocrine-disruption concern at chronic exposure. Carbon filtration addresses it.",
+    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+  },
 ];

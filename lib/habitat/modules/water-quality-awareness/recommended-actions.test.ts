@@ -291,10 +291,85 @@ describe("buildRecommendedActions", () => {
     expect(ft.icon).toBe("phone");
   });
 
-  it("uses 'droplet' for the pitcher_filter icon (must exist in components/icon.tsx)", () => {
+  it("uses 'droplet' for the pitcher_filter icon on the LCR-fallback path", () => {
     const pf = buildRecommendedActions(
       inputs({ compliance: complianceActiveHealth() }),
     ).find((a) => a.id === "pitcher_filter")!;
     expect(pf.icon).toBe("droplet");
+  });
+
+  it("attaches the remediation-matrix CTA to the pitcher_filter card", () => {
+    const pf = buildRecommendedActions(
+      inputs({ compliance: complianceActiveHealth() }),
+    ).find((a) => a.id === "pitcher_filter")!;
+    expect(pf.matrix_cta).toBe("See your full remediation matrix");
+    // The card no longer carries an external link — the matrix view
+    // owns the NSF explainer + certified-product browse link.
+    expect(pf.link).toBeUndefined();
+  });
+});
+
+describe("buildRecommendedActions — contaminant-specific filter (WQA-5)", () => {
+  const KALAMAZOO_DETECTED = [
+    { name: "Lead", level_label: "9 ppb" },
+    { name: "PFOA", level_label: "2.2 ng/L" },
+    { name: "PFOS", level_label: "4.0 ng/L" },
+    { name: "Total Trihalomethanes (TTHMs)", level_label: "28.5 ppb" },
+    { name: "Haloacetic Acids (HAA5)", level_label: "16.2 ppb" },
+    { name: "1,2-Dichloroethane", level_label: "trace" },
+    { name: "cis-1,2-Dichloroethylene", level_label: "trace" },
+    { name: "Fluoride", level_label: "0.68 ppm" },
+  ];
+
+  it("any CCR detection emits the pitcher_filter card even with clean compliance", () => {
+    expect(
+      shouldEmitPitcherFilter(
+        inputs({ detectedContaminants: [{ name: "Fluoride" }] }),
+      ),
+    ).toBe(true);
+  });
+
+  it("names the under-sink carbon block + P473 and covers 5 of 6 for Kalamazoo", () => {
+    const actions = buildRecommendedActions(
+      inputs({ detectedContaminants: KALAMAZOO_DETECTED }),
+    );
+    const pf = actions.find((a) => a.id === "pitcher_filter")!;
+    expect(pf.icon).toBe("filter");
+    expect(pf.headline).toBe(
+      "Install a NSF/ANSI 53 + NSF P473 certified under-sink filter",
+    );
+    expect(pf.supporting_line).toContain("5 of the 6 detected contaminants");
+    expect(pf.supporting_line).toContain("Lead");
+    expect(pf.supporting_line).toContain("PFAS (PFOA, PFOS)");
+    // Lead caveat present because lead is in the covered set.
+    expect(pf.supporting_line).toMatch(/whole-house filters can't help with lead/i);
+    expect(pf.matrix_cta).toBe("See your full remediation matrix");
+  });
+
+  it("drops P473 from the headline when no PFAS is detected", () => {
+    const actions = buildRecommendedActions(
+      inputs({ detectedContaminants: [{ name: "Lead", level_label: "9 ppb" }] }),
+    );
+    const pf = actions.find((a) => a.id === "pitcher_filter")!;
+    expect(pf.headline).toBe(
+      "Install a NSF/ANSI 53 certified under-sink filter",
+    );
+    expect(pf.headline).not.toContain("P473");
+    expect(pf.supporting_line).toContain("all of the detected contaminants");
+  });
+
+  it("falls back to LCR copy when detected contaminants don't map (copper-only)", () => {
+    const actions = buildRecommendedActions(
+      inputs({
+        detectedContaminants: [{ name: "Copper", level_label: "0.1 mg/L" }],
+        leadCopper: lcrDetected(),
+      }),
+    );
+    const pf = actions.find((a) => a.id === "pitcher_filter")!;
+    // No matrix row for copper → the contaminant-specific builder
+    // returns null and we use the tier-tuned faucet/pitcher copy.
+    expect(pf.icon).toBe("droplet");
+    expect(pf.headline).toBe("Consider a faucet-mount or pitcher filter");
+    expect(pf.matrix_cta).toBe("See your full remediation matrix");
   });
 });

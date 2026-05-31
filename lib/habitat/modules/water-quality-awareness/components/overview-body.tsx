@@ -33,6 +33,7 @@ import {
 import { CcrUploadModal } from "@/components/ccr-upload/CcrUploadModal";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
+import { RemediationMatrixView } from "./remediation-matrix-view";
 import { findWqaContaminantByAlias } from "@/lib/habitat/water-quality/contaminants/lookup";
 import type { HabitatRecheckSource } from "@/lib/habitat/types";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
@@ -80,6 +81,11 @@ export function WqaOverviewBody({
   const f = (row.findings ?? null) as WqaFindings | null;
   const router = useRouter();
   const [ccrModalOpen, setCcrModalOpen] = useState(false);
+  // WQA-5: in-modal sub-view toggle. "overview" is the findings
+  // landing page; "matrix" swaps the body to the remediation matrix
+  // (reached from the filter card's "See your full remediation matrix"
+  // CTA). Local to this component — no shell slot, no route.
+  const [view, setView] = useState<"overview" | "matrix">("overview");
 
   // Issue #193 — PWSID correction in-flight state.
   //
@@ -127,6 +133,14 @@ export function WqaOverviewBody({
   const card = f.system_card;
   const isReRunningForCorrection = correctionInFlight !== null;
 
+  // WQA-5: the remediation matrix replaces the whole body when open.
+  // Reading is pure off `f`; the back affordance returns to overview.
+  if (view === "matrix") {
+    return (
+      <RemediationMatrixView findings={f} onBack={() => setView("overview")} />
+    );
+  }
+
   // Shared callback used by both the InferredHeader "No" path and the
   // SystemCard post-confirmation edit affordance. Pre-arms the modal
   // shell's banner and flips the local in-flight state synchronously
@@ -162,7 +176,10 @@ export function WqaOverviewBody({
           }
         />
       )}
-      <RecommendedActionsSection findings={f} />
+      <RecommendedActionsSection
+        findings={f}
+        onOpenMatrix={() => setView("matrix")}
+      />
       <DetectedInWater findings={f} />
       <SourcesBlock findings={f} />
 
@@ -1100,7 +1117,14 @@ function StatTile({
 
 /* ---------- 3. Recommended for your situation -------------------------- */
 
-function RecommendedActionsSection({ findings }: { findings: WqaFindings }) {
+function RecommendedActionsSection({
+  findings,
+  onOpenMatrix,
+}: {
+  findings: WqaFindings;
+  /** WQA-5: opens the in-modal remediation matrix from a card's CTA. */
+  onOpenMatrix: () => void;
+}) {
   const actions = findings.recommended_actions ?? [];
   if (actions.length === 0) return null;
   return (
@@ -1114,7 +1138,7 @@ function RecommendedActionsSection({ findings }: { findings: WqaFindings }) {
       <ul className="flex flex-col gap-2">
         {actions.map((action) => (
           <li key={action.id}>
-            <RecommendedActionCard action={action} />
+            <RecommendedActionCard action={action} onOpenMatrix={onOpenMatrix} />
           </li>
         ))}
       </ul>
@@ -1122,7 +1146,13 @@ function RecommendedActionsSection({ findings }: { findings: WqaFindings }) {
   );
 }
 
-function RecommendedActionCard({ action }: { action: WqaRecommendedAction }) {
+function RecommendedActionCard({
+  action,
+  onOpenMatrix,
+}: {
+  action: WqaRecommendedAction;
+  onOpenMatrix: () => void;
+}) {
   return (
     <div
       className="rounded-md flex items-start gap-3 p-3"
@@ -1191,6 +1221,24 @@ function RecommendedActionCard({ action }: { action: WqaRecommendedAction }) {
               <span>{action.link.label}</span>
               <Icon name="external-link" size={14} />
             </a>
+          </div>
+        ) : null}
+        {action.matrix_cta ? (
+          <div className="text-small mt-2">
+            <button
+              type="button"
+              onClick={onOpenMatrix}
+              className="inline-flex items-center gap-1"
+              style={{
+                color: "var(--color-accent)",
+                background: "transparent",
+                border: "none",
+                padding: 0,
+              }}
+            >
+              <span>{action.matrix_cta}</span>
+              <Icon name="chevron-right" size={14} />
+            </button>
           </div>
         ) : null}
       </div>
