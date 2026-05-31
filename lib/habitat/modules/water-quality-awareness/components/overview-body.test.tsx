@@ -667,6 +667,43 @@ describe("WqaOverviewBody — CCR list report-style format (issue #239)", () => 
   });
 });
 
+describe("WqaOverviewBody — limit falls back to mcl_action_level (issue #243)", () => {
+  // Lead/copper carry their federal limit in `mcl_action_level` (the
+  // LCR action level), not `mcl` — by schema design, and the way the
+  // synthesized lead/copper rows are built in ccr.ts (mcl: null,
+  // mcl_action_level set). The earlier formatter read only `c.mcl`, so
+  // the "/ <limit> limit" half silently dropped and the row rendered
+  // bare. These exercise the fallback path the older tests miss (they
+  // pass `mcl` directly).
+  it("renders the lead limit from mcl_action_level when mcl is null", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Lead", level: 9, mcl: null, tier: "caution" },
+    ]);
+    findings.ccr_findings!.contaminants![0].mcl_action_level = 15;
+    render(findings);
+    expect(text()).toContain("9 ppb / 15 ppb limit");
+  });
+
+  it("renders the copper limit from mcl_action_level when mcl is null", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Copper", level: 1.2, mcl: null, tier: "caution" },
+    ]);
+    findings.ccr_findings!.contaminants![0].mcl_action_level = 1.3;
+    render(findings);
+    expect(text()).toContain("1.2 ppb / 1.3 ppb limit");
+  });
+
+  it("still renders bare level when neither mcl nor mcl_action_level is present", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Lead", level: 9, mcl: null, tier: "caution" },
+    ]);
+    // mcl_action_level stays null (the fixture default) — no limit to show.
+    render(findings);
+    expect(text()).toContain("9 ppb");
+    expect(text()).not.toContain("ppb / ");
+  });
+});
+
 describe("WqaOverviewBody — AUTOMATIC maintenance-bridge card (WQA-6)", () => {
   it("renders the AUTOMATIC card with the badge and an internal maintenance link", () => {
     const findings = cwsWithCcrFindings([

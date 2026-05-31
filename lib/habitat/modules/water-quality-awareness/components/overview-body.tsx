@@ -1453,6 +1453,22 @@ const CCR_NAME_STYLE = {
   color: "var(--color-text-primary)",
 };
 
+/**
+ * The limit a row is measured against: the MCL when present, else the
+ * LCR action level (lead / copper carry their limit in
+ * `mcl_action_level`, not `mcl`). Mirrors the fallback in
+ * `classifyContaminantTier` and `mclRatio` so the displayed limit,
+ * the tier classification, and the sort signal all read the same
+ * number — without this, lead/copper rows rendered bare (issue #243).
+ */
+function resolvedLimit(c: CcrSummarizedContaminant): number | null {
+  if (c.mcl !== null && c.mcl > 0) return c.mcl;
+  if (c.mcl_action_level !== null && c.mcl_action_level > 0) {
+    return c.mcl_action_level;
+  }
+  return null;
+}
+
 /** "3.1 ppt / 8 ppt limit" — mirrors the report's level-vs-limit treatment. */
 function formatDetectedAgainstLimit(c: CcrSummarizedContaminant): string {
   const level =
@@ -1462,8 +1478,14 @@ function formatDetectedAgainstLimit(c: CcrSummarizedContaminant): string {
         ? `${c.detected_level} ${c.unit}`
         : `${c.detected_level}`;
   if (!level) return "Detection level not reported";
-  const mcl = c.mcl === null ? null : c.unit ? `${c.mcl} ${c.unit}` : `${c.mcl}`;
-  return mcl ? `${level} / ${mcl} limit` : level;
+  const limitValue = resolvedLimit(c);
+  const limit =
+    limitValue === null
+      ? null
+      : c.unit
+        ? `${limitValue} ${c.unit}`
+        : `${limitValue}`;
+  return limit ? `${level} / ${limit} limit` : level;
 }
 
 /** Level/limit line + the monitoring year as a muted suffix. The year is
