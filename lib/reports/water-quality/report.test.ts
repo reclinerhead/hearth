@@ -4,13 +4,16 @@ import type { CcrFreeTestingOffer } from "@/lib/documents/ai/ccr-schema";
 import type { DetectedContaminantInput } from "@/lib/habitat/water-quality/remediation/recommend";
 import { TODDTECH_HEARTH_URL } from "../constants";
 import { buildReportFooterTemplate } from "../theme";
-import { PFAS_FAMILY } from "@/lib/habitat/water-quality/contaminants/data";
 import {
   buildWaterQualityReport,
   groupPfasFamily,
+  PFAS_FAMILY_HEADING,
   waterQualityReportSignature,
   type WaterQualityReportInput,
 } from "./report";
+
+/** The EPA PFAS reference URL, used by the family card (from the data entry). */
+const PFAS_LEARN_MORE_URL = "https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas";
 
 /** Minimal CcrSummarizedContaminant fixtures — only the fields the report reads. */
 function contaminant(
@@ -223,15 +226,15 @@ describe("PFAS family card rendering", () => {
 
   it("renders one family card (body + all five analytes + a single EPA link)", () => {
     const html = buildWaterQualityReport(withFivePfas());
-    // Heading + family body present.
-    expect(html).toContain(PFAS_FAMILY.label);
-    expect(html).toContain("forever chemicals");
+    // Heading + family body (the dedicated reference description) present.
+    expect(html).toContain(PFAS_FAMILY_HEADING);
+    expect(html).toContain("per- and polyfluoroalkyl substances");
     // All five analytes listed by their printed names.
     for (const a of ["PFOA", "PFOS", "PFHxS", "PFBS", "PFHxA"]) {
       expect(html).toContain(a);
     }
     // Exactly one EPA reference link for the family.
-    const links = html.split(`href="${PFAS_FAMILY.learn_more_url}"`).length - 1;
+    const links = html.split(`href="${PFAS_LEARN_MORE_URL}"`).length - 1;
     expect(links).toBe(1);
     // Non-PFAS contaminants still render their own cards.
     expect(html).toContain("Copper");
@@ -241,7 +244,7 @@ describe("PFAS family card rendering", () => {
   it("does not render a family wrapper when only one PFAS analyte is present", () => {
     // baseInput has a single PFAS analyte (PFOA).
     const html = buildWaterQualityReport(baseInput());
-    expect(html).not.toContain(PFAS_FAMILY.label);
+    expect(html).not.toContain(PFAS_FAMILY_HEADING);
   });
 });
 

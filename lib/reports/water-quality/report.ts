@@ -25,7 +25,6 @@ import {
 } from "@/lib/habitat/modules/water-quality-awareness/ccr";
 import type { CcrFreeTestingOffer } from "@/lib/documents/ai/ccr-schema";
 import { findWqaContaminantByAlias } from "@/lib/habitat/water-quality/contaminants/lookup";
-import { PFAS_FAMILY } from "@/lib/habitat/water-quality/contaminants/data";
 import {
   betterEffectiveness,
   type RemediationEffectiveness,
@@ -240,13 +239,28 @@ function renderAwarenessItem(item: AwarenessItem): string {
 }
 
 /**
- * The PFAS family card: one family explanation + one EPA link, with each
- * detected analyte listed beneath (as printed on the CCR — its name is
- * already the human-readable spelled-out form). Mirrors the single-row
- * level/limit treatment.
+ * Plain-language heading for the family card (open question 1). The body and
+ * EPA link come from the reference data (the "PFAS" family entry in
+ * `data.ts`, issue #234 follow-up); the heading is a presentation choice and
+ * stays here.
+ */
+export const PFAS_FAMILY_HEADING = "PFAS — the “forever chemicals”";
+
+/**
+ * The PFAS family card: one family explanation + one EPA link (both from the
+ * "PFAS" family reference entry), with each detected analyte listed beneath
+ * (as printed on the CCR — its name is already the human-readable spelled-out
+ * form). Mirrors the single-row level/limit treatment.
  */
 function pfasFamilyCard(analytes: CcrSummarizedContaminant[]): string {
   const cue = tierCue("caution"); // PFAS is floored at the caution tier
+  const ref = findWqaContaminantByAlias("PFAS"); // family reference entry
+  const body = ref?.description
+    ? `<p class="why muted">${escapeHtml(ref.description)}</p>`
+    : "";
+  const link = ref?.learn_more_url
+    ? `<a class="epa-link mono" href="${ref.learn_more_url}">EPA reference →</a>`
+    : "";
   const analyteRows = analytes
     .map((c) => {
       const level = formatLevel(c.detected_level, c.unit);
@@ -265,12 +279,12 @@ function pfasFamilyCard(analytes: CcrSummarizedContaminant[]): string {
   return `
 <div class="contaminant keep-together">
   <div class="contaminant-head">
-    <span class="cn">${escapeHtml(PFAS_FAMILY.label)}</span>
+    <span class="cn">${escapeHtml(PFAS_FAMILY_HEADING)}</span>
     <span class="cue" style="color:${cue.color};border-color:${cue.color}">${cue.label}</span>
   </div>
-  <p class="why muted">${escapeHtml(PFAS_FAMILY.description)}</p>
+  ${body}
   <div class="pfas-analytes">${analyteRows}</div>
-  <a class="epa-link mono" href="${PFAS_FAMILY.learn_more_url}">EPA reference →</a>
+  ${link}
 </div>`;
 }
 

@@ -267,6 +267,42 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
       "PFOS is the other most-studied 'forever chemical', regulated alongside PFOA under EPA's 2024 PFAS rule at 4 parts per trillion with a 2029 compliance deadline. The same persistence and accumulation concerns apply, and the same treatments address it — a carbon-block filter certified to NSF P473, or reverse osmosis. Ordinary carafe pitchers are unreliable for PFAS.",
     learn_more_url: "https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas",
   },
+  // Family-level reference. A CCR can detect several PFAS compounds at once,
+  // and the homeowner-relevant story is the family, not the molecules — so
+  // surfaces that group PFAS into one card (the Water Quality Report, issue
+  // #234) resolve this entry for the family explanation + EPA link. The
+  // aliases are deliberately family-level terms only (never the individual
+  // compound names), so an exact-match lookup of "PFOA"/"PFOS"/etc. still
+  // resolves to their own entries above — `findWqaContaminantByAlias` matches
+  // aliases exactly, so the broad "perfluoroalkyl" term can't shadow a
+  // specific analyte. The family federal_limits frame the card; each nested
+  // analyte row still shows its own MCL from the detected data.
+  {
+    canonical_name: "PFAS",
+    common_name: "PFAS",
+    aliases: [
+      "PFAS",
+      "Per- and polyfluoroalkyl substances",
+      "perfluoroalkyl",
+      "polyfluoroalkyl",
+    ],
+    category: "pfas",
+    federal_limits: [
+      {
+        kind: "mcl",
+        value_mg_l: 0.000004,
+        label: "Individual MCLs as low as 4.0 ng/L (ppt) — effective 2029",
+      },
+      {
+        kind: "mclg",
+        value_mg_l: 0,
+        label: "0 ng/L MCLG for PFOA and PFOS (no safe amount)",
+      },
+    ],
+    description:
+      "PFAS — per- and polyfluoroalkyl substances — are a large family of synthetic 'forever chemicals' that don't break down in the environment or the body and accumulate over time. They come from industrial discharge, firefighting foam, and stain- and water-resistant treatments. EPA finalized enforceable limits in 2024 for several of them, with some individual compounds set as low as 4 parts per trillion and a 2029 compliance deadline. Because those limits are so low and the health concerns — developmental, immune, and cancer effects — attach to long-term accumulation, any detected level is worth knowing about, even well under the limit. A carbon-block filter certified to NSF P473, or reverse osmosis, removes them; ordinary carafe pitchers are unreliable for PFAS.",
+    learn_more_url: "https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas",
+  },
 
   // -- Inorganic chemicals commonly printed on CCRs ------------------------
   {
@@ -413,21 +449,3 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
   },
 ];
-
-/**
- * Family-level reference for PFAS. The per-analyte entries above
- * (PFOA, PFOS) carry their own descriptions, but a CCR can detect several
- * PFAS compounds at once — and the homeowner-relevant story is the family,
- * not the individual molecules. This is the canonical home for that
- * family-level copy, consumed by surfaces that group PFAS into one card
- * (the Water Quality Report, issue #234). Not part of `WQA_CONTAMINANTS`
- * because it isn't a detectable analyte with aliases — it's editorial copy
- * for the group.
- */
-export const PFAS_FAMILY = {
-  /** Plain-language family heading. */
-  label: "PFAS — the “forever chemicals”",
-  description:
-    "PFAS are a large family of synthetic “forever chemicals” that don't break down in the environment or the body and build up over time. EPA finalized enforceable limits for several of them in 2024 (utilities must comply by 2029), set at just a few parts per trillion — so low that any detected amount is worth knowing about. The health concerns (developmental, immune, and cancer effects) come from long-term accumulation across these compounds together, which is why they're best understood as one exposure rather than separate chemicals. A carbon-block filter certified to NSF P473, or reverse osmosis, removes them; ordinary carafe pitchers are unreliable.",
-  learn_more_url: "https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas",
-} as const;
