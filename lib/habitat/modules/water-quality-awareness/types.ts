@@ -14,6 +14,7 @@
 import type { LeadCopperSummary } from "./lcr";
 import type { RecentViolationsSummary } from "./compliance";
 import type { CcrFindings } from "./ccr";
+import type { WaterProperties } from "./water-properties";
 
 /**
  * How confidently the module identified the user's water utility.
@@ -196,6 +197,18 @@ export type WqaFindings = {
   recommended_actions?: WqaRecommendedAction[];
 
   /**
+   * Water-touching properties (hardness, iron, manganese) read from the
+   * CCR's contaminant table on `cws_with_ccr` (WQA-6). Drives the
+   * maintenance bridge: the finding `summary` names them so the
+   * maintenance-synthesis pipeline can adapt water-touching equipment
+   * cadences, and the "AUTOMATIC" recommended-action card surfaces them.
+   * Absent on every branch with no CCR, and on CCRs that don't print
+   * hardness/iron (these are secondary parameters, not federally
+   * regulated — see water-properties.ts).
+   */
+  water_properties?: WaterProperties;
+
+  /**
    * Branch-specific metadata. Populated for every branch; the UI uses
    * it to drive copy choices and "find your CCR" surfaces.
    */
@@ -251,4 +264,11 @@ export type WqaRecommendedAction = {
    * an external URL. Absent on cards that don't open the matrix.
    */
   matrix_cta?: string;
+  /**
+   * Marks the card as a Hearth-automated adaptation (WQA-6's
+   * maintenance bridge). The renderer shows an "AUTOMATIC" badge and
+   * treats `link` as an internal route (the maintenance plan) rather
+   * than an external URL. Absent on the manual-action cards.
+   */
+  automatic?: boolean;
 };

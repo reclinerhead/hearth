@@ -4,9 +4,39 @@ import type { LeadCopperSummary } from "./lcr";
 import {
   buildRecommendedActions,
   shouldEmitFreeTesting,
+  shouldEmitMaintenanceBridge,
   shouldEmitPitcherFilter,
   type RecommendedActionsInputs,
 } from "./recommended-actions";
+import type { WaterProperties } from "./water-properties";
+
+function hardWaterWithIron(): WaterProperties {
+  return {
+    hardness: {
+      mg_l_caco3: 140,
+      grains_per_gallon: 8.2,
+      classification: "hard",
+      raw_label: "140 mg/L",
+    },
+    iron: { detected: true, mg_l: 0.4, raw_label: "0.4 mg/L" },
+    manganese: null,
+    affects_maintenance: true,
+  };
+}
+
+function softWater(): WaterProperties {
+  return {
+    hardness: {
+      mg_l_caco3: 40,
+      grains_per_gallon: 2.3,
+      classification: "soft",
+      raw_label: "40 mg/L",
+    },
+    iron: null,
+    manganese: null,
+    affects_maintenance: false,
+  };
+}
 
 function complianceClean(): ComplianceSummary {
   return {
@@ -248,7 +278,7 @@ describe("buildRecommendedActions", () => {
     expect(ft.supporting_line).not.toContain("null");
   });
 
-  it("never emits maintenance_bridge in v1 (deferred to WQA-6)", () => {
+  it("does not emit maintenance_bridge when no water properties are present", () => {
     const actions = buildRecommendedActions(
       inputs({ compliance: complianceActiveHealth() }),
     );
@@ -371,5 +401,57 @@ describe("buildRecommendedActions — contaminant-specific filter (WQA-5)", () =
     expect(pf.icon).toBe("droplet");
     expect(pf.headline).toBe("Consider a faucet-mount or pitcher filter");
     expect(pf.matrix_cta).toBe("See your full remediation matrix");
+  });
+});
+
+describe("buildRecommendedActions — maintenance bridge / AUTOMATIC card (WQA-6)", () => {
+  it("shouldEmitMaintenanceBridge follows affects_maintenance", () => {
+    expect(
+      shouldEmitMaintenanceBridge(inputs({ waterProperties: hardWaterWithIron() })),
+    ).toBe(true);
+    expect(
+      shouldEmitMaintenanceBridge(inputs({ waterProperties: softWater() })),
+    ).toBe(false);
+    expect(shouldEmitMaintenanceBridge(inputs({ waterProperties: null }))).toBe(
+      false,
+    );
+    expect(shouldEmitMaintenanceBridge(inputs())).toBe(false);
+  });
+
+  it("emits an AUTOMATIC maintenance_bridge card naming the water properties", () => {
+    const actions = buildRecommendedActions(
+      inputs({ waterProperties: hardWaterWithIron() }),
+    );
+    const bridge = actions.find((a) => a.id === "maintenance_bridge")!;
+    expect(bridge).toBeDefined();
+    expect(bridge.automatic).toBe(true);
+    expect(bridge.icon).toBe("tool");
+    expect(bridge.supporting_line).toMatch(/hard water/i);
+    expect(bridge.supporting_line).toMatch(/iron/i);
+    expect(bridge.link).toEqual({
+      label: "See your maintenance plan",
+      url: "/maintenance",
+    });
+  });
+
+  it("places the maintenance_bridge card last in the order", () => {
+    const actions = buildRecommendedActions(
+      inputs({
+        compliance: complianceActiveHealth(),
+        waterProperties: hardWaterWithIron(),
+      }),
+    );
+    expect(actions.map((a) => a.id)).toEqual([
+      "pitcher_filter",
+      "free_testing",
+      "maintenance_bridge",
+    ]);
+  });
+
+  it("does not emit the card for soft water with no metals", () => {
+    const actions = buildRecommendedActions(
+      inputs({ waterProperties: softWater() }),
+    );
+    expect(actions.find((a) => a.id === "maintenance_bridge")).toBeUndefined();
   });
 });

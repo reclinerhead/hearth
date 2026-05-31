@@ -617,6 +617,32 @@ describe("WqaOverviewBody — CCR contaminant list (issue #199)", () => {
   });
 });
 
+describe("WqaOverviewBody — AUTOMATIC maintenance-bridge card (WQA-6)", () => {
+  it("renders the AUTOMATIC card with the badge and an internal maintenance link", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Atrazine", level: 0.5, mcl: 3, tier: "context" },
+    ]);
+    findings.recommended_actions = [
+      {
+        id: "maintenance_bridge",
+        icon: "tool",
+        headline: "Maintenance adjusted for your water",
+        supporting_line:
+          "Your Water Quality Report shows hard water with detectable iron.",
+        automatic: true,
+        link: { label: "See your maintenance plan", url: "/maintenance" },
+      },
+    ];
+    render(findings);
+    expect(text()).toContain("Maintenance adjusted for your water");
+    expect(text()).toContain("Automatic");
+    const link = container.querySelector('a[href="/maintenance"]');
+    expect(link).not.toBeNull();
+    // Internal route — must NOT open in a new tab.
+    expect(link?.getAttribute("target")).toBeNull();
+  });
+});
+
 describe("WqaOverviewBody — CCR lead & PFAS surface in the panel (issue #224)", () => {
   it("renders lead from the CCR lead/copper distribution", () => {
     const findings = cwsWithCcrFindings([

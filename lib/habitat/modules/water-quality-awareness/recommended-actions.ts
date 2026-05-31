@@ -26,12 +26,15 @@
  *                      facts ("Kalamazoo offers free testing through X
  *                      program" — language pulled from the CCR).
  *
- *   maintenance_bridge — fires when there's a maintenance-bridge to
- *                        surface (a water-touching item whose cadence
- *                        was adjusted by WQA-derived properties).
- *                        v1 is suppressed — WQA-6 builds the bridges.
- *                        The empty-state activity-log narration still
- *                        fires so the user sees what's coming.
+ *   maintenance_bridge — the AUTOMATIC card (WQA-6). Fires when the CCR
+ *                        reported a cadence-relevant water property
+ *                        (hardness at moderate-or-above, or detectable
+ *                        iron/manganese). Names the properties and the
+ *                        water-touching equipment whose upkeep cadence
+ *                        Hearth shortens to match, and links to the
+ *                        maintenance plan. The per-item cadence deltas
+ *                        live on the maintenance side; surfacing them on
+ *                        this card is a tracked follow-up.
  *
  * The system is additive: an action that doesn't fire is simply
  * absent from the output array. Section is suppressed when no
@@ -44,6 +47,10 @@ import {
   recommendRemediationCombination,
   type DetectedContaminantInput,
 } from "@/lib/habitat/water-quality/remediation/recommend";
+import {
+  waterPropertiesPhrase,
+  type WaterProperties,
+} from "./water-properties";
 import type { WqaRecommendedAction } from "./types";
 
 /**
@@ -81,6 +88,12 @@ export type RecommendedActionsInputs = {
    * detection data; the card then falls back to the tier-tuned LCR copy.
    */
   detectedContaminants?: DetectedContaminantInput[];
+  /**
+   * Water-touching properties (hardness, iron, manganese) read from the
+   * CCR (WQA-6). Drives the `maintenance_bridge` AUTOMATIC card. Absent
+   * on branches with no CCR or when the CCR didn't print them.
+   */
+  waterProperties?: WaterProperties | null;
 };
 
 // The CTA label the pitcher_filter card carries to open the in-modal
@@ -108,9 +121,43 @@ export function buildRecommendedActions(
   if (shouldEmitFreeTesting(input)) {
     out.push(buildFreeTestingAction(input));
   }
-  // maintenance_bridge intentionally suppressed in v1. WQA-6 ships it.
+  if (shouldEmitMaintenanceBridge(input)) {
+    out.push(buildMaintenanceBridgeAction(input.waterProperties!));
+  }
 
   return out;
+}
+
+/**
+ * Whether to emit the maintenance-bridge (AUTOMATIC) card. True when the
+ * CCR reported a cadence-relevant water property — hardness at moderate-
+ * or-above, or detectable iron/manganese (WQA-6). False on every branch
+ * with no CCR, and on CCRs that don't print these secondary parameters.
+ *
+ * Exported for the test suite.
+ */
+export function shouldEmitMaintenanceBridge(
+  input: RecommendedActionsInputs,
+): boolean {
+  return input.waterProperties?.affects_maintenance ?? false;
+}
+
+function buildMaintenanceBridgeAction(
+  properties: WaterProperties,
+): WqaRecommendedAction {
+  const phrase = waterPropertiesPhrase(properties);
+  return {
+    id: "maintenance_bridge",
+    icon: "tool",
+    headline: "Maintenance adjusted for your water",
+    supporting_line:
+      `Your Water Quality Report shows ${phrase}. Hearth has shortened the ` +
+      `upkeep cadence on your water-touching equipment — water heater, water ` +
+      `softener, dishwasher, and faucet aerators — to match, so they last ` +
+      `longer.`,
+    automatic: true,
+    link: { label: "See your maintenance plan", url: "/maintenance" },
+  };
 }
 
 /**

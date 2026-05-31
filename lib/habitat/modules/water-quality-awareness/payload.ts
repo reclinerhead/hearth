@@ -21,6 +21,10 @@ import type { EnvirofactsWaterSystemRecord } from "./sources/envirofacts";
 import type { WqaBranch, WqaFindings, WqaRecommendedAction } from "./types";
 import type { CcrFindings } from "./ccr";
 import { ccrHasCautionSignal, ccrHasConcernSignal } from "./ccr";
+import {
+  describeWaterProperties,
+  type WaterProperties,
+} from "./water-properties";
 
 /**
  * Bundle returned by buildFindings. The orchestrator persists every
@@ -426,6 +430,12 @@ export function buildSystemPayload(
    * `cws_with_ccr` branch. Issue #176 (WQA-3).
    */
   ccrEnrichment: CcrEnrichment | null = null,
+  /**
+   * Water-touching properties (hardness, iron, manganese) read from the
+   * CCR (WQA-6). Persisted on the payload and named in the summary so
+   * the maintenance bridge can adapt cadences. Null when absent.
+   */
+  waterProperties: WaterProperties | null = null,
 ): WqaPayload {
   const adminName = formatAdminName(record.admin_name ?? record.org_name);
   const systemName = displaySystemName(record);
@@ -492,6 +502,11 @@ export function buildSystemPayload(
     findings.ccr_findings = ccrEnrichment.findings;
   }
 
+  // WQA-6: persist water-touching properties when the CCR reported them.
+  if (waterProperties) {
+    findings.water_properties = waterProperties;
+  }
+
   const severity = deriveSeverity(
     enrichment,
     ccrEnrichment ? ccrEnrichment.findings : null,
@@ -513,7 +528,12 @@ export function buildSystemPayload(
   return {
     severity,
     headline: `Your water comes from ${systemName}`,
-    summary: buildCwsSummary(systemName, enrichment, ccrEnrichment),
+    summary: buildCwsSummary(
+      systemName,
+      enrichment,
+      ccrEnrichment,
+      waterProperties,
+    ),
     findings,
   };
 }
@@ -529,6 +549,7 @@ export function buildCwsSummary(
   systemName: string,
   enrichment: SdwisEnrichment,
   ccr: CcrEnrichment | null = null,
+  waterProperties: WaterProperties | null = null,
 ): string {
   const compliance = enrichment.compliance;
   const lcr = enrichment.leadCopper;
@@ -583,7 +604,13 @@ export function buildCwsSummary(
     ? `Your utility's ${ccr.reportYear} Water Quality Report is on file — open the finding to see what we extracted.`
     : `We'll layer in your utility's annual Water Quality Report next — once you have a recent copy, you'll be able to upload it here for a personalized read.`;
 
-  return [complianceClause, lcrClause, ccrClause]
+  // WQA-6: name the water-touching properties so the maintenance-
+  // synthesis bridge (which receives this summary per habitat finding)
+  // can adapt water-touching equipment cadences. Empty unless something
+  // cadence-relevant is present.
+  const waterPropertiesClause = describeWaterProperties(waterProperties);
+
+  return [complianceClause, lcrClause, ccrClause, waterPropertiesClause]
     .filter((p) => p.length > 0)
     .join(" ");
 }

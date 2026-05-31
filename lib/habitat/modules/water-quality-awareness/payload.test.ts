@@ -16,6 +16,35 @@ import {
   type SdwisEnrichment,
 } from "./payload";
 import type { EnvirofactsWaterSystemRecord } from "./sources/envirofacts";
+import type { WaterProperties } from "./water-properties";
+
+function hardWaterProps(): WaterProperties {
+  return {
+    hardness: {
+      mg_l_caco3: 140,
+      grains_per_gallon: 8.2,
+      classification: "hard",
+      raw_label: "140 mg/L",
+    },
+    iron: { detected: true, mg_l: 0.4, raw_label: "0.4 mg/L" },
+    manganese: null,
+    affects_maintenance: true,
+  };
+}
+
+function softWaterProps(): WaterProperties {
+  return {
+    hardness: {
+      mg_l_caco3: 40,
+      grains_per_gallon: 2.3,
+      classification: "soft",
+      raw_label: "40 mg/L",
+    },
+    iron: null,
+    manganese: null,
+    affects_maintenance: false,
+  };
+}
 
 function complianceClean(): ComplianceSummary {
   return {
@@ -486,6 +515,48 @@ describe("buildCwsSummary", () => {
       leadCopper: { status: "no_samples_on_file" },
     });
     expect(summary).toMatch(/doesn't have lead-and-copper sample results on file/i);
+  });
+
+  it("names cadence-relevant water properties so the maintenance bridge can read them (WQA-6)", () => {
+    const summary = buildCwsSummary(
+      "Kalamazoo Public Water Supply",
+      { compliance: complianceClean(), leadCopper: { status: "no_samples_on_file" } },
+      null,
+      hardWaterProps(),
+    );
+    expect(summary).toMatch(/hard water/i);
+    expect(summary).toMatch(/maintenance cadence/i);
+  });
+
+  it("appends nothing for soft water with no metals", () => {
+    const summary = buildCwsSummary(
+      "Kalamazoo Public Water Supply",
+      { compliance: complianceClean(), leadCopper: { status: "no_samples_on_file" } },
+      null,
+      softWaterProps(),
+    );
+    expect(summary).not.toMatch(/maintenance cadence/i);
+  });
+});
+
+describe("buildSystemPayload — water_properties (WQA-6)", () => {
+  it("persists water_properties on the finding when present", () => {
+    const p = buildSystemPayload(
+      "cws_no_ccr",
+      kalamazoo(),
+      { compliance: complianceClean(), leadCopper: { status: "no_samples_on_file" } },
+      "verified",
+      [],
+      null,
+      hardWaterProps(),
+    );
+    expect(p.findings.water_properties?.hardness?.classification).toBe("hard");
+    expect(p.findings.water_properties?.affects_maintenance).toBe(true);
+  });
+
+  it("omits water_properties when none were extracted", () => {
+    const p = buildSystemPayload("cws_no_ccr", kalamazoo());
+    expect(p.findings.water_properties).toBeUndefined();
   });
 });
 
