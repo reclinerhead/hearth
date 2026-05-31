@@ -19,7 +19,6 @@
  */
 
 import {
-  PFAS_NAME_HINTS,
   type CcrSummarizedContaminant,
   type CcrContaminantTier,
 } from "@/lib/habitat/modules/water-quality-awareness/ccr";
@@ -34,6 +33,11 @@ import {
   recommendRemediationCombination,
   type DetectedContaminantInput,
 } from "@/lib/habitat/water-quality/remediation/recommend";
+import {
+  groupPfasFamily,
+  PFAS_FAMILY_HEADING,
+  type AwarenessItem,
+} from "@/lib/habitat/water-quality/contaminants/pfas-grouping";
 import { buildReportDocument, escapeHtml, REPORT_COLORS } from "../theme";
 import { computeReportSignature } from "../signature";
 
@@ -170,81 +174,13 @@ function effForColumn(
   return effectiveness[columnKey];
 }
 
-// --- PFAS family grouping (issue #234) -------------------------------------
-
-/**
- * Is this contaminant a PFAS-family analyte? Uses the SAME hint list the
- * summarizer uses to floor PFAS at the caution tier, so the report and the
- * summarizer never disagree on what counts as PFAS.
- */
-function isPfasName(name: string): boolean {
-  const n = name.toLowerCase();
-  return PFAS_NAME_HINTS.some((hint) => n.includes(hint));
-}
-
-/**
- * One entry in the "Detected in your water" list: either a normal single
- * contaminant, or the PFAS family (2+ analytes folded into one card).
- */
-type AwarenessItem =
-  | { kind: "single"; contaminant: CcrSummarizedContaminant }
-  | { kind: "pfasFamily"; analytes: CcrSummarizedContaminant[] };
-
-/**
- * Fold PFAS-family analytes into a single family entry, in place, at the
- * position of the first PFAS row (preserving the summarizer's ordering for
- * everything else). PFAS is floored at `caution`, so that position lands in
- * the caution block. With 0 or 1 PFAS rows the list is returned unchanged —
- * a lone analyte renders as a normal card, no empty family wrapper.
- *
- * Pure. Grouping lives here (the report's own presentation decision), NOT in
- * `buildDisplayedCcrContaminants` — the matrix's `deriveDetectedContaminants`
- * reads the CCR sections itself and must not be pre-merged (#224 contract).
- *
- * Exported for the test suite.
- */
-export function groupPfasFamily(
-  contaminants: CcrSummarizedContaminant[],
-): AwarenessItem[] {
-  const pfasCount = contaminants.filter((c) => isPfasName(c.contaminant_name)).length;
-  if (pfasCount < 2) {
-    return contaminants.map((contaminant) => ({ kind: "single", contaminant }));
-  }
-
-  // Largest detected level first, so the homeowner's eye lands on the
-  // biggest number (open question 3).
-  const analytes = contaminants
-    .filter((c) => isPfasName(c.contaminant_name))
-    .sort((a, b) => (b.detected_level ?? -Infinity) - (a.detected_level ?? -Infinity));
-
-  const items: AwarenessItem[] = [];
-  let familyEmitted = false;
-  for (const c of contaminants) {
-    if (isPfasName(c.contaminant_name)) {
-      if (!familyEmitted) {
-        items.push({ kind: "pfasFamily", analytes });
-        familyEmitted = true;
-      }
-      continue; // subsequent PFAS rows are folded into the family card
-    }
-    items.push({ kind: "single", contaminant: c });
-  }
-  return items;
-}
+// --- PFAS family grouping (issue #234; shared logic in contaminants/pfas-grouping) ---
 
 function renderAwarenessItem(item: AwarenessItem): string {
   return item.kind === "pfasFamily"
     ? pfasFamilyCard(item.analytes)
     : contaminantRow(item.contaminant);
 }
-
-/**
- * Plain-language heading for the family card (open question 1). The body and
- * EPA link come from the reference data (the "PFAS" family entry in
- * `data.ts`, issue #234 follow-up); the heading is a presentation choice and
- * stays here.
- */
-export const PFAS_FAMILY_HEADING = "PFAS — the “forever chemicals”";
 
 /**
  * The PFAS family card: one family explanation + one EPA link (both from the

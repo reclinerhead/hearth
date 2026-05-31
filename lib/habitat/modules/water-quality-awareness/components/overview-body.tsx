@@ -35,6 +35,11 @@ import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
 import { RemediationMatrixView } from "./remediation-matrix-view";
 import { findWqaContaminantByAlias } from "@/lib/habitat/water-quality/contaminants/lookup";
+import {
+  groupPfasFamily,
+  PFAS_FAMILY_HEADING,
+  type AwarenessItem,
+} from "@/lib/habitat/water-quality/contaminants/pfas-grouping";
 import type { HabitatRecheckSource } from "@/lib/habitat/types";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import {
@@ -47,7 +52,6 @@ import type {
   CcrSummarizedContaminant,
   CcrContaminantTier,
 } from "../ccr";
-import type { CcrDetectedContaminant } from "@/lib/documents/ai/ccr-schema";
 import type { LcrMeasurement, LeadCopperSummary } from "../lcr";
 import {
   APPROACHING_THRESHOLD_RATIO,
@@ -1352,10 +1356,14 @@ function DetectedInWater({ findings }: { findings: WqaFindings }) {
 
 /**
  * CCR-derived contaminant list. Read straight off `findings.ccr_findings`
- * which the summarizer already sorted concern → caution → context. Each
- * row shows the detected level, MCL, and source boilerplate from the
- * CCR; the disclosure expands to the contaminant-reference description
- * when one is on file.
+ * which the summarizer already sorted concern → caution → context.
+ *
+ * Aligned with the Water Quality Report's format (issue #239): each row
+ * leads with the plain-language description inline (no expand-to-read), shows
+ * its level against the limit with the monitoring year, and detected PFAS
+ * analytes fold into one family card (shared `groupPfasFamily`). The
+ * low-level (context) tier stays collapsed behind a disclosure — the modal
+ * is used on mobile, where a long detected list runs away without it.
  */
 function CcrContaminantList({
   ccr,
@@ -1371,11 +1379,6 @@ function CcrContaminantList({
   const contaminants = buildDisplayedCcrContaminants(ccr, lcr);
 
   if (contaminants.length === 0) {
-    // The extraction returned a clean contaminant table — a positive
-    // signal that the utility tested for the federally regulated set
-    // and detected nothing above its reporting threshold. The lead/
-    // copper distribution may still have data; surface it as the
-    // bottom-line summary.
     return (
       <div className="flex flex-col gap-2">
         <p
@@ -1390,11 +1393,11 @@ function CcrContaminantList({
     );
   }
 
-  // Issue #199 item 2: collapse the context tier behind a disclosure
-  // when there are 2+ context rows so concern/caution headline rows
-  // stay visible above the fold and the long tail is one click away.
-  // A single context row stays inline — the disclosure overhead isn't
-  // worth it. Zero context rows means no disclosure renders at all.
+  // Issue #199: collapse the context tier behind a disclosure when there are
+  // 2+ context rows so the concern/caution rows stay above the fold and the
+  // long tail is one tap away (kept for mobile — issue #239 decision). PFAS
+  // is floored at caution, so it always lands in the headline group; the
+  // family grouping runs over each group independently (context has none).
   const headlineRows: CcrSummarizedContaminant[] = [];
   const contextRows: CcrSummarizedContaminant[] = [];
   for (const c of contaminants) {
@@ -1402,17 +1405,15 @@ function CcrContaminantList({
     else headlineRows.push(c);
   }
   const collapseContext = contextRows.length >= 2;
-  const inlineRows = collapseContext ? headlineRows : contaminants;
+  const inlineItems = groupPfasFamily(collapseContext ? headlineRows : contaminants);
+  const contextItems = collapseContext ? groupPfasFamily(contextRows) : [];
 
   return (
     <div className="flex flex-col gap-2">
-      {inlineRows.length > 0 ? (
+      {inlineItems.length > 0 ? (
         <ul className="flex flex-col gap-2">
-          {inlineRows.map((c, i) => (
-            <CcrContaminantRow
-              key={`${c.contaminant_name}-inline-${i}`}
-              c={c}
-            />
+          {inlineItems.map((item, i) => (
+            <CcrAwarenessItem key={`inline-${i}`} item={item} />
           ))}
         </ul>
       ) : null}
@@ -1425,11 +1426,8 @@ function CcrContaminantList({
             {contextRows.length} more contaminants detected at low levels
           </summary>
           <ul className="flex flex-col gap-2 mt-2">
-            {contextRows.map((c, i) => (
-              <CcrContaminantRow
-                key={`${c.contaminant_name}-context-${i}`}
-                c={c}
-              />
+            {contextItems.map((item, i) => (
+              <CcrAwarenessItem key={`context-${i}`} item={item} />
             ))}
           </ul>
         </details>
@@ -1438,7 +1436,83 @@ function CcrContaminantList({
   );
 }
 
+function CcrAwarenessItem({ item }: { item: AwarenessItem }) {
+  return item.kind === "pfasFamily" ? (
+    <CcrPfasFamilyCard analytes={item.analytes} />
+  ) : (
+    <CcrContaminantRow c={item.contaminant} />
+  );
+}
+
+// Contaminant name in the report's display register (serif), so the modal
+// reads like the PDF rather than a data row.
+const CCR_NAME_STYLE = {
+  fontFamily: "var(--font-serif)",
+  fontSize: 15,
+  lineHeight: 1.25,
+  color: "var(--color-text-primary)",
+};
+
+/** "3.1 ppt / 8 ppt limit" — mirrors the report's level-vs-limit treatment. */
+function formatDetectedAgainstLimit(c: CcrSummarizedContaminant): string {
+  const level =
+    c.detected_level === null
+      ? null
+      : c.unit
+        ? `${c.detected_level} ${c.unit}`
+        : `${c.detected_level}`;
+  if (!level) return "Detection level not reported";
+  const mcl = c.mcl === null ? null : c.unit ? `${c.mcl} ${c.unit}` : `${c.mcl}`;
+  return mcl ? `${level} / ${mcl} limit` : level;
+}
+
+/** Level/limit line + the monitoring year as a muted suffix. The year is
+ * kept (issue #239): analytes are sampled on different schedules, so the
+ * per-row year genuinely varies (fluoride 2022, barium 2023, nitrate 2024). */
+function CcrMeasureLine({ c }: { c: CcrSummarizedContaminant }) {
+  return (
+    <div
+      className="mono text-small"
+      style={{ color: "var(--color-text-secondary)", marginTop: 2 }}
+    >
+      {formatDetectedAgainstLimit(c)}
+      {c.monitoring_period ? (
+        <span style={{ color: "var(--color-text-tertiary)" }}>
+          {" "}
+          · {c.monitoring_period}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function CcrEpaReferenceLink({ url }: { url: string }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mono inline-block"
+      style={{
+        marginTop: 8,
+        fontSize: 11,
+        letterSpacing: "0.02em",
+        color: "var(--color-accent)",
+      }}
+    >
+      EPA reference &rarr;
+    </a>
+  );
+}
+
+/**
+ * A single detected contaminant, report-style: name + tier badge, the
+ * level/limit·year line, the editorial description inline (no expand-to-read
+ * — issue #239), and an EPA reference link. The description + link resolve
+ * from the shared contaminant reference via `findWqaContaminantByAlias`.
+ */
 function CcrContaminantRow({ c }: { c: CcrSummarizedContaminant }) {
+  const ref = findWqaContaminantByAlias(c.contaminant_name);
   return (
     <li
       className="rounded-md p-3"
@@ -1447,143 +1521,97 @@ function CcrContaminantRow({ c }: { c: CcrSummarizedContaminant }) {
         backgroundColor: "var(--color-bg-surface-raised)",
       }}
     >
-      <div className="flex items-center gap-2 mb-1">
+      <div className="flex items-start justify-between gap-2">
+        <span style={CCR_NAME_STYLE}>{c.contaminant_name}</span>
         <CcrTierBadge tier={c.tier} />
-        <span
+      </div>
+      <CcrMeasureLine c={c} />
+      {ref?.description ? (
+        <p
+          className="text-small"
           style={{
-            fontSize: 14,
-            fontWeight: 500,
-            color: "var(--color-text-primary)",
+            color: "var(--color-text-secondary)",
+            lineHeight: 1.55,
+            marginTop: 6,
           }}
         >
-          {c.contaminant_name}
-        </span>
-      </div>
-      <div
-        className="mono text-small"
-        style={{ color: "var(--color-text-secondary)" }}
-      >
-        {formatCcrLevel(c)}
-        {c.mcl !== null ? (
-          <span style={{ color: "var(--color-text-tertiary)" }}>
-            {" "}
-            • MCL {c.mcl}
-            {c.unit ? ` ${c.unit}` : ""}
-          </span>
-        ) : null}
-        {c.monitoring_period ? (
-          <span style={{ color: "var(--color-text-tertiary)" }}>
-            {" "}
-            • {c.monitoring_period}
-          </span>
-        ) : null}
-      </div>
-      {c.has_multiple_observations ? (
-        <CcrOtherObservations contaminant={c} />
+          {ref.description}
+        </p>
       ) : null}
-      {c.sources || c.notes ? (
-        <details className="mt-2">
-          <summary
-            className="text-small cursor-pointer"
-            style={{ color: "var(--color-accent)" }}
-          >
-            What this means
-          </summary>
-          <div
-            className="text-small mt-2"
-            style={{
-              color: "var(--color-text-secondary)",
-              lineHeight: 1.55,
-            }}
-          >
-            {c.sources ? <p>Likely sources: {c.sources}</p> : null}
-            {c.notes ? <p>{c.notes}</p> : null}
-          </div>
-        </details>
-      ) : null}
+      {ref?.learn_more_url ? <CcrEpaReferenceLink url={ref.learn_more_url} /> : null}
     </li>
   );
 }
 
 /**
- * Disclosure showing the alternate observations for an analyte that
- * was reported in more than one CCR table (issue #200). The display
- * value lives on the parent row; this surfaces the other levels with
- * their monitoring context so the reader can see that what looks like
- * "two PFBS rows" is actually one analyte measured under two
- * programs.
+ * PFAS family card (issue #239, mirroring the report): one family heading +
+ * explanation + EPA link, with each detected analyte listed beneath by its
+ * printed name and level/limit·year. Grouping is decided by the shared
+ * `groupPfasFamily`; the body + link come from the "PFAS" reference entry.
  */
-function CcrOtherObservations({
-  contaminant,
+function CcrPfasFamilyCard({
+  analytes,
 }: {
-  contaminant: CcrSummarizedContaminant;
+  analytes: CcrSummarizedContaminant[];
 }) {
-  const others = contaminant.other_observations;
-  if (others.length === 0) return null;
-  const headline = describeMonitoringContext(contaminant);
+  const ref = findWqaContaminantByAlias("PFAS");
   return (
-    <details className="mt-2">
-      <summary
-        className="text-small cursor-pointer"
-        style={{ color: "var(--color-accent)" }}
-      >
-        Measured under more than one program
-        {others.length === 1 ? " (1 other observation)" : ` (${others.length} other observations)`}
-      </summary>
-      <div
-        className="text-small mt-2"
-        style={{ color: "var(--color-text-secondary)", lineHeight: 1.55 }}
-      >
-        <p style={{ color: "var(--color-text-tertiary)" }}>
-          Showing: {headline}
-        </p>
-        <ul className="flex flex-col gap-2 mt-2">
-          {others.map((o, i) => (
-            <li
-              key={`${o.monitoring_period ?? "period"}-${o.source_table_label ?? "table"}-${i}`}
-              className="rounded-md p-2"
-              style={{
-                border: "1px solid var(--color-border-subtle)",
-                backgroundColor: "var(--color-bg-base)",
-              }}
-            >
-              <div className="mono text-small">
-                {formatOtherObservationLevel(o)}
-              </div>
-              <div
-                className="text-small mt-1"
-                style={{ color: "var(--color-text-tertiary)" }}
-              >
-                {describeMonitoringContext(o)}
-              </div>
-            </li>
-          ))}
-        </ul>
+    <li
+      className="rounded-md p-3"
+      style={{
+        border: "1px solid var(--color-border-subtle)",
+        backgroundColor: "var(--color-bg-surface-raised)",
+      }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span style={CCR_NAME_STYLE}>{PFAS_FAMILY_HEADING}</span>
+        <CcrTierBadge tier="caution" />
       </div>
-    </details>
+      {ref?.description ? (
+        <p
+          className="text-small"
+          style={{
+            color: "var(--color-text-secondary)",
+            lineHeight: 1.55,
+            marginTop: 6,
+          }}
+        >
+          {ref.description}
+        </p>
+      ) : null}
+      <ul
+        className="flex flex-col gap-1.5 mt-2 pt-2"
+        style={{ borderTop: "1px solid var(--color-border-subtle)" }}
+      >
+        {analytes.map((a, i) => (
+          <li
+            key={`${a.contaminant_name}-${i}`}
+            className="flex items-baseline justify-between gap-3"
+          >
+            <span
+              className="text-small"
+              style={{ color: "var(--color-text-primary)" }}
+            >
+              {a.contaminant_name}
+            </span>
+            <span
+              className="mono text-small"
+              style={{ color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}
+            >
+              {formatDetectedAgainstLimit(a)}
+              {a.monitoring_period ? (
+                <span style={{ color: "var(--color-text-tertiary)" }}>
+                  {" "}
+                  · {a.monitoring_period}
+                </span>
+              ) : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {ref?.learn_more_url ? <CcrEpaReferenceLink url={ref.learn_more_url} /> : null}
+    </li>
   );
-}
-
-function describeMonitoringContext(
-  c: CcrDetectedContaminant | CcrSummarizedContaminant,
-): string {
-  const parts: string[] = [];
-  if (c.source_table_label) parts.push(c.source_table_label);
-  if (c.monitoring_period) parts.push(c.monitoring_period);
-  if (parts.length === 0) return "Monitoring context not stated";
-  return parts.join(" • ");
-}
-
-function formatOtherObservationLevel(c: CcrDetectedContaminant): string {
-  if (c.detected_level === null) return "Detection level not reported";
-  if (c.unit) return `Detected: ${c.detected_level} ${c.unit}`;
-  return `Detected: ${c.detected_level}`;
-}
-
-function formatCcrLevel(c: CcrSummarizedContaminant): string {
-  if (c.detected_level === null) return "Detection level not reported";
-  if (c.unit) return `Detected: ${c.detected_level} ${c.unit}`;
-  return `Detected: ${c.detected_level}`;
 }
 
 // Per-tier explanations surfaced via tooltip on the CCR tier badge
