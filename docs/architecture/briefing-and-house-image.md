@@ -104,9 +104,22 @@ The stamp is set by [`app/actions/houses/mark-habitat-reviewed.ts`](../../app/ac
 
 The CTAs route to each action's surface. The two upload milestones open the **Smart Uploader** directly (hosted as a single instance in the panel — emergency video pre-routes to `initialEmergencyEntry="category-picker"`; first appliance lands on the path-picker), since those surfaces are modals with nowhere to scroll. The photo and habitat CTAs **scroll** to their inline surfaces (`#dashboard-hero`, where `HouseImageSurface` owns the photo picker, and `#dashboard-habitat`, where opening a finding modal stamps the milestone). After a Smart Uploader save the panel calls `router.refresh()` so the completed card drops without a manual reload.
 
-### Retire beat
+### Go-deeper panel (the upgraded retire beat)
 
-When the final pending milestone completes, the panel shows a single quiet "foundation set" reward line on that load before retiring — gratitude/noticing, no badges/points/streaks (the rewards principle). It's gated by a per-session `sessionStorage` flag (`hearthMilestonesRetireBeat:<houseId>`), not persisted server state — re-showing it in a brand-new session is an accepted non-goal. The panel starts assuming the beat was already seen so SSR and the first client render agree (both `null` when all-complete), then an effect reveals it once. With everything complete and the beat already shown, the panel renders nothing — no layout hole.
+When the final pending milestone completes, the panel hands off to the **go-deeper panel** (issue #220) — what began as a single quiet reward line, grown into a re-openable "ways to go deeper" surface that debuts as a celebration. It's a lit, bordered card (accent-tinted border, a subtle warm radial glow from the top-right corner) with a state-aware header, a recessed hairline divider, and three suggestion cards. No badges/points/streaks (the rewards principle) — the glow and serif headline carry the moment.
+
+**Two modes, one card block.** Only the header differs; the divider + three cards below are identical (`GoDeeperMode` / `GO_DEEPER_HEADER` in `onboarding-milestones.ts`):
+
+- **`celebration`** — the auto-show on the final-flip load: hearth-mark (the brand `flame`) in an amber chip, an amber "THE FOUNDATION IS SET" eyebrow, a Fraunces-serif "Hearth knows your home now." headline, and a past-tense sub-line.
+- **`reopen`** — when the user clicks the dashboard `?` trigger later: a calmer, present-tense header ("WAYS TO GO DEEPER" / "Get more out of Hearth.") that never congratulates twice.
+
+**Static suggestions.** Three hardcoded cards (`GO_DEEPER_CARDS`, presentation data decoupled from milestone logic): *Keep building your inventory* → opens the Smart Uploader on the appliance path-picker; *Record more shutoffs* → opens it pre-routed to emergency; *Fill in your house facts* → opens the home-details edit modal. The first two reuse the panel's hosted `SmartUploader`; the third calls an `onOpenHomeDetails` callback.
+
+**Celebration mechanics (unchanged from the old beat).** Gated by the per-session `sessionStorage` flag (`hearthMilestonesRetireBeat:<houseId>`), not persisted server state — re-showing it in a brand-new session is an accepted non-goal. The panel starts assuming the beat was seen so SSR and the first client render agree, then an effect reveals it once and writes the flag. A **dismiss `x`** (top-right, in both modes) hides the celebration for the session (flips the same client flag); in reopen mode it just closes the reopened panel.
+
+**The `?` reopen trigger.** Lives in the `HeroAddress` button cluster in `dashboard-live.tsx`, left of the edit pencil (`[?] [✏️] [↻]`) — the address row is the dashboard's de-facto title, so it's the right home for a dashboard-scoped help affordance. Clicking it opens the go-deeper panel in `reopen` mode regardless of milestone/beat state; it does **not** restore the milestone cards (a separate surface that returns on next reload while still pending).
+
+**Coordinator seam.** The milestones panel and `DashboardLive` are siblings rendered by a thin client coordinator, `dashboard-onboarding.tsx`, which holds the two shared pieces of state: the `?`-driven reopen flag (set in `DashboardLive`, consumed by the panel) and the home-details edit-modal open boolean (the go-deeper "house facts" card opens the modal `DashboardLive` still owns). `page.tsx` renders the coordinator, keyed on house id.
 
 ---
 

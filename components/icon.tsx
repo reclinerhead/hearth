@@ -66,7 +66,9 @@ export type IconName =
   | "dots-vertical"
   | "trash"
   | "star"
-  | "phone";
+  | "phone"
+  | "square-check"
+  | "help-circle";
 
 const base: SVGProps<SVGSVGElement> = {
   width: 20,
@@ -447,6 +449,19 @@ const paths: Record<IconName, React.ReactNode> = {
   ),
   phone: (
     <path d="M5 4h3l2 5-2 1c1 2 3 4 5 5l1-2 5 2v3a2 2 0 0 1-2 2A14 14 0 0 1 3 6a2 2 0 0 1 2-2z" />
+  ),
+  "square-check": (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <path d="m9 12 2 2 4-4" />
+    </>
+  ),
+  "help-circle": (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .8-1 1.7" />
+      <path d="M12 17h0" />
+    </>
   ),
 };
 

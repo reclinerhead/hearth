@@ -4,13 +4,12 @@ import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import { resolveActiveHouseId } from "@/lib/houses/active-house";
 import { createClient } from "@/lib/supabase/server";
 import type { House } from "@/types/house";
-import { DashboardLive } from "./dashboard-live";
+import { DashboardOnboarding } from "./dashboard-onboarding";
 import { EmergencyReferencePanel } from "./emergency-reference-panel";
 import { HabitatPreviewPanel } from "./habitat-preview-panel";
 import { LifecycleOutlookPanel } from "./lifecycle-outlook-panel";
 import { MaintenancePanelDashboard } from "./maintenance-panel-dashboard";
 import { buildMilestones } from "./onboarding-milestones";
-import { OnboardingMilestonesPanel } from "./onboarding-milestones-panel";
 
 // Issue #139 replaced the hardcoded EMERGENCIES placeholder with the
 // EmergencyReferencePanel, which fetches real hearth.documents rows of
@@ -100,31 +99,27 @@ export default async function DashboardPage() {
         first thing a new user should see post-setup, they're transient
         (gone once complete), and placing them above the hero means they
         don't permanently displace the hero/facts layout that is the
-        dashboard's stable identity. The panel keys on house id so a
-        property switch recomputes against the new house's signals.
-      */}
-      <OnboardingMilestonesPanel
-        key={`milestones-${house.id}`}
-        houseId={house.id}
-        milestones={milestones}
-      />
-      {/*
-        Key the two client components below on the active house id so a
-        property switch or property delete forces a full remount rather
-        than a prop-only update. Their internal hooks
+        dashboard's stable identity.
+
+        The milestones panel and DashboardLive are rendered by a thin client
+        coordinator (issue #220) that shares the home-details edit-modal open
+        state and the go-deeper "reopen" flag between them — see
+        DashboardOnboarding. It returns a fragment, so both stay direct flex
+        children of this column.
+
+        Key on the active house id so a property switch or delete forces a full
+        remount rather than a prop-only update: the inner hooks
         (`useHouseRealtime`, `useHabitatFindings`) seed `useState` from
-        `initialHouse` / `initialRows` exactly once per mount and don't
-        re-seed when the prop changes — so without a key change, after
-        the post-delete `redirect("/dashboard")` re-renders this server
-        component with a new house, the client tree would keep
-        displaying the previous (now-deleted) row until something
-        triggered a manual refetch. Keying on house id makes the active
-        property switch the unmount/remount boundary that hooks already
-        expect.
+        `initialHouse` / `initialRows` once per mount and don't re-seed on prop
+        change, so without a key change the post-delete `redirect("/dashboard")`
+        would keep showing the previous (now-deleted) row. Keying here makes the
+        property switch the unmount/remount boundary the hooks expect, and
+        recomputes the milestone signals against the new house.
       */}
-      <DashboardLive
+      <DashboardOnboarding
         key={house.id}
         houseId={house.id}
+        milestones={milestones}
         initialHouse={house}
         lifecycleOutlookSlot={<LifecycleOutlookPanel houseId={house.id} />}
       />

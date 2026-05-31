@@ -205,3 +205,85 @@ export function resolvePanelView(
  */
 export const RETIRE_BEAT_LINE =
   "That's the foundation set. Hearth knows your home now.";
+
+/**
+ * Go-deeper panel (issue #220). The retire beat grew into a re-openable "ways
+ * to go deeper" panel that debuts as a celebration. It renders in one of two
+ * modes — only the header copy differs; the divider + three suggestion cards
+ * below are identical:
+ *
+ *   - `celebration` — the auto-show on the final-flip load (past-tense
+ *     congratulation; same trigger/session mechanics as the old retire beat).
+ *   - `reopen`      — when the user clicks the `?` trigger later (calmer,
+ *     present-tense; never congratulates twice).
+ */
+export type GoDeeperMode = "celebration" | "reopen";
+
+export const GO_DEEPER_HEADER: Record<
+  GoDeeperMode,
+  { eyebrow: string; headline: string; sub: string }
+> = {
+  celebration: {
+    eyebrow: "THE FOUNDATION IS SET",
+    headline: "Hearth knows your home now.",
+    sub: "You've given it the essentials — a face, your emergency shutoffs, your first appliance, and a look at what surrounds the property. From here, the more you add, the more Hearth can see coming.",
+  },
+  reopen: {
+    eyebrow: "WAYS TO GO DEEPER",
+    headline: "Get more out of Hearth.",
+    sub: "Hearth can hold far more than the basics — the more of your home you bring in, the more it can keep an eye on and surface for you when it matters.",
+  },
+};
+
+/** Section label between the header and the suggestion cards (both modes). */
+export const GO_DEEPER_NEXT_EYEBROW = "A few ways to go deeper";
+
+/**
+ * What a go-deeper card does when tapped. The first two reuse the milestone
+ * panel's hosted Smart Uploader; `open-home-details` opens the home-details
+ * edit modal (owned by `DashboardLive`, reached via a lifted callback).
+ */
+export type GoDeeperAction =
+  | "open-uploader-appliance"
+  | "open-uploader-emergency"
+  | "open-home-details";
+
+export type GoDeeperCard = {
+  id: "inventory" | "shutoffs" | "house_facts";
+  icon: IconName;
+  title: string;
+  description: string;
+  action: GoDeeperAction;
+};
+
+/**
+ * Static go-deeper suggestions (issue #220). Hardcoded for now — wired to
+ * route, but not yet data-driven. Mirrors how milestone content lives here as
+ * data so the (card → action) mapping stays serialisable and testable.
+ */
+export const GO_DEEPER_CARDS: GoDeeperCard[] = [
+  {
+    id: "inventory",
+    icon: "package",
+    title: "Keep building your inventory",
+    description:
+      "It's not just appliances — add your furnace, water heater, roof, even your car. Each one starts its own maintenance story.",
+    action: "open-uploader-appliance",
+  },
+  {
+    id: "shutoffs",
+    icon: "video",
+    title: "Record more shutoffs",
+    description:
+      "One video was a start. Capture the gas meter, the breaker panel, the main valve — so anyone can act in a pinch.",
+    action: "open-uploader-emergency",
+  },
+  {
+    id: "house_facts",
+    icon: "square-check",
+    title: "Fill in your house facts",
+    description:
+      "Year built, living area, lot size — small details that sharpen everything Hearth tells you about your home.",
+    action: "open-home-details",
+  },
+];
