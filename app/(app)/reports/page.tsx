@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { CSSProperties, ReactNode } from "react";
 import { Icon, type IconName } from "@/components/icon";
 import { SectionHeader } from "@/components/ui";
+import { WaterQualityGenerateButton } from "./water-quality-generate-button";
 
 /**
  * Hearth Reporting — the central hub for synthesis reports generated
@@ -37,6 +38,13 @@ type ReportCard = {
    * inspector.
    */
   caveat?: string;
+  /**
+   * Marks the one report whose Generate action is live (issue #207, the
+   * Water Quality Report). When set, the card renders the real generate
+   * button instead of the disabled button + "Coming soon" chip. Every
+   * other card across all four groups stays mocked.
+   */
+  live?: boolean;
 };
 
 type ReportGroup = {
@@ -161,6 +169,25 @@ const GROUPS: ReportGroup[] = [
         icon: "user",
         previewLabel: "Catch-up digest",
         previewIcon: "user",
+      },
+    ],
+  },
+  {
+    id: "habitat",
+    eyebrow: "The world around your home",
+    title: "Your home's habitat",
+    blurb:
+      "Reports built from the environmental data Hearth gathers about your address — your water, the ground beneath you, the hazards nearby. The first one is live.",
+    reports: [
+      {
+        id: "water-quality",
+        title: "Water Quality Report",
+        description:
+          "A plain-language briefing on what's actually in your tap water: every contaminant your utility detected, what each one means, and which treatment genuinely addresses it — ending on what to do, not what to fear. Built to forward to a parent, a partner, or a contractor.",
+        icon: "droplet",
+        previewLabel: "Forward-ready water briefing",
+        previewIcon: "droplet",
+        live: true,
       },
     ],
   },
@@ -320,31 +347,35 @@ function ReportCardView({ report }: { report: ReportCard }) {
         icon={report.previewIcon ?? report.icon}
       />
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "var(--space-3)",
-          marginTop: "auto",
-        }}
-      >
-        <ComingSoonChip />
-        <button
-          type="button"
-          className="btn btn-ghost"
-          disabled
-          aria-disabled
-          title="Coming soon"
+      {report.live ? (
+        <WaterQualityGenerateButton />
+      ) : (
+        <div
           style={{
-            opacity: 0.55,
-            cursor: "not-allowed",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "var(--space-3)",
+            marginTop: "auto",
           }}
         >
-          Generate
-          <Icon name="arrow-right" size={14} />
-        </button>
-      </div>
+          <ComingSoonChip />
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled
+            aria-disabled
+            title="Coming soon"
+            style={{
+              opacity: 0.55,
+              cursor: "not-allowed",
+            }}
+          >
+            Generate
+            <Icon name="arrow-right" size={14} />
+          </button>
+        </div>
+      )}
     </article>
   );
 }
