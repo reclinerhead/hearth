@@ -37,6 +37,7 @@ vi.mock("@/app/(app)/dashboard/actions", () => ({
 }));
 
 import { WqaOverviewBody } from "./overview-body";
+import { PFAS_FAMILY_HEADING } from "@/lib/habitat/water-quality/contaminants/pfas-grouping";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import type { WqaFindings } from "../types";
 
@@ -614,6 +615,55 @@ describe("WqaOverviewBody — CCR contaminant list (issue #199)", () => {
       ]),
     );
     expect(text()).toContain("2 more contaminants detected at low levels");
+  });
+});
+
+describe("WqaOverviewBody — CCR list report-style format (issue #239)", () => {
+  it("shows each contaminant's description inline, not behind a 'What this means' expand", () => {
+    render(cwsWithCcrFindings([{ name: "Lead", level: 9, mcl: 15, tier: "caution" }]));
+    // The editorial description renders inline (resolved from the reference)...
+    expect(text()).toContain("no known safe level of lead");
+    // ...and the old expand-to-read disclosure is gone.
+    expect(text()).not.toContain("What this means");
+  });
+
+  it("renders the level against the limit in the report's format", () => {
+    render(cwsWithCcrFindings([{ name: "Lead", level: 9, mcl: 15, tier: "caution" }]));
+    expect(text()).toContain("9 ppb / 15 ppb limit");
+    expect(text()).not.toContain("• MCL"); // old format dropped
+  });
+
+  it("keeps the monitoring year on each row (schedules differ per analyte)", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Lead", level: 9, mcl: 15, tier: "caution" },
+    ]);
+    findings.ccr_findings!.contaminants![0].monitoring_period = "2022";
+    render(findings);
+    expect(text()).toContain("2022");
+  });
+
+  it("drops the multi-observation disclosure", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Lead", level: 9, mcl: 15, tier: "caution" },
+    ]);
+    findings.ccr_findings!.contaminants![0].has_multiple_observations = true;
+    render(findings);
+    expect(text()).not.toContain("Measured under more than one program");
+  });
+
+  it("folds 2+ detected PFAS analytes into one family card", () => {
+    render(
+      cwsWithCcrFindings([
+        { name: "Perfluorooctanoic acid (PFOA)", level: 3.1, mcl: 4, tier: "caution" },
+        { name: "Perfluorooctane sulfonic acid (PFOS)", level: 5.7, mcl: 4, tier: "caution" },
+      ]),
+    );
+    expect(text()).toContain(PFAS_FAMILY_HEADING);
+    // Family explanation (from the "PFAS" reference entry) renders inline.
+    expect(text()).toContain("per- and polyfluoroalkyl substances");
+    // Both analytes still listed beneath the family heading.
+    expect(text()).toContain("PFOA");
+    expect(text()).toContain("PFOS");
   });
 });
 

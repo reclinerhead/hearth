@@ -5,9 +5,11 @@ import type { DetectedContaminantInput } from "@/lib/habitat/water-quality/remed
 import { TODDTECH_HEARTH_URL } from "../constants";
 import { buildReportFooterTemplate } from "../theme";
 import {
-  buildWaterQualityReport,
   groupPfasFamily,
   PFAS_FAMILY_HEADING,
+} from "@/lib/habitat/water-quality/contaminants/pfas-grouping";
+import {
+  buildWaterQualityReport,
   waterQualityReportSignature,
   type WaterQualityReportInput,
 } from "./report";
