@@ -51,7 +51,7 @@ export const WATER_QUALITY_TEMPLATE_VERSION = "v3";
  * (descriptions / learn_more_url) or the remediation matrix changes in a
  * way that should invalidate already-cached PDFs.
  */
-export const WATER_QUALITY_REFERENCE_VERSION = "ref-2026-05";
+export const WATER_QUALITY_REFERENCE_VERSION = "ref-2026-06";
 
 export type WaterQualityReportInput = {
   /** Full single-line address, shown in the header and the running footer. */

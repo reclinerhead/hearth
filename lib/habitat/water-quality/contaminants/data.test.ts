@@ -75,6 +75,43 @@ describe("learn_more URLs", () => {
   });
 });
 
+describe("curated EPA reference links (issue #237)", () => {
+  it("points copper, fluoride, and chromium at their dedicated EPA pages", () => {
+    expect(get("Copper").learn_more_url).toBe(
+      "https://www.epa.gov/ground-water-and-drinking-water/lead-and-copper-101",
+    );
+    expect(get("Fluoride").learn_more_url).toBe(
+      "https://www.epa.gov/sdwa/fluoride-drinking-water",
+    );
+    expect(get("Chromium").learn_more_url).toBe(
+      "https://www.epa.gov/sdwa/chromium-drinking-water",
+    );
+  });
+
+  it("points contaminants without a dedicated page at the NPDWR table, not the generic rules page", () => {
+    for (const name of ["Arsenic", "Nitrate", "Barium", "Selenium", "Atrazine"]) {
+      expect(get(name).learn_more_url).toBe(
+        "https://www.epa.gov/ground-water-and-drinking-water/national-primary-drinking-water-regulations",
+      );
+    }
+    // The old generic "Chemical Contaminant Rules" page is no longer used.
+    for (const c of WQA_CONTAMINANTS) {
+      expect(c.learn_more_url).not.toContain("chemical-contaminant-rules");
+    }
+  });
+});
+
+describe("chlorine / chloramine reference entry (issue #237)", () => {
+  it("resolves chlorine and chloramine to a populated entry", () => {
+    const chlorine = findWqaContaminantByAlias("Chlorine");
+    expect(chlorine?.canonical_name).toBe("Chlorine");
+    expect(chlorine?.description.length ?? 0).toBeGreaterThan(0);
+    expect(chlorine?.learn_more_url).toContain("epa.gov");
+    expect(findWqaContaminantByAlias("Chloramine")?.canonical_name).toBe("Chlorine");
+    expect(findWqaContaminantByAlias("Free Chlorine")?.canonical_name).toBe("Chlorine");
+  });
+});
+
 describe("findWqaContaminantByAlias", () => {
   it("looks up lead by canonical name", () => {
     expect(findWqaContaminantByAlias("Lead")?.canonical_name).toBe("Lead");
