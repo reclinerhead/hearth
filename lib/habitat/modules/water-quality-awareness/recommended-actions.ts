@@ -40,6 +40,10 @@
 
 import type { ComplianceSummary } from "./compliance";
 import { computeLcrSeverityInputs, type LeadCopperSummary } from "./lcr";
+import {
+  recommendRemediationCombination,
+  type DetectedContaminantInput,
+} from "@/lib/habitat/water-quality/remediation/recommend";
 import type { WqaRecommendedAction } from "./types";
 
 /**
@@ -66,7 +70,22 @@ export type RecommendedActionsInputs = {
     phone: string | null;
   } | null;
   systemName: string;
+  /**
+   * Contaminants detected for this house, normalized by the orchestrator
+   * from the CCR contaminant table (cws_with_ccr) or the SDWIS lead/
+   * copper samples (cws_no_ccr / non_community). Drives the contaminant-
+   * specific filter recommendation in WQA-5 — when populated, the
+   * pitcher_filter card names the under-sink carbon block, its NSF
+   * certifications, and exactly which detected contaminants it covers,
+   * via `recommendRemediationCombination`. Empty on branches with no
+   * detection data; the card then falls back to the tier-tuned LCR copy.
+   */
+  detectedContaminants?: DetectedContaminantInput[];
 };
+
+// The CTA label the pitcher_filter card carries to open the in-modal
+// remediation matrix. Lives here so the test and the renderer agree.
+const MATRIX_CTA_LABEL = "See your full remediation matrix";
 
 /**
  * Build the recommended-actions list for a finding. Pure.
@@ -114,6 +133,9 @@ export function shouldEmitPitcherFilter(
   input: RecommendedActionsInputs,
 ): boolean {
   if (input.compliance?.has_active_health_based) return true;
+  // WQA-5: any CCR-detected contaminant is a filtration signal, not
+  // just lead/copper — the matrix shows the user what addresses it.
+  if ((input.detectedContaminants?.length ?? 0) > 0) return true;
   const lcr = computeLcrSeverityInputs(input.leadCopper);
   return lcr.any_detected;
 }
@@ -136,6 +158,18 @@ export function shouldEmitFreeTesting(
 function buildPitcherFilterAction(
   input: RecommendedActionsInputs,
 ): WqaRecommendedAction {
+  // WQA-5: when we have a detected-contaminant set that maps onto the
+  // remediation matrix, the card becomes contaminant-specific — it
+  // names the under-sink carbon block, the NSF certifications it should
+  // carry, and exactly which detected contaminants it covers. Falls
+  // back to the tier-tuned LCR copy below when nothing maps (e.g.
+  // copper-only on cws_no_ccr, which has no matrix row).
+  const detected = input.detectedContaminants ?? [];
+  if (detected.length > 0) {
+    const contaminantAction = buildContaminantSpecificFilterAction(detected);
+    if (contaminantAction) return contaminantAction;
+  }
+
   const compliance = input.compliance;
   const lcrInputs = computeLcrSeverityInputs(input.leadCopper);
 
@@ -177,14 +211,90 @@ function buildPitcherFilterAction(
     icon: "droplet",
     headline: "Consider a faucet-mount or pitcher filter",
     supporting_line: supporting,
-    // WQA-5's remediation matrix will provide a contaminant-specific
-    // product link. For now, the EPA NSF/ANSI 53 page is the
-    // authoritative jumping-off point.
-    link: {
-      label: "What NSF/ANSI 53 means",
-      url: "https://www.epa.gov/sites/default/files/2015-11/documents/2005_11_17_faq_fs_healthseries_filtration.pdf",
-    },
+    // WQA-5: open the in-modal remediation matrix from here. The matrix
+    // carries the NSF/ANSI explainer and the certified-product browse
+    // link, so this card no longer needs an external link of its own.
+    matrix_cta: MATRIX_CTA_LABEL,
   };
+}
+
+/**
+ * The contaminant-specific filter card (WQA-5). Returns null when none
+ * of the detected contaminants map onto a matrix row — the caller then
+ * falls back to the tier-tuned LCR copy. Built from
+ * `recommendRemediationCombination`, so the "addresses N of M" framing,
+ * the cert list (NSF/ANSI 53, + P473 when PFAS is present), and the
+ * covered-contaminant names all stay consistent with the matrix view.
+ */
+function buildContaminantSpecificFilterAction(
+  detected: DetectedContaminantInput[],
+): WqaRecommendedAction | null {
+  const combo = recommendRemediationCombination(detected);
+  // Nothing mapped onto the matrix (e.g. copper-only) → let the caller
+  // fall back to the LCR copy.
+  if (combo.primary.detected_count === 0) return null;
+
+  const certs = combo.primary.nsf_standards.join(" + ");
+  const headline = `Install a ${certs} certified under-sink filter`;
+
+  const { covered_count, detected_count, covered } = combo.primary;
+  const coveredList = formatNameList(covered);
+
+  let supporting: string;
+  if (covered_count === 0) {
+    // Detected contaminants exist but carbon block fully covers none of
+    // them (e.g. fluoride-only). Point at the matrix for what does.
+    supporting =
+      `We detected ${countNoun(detected_count, "contaminant")} in your water, ` +
+      `but a carbon-block filter isn't the right tool for ${
+        detected_count === 1 ? "it" : "them"
+      }. See the remediation matrix for what addresses your specific contaminants.`;
+  } else {
+    const coverageClause =
+      covered_count === detected_count
+        ? `addresses ${allOrBothNoun(covered_count)} of the detected contaminants at your house`
+        : `addresses ${covered_count} of the ${detected_count} detected contaminants at your house`;
+    supporting =
+      `A single carbon-block filter with these certifications ${coverageClause}: ${coveredList}.`;
+  }
+
+  // The lead caveat only applies when lead is actually in the detected
+  // set — whole-house filters can't reach lead that enters downstream
+  // of the meter. Append it so the user understands the under-sink
+  // (point-of-use) recommendation isn't arbitrary.
+  const hasLead = combo.primary.covered.includes("Lead");
+  if (hasLead) {
+    supporting +=
+      " Whole-house filters can't help with lead, which enters from your " +
+      "service line and household plumbing downstream of treatment — so " +
+      "the filter goes at the tap you drink from.";
+  }
+
+  return {
+    id: "pitcher_filter",
+    icon: "filter",
+    headline,
+    supporting_line: supporting,
+    matrix_cta: MATRIX_CTA_LABEL,
+  };
+}
+
+/** "lead, TTHMs, and PFAS" — Oxford-comma name list. */
+function formatNameList(names: string[]): string {
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+function countNoun(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/** "all" reads better than "5 of 5"; "both" for exactly two. */
+function allOrBothNoun(n: number): string {
+  if (n === 2) return "both";
+  return "all";
 }
 
 function buildFreeTestingAction(

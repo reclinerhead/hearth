@@ -12,16 +12,42 @@ function get(name: string): WqaContaminant {
 }
 
 describe("WQA_CONTAMINANTS coverage", () => {
-  it("includes lead and copper for WQA-4 (the LCR-surfaced contaminants)", () => {
+  it("includes lead and copper (the LCR-surfaced contaminants)", () => {
     expect(WQA_CONTAMINANTS.map((c) => c.canonical_name)).toEqual(
       expect.arrayContaining(["Lead", "Copper"]),
     );
   });
 
-  it("ships exactly two entries in WQA-4 (lead and copper)", () => {
-    // WQA-3's CCR extraction will append more entries. This test
-    // pins the v1 surface; loosen it when WQA-3 lands.
-    expect(WQA_CONTAMINANTS).toHaveLength(2);
+  it("covers the common-CCR set rounded out in WQA-5", () => {
+    // WQA-5 expanded the WQA-4 lead/copper stub with the contaminants a
+    // typical municipal CCR prints. These are the load-bearing ones the
+    // remediation matrix and the findings view's "What this means"
+    // disclosures rely on resolving.
+    const names = WQA_CONTAMINANTS.map((c) => c.canonical_name);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "Total Trihalomethanes",
+        "Haloacetic Acids",
+        "PFOA",
+        "PFOS",
+        "Arsenic",
+        "Nitrate",
+        "Fluoride",
+        "1,2-Dichloroethane",
+        "cis-1,2-Dichloroethylene",
+        "Atrazine",
+        "Uranium",
+      ]),
+    );
+  });
+
+  it("has unique canonical names and at least one alias each", () => {
+    const names = WQA_CONTAMINANTS.map((c) => c.canonical_name);
+    expect(new Set(names).size).toBe(names.length);
+    for (const c of WQA_CONTAMINANTS) {
+      expect(c.aliases.length).toBeGreaterThan(0);
+      expect(c.federal_limits.length).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -70,6 +96,22 @@ describe("findWqaContaminantByAlias", () => {
     expect(findWqaContaminantByAlias("Copper")?.canonical_name).toBe("Copper");
     expect(findWqaContaminantByAlias("CU90")?.canonical_name).toBe("Copper");
     expect(findWqaContaminantByAlias("1022")?.canonical_name).toBe("Copper");
+  });
+
+  it("resolves the WQA-5 CCR contaminants by their extracted names", () => {
+    expect(
+      findWqaContaminantByAlias("Total Trihalomethanes (TTHMs)")?.canonical_name,
+    ).toBe("Total Trihalomethanes");
+    expect(
+      findWqaContaminantByAlias("Haloacetic Acids (HAA5)")?.canonical_name,
+    ).toBe("Haloacetic Acids");
+    expect(findWqaContaminantByAlias("PFOA")?.canonical_name).toBe("PFOA");
+    expect(findWqaContaminantByAlias("Fluoride")?.canonical_name).toBe(
+      "Fluoride",
+    );
+    expect(
+      findWqaContaminantByAlias("cis-1,2-Dichloroethylene")?.canonical_name,
+    ).toBe("cis-1,2-Dichloroethylene");
   });
 
   it("trims whitespace before lookup", () => {

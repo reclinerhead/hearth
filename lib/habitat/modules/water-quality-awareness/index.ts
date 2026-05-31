@@ -112,6 +112,7 @@ import {
   type RecommendedActionsInputs,
 } from "./recommended-actions";
 import { formatAdminName, displaySystemName } from "./payload";
+import { deriveDetectedContaminants } from "./detected";
 import type { WqaRecommendedAction } from "./types";
 import { createElement } from "react";
 import { WqaOverviewBody } from "./components/overview-body";
@@ -579,14 +580,39 @@ const WaterQualityAwarenessModule: HabitatModule = {
       enrichment = { compliance, leadCopper };
     }
 
-    // Compute the WQA-4 recommended-actions list before payload
-    // assembly. We compute here (not inside buildSystemPayload) so the
-    // activity log can narrate the emitted IDs without re-running the
-    // pure compute. Inputs come from `record` + `enrichment` (both in
-    // scope here); skipped entirely on private_well / stale /
-    // cws_unmapped — those branches don't surface action cards.
+    // Build the CCR enrichment once, up here, when we landed on
+    // cws_with_ccr — both the recommended-actions computation (WQA-5
+    // reads the detected contaminants off it) and the payload assembly
+    // below consume the same result, so we don't run buildCcrFindings
+    // twice. Null on every other branch.
+    const ccrEnrichment =
+      decision.branch === "cws_with_ccr" && ccrCacheRow
+        ? {
+            reportYear: ccrCacheRow.report_year,
+            findings: buildCcrFindings({
+              reportYear: ccrCacheRow.report_year,
+              publishedDate: ccrCacheRow.published_date,
+              extractedData: ccrCacheRow.extracted_data,
+            }),
+          }
+        : null;
+
+    // Compute the recommended-actions list before payload assembly. We
+    // compute here (not inside buildSystemPayload) so the activity log
+    // can narrate the emitted IDs without re-running the pure compute.
+    // Inputs come from `record` + `enrichment` (both in scope here);
+    // skipped entirely on private_well / stale / cws_unmapped — those
+    // branches don't surface action cards.
     let recommendedActions: WqaRecommendedAction[] = [];
     if (record && enrichment) {
+      // WQA-5: the detected-contaminant set drives the contaminant-
+      // specific filter card. From the CCR table on cws_with_ccr, from
+      // the SDWIS lead/copper samples otherwise.
+      const detectedContaminants = deriveDetectedContaminants({
+        branch: decision.branch,
+        ccrFindings: ccrEnrichment?.findings ?? null,
+        leadCopper: enrichment.leadCopper,
+      });
       const inputs: RecommendedActionsInputs = {
         compliance: enrichment.compliance,
         leadCopper: enrichment.leadCopper,
@@ -596,6 +622,7 @@ const WaterQualityAwarenessModule: HabitatModule = {
           phone: record.phone_number ?? null,
         },
         systemName: displaySystemName(record),
+        detectedContaminants,
       };
       recommendedActions = buildRecommendedActions(inputs);
       const actionsStep = recommendedActionsComputeNarration({
@@ -646,20 +673,8 @@ const WaterQualityAwarenessModule: HabitatModule = {
       // and fall back to "verified" defensively (unreachable).
       const confidence: "verified" | "inferred" | "user_confirmed" | "user_corrected" =
         resolution.confidence === "unmapped" ? "verified" : resolution.confidence;
-      // Build the CCR enrichment from the cache row when we landed on
-      // cws_with_ccr. The persisted row's coverage year is the
-      // authoritative report_year; published_date may be null.
-      const ccrEnrichment =
-        decision.branch === "cws_with_ccr" && ccrCacheRow
-          ? {
-              reportYear: ccrCacheRow.report_year,
-              findings: buildCcrFindings({
-                reportYear: ccrCacheRow.report_year,
-                publishedDate: ccrCacheRow.published_date,
-                extractedData: ccrCacheRow.extracted_data,
-              }),
-            }
-          : null;
+      // ccrEnrichment was computed once above (shared with the
+      // recommended-actions detection step) — reuse it here.
       return buildSystemPayload(
         decision.branch,
         record,

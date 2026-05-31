@@ -242,4 +242,13 @@ export type WqaRecommendedAction = {
   supporting_line: string;
   provenance?: string;
   link?: { label: string; url: string };
+  /**
+   * Optional internal call-to-action that opens the in-modal
+   * remediation-matrix sub-view rather than navigating away. WQA-5
+   * attaches this to the pitcher_filter card ("See your full
+   * remediation matrix"). The overview body renders it as a button
+   * wired to its local view toggle — distinct from `link`, which is
+   * an external URL. Absent on cards that don't open the matrix.
+   */
+  matrix_cta?: string;
 };

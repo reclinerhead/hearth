@@ -314,7 +314,19 @@ describe("WQA module check() — direct miss + single-nearby fallback", () => {
     const filterCard = f.recommended_actions!.find(
       (a) => a.id === "pitcher_filter",
     )!;
-    expect(filterCard.supporting_line).toMatch(/any presence is worth knowing/i);
+    // WQA-5: the detected lead sample now flows through the remediation
+    // matrix, so the card is contaminant-specific (under-sink carbon
+    // block, NSF/ANSI 53, covers lead) and carries the matrix CTA —
+    // even on cws_no_ccr where the only detection is the LCR lead value.
+    expect(filterCard.icon).toBe("filter");
+    expect(filterCard.headline).toBe(
+      "Install a NSF/ANSI 53 certified under-sink filter",
+    );
+    expect(filterCard.supporting_line).toContain("Lead");
+    expect(filterCard.supporting_line).toMatch(
+      /whole-house filters can't help with lead/i,
+    );
+    expect(filterCard.matrix_cta).toBe("See your full remediation matrix");
     const testingCard = f.recommended_actions!.find(
       (a) => a.id === "free_testing",
     )!;
