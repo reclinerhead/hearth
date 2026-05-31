@@ -162,9 +162,12 @@ a { color: ${c.accent}; text-decoration: none; }
  */
 export function buildReportFooterTemplate(address: string): string {
   const c = REPORT_COLORS;
-  return `<div style="width:100%;padding:0 14mm;box-sizing:border-box;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:7px;letter-spacing:0.04em;color:${c.textTertiary};text-align:center;">Hearth — ${escapeHtml(
+  // font-size is set explicitly (Puppeteer footers default to a near-0
+  // size) and sized to fill one line across the page; the lead brand
+  // segment gets the warm gold + weight so it stands out as the credit.
+  return `<div style="width:100%;padding:0 10mm;box-sizing:border-box;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:9.5px;letter-spacing:0.02em;color:${c.textTertiary};text-align:center;white-space:nowrap;"><span style="color:${c.accent};font-weight:700;">Hearth — ${escapeHtml(
     HEARTH_REPORT_TAGLINE,
-  )} &nbsp;·&nbsp; Generated for ${escapeHtml(
+  )}</span> &nbsp;·&nbsp; Generated for ${escapeHtml(
     address,
   )} &nbsp;·&nbsp; Powered by <a href="${TODDTECH_HEARTH_URL}" style="color:${c.textTertiary};text-decoration:underline;">ToddTech</a></div>`;
 }

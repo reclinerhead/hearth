@@ -299,7 +299,7 @@ function agencySection(input: WaterQualityReportInput): string {
   </div>
   ${separately}
 
-  <h3 style="margin-top:20px">The full picture</h3>
+  <h3 style="margin-top:12px">The full picture</h3>
   <p class="section-sub faint">Rows in your water are highlighted. How well each treatment handles each contaminant:</p>
   <table class="matrix">
     <thead><tr><th scope="col" class="row-label-head">Contaminant</th>${header}</tr></thead>
@@ -406,20 +406,20 @@ function templateCss(): string {
    than from content, so the five treatment columns are exactly equal
    regardless of header length ("Carbon block" no longer widens its
    column). Row-label takes 30%; the five tech columns split the rest. */
-.matrix { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 10px; font-size: 9pt; }
+.matrix { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 6px; font-size: 9pt; }
 .matrix .row-label-head, .matrix tbody th.row-label { width: 30%; }
 .matrix thead th.col-head, .matrix td.cell { width: 14%; }
-.matrix thead th { text-align: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 6.8pt; letter-spacing: 0.06em; text-transform: uppercase; color: ${c.textTertiary}; padding: 0 4px 8px; }
+.matrix thead th { text-align: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 6.8pt; letter-spacing: 0.06em; text-transform: uppercase; color: ${c.textTertiary}; padding: 0 4px 5px; }
 .matrix .row-label-head { text-align: left; }
-.matrix tbody th.row-label { text-align: left; font-weight: 400; padding: 7px 8px 7px 0; border-top: 1px solid ${c.borderSubtle}; }
+.matrix tbody th.row-label { text-align: left; font-weight: 400; padding: 4px 8px 4px 0; border-top: 1px solid ${c.borderSubtle}; }
 .rl-name { display: block; color: ${c.textPrimary}; font-size: 10pt; }
 .rl-context { display: block; font-size: 7pt; margin-top: 1px; }
-.matrix td.cell { text-align: center; font-size: 12pt; border-top: 1px solid ${c.borderSubtle}; padding: 7px 4px; }
+.matrix td.cell { text-align: center; font-size: 11pt; border-top: 1px solid ${c.borderSubtle}; padding: 4px 4px; }
 .matrix tr.row-detected th.row-label { border-left: 2px solid ${c.amber}; padding-left: 8px; }
 .matrix tr.row-detected th.row-label .rl-name { color: ${c.amber}; font-weight: 500; }
 .matrix tr.row-detected td.cell { background: color-mix(in oklab, ${c.amber} 8%, transparent); }
 
-.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 8pt; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; font-size: 8pt; break-inside: avoid; }
 .legend b { font-size: 11pt; vertical-align: -1px; }
 
 .ladder { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 9px; }
