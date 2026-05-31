@@ -23,6 +23,7 @@
 
 import {
   REMEDIATION_MATRIX,
+  remediationRowByKey,
   type RemediationRow,
 } from "./matrix";
 
@@ -79,7 +80,24 @@ export function matchRemediationRow(
       if (name === a || (code.length > 0 && code === a)) return row;
     }
   }
+  // PFAS family fallback. PFAS naming is wildly inconsistent across CCRs
+  // (PFOA, PFOS, PFBA, PFHxA, GenX, "perfluorooctanoic acid", …), so an
+  // exact alias list can't keep up — enumerating every species is a
+  // losing game. Recognize the family by the "pf" prefix or a
+  // per-/poly-fluoro substring (the same heuristic `ccr.ts` uses for
+  // PFAS tiering) so an unlisted species still highlights the PFAS row.
+  if (isPfasFamilyName(name)) {
+    return remediationRowByKey("pfas");
+  }
   return null;
+}
+
+function isPfasFamilyName(name: string): boolean {
+  if (name.length < 3) return false;
+  // "pf…" covers PFOA/PFOS/PFBA/PFHxA/PFPeA/…; the substrings cover
+  // spelled-out names. "fluoride" contains neither, so it's unaffected.
+  if (name.startsWith("pf")) return true;
+  return name.includes("perfluoro") || name.includes("polyfluoro");
 }
 
 /**

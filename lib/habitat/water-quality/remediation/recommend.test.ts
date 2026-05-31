@@ -47,6 +47,21 @@ describe("matchRemediationRow", () => {
     expect(matchRemediationRow({ name: "  fLuOrIdE " })?.key).toBe("fluoride");
   });
 
+  it("maps unlisted PFAS species onto the PFAS row by family", () => {
+    // Exact aliases can't enumerate every PFAS name; the family
+    // fallback catches the rest.
+    expect(matchRemediationRow({ name: "PFBA" })?.key).toBe("pfas");
+    expect(matchRemediationRow({ name: "PFHpA" })?.key).toBe("pfas");
+    expect(
+      matchRemediationRow({ name: "Perfluorohexanoic acid" })?.key,
+    ).toBe("pfas");
+    expect(matchRemediationRow({ name: "GenX" })?.key).toBe("pfas");
+  });
+
+  it("does NOT mistake fluoride for a PFAS", () => {
+    expect(matchRemediationRow({ name: "Fluoride" })?.key).toBe("fluoride");
+  });
+
   it("returns null for contaminants the matrix omits (e.g. copper)", () => {
     expect(matchRemediationRow({ name: "Copper" })).toBeNull();
     expect(matchRemediationRow({ name: "Sodium" })).toBeNull();
