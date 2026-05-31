@@ -42,6 +42,7 @@ function baseInput(overrides: Partial<WaterQualityReportInput> = {}): WaterQuali
     address: "123 Maple St, Kalamazoo, MI 49001",
     reportDateLabel: "May 31, 2026",
     utilityName: "City of Kalamazoo Water",
+    pwsid: "MI0000123",
     sourceWaterLabel: "ground water",
     reportYear: 2024,
     contaminants,
@@ -119,12 +120,21 @@ describe("buildWaterQualityReport", () => {
     expect(withOffer).toContain("offers free residential water testing");
   });
 
-  it("never leaks machine identifiers (PWSIDs, contaminant codes) into the PDF", () => {
+  it("never leaks contaminant codes into the PDF", () => {
     const html = buildWaterQualityReport(baseInput());
-    // Codes that exist in the detected inputs / reference aliases must not render.
+    // SDWIS / LCR codes that exist in the detected inputs and reference
+    // aliases must not render — users see names, never codes.
     expect(html).not.toContain("PB90");
     expect(html).not.toContain("5000");
-    expect(html).not.toMatch(/\bMI\d{7}\b/); // PWSID shape
+  });
+
+  it("surfaces the spelled-out PWSID in the utility contact block (issue #207 exception)", () => {
+    const html = buildWaterQualityReport(baseInput({ pwsid: "MI0000123" }));
+    expect(html).toContain("Public Water Supply ID (PWSID)");
+    expect(html).toContain("MI0000123");
+    // ...but only when present.
+    const withoutPwsid = buildWaterQualityReport(baseInput({ pwsid: null }));
+    expect(withoutPwsid).not.toContain("Public Water Supply ID (PWSID)");
   });
 
   it("renders a clean-water message when nothing was detected", () => {

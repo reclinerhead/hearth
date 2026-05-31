@@ -55,6 +55,13 @@ export type WaterQualityReportInput = {
   /** Human report date, e.g. "May 31, 2026". Computed by the route (no Date in pure code). */
   reportDateLabel: string;
   utilityName: string | null;
+  /**
+   * Public Water Supply ID. Surfaced (spelled out) in the utility-contact
+   * block as a useful lookup key for the homeowner — a deliberate, scoped
+   * exception to the general "never surface machine identifiers" rule,
+   * approved for this report surface (issue #207). Null when unresolved.
+   */
+  pwsid: string | null;
   /** Readable source-water phrase, e.g. "ground water" / "surface water". */
   sourceWaterLabel: string | null;
   /** Coverage year of the CCR this was derived from. */
@@ -343,6 +350,12 @@ function buildContactBlock(input: WaterQualityReportInput): string {
   const c = input.adminContact;
   const lines: string[] = [];
   if (input.utilityName) lines.push(`<div class="contact-name">${escapeHtml(input.utilityName)}</div>`);
+  if (input.pwsid)
+    lines.push(
+      `<div class="contact-pwsid"><span class="pwsid-label faint">Public Water Supply ID (PWSID)</span><span class="pwsid-value mono">${escapeHtml(
+        input.pwsid,
+      )}</span></div>`,
+    );
   const detail: string[] = [];
   if (c?.name) detail.push(escapeHtml(c.name));
   if (c?.phone) detail.push(escapeHtml(c.phone));
@@ -389,7 +402,13 @@ function templateCss(): string {
 .badge { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 7pt; letter-spacing: 0.06em; color: ${c.accent}; border: 1px solid color-mix(in oklab, ${c.accent} 30%, transparent); border-radius: 6px; padding: 3px 7px; }
 .combo-cost { margin-top: 8px; font-size: 7.5pt; }
 
-.matrix { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 9pt; }
+/* table-layout: fixed makes column widths come from these rules rather
+   than from content, so the five treatment columns are exactly equal
+   regardless of header length ("Carbon block" no longer widens its
+   column). Row-label takes 30%; the five tech columns split the rest. */
+.matrix { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 10px; font-size: 9pt; }
+.matrix .row-label-head, .matrix tbody th.row-label { width: 30%; }
+.matrix thead th.col-head, .matrix td.cell { width: 14%; }
 .matrix thead th { text-align: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 6.8pt; letter-spacing: 0.06em; text-transform: uppercase; color: ${c.textTertiary}; padding: 0 4px 8px; }
 .matrix .row-label-head { text-align: left; }
 .matrix tbody th.row-label { text-align: left; font-weight: 400; padding: 7px 8px 7px 0; border-top: 1px solid ${c.borderSubtle}; }
@@ -409,7 +428,10 @@ function templateCss(): string {
 
 .contact { margin-top: 18px; padding: 13px; }
 .contact-name { font-family: 'Fraunces', serif; font-size: 12pt; margin-top: 4px; }
-.contact-detail { font-size: 8.5pt; margin-top: 4px; }
+.contact-pwsid { margin-top: 8px; }
+.contact-pwsid .pwsid-label { display: block; font-size: 7.5pt; letter-spacing: 0.02em; }
+.contact-pwsid .pwsid-value { display: block; font-size: 11pt; color: ${c.textPrimary}; margin-top: 1px; letter-spacing: 0.04em; }
+.contact-detail { font-size: 8.5pt; margin-top: 8px; }
 .contact-link { display: inline-block; margin-top: 8px; font-size: 8pt; color: ${c.accent}; border-bottom: 1px solid color-mix(in oklab, ${c.accent} 40%, transparent); }
 
 .disclosure { margin-top: 20px; padding-top: 12px; border-top: 1px solid ${c.borderSubtle}; font-size: 7.8pt; line-height: 1.5; }

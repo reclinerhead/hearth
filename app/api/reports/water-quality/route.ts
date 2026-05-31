@@ -136,6 +136,7 @@ export async function GET(): Promise<Response> {
     address: formatAddress(house),
     reportDateLabel,
     utilityName: findings.system_card?.pws_name ?? null,
+    pwsid: findings.system_card?.pwsid ?? null,
     sourceWaterLabel: sourceWaterLabel(findings.system_card?.source_type),
     reportYear: ccr.report_year ?? null,
     contaminants: displayedContaminants,
