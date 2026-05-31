@@ -18,7 +18,11 @@
  * layer's job (`buildReportDocument`); nothing here reimplements them.
  */
 
-import type { CcrSummarizedContaminant, CcrContaminantTier } from "@/lib/habitat/modules/water-quality-awareness/ccr";
+import {
+  PFAS_NAME_HINTS,
+  type CcrSummarizedContaminant,
+  type CcrContaminantTier,
+} from "@/lib/habitat/modules/water-quality-awareness/ccr";
 import type { CcrFreeTestingOffer } from "@/lib/documents/ai/ccr-schema";
 import { findWqaContaminantByAlias } from "@/lib/habitat/water-quality/contaminants/lookup";
 import {
@@ -40,7 +44,7 @@ export const WATER_QUALITY_REPORT_TYPE = "water_quality";
  * Template version — bump on any layout / copy / composition change so a
  * cached PDF rendered by an older template regenerates on the next request.
  */
-export const WATER_QUALITY_TEMPLATE_VERSION = "v2";
+export const WATER_QUALITY_TEMPLATE_VERSION = "v3";
 
 /**
  * Static reference-data version — bump when the contaminant reference
@@ -166,11 +170,130 @@ function effForColumn(
   return effectiveness[columnKey];
 }
 
+// --- PFAS family grouping (issue #234) -------------------------------------
+
+/**
+ * Is this contaminant a PFAS-family analyte? Uses the SAME hint list the
+ * summarizer uses to floor PFAS at the caution tier, so the report and the
+ * summarizer never disagree on what counts as PFAS.
+ */
+function isPfasName(name: string): boolean {
+  const n = name.toLowerCase();
+  return PFAS_NAME_HINTS.some((hint) => n.includes(hint));
+}
+
+/**
+ * One entry in the "Detected in your water" list: either a normal single
+ * contaminant, or the PFAS family (2+ analytes folded into one card).
+ */
+type AwarenessItem =
+  | { kind: "single"; contaminant: CcrSummarizedContaminant }
+  | { kind: "pfasFamily"; analytes: CcrSummarizedContaminant[] };
+
+/**
+ * Fold PFAS-family analytes into a single family entry, in place, at the
+ * position of the first PFAS row (preserving the summarizer's ordering for
+ * everything else). PFAS is floored at `caution`, so that position lands in
+ * the caution block. With 0 or 1 PFAS rows the list is returned unchanged —
+ * a lone analyte renders as a normal card, no empty family wrapper.
+ *
+ * Pure. Grouping lives here (the report's own presentation decision), NOT in
+ * `buildDisplayedCcrContaminants` — the matrix's `deriveDetectedContaminants`
+ * reads the CCR sections itself and must not be pre-merged (#224 contract).
+ *
+ * Exported for the test suite.
+ */
+export function groupPfasFamily(
+  contaminants: CcrSummarizedContaminant[],
+): AwarenessItem[] {
+  const pfasCount = contaminants.filter((c) => isPfasName(c.contaminant_name)).length;
+  if (pfasCount < 2) {
+    return contaminants.map((contaminant) => ({ kind: "single", contaminant }));
+  }
+
+  // Largest detected level first, so the homeowner's eye lands on the
+  // biggest number (open question 3).
+  const analytes = contaminants
+    .filter((c) => isPfasName(c.contaminant_name))
+    .sort((a, b) => (b.detected_level ?? -Infinity) - (a.detected_level ?? -Infinity));
+
+  const items: AwarenessItem[] = [];
+  let familyEmitted = false;
+  for (const c of contaminants) {
+    if (isPfasName(c.contaminant_name)) {
+      if (!familyEmitted) {
+        items.push({ kind: "pfasFamily", analytes });
+        familyEmitted = true;
+      }
+      continue; // subsequent PFAS rows are folded into the family card
+    }
+    items.push({ kind: "single", contaminant: c });
+  }
+  return items;
+}
+
+function renderAwarenessItem(item: AwarenessItem): string {
+  return item.kind === "pfasFamily"
+    ? pfasFamilyCard(item.analytes)
+    : contaminantRow(item.contaminant);
+}
+
+/**
+ * Plain-language heading for the family card (open question 1). The body and
+ * EPA link come from the reference data (the "PFAS" family entry in
+ * `data.ts`, issue #234 follow-up); the heading is a presentation choice and
+ * stays here.
+ */
+export const PFAS_FAMILY_HEADING = "PFAS — the “forever chemicals”";
+
+/**
+ * The PFAS family card: one family explanation + one EPA link (both from the
+ * "PFAS" family reference entry), with each detected analyte listed beneath
+ * (as printed on the CCR — its name is already the human-readable spelled-out
+ * form). Mirrors the single-row level/limit treatment.
+ */
+function pfasFamilyCard(analytes: CcrSummarizedContaminant[]): string {
+  const cue = tierCue("caution"); // PFAS is floored at the caution tier
+  const ref = findWqaContaminantByAlias("PFAS"); // family reference entry
+  const body = ref?.description
+    ? `<p class="why muted">${escapeHtml(ref.description)}</p>`
+    : "";
+  const link = ref?.learn_more_url
+    ? `<a class="epa-link mono" href="${ref.learn_more_url}">EPA reference →</a>`
+    : "";
+  const analyteRows = analytes
+    .map((c) => {
+      const level = formatLevel(c.detected_level, c.unit);
+      const mcl = formatLevel(c.mcl, c.unit);
+      const measure = level
+        ? `<span class="an-measure mono">${escapeHtml(level)}${
+            mcl ? ` <span class="faint">/ ${escapeHtml(mcl)} limit</span>` : ""
+          }</span>`
+        : "";
+      return `<div class="pfas-analyte"><span class="an-name">${escapeHtml(
+        c.contaminant_name,
+      )}</span>${measure}</div>`;
+    })
+    .join("");
+
+  return `
+<div class="contaminant keep-together">
+  <div class="contaminant-head">
+    <span class="cn">${escapeHtml(PFAS_FAMILY_HEADING)}</span>
+    <span class="cue" style="color:${cue.color};border-color:${cue.color}">${cue.label}</span>
+  </div>
+  ${body}
+  <div class="pfas-analytes">${analyteRows}</div>
+  ${link}
+</div>`;
+}
+
 // --- section builders ------------------------------------------------------
 
 function awarenessSection(input: WaterQualityReportInput): string {
   const orienting = buildOrientingSentence(input);
-  const rows = input.contaminants.map(contaminantRow).join("");
+  const items = groupPfasFamily(input.contaminants);
+  const rows = items.map(renderAwarenessItem).join("");
   const detectedCount = input.contaminants.length;
 
   const list =
@@ -445,6 +568,11 @@ function templateCss(): string {
 .measure { font-size: 9pt; color: ${c.textPrimary}; }
 .why { margin-top: 6px; font-size: 9.5pt; line-height: 1.5; }
 .epa-link { display: inline-block; margin-top: 7px; font-size: 7.5pt; letter-spacing: 0.04em; color: ${c.accent}; border-bottom: 1px solid color-mix(in oklab, ${c.accent} 40%, transparent); }
+
+.pfas-analytes { margin-top: 9px; padding-top: 8px; border-top: 1px solid ${c.borderSubtle}; display: flex; flex-direction: column; gap: 5px; }
+.pfas-analyte { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.pfas-analyte .an-name { font-size: 9.5pt; color: ${c.textPrimary}; }
+.pfas-analyte .an-measure { font-size: 8.5pt; color: ${c.textPrimary}; white-space: nowrap; }
 
 .combo { display: flex; gap: 12px; margin-top: 12px; }
 .combo-primary, .combo-add { flex: 1; padding: 13px; }

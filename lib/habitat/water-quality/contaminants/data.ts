@@ -267,6 +267,42 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
       "PFOS is the other most-studied 'forever chemical', regulated alongside PFOA under EPA's 2024 PFAS rule at 4 parts per trillion with a 2029 compliance deadline. The same persistence and accumulation concerns apply, and the same treatments address it — a carbon-block filter certified to NSF P473, or reverse osmosis. Ordinary carafe pitchers are unreliable for PFAS.",
     learn_more_url: "https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas",
   },
+  // Family-level reference. A CCR can detect several PFAS compounds at once,
+  // and the homeowner-relevant story is the family, not the molecules — so
+  // surfaces that group PFAS into one card (the Water Quality Report, issue
+  // #234) resolve this entry for the family explanation + EPA link. The
+  // aliases are deliberately family-level terms only (never the individual
+  // compound names), so an exact-match lookup of "PFOA"/"PFOS"/etc. still
+  // resolves to their own entries above — `findWqaContaminantByAlias` matches
+  // aliases exactly, so the broad "perfluoroalkyl" term can't shadow a
+  // specific analyte. The family federal_limits frame the card; each nested
+  // analyte row still shows its own MCL from the detected data.
+  {
+    canonical_name: "PFAS",
+    common_name: "PFAS",
+    aliases: [
+      "PFAS",
+      "Per- and polyfluoroalkyl substances",
+      "perfluoroalkyl",
+      "polyfluoroalkyl",
+    ],
+    category: "pfas",
+    federal_limits: [
+      {
+        kind: "mcl",
+        value_mg_l: 0.000004,
+        label: "Individual MCLs as low as 4.0 ng/L (ppt) — effective 2029",
+      },
+      {
+        kind: "mclg",
+        value_mg_l: 0,
+        label: "0 ng/L MCLG for PFOA and PFOS (no safe amount)",
+      },
+    ],
+    description:
+      "PFAS — per- and polyfluoroalkyl substances — are a large family of synthetic 'forever chemicals' that don't break down in the environment or the body and accumulate over time. They come from industrial discharge, firefighting foam, and stain- and water-resistant treatments. EPA finalized enforceable limits in 2024 for several of them, with some individual compounds set as low as 4 parts per trillion and a 2029 compliance deadline. Because those limits are so low and the health concerns — developmental, immune, and cancer effects — attach to long-term accumulation, any detected level is worth knowing about, even well under the limit. A carbon-block filter certified to NSF P473, or reverse osmosis, removes them; ordinary carafe pitchers are unreliable for PFAS.",
+    learn_more_url: "https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas",
+  },
 
   // -- Inorganic chemicals commonly printed on CCRs ------------------------
   {
