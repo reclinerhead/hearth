@@ -186,7 +186,7 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     ],
     description:
       "Copper, like lead, comes from corrosion of household plumbing rather than the water source. Short-term exposure to elevated copper can cause stomach upset; long-term exposure can affect liver and kidney function in people with copper-sensitive conditions like Wilson's disease. The same flushing and filtration steps that address lead generally address copper too — copper is comparatively easier to remove and most household carbon filters handle it.",
-    learn_more_url: "https://www.epa.gov/ground-water-and-drinking-water/national-primary-drinking-water-regulations",
+    learn_more_url: "https://www.epa.gov/ground-water-and-drinking-water/lead-and-copper-101",
   },
 
   // -- Disinfection byproducts (the CCR pair every chlorinated system reports) --
@@ -228,6 +228,36 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     description:
       "Haloacetic acids are the second regulated family of disinfection byproducts, formed the same way as trihalomethanes — chlorine reacting with organic matter. Like TTHMs they're a byproduct of the disinfection that makes tap water safe, removed effectively by carbon filtration and concentrated rather than removed by boiling.",
     learn_more_url: "https://www.epa.gov/dwreginfo/stage-1-and-stage-2-disinfectants-and-disinfection-byproducts-rules",
+  },
+  // The disinfectant residual itself (not a byproduct). CCRs report a chlorine
+  // or chloramine residual at the tap; without this entry it rendered bare in
+  // the report (issue #237). MRDL (maximum residual disinfectant level) is
+  // modeled as an `mcl`-kind limit with an MRDL-worded label.
+  {
+    canonical_name: "Chlorine",
+    common_name: "Chlorine / chloramine",
+    aliases: [
+      "Chlorine",
+      "Free Chlorine",
+      "Total Chlorine",
+      "Chlorine Residual",
+      "Total Chlorine Residual",
+      "Chloramine",
+      "Chloramines",
+      "1006",
+      "1009",
+    ],
+    category: "disinfection_byproducts",
+    federal_limits: [
+      {
+        kind: "mcl",
+        value_mg_l: 4,
+        label: "4.0 mg/L MRDL (maximum residual disinfectant level)",
+      },
+    ],
+    description:
+      "Chlorine — and chloramine, a longer-lasting chlorine-and-ammonia blend many utilities use — is the disinfectant added to kill bacteria and viruses. A residual detected at your tap is intentional: it's what keeps the water safe all the way from the plant to your home, and the federal limit caps how much may remain. At normal levels it's a safety feature, not a contaminant. If you dislike the taste or smell, an activated-carbon filter (a pitcher or under-sink unit) removes it readily — chloramine just needs a bit more carbon contact time than free chlorine.",
+    learn_more_url: "https://www.epa.gov/dwreginfo/basic-information-about-chloramines-and-drinking-water-disinfection",
   },
 
   // -- PFAS (2024 final MCLs; any detection is meaningful) -----------------
@@ -316,7 +346,7 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     ],
     description:
       "Arsenic occurs naturally in many rock formations and enters groundwater as it dissolves — so it's primarily a concern for groundwater systems and private wells. Long-term exposure is linked to several cancers and cardiovascular effects. Carbon filters only partially address it; reverse osmosis or distillation is the reliable household treatment.",
-    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+    learn_more_url: "https://www.epa.gov/ground-water-and-drinking-water/national-primary-drinking-water-regulations",
   },
   {
     canonical_name: "Nitrate",
@@ -328,7 +358,7 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     ],
     description:
       "Nitrate enters water mainly from fertilizer runoff, septic systems, and animal waste, so it tends to be elevated in agricultural areas. It's the one common contaminant with an acute rather than cumulative risk: high nitrate is dangerous for infants under six months ('blue baby syndrome'). Carbon filters do not remove it — reverse osmosis, distillation, or a nitrate-selective ion-exchange unit is required.",
-    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+    learn_more_url: "https://www.epa.gov/ground-water-and-drinking-water/national-primary-drinking-water-regulations",
   },
   {
     canonical_name: "Fluoride",
@@ -340,7 +370,7 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     ],
     description:
       "Most utilities add fluoride deliberately, targeting roughly 0.7 mg/L for dental health — so a detected level in that range is intentional, not contamination. The federal MCL of 4 mg/L guards against the skeletal effects of much higher long-term exposure. Removing fluoride is a personal/values choice rather than a safety necessity at typical added levels, and it requires reverse osmosis or distillation; carbon filters don't touch it.",
-    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+    learn_more_url: "https://www.epa.gov/sdwa/fluoride-drinking-water",
   },
   {
     canonical_name: "Chromium",
@@ -352,7 +382,7 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     ],
     description:
       "Total chromium covers both the benign trivalent form (a dietary nutrient) and hexavalent chromium-6 (the industrial form of 'Erin Brockovich' fame). EPA regulates total chromium; California and others have pushed for a separate chromium-6 standard. Reverse osmosis is the reliable household treatment.",
-    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+    learn_more_url: "https://www.epa.gov/sdwa/chromium-drinking-water",
   },
   {
     canonical_name: "Barium",
@@ -364,7 +394,7 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     ],
     description:
       "Barium occurs naturally in mineral deposits and can dissolve into groundwater. At levels above the federal limit, long-term exposure can raise blood pressure. Reverse osmosis, ion exchange, and distillation all address it.",
-    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+    learn_more_url: "https://www.epa.gov/ground-water-and-drinking-water/national-primary-drinking-water-regulations",
   },
   {
     canonical_name: "Selenium",
@@ -376,7 +406,7 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     ],
     description:
       "Selenium is an essential trace nutrient at low levels but harmful in excess; it enters water from natural deposits and some industrial discharge. Reverse osmosis or distillation removes it.",
-    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+    learn_more_url: "https://www.epa.gov/ground-water-and-drinking-water/national-primary-drinking-water-regulations",
   },
   {
     canonical_name: "Uranium",
@@ -403,7 +433,7 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     ],
     description:
       "1,2-Dichloroethane is an industrial solvent and a volatile organic compound — when it shows up in drinking water it usually traces back to an industrial release or a contaminated-site plume rather than the water source. Carbon filtration removes it well. Where it co-occurs with a nearby Superfund chlorinated-solvent site, the connection is worth understanding even when the treated water tests compliant.",
-    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+    learn_more_url: "https://www.epa.gov/ground-water-and-drinking-water/national-primary-drinking-water-regulations",
   },
   {
     canonical_name: "cis-1,2-Dichloroethylene",
@@ -420,7 +450,7 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     ],
     description:
       "cis-1,2-Dichloroethylene is a breakdown product of industrial solvents like trichloroethylene, so it commonly appears alongside other VOCs near contaminated sites. It's a volatile organic compound that carbon filtration addresses effectively.",
-    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+    learn_more_url: "https://www.epa.gov/ground-water-and-drinking-water/national-primary-drinking-water-regulations",
   },
   {
     canonical_name: "Trichloroethylene",
@@ -432,7 +462,7 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     ],
     description:
       "Trichloroethylene (TCE) is a widely used industrial degreasing solvent and a common groundwater contaminant near manufacturing and dry-cleaning sites. Long-term exposure carries cancer and developmental concerns. As a volatile organic compound it's removed well by carbon filtration or air stripping.",
-    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+    learn_more_url: "https://www.epa.gov/ground-water-and-drinking-water/national-primary-drinking-water-regulations",
   },
 
   // -- Synthetic organic compounds (common agricultural detection) ---------
@@ -446,6 +476,6 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     ],
     description:
       "Atrazine is one of the most widely used agricultural herbicides in the U.S., so it shows up seasonally in surface-water systems drawing from farmland watersheds. It's an endocrine-disruption concern at chronic exposure. Carbon filtration addresses it.",
-    learn_more_url: "https://www.epa.gov/sdwa/chemical-contaminant-rules",
+    learn_more_url: "https://www.epa.gov/ground-water-and-drinking-water/national-primary-drinking-water-regulations",
   },
 ];
