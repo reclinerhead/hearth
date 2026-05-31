@@ -127,11 +127,56 @@ export async function GET(): Promise<Response> {
     leadCopper,
   });
 
-  const reportDateLabel = new Intl.DateTimeFormat("en-US", {
+  const longDate = new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
-  }).format(new Date());
+  });
+  const reportDateLabel = longDate.format(new Date());
+
+  // CCR provenance for the "Where this data comes from" list. Best-effort:
+  // reads the shared water_system_reports row for this utility + year. The
+  // uploader's name is surfaced only when the uploader is the person
+  // generating the report — we don't put another household's name on a
+  // forwardable PDF (and the name lives in auth metadata, readable only for
+  // the current user).
+  const pwsid = findings.system_card?.pwsid ?? null;
+  const reportYear = ccr.report_year ?? null;
+  let ccrProvenance: WaterQualityReportInput["ccrProvenance"] =
+    reportYear !== null ? { year: reportYear, uploadedByName: null, uploadedOnLabel: null } : null;
+
+  if (pwsid && reportYear !== null) {
+    const { data: reportRow } = await supabase
+      .from("water_system_reports")
+      .select("uploaded_by, created_at")
+      .eq("pwsid", pwsid)
+      .eq("report_year", reportYear)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (reportRow) {
+      const { data: authData } = await supabase.auth.getUser();
+      const currentUser = authData?.user ?? null;
+      const meta = currentUser?.user_metadata ?? {};
+      const selfName =
+        typeof meta.full_name === "string"
+          ? meta.full_name
+          : typeof meta.name === "string"
+            ? meta.name
+            : null;
+      const uploadedByName =
+        currentUser && reportRow.uploaded_by === currentUser.id ? selfName : null;
+      const uploadedOnLabel = reportRow.created_at
+        ? longDate.format(new Date(reportRow.created_at))
+        : null;
+      ccrProvenance = { year: reportYear, uploadedByName, uploadedOnLabel };
+    }
+  }
+
+  // SDWIS is a source whenever we identified a public water system (its
+  // identity, compliance, and lead/copper records come from SDWIS).
+  const usedSdwis = Boolean(findings.system_card);
 
   const input: WaterQualityReportInput = {
     address: formatAddress(house),
@@ -143,6 +188,8 @@ export async function GET(): Promise<Response> {
     contaminants: displayedContaminants,
     detected,
     freeTestingOffer: ccr.free_testing_offer ?? null,
+    usedSdwis,
+    ccrProvenance,
     adminContact: findings.branch_metadata?.admin_contact ?? null,
     ccrArchiveUrl: null,
   };

@@ -106,6 +106,9 @@ h3 { font-size: 12.5pt; font-weight: 500; }
 
 p { margin: 0; }
 a { color: ${c.accent}; text-decoration: none; }
+/* Only 400/500 are loaded for the report fonts; 700 would faux-bold, so
+   emphasis renders at the real 500 weight. */
+b, strong { font-weight: 500; }
 
 .eyebrow {
   font-family: 'JetBrains Mono', ui-monospace, monospace;

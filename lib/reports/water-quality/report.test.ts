@@ -49,6 +49,8 @@ function baseInput(overrides: Partial<WaterQualityReportInput> = {}): WaterQuali
     contaminants,
     detected,
     freeTestingOffer: null,
+    usedSdwis: true,
+    ccrProvenance: { year: 2024, uploadedByName: "Todd Wyatt", uploadedOnLabel: "May 31, 2026" },
     adminContact: { name: "James Baker", email: "water@kalamazoo.gov", phone: "(269) 555-0100" },
     ccrArchiveUrl: null,
     ...overrides,
@@ -133,6 +135,29 @@ describe("buildWaterQualityReport", () => {
     // ...but only when present.
     const withoutPwsid = buildWaterQualityReport(baseInput({ pwsid: null }));
     expect(withoutPwsid).not.toContain("Public Water Supply ID (PWSID)");
+  });
+
+  it("lists data sources with acronyms spelled out and CCR provenance", () => {
+    const html = buildWaterQualityReport(baseInput());
+    expect(html).toContain("Where this data comes from");
+    expect(html).toContain("Consumer Confidence Report (CCR)");
+    expect(html).toContain("Safe Drinking Water Information System (SDWIS)");
+    expect(html).toContain("uploaded by Todd Wyatt");
+    expect(html).toContain("on May 31, 2026");
+    expect(html).toContain("2024 Consumer Confidence Report");
+  });
+
+  it("omits the SDWIS bullet when SDWIS wasn't a source", () => {
+    const html = buildWaterQualityReport(baseInput({ usedSdwis: false }));
+    expect(html).not.toContain("Safe Drinking Water Information System");
+  });
+
+  it("omits the uploader credit when the uploader isn't the current user", () => {
+    const html = buildWaterQualityReport(
+      baseInput({ ccrProvenance: { year: 2024, uploadedByName: null, uploadedOnLabel: "May 31, 2026" } }),
+    );
+    expect(html).toContain("Consumer Confidence Report (CCR)");
+    expect(html).not.toContain("uploaded by");
   });
 
   it("renders a clean-water message when nothing was detected", () => {

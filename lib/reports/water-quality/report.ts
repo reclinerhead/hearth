@@ -71,6 +71,23 @@ export type WaterQualityReportInput = {
   /** Normalized detections feeding the remediation matrix personalization. */
   detected: DetectedContaminantInput[];
   freeTestingOffer: CcrFreeTestingOffer | null;
+  /**
+   * Whether EPA's SDWIS was a data source (true for an identified public
+   * water system — its identity, compliance, and lead/copper records come
+   * from SDWIS). Drives a "Where this data comes from" bullet.
+   */
+  usedSdwis: boolean;
+  /**
+   * Provenance of the uploaded CCR for the "Where this data comes from"
+   * list. `uploadedByName` is only set when the uploader is the person
+   * generating the report (we don't surface another household's name on a
+   * forwardable document). Null when no CCR provenance is available.
+   */
+  ccrProvenance: {
+    year: number | null;
+    uploadedByName: string | null;
+    uploadedOnLabel: string | null;
+  } | null;
   adminContact: { name: string | null; email: string | null; phone: string | null } | null;
   /** Utility's CCR archive URL when known; omitted from the contact block otherwise. */
   ccrArchiveUrl: string | null;
@@ -341,9 +358,42 @@ function involvementSection(input: WaterQualityReportInput): string {
 
   <div class="disclosure faint small">
     <p><b>How this was made.</b> Every number, tier, and treatment rating in this report is drawn directly from your utility's published Consumer Confidence Report and EPA's public drinking-water data — nothing here is generated or estimated. Treatment effectiveness follows EPA and NSF public guidance and assumes a properly certified unit.</p>
-    <p style="margin-top:8px">This report is for awareness, not a substitute for testing the water at your own tap. Treatment recommendations are at the technology level; Hearth doesn't sell or endorse specific products.</p>
+    ${buildDataSources(input)}
+    <p style="margin-top:10px">This report is for awareness, not a substitute for testing the water at your own tap. Treatment recommendations are at the technology level; Hearth doesn't sell or endorse specific products.</p>
   </div>
 </section>`;
+}
+
+/**
+ * "Where this data comes from" bullet list, shown between the two
+ * disclosure paragraphs. Spells out the acronyms for a general audience.
+ * Emits nothing if neither source applies.
+ */
+function buildDataSources(input: WaterQualityReportInput): string {
+  const items: string[] = [];
+
+  const prov = input.ccrProvenance;
+  if (prov) {
+    const yearPart = prov.year ? `${prov.year} ` : "";
+    const credit: string[] = [];
+    if (prov.uploadedByName) credit.push(`uploaded by ${escapeHtml(prov.uploadedByName)}`);
+    if (prov.uploadedOnLabel) credit.push(`on ${escapeHtml(prov.uploadedOnLabel)}`);
+    const creditText = credit.length > 0 ? ` (${credit.join(" ")})` : "";
+    items.push(
+      `<li><b>Your utility's ${yearPart}Consumer Confidence Report (CCR)</b> — the annual water-quality report every community water system is required to publish for its customers${creditText}. It's the source of the detected-contaminant levels in this report.</li>`,
+    );
+  }
+
+  if (input.usedSdwis) {
+    items.push(
+      `<li><b>EPA's Safe Drinking Water Information System (SDWIS)</b> — the U.S. Environmental Protection Agency's national database of public water systems. Your utility's identity, its compliance history, and its lead &amp; copper monitoring records are drawn from it.</li>`,
+    );
+  }
+
+  if (items.length === 0) return "";
+  return `<div class="sources"><div class="sources-head">Where this data comes from</div><ul class="sources-list">${items.join(
+    "",
+  )}</ul></div>`;
 }
 
 function buildContactBlock(input: WaterQualityReportInput): string {
@@ -435,6 +485,11 @@ function templateCss(): string {
 .contact-link { display: inline-block; margin-top: 8px; font-size: 8pt; color: ${c.accent}; border-bottom: 1px solid color-mix(in oklab, ${c.accent} 40%, transparent); }
 
 .disclosure { margin-top: 20px; padding-top: 12px; border-top: 1px solid ${c.borderSubtle}; font-size: 7.8pt; line-height: 1.5; }
+.sources { margin-top: 10px; }
+.sources-head { font-weight: 500; color: ${c.textSecondary}; margin-bottom: 4px; }
+.sources-list { margin: 0; padding-left: 15px; display: flex; flex-direction: column; gap: 5px; }
+.sources-list li { line-height: 1.5; }
+.sources-list li b { color: ${c.textSecondary}; }
 `;
 }
 
