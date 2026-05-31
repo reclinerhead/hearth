@@ -48,7 +48,7 @@ export const WATER_QUALITY_REPORT_TYPE = "water_quality";
  * Template version — bump on any layout / copy / composition change so a
  * cached PDF rendered by an older template regenerates on the next request.
  */
-export const WATER_QUALITY_TEMPLATE_VERSION = "v3";
+export const WATER_QUALITY_TEMPLATE_VERSION = "v4";
 
 /**
  * Static reference-data version — bump when the contaminant reference
@@ -138,22 +138,45 @@ function formatLevel(level: number | null, unit: string | null): string | null {
 // --- remediation matrix cell states ---------------------------------------
 
 /**
- * The four cell states, rendered distinctly. The unreliable-vs-none
- * distinction is the one a non-expert gets wrong (carbon-and-PFAS is
- * "unreliable," not "none"), so the two never share a glyph or color.
+ * The four cell states, rendered as inline SVG (NOT Unicode glyphs). The
+ * geometric-shape characters (●◐△) aren't in the report's web fonts, so
+ * Chromium drew them with a server-side fallback font that didn't survive
+ * into the PDF for non-Chromium viewers — iOS showed blanks (issue #241).
+ * SVG embeds as vector paths, font-independent, so the shapes render
+ * identically across every viewer and in print.
+ *
+ * The unreliable-vs-none distinction is the one a non-expert gets wrong
+ * (carbon-and-PFAS is "unreliable," not "none"), so the two never share a
+ * shape or color: full = filled disc, partial = half-filled disc, unreliable
+ * = outlined triangle, none = a short dash.
  */
-function effCell(eff: RemediationEffectiveness): { glyph: string; color: string; cls: string } {
+function effShapeSvg(eff: RemediationEffectiveness): string {
+  const c = REPORT_COLORS;
+  const open = `<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" style="display:inline-block;vertical-align:middle">`;
   switch (eff) {
     case "full":
-      return { glyph: "●", color: REPORT_COLORS.success, cls: "eff-full" };
+      return `${open}<circle cx="8" cy="8" r="5" fill="${c.success}"/></svg>`;
     case "partial":
-      return { glyph: "◐", color: REPORT_COLORS.accent, cls: "eff-partial" };
+      // Outlined disc with its left half filled — reads as ◐ but crisp at 11px.
+      return `${open}<circle cx="8" cy="8" r="5" fill="none" stroke="${c.accent}" stroke-width="1.4"/><path d="M8 3 A5 5 0 0 0 8 13 Z" fill="${c.accent}"/></svg>`;
     case "unreliable":
-      return { glyph: "△", color: REPORT_COLORS.danger, cls: "eff-unreliable" };
+      return `${open}<path d="M8 2.6 L13.6 13 L2.4 13 Z" fill="none" stroke="${c.danger}" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
     case "none":
     default:
-      return { glyph: "—", color: REPORT_COLORS.textTertiary, cls: "eff-none" };
+      return `${open}<line x1="4" y1="8" x2="12" y2="8" stroke="${c.textTertiary}" stroke-width="1.4" stroke-linecap="round"/></svg>`;
   }
+}
+
+function effCell(eff: RemediationEffectiveness): { svg: string; cls: string } {
+  const cls =
+    eff === "full"
+      ? "eff-full"
+      : eff === "partial"
+        ? "eff-partial"
+        : eff === "unreliable"
+          ? "eff-unreliable"
+          : "eff-none";
+  return { svg: effShapeSvg(eff), cls };
 }
 
 const DISPLAY_COLUMNS: Array<{ key: string; label: string }> = [
@@ -338,7 +361,7 @@ function agencySection(input: WaterQualityReportInput): string {
     .map((p) => {
       const cells = DISPLAY_COLUMNS.map((col) => {
         const cell = effCell(effForColumn(p.row.effectiveness, col.key));
-        return `<td class="cell ${cell.cls}" style="color:${cell.color}">${cell.glyph}</td>`;
+        return `<td class="cell ${cell.cls}">${cell.svg}</td>`;
       }).join("");
       return `
 <tr class="${p.detected ? "row-detected" : ""}">
@@ -383,10 +406,10 @@ function agencySection(input: WaterQualityReportInput): string {
   </table>
 
   <div class="legend faint small">
-    <span><b style="color:${REPORT_COLORS.success}">●</b> Removes it</span>
-    <span><b style="color:${REPORT_COLORS.accent}">◐</b> Partial</span>
-    <span><b style="color:${REPORT_COLORS.danger}">△</b> Unreliable — marketed for it, but inconsistent</span>
-    <span><b style="color:${REPORT_COLORS.textTertiary}">—</b> Doesn't address it</span>
+    <span>${effShapeSvg("full")} Removes it</span>
+    <span>${effShapeSvg("partial")} Partial</span>
+    <span>${effShapeSvg("unreliable")} Unreliable — marketed for it, but inconsistent</span>
+    <span>${effShapeSvg("none")} Doesn't address it</span>
   </div>
 </section>`;
 }
