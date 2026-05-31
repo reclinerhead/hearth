@@ -28,6 +28,7 @@ import { buildDisplayedCcrContaminants } from "@/lib/habitat/modules/water-quali
 import { deriveDetectedContaminants } from "@/lib/habitat/modules/water-quality-awareness/detected";
 import { getCachedReportPdf, persistReport } from "@/lib/reports/cache";
 import { renderReportPdf } from "@/lib/reports/render";
+import { buildReportFooterTemplate } from "@/lib/reports/theme";
 import {
   buildWaterQualityReport,
   waterQualityReportSignature,
@@ -163,7 +164,10 @@ export async function GET(): Promise<Response> {
   // Miss → render fresh, persist best-effort, serve.
   let pdf: Buffer;
   try {
-    pdf = await renderReportPdf(buildWaterQualityReport(input));
+    pdf = await renderReportPdf(
+      buildWaterQualityReport(input),
+      buildReportFooterTemplate(input.address),
+    );
   } catch (e) {
     console.error("[reports/water-quality] render failed:", e);
     return jsonError("We couldn't generate your report just now. Please try again.", 500);

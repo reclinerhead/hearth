@@ -95,21 +95,29 @@ async function launchBrowser(): Promise<Browser> {
  * so the Google-Fonts @import has resolved before the snapshot — otherwise
  * the first render can capture a fallback face.
  */
-export async function renderReportPdf(html: string): Promise<Buffer> {
+export async function renderReportPdf(
+  html: string,
+  footerTemplate?: string,
+): Promise<Buffer> {
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "load" });
     await page.evaluateHandle("document.fonts.ready");
-    // Margins are set here (not only via CSS @page) because page.pdf()
-    // applies its own margins and overrides the stylesheet — relying on
-    // @page alone left content flowing to the page edge and colliding with
-    // the fixed footer. The generous bottom margin reserves the band the
-    // running footer sits in, so content flow stops well above it.
+    // The running footer uses Puppeteer's NATIVE footer (displayHeaderFooter
+    // + footerTemplate), which renders inside the reserved bottom page margin
+    // on every page — so it never collides with flowing content. A CSS
+    // position:fixed footer can't do this (it's content-box-relative and
+    // content paints behind it). The bottom margin (18mm) reserves the band;
+    // the empty header template suppresses Chromium's default date header.
+    const useFooter = typeof footerTemplate === "string" && footerTemplate.length > 0;
     const pdf = await page.pdf({
       printBackground: true,
       format: "letter",
-      margin: { top: "16mm", right: "16mm", bottom: "22mm", left: "16mm" },
+      displayHeaderFooter: useFooter,
+      headerTemplate: useFooter ? "<span></span>" : undefined,
+      footerTemplate: useFooter ? footerTemplate : undefined,
+      margin: { top: "16mm", right: "16mm", bottom: "18mm", left: "16mm" },
     });
     return Buffer.from(pdf);
   } finally {

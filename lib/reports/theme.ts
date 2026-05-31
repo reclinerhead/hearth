@@ -138,57 +138,60 @@ a { color: ${c.accent}; text-decoration: none; }
 /* Keep a block from being split across a page boundary where splitting
    would orphan a heading from its content. Applied selectively. */
 .keep-together { break-inside: avoid; }
-
-/* Running attribution footer — shared layer, every page. Pinned into the
-   bottom @page margin band. The "Powered by ToddTech" anchor is a real,
-   clickable PDF link to the Hearth portfolio page. */
-.report-footer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 8mm;
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 6.5pt;
-  font-weight: 400;
-  letter-spacing: 0.04em;
-  color: ${c.textTertiary};
-  text-align: center;
-}
-.report-footer a {
-  color: ${c.textTertiary};
-  text-decoration: none;
-  border-bottom: 1px solid ${c.borderEmphasis};
-}
-.report-footer .sep { opacity: 0.5; padding: 0 0.5em; }
 `;
 }
 
 /**
- * The running attribution footer markup. Single subtle line:
+ * Running attribution footer, rendered via Puppeteer's native footer
+ * (`displayHeaderFooter` + `footerTemplate`) — NOT a CSS element. This is
+ * deliberate: a CSS `position: fixed` footer is positioned relative to the
+ * content box in Chromium's paged mode and flowing content paints behind it
+ * on every page (there is no per-page space reservation in CSS). The native
+ * footer renders inside the reserved bottom page margin on every page, so it
+ * never collides with content no matter how far the matrix overflows.
+ *
+ * Tradeoff: the native footer renders in a separate context, so it does NOT
+ * inherit the document fonts/CSS (hence the inline styles + generic
+ * `monospace`) and its `<a>` is not guaranteed to be a clickable PDF
+ * annotation across Chromium versions. The brand + URL are shown as text so
+ * the soft-referral survives regardless; an in-flow clickable ToddTech link
+ * also rides at the end of the document body (see `buildReportDocument`).
+ *
+ * Single subtle line:
  *   Hearth — Home Awareness · Generated for {address} · Powered by ToddTech
- * "Powered by ToddTech" links to the Hearth portfolio page.
  */
-function footerHtml(address: string): string {
-  return `
-<div class="report-footer">
-  Hearth — ${escapeHtml(HEARTH_REPORT_TAGLINE)}<span class="sep">·</span>Generated for ${escapeHtml(
+export function buildReportFooterTemplate(address: string): string {
+  const c = REPORT_COLORS;
+  return `<div style="width:100%;padding:0 14mm;box-sizing:border-box;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:7px;letter-spacing:0.04em;color:${c.textTertiary};text-align:center;">Hearth — ${escapeHtml(
+    HEARTH_REPORT_TAGLINE,
+  )} &nbsp;·&nbsp; Generated for ${escapeHtml(
     address,
-  )}<span class="sep">·</span>Powered by <a href="${TODDTECH_HEARTH_URL}">ToddTech</a>
-</div>`;
+  )} &nbsp;·&nbsp; Powered by <a href="${TODDTECH_HEARTH_URL}" style="color:${c.textTertiary};text-decoration:underline;">ToddTech</a></div>`;
+}
+
+/**
+ * The shared in-flow attribution credit. Rides once at the very end of the
+ * document body (last page) as a normal flow element, so its "Powered by
+ * ToddTech" anchor is a guaranteed-clickable PDF link — the running per-page
+ * footer (a native Puppeteer footer) carries the same brand text but can't
+ * promise clickable links. Shared layer; report templates never render it.
+ */
+function inFlowCredit(): string {
+  const c = REPORT_COLORS;
+  return `<div style="margin-top:18px;padding-top:10px;border-top:1px solid ${c.borderSubtle};font-family:'JetBrains Mono',ui-monospace,monospace;font-size:7pt;letter-spacing:0.04em;color:${c.textTertiary};text-align:center;">Powered by <a href="${TODDTECH_HEARTH_URL}" style="color:${c.textTertiary};border-bottom:1px solid ${c.borderEmphasis};text-decoration:none;">ToddTech</a></div>`;
 }
 
 /**
  * Wrap a report body (the page-composition HTML a specific report template
  * produces) in the full standalone HTML document Chromium renders: the
- * shared print theme, the template's own scoped styles, and the running
- * footer. This is the single entry point report templates use — they never
- * reimplement the footer or the document shell.
+ * shared print theme, the template's own scoped styles, and the in-flow
+ * attribution credit. The running per-page footer is added separately by the
+ * renderer via `buildReportFooterTemplate`. This is the single entry point
+ * report templates use — they never reimplement the footer or the shell.
  */
 export function buildReportDocument(args: {
   /** Document <title>; also used by Chromium as the PDF title metadata. */
   title: string;
-  /** The full address line shown in the running footer. */
-  address: string;
   /** The report's page-composition HTML (the <body> inner content). */
   bodyHtml: string;
   /** Optional report-specific CSS appended after the shared stylesheet. */
@@ -203,7 +206,7 @@ export function buildReportDocument(args: {
 </head>
 <body>
 ${args.bodyHtml}
-${footerHtml(args.address)}
+${inFlowCredit()}
 </body>
 </html>`;
 }

@@ -3,6 +3,7 @@ import type { CcrSummarizedContaminant } from "@/lib/habitat/modules/water-quali
 import type { CcrFreeTestingOffer } from "@/lib/documents/ai/ccr-schema";
 import type { DetectedContaminantInput } from "@/lib/habitat/water-quality/remediation/recommend";
 import { TODDTECH_HEARTH_URL } from "../constants";
+import { buildReportFooterTemplate } from "../theme";
 import {
   buildWaterQualityReport,
   waterQualityReportSignature,
@@ -55,11 +56,9 @@ function baseInput(overrides: Partial<WaterQualityReportInput> = {}): WaterQuali
 }
 
 describe("buildWaterQualityReport", () => {
-  it("renders the address in the header and the running footer", () => {
+  it("renders the address in the header", () => {
     const html = buildWaterQualityReport(baseInput());
-    // Header + footer both carry the address (footer survives page separation).
-    const occurrences = html.split("123 Maple St, Kalamazoo, MI 49001").length - 1;
-    expect(occurrences).toBeGreaterThanOrEqual(2);
+    expect(html).toContain("123 Maple St, Kalamazoo, MI 49001");
   });
 
   it("lists detected contaminants in the summarizer's order with verbal tier cues", () => {
@@ -100,9 +99,8 @@ describe("buildWaterQualityReport", () => {
     expect(html).toContain("in your water");
   });
 
-  it("links the footer attribution to the Hearth portfolio page with the in-app tagline", () => {
+  it("carries a guaranteed-clickable ToddTech credit in the document body", () => {
     const html = buildWaterQualityReport(baseInput());
-    expect(html).toContain("Home Awareness");
     expect(html).toContain(`href="${TODDTECH_HEARTH_URL}"`);
     expect(html).toContain("Powered by");
   });
@@ -140,6 +138,16 @@ describe("buildWaterQualityReport", () => {
   it("renders a clean-water message when nothing was detected", () => {
     const html = buildWaterQualityReport(baseInput({ contaminants: [], detected: [] }));
     expect(html).toContain("no measurable detections");
+  });
+});
+
+describe("buildReportFooterTemplate (running per-page footer)", () => {
+  it("carries the in-app tagline, the address, and the ToddTech attribution", () => {
+    const footer = buildReportFooterTemplate("123 Maple St, Kalamazoo, MI 49001");
+    expect(footer).toContain("Home Awareness");
+    expect(footer).toContain("123 Maple St, Kalamazoo, MI 49001");
+    expect(footer).toContain("Powered by");
+    expect(footer).toContain(`href="${TODDTECH_HEARTH_URL}"`);
   });
 });
 

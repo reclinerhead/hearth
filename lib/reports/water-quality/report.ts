@@ -446,7 +446,6 @@ export function buildWaterQualityReport(input: WaterQualityReportInput): string 
   const bodyHtml = `${awarenessSection(input)}${agencySection(input)}${involvementSection(input)}`;
   return buildReportDocument({
     title: `Water Quality Report — ${input.address}`,
-    address: input.address,
     bodyHtml,
     templateCss: templateCss(),
   });
