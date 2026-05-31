@@ -113,6 +113,7 @@ import {
 } from "./recommended-actions";
 import { formatAdminName, displaySystemName } from "./payload";
 import { deriveDetectedContaminants } from "./detected";
+import { extractWaterProperties } from "./water-properties";
 import type { WqaRecommendedAction } from "./types";
 import { createElement } from "react";
 import { WqaOverviewBody } from "./components/overview-body";
@@ -597,6 +598,15 @@ const WaterQualityAwarenessModule: HabitatModule = {
           }
         : null;
 
+    // WQA-6: water-touching properties (hardness, iron, manganese) read
+    // from the CCR. Computed once here — both the maintenance-bridge
+    // recommended-action and the payload (which names them in the
+    // summary for the synthesis pipeline) consume it. Null off the CCR
+    // branch and when the CCR didn't print these secondary parameters.
+    const waterProperties = extractWaterProperties(
+      ccrEnrichment?.findings ?? null,
+    );
+
     // Compute the recommended-actions list before payload assembly. We
     // compute here (not inside buildSystemPayload) so the activity log
     // can narrate the emitted IDs without re-running the pure compute.
@@ -623,6 +633,7 @@ const WaterQualityAwarenessModule: HabitatModule = {
         },
         systemName: displaySystemName(record),
         detectedContaminants,
+        waterProperties,
       };
       recommendedActions = buildRecommendedActions(inputs);
       const actionsStep = recommendedActionsComputeNarration({
@@ -682,6 +693,7 @@ const WaterQualityAwarenessModule: HabitatModule = {
         confidence,
         recommendedActions,
         ccrEnrichment,
+        waterProperties,
       );
     })();
 

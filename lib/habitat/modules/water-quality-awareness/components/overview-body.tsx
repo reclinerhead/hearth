@@ -1177,14 +1177,17 @@ function RecommendedActionCard({
         <Icon name={action.icon as never} size={16} />
       </span>
       <div className="min-w-0 flex-1">
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 500,
-            color: "var(--color-text-primary)",
-          }}
-        >
-          {action.headline}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: "var(--color-text-primary)",
+            }}
+          >
+            {action.headline}
+          </div>
+          {action.automatic ? <AutomaticBadge /> : null}
         </div>
         <p
           className="text-small"
@@ -1212,16 +1215,31 @@ function RecommendedActionCard({
         ) : null}
         {action.link ? (
           <div className="text-small mt-2">
-            <a
-              href={action.link.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1"
-              style={{ color: "var(--color-accent)" }}
-            >
-              <span>{action.link.label}</span>
-              <Icon name="external-link" size={14} />
-            </a>
+            {action.automatic ? (
+              // WQA-6: the maintenance-bridge card links to an internal
+              // route (the maintenance plan), not an external URL — so
+              // no target=_blank and an arrow rather than the external-
+              // link glyph.
+              <a
+                href={action.link.url}
+                className="inline-flex items-center gap-1"
+                style={{ color: "var(--color-accent)" }}
+              >
+                <span>{action.link.label}</span>
+                <Icon name="arrow-right" size={14} />
+              </a>
+            ) : (
+              <a
+                href={action.link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1"
+                style={{ color: "var(--color-accent)" }}
+              >
+                <span>{action.link.label}</span>
+                <Icon name="external-link" size={14} />
+              </a>
+            )}
           </div>
         ) : null}
         {action.matrix_cta ? (
@@ -1244,6 +1262,27 @@ function RecommendedActionCard({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * The "AUTOMATIC" pill on the maintenance-bridge card (WQA-6). Signals
+ * that Hearth adapted something on its own — the same register as the
+ * mockup's badge. Uses the info tone so it reads as a system action,
+ * distinct from the amber attention tier.
+ */
+function AutomaticBadge() {
+  return (
+    <span
+      className="rounded-full px-2 py-0.5 eyebrow shrink-0"
+      style={{
+        backgroundColor: "color-mix(in oklab, var(--color-info) 16%, transparent)",
+        color: "var(--color-info)",
+        fontSize: 10,
+      }}
+    >
+      Automatic
+    </span>
   );
 }
 
