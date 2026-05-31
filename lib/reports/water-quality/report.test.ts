@@ -94,12 +94,20 @@ describe("buildWaterQualityReport", () => {
     expect(html).toContain("https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas");
   });
 
-  it("renders all four distinct matrix cell states", () => {
+  it("renders all four distinct matrix cell states as inline SVG (not font glyphs)", () => {
     const html = buildWaterQualityReport(baseInput());
-    expect(html).toContain("●"); // full
-    expect(html).toContain("◐"); // partial
-    expect(html).toContain("△"); // unreliable — distinct from none
-    expect(html).toContain("—"); // none
+    // Each state is present and distinct.
+    expect(html).toContain("eff-full");
+    expect(html).toContain("eff-partial");
+    expect(html).toContain("eff-unreliable");
+    expect(html).toContain("eff-none");
+    // Shapes are SVG vectors, so they embed font-independently and render on
+    // iOS / every PDF viewer (issue #241) — not the old Unicode glyphs that
+    // relied on a font fallback that didn't survive into the PDF.
+    expect(html).toContain("<svg");
+    expect(html).not.toContain("●");
+    expect(html).not.toContain("◐");
+    expect(html).not.toContain("△");
   });
 
   it("highlights detected rows in the matrix", () => {
