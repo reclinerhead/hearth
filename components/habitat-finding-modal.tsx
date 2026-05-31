@@ -49,10 +49,18 @@ import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 const FOCUSABLE_SELECTOR =
   'a[href], area[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), iframe, [tabindex]:not([tabindex="-1"])';
 
-// Module thumbnail size in the modal header. Matches HERO_PX in
-// HabitatFindingTileCompact so the same image renders at the same
-// dimensions in both surfaces — the tile the user clicked and the
+// Module thumbnail size in the modal header on DESKTOP. Matches
+// HERO_PX in HabitatFindingTileCompact so the same image renders at the
+// same dimensions in both surfaces — the tile the user clicked and the
 // header of the modal that opened.
+//
+// Issue #228 intentionally decouples this on mobile: the pinned header
+// thumbnail shrinks to 44px below the `sm:` breakpoint to claw back
+// vertical space (the size is driven by a `--thumb` CSS var on the
+// thumbnail wrapper, 44px → 72px at `sm:`). The tile and the modal are
+// different surfaces and the user has already transitioned between
+// them, so the same-size invariant only needs to hold on desktop. This
+// constant stays the desktop value and feeds the image `sizes` hint.
 const HEADER_THUMB_PX = 72;
 
 const ACTIVITY_LOG_FALLBACK_COPY =
@@ -416,11 +424,16 @@ export function HabitatFindingModal({
           style={{ borderBottom: "1px solid var(--color-border-subtle)" }}
         >
           {habitatModule.iconImage ? (
+            // Issue #228: shrink the pinned thumbnail on mobile (44px)
+            // to claw back vertical space, full size (72px) on desktop.
+            // Driven off a `--thumb` CSS var set by utility classes — an
+            // inline `width`/`height` would win over a `sm:` class, so
+            // the breakpoint override lives on the var, not the size.
             <div
-              className="relative overflow-hidden shrink-0"
+              className="relative overflow-hidden shrink-0 [--thumb:44px] sm:[--thumb:72px]"
               style={{
-                width: HEADER_THUMB_PX,
-                height: HEADER_THUMB_PX,
+                width: "var(--thumb)",
+                height: "var(--thumb)",
                 borderRadius: "var(--radius-md)",
                 border: "1px solid var(--color-border-subtle)",
                 backgroundColor: "var(--color-bg-surface-raised)",
@@ -430,7 +443,7 @@ export function HabitatFindingModal({
                 src={habitatModule.iconImage}
                 alt=""
                 fill
-                sizes="72px"
+                sizes={`${HEADER_THUMB_PX}px`}
                 style={{ objectFit: "cover" }}
               />
             </div>
@@ -458,8 +471,12 @@ export function HabitatFindingModal({
             <h2 id={titleId} className="h2 mt-0.5">
               {headline}
             </h2>
+            {/* Issue #228: on mobile the summary moves out of the pinned
+                header into the scroll region (re-emitted below in the
+                overview pane). Desktop keeps it inline here, in both the
+                overview and detail panes, exactly as before. */}
             <p
-              className="text-small mt-1"
+              className="text-small mt-1 hidden sm:block"
               style={{ color: "var(--color-text-secondary)" }}
             >
               {summary}
@@ -489,6 +506,16 @@ export function HabitatFindingModal({
             className="overflow-y-auto p-4 sm:p-5 space-y-5"
             onClick={dismissBanner}
           >
+            {/* Issue #228: mobile-only relocation of the header summary
+                into the scroll flow (the pinned-header copy above is
+                `hidden sm:block`). Same visual treatment as the header
+                version; absent on desktop and in the detail pane. */}
+            <p
+              className="text-small sm:hidden"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              {summary}
+            </p>
             {recheckBanner ? (
               <RecheckBanner
                 summary={recheckBanner.summary}
