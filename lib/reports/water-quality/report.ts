@@ -40,7 +40,7 @@ export const WATER_QUALITY_REPORT_TYPE = "water_quality";
  * Template version — bump on any layout / copy / composition change so a
  * cached PDF rendered by an older template regenerates on the next request.
  */
-export const WATER_QUALITY_TEMPLATE_VERSION = "v1";
+export const WATER_QUALITY_TEMPLATE_VERSION = "v2";
 
 /**
  * Static reference-data version — bump when the contaminant reference

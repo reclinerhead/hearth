@@ -18,24 +18,27 @@ import {
 } from "./constants";
 
 /**
- * The dark Hearth palette, mirrored from app/globals.css. The report
- * renders in Hearth's theme (a product surface, not a generic white sheet)
- * — #1A1614 base, #E89B4A accent, warm paper-toned text.
+ * The report's PRINT palette — a white page with Hearth's warm light-theme
+ * tokens (mirrored from app/globals.css `:root[data-theme="light"]`). The
+ * report is meant to be printed and forwarded, so it uses a white
+ * background rather than the app's dark mode: minimal ink, maximum
+ * legibility on paper, while staying recognizably Hearth (warm accent,
+ * paper-toned surfaces, the three fonts).
  */
 export const REPORT_COLORS = {
-  bgBase: "#1a1614",
-  bgSurface: "#221e1b",
-  bgSurfaceRaised: "#2b2724",
-  borderSubtle: "#332e2a",
-  borderEmphasis: "#3f3934",
-  textPrimary: "#f5f0e8",
-  textSecondary: "#b8b0a4",
-  textTertiary: "#7f786e",
-  accent: "#e89b4a",
-  warning: "#d4925e",
-  info: "#7a9cb8",
-  success: "#8aab7d",
-  danger: "#c76f5c",
+  bgBase: "#ffffff",
+  bgSurface: "#faf6ef",
+  bgSurfaceRaised: "#f3ede2",
+  borderSubtle: "#e8e0d2",
+  borderEmphasis: "#d4c9b6",
+  textPrimary: "#1f1a16",
+  textSecondary: "#5f574c",
+  textTertiary: "#8f857a",
+  accent: "#c97a2e",
+  warning: "#b5742e",
+  info: "#5b7f9a",
+  success: "#6e8f60",
+  danger: "#a8543f",
   /** The amber the WQA surfaces use for detected/attention rows. */
   amber: "#d97706",
 } as const;

@@ -24,6 +24,7 @@ import { resolveActiveHouseId } from "@/lib/houses/active-house";
 import { createClient } from "@/lib/supabase/server";
 import type { House } from "@/types/house";
 import type { WqaFindings } from "@/lib/habitat/modules/water-quality-awareness/types";
+import { buildDisplayedCcrContaminants } from "@/lib/habitat/modules/water-quality-awareness/ccr";
 import { deriveDetectedContaminants } from "@/lib/habitat/modules/water-quality-awareness/detected";
 import { getCachedReportPdf, persistReport } from "@/lib/reports/cache";
 import { renderReportPdf } from "@/lib/reports/render";
@@ -101,10 +102,19 @@ export async function GET(): Promise<Response> {
     );
   }
 
+  const leadCopper = findings.lead_copper_summary ?? null;
+
+  // The displayed "Detected in your water" list is the regulated-contaminant
+  // table PLUS the separate lead/copper distribution PLUS detected UCMR
+  // (PFAS) rows — the same merge the findings modal uses (issue #224).
+  // Reading the raw `ccr.contaminants` array alone drops lead and copper,
+  // which live in their own CCR section.
+  const displayedContaminants = buildDisplayedCcrContaminants(ccr, leadCopper);
+
   const detected = deriveDetectedContaminants({
     branch: findings.branch,
     ccrFindings: ccr,
-    leadCopper: findings.lead_copper_summary ?? null,
+    leadCopper,
   });
 
   const reportDateLabel = new Intl.DateTimeFormat("en-US", {
@@ -119,7 +129,7 @@ export async function GET(): Promise<Response> {
     utilityName: findings.system_card?.pws_name ?? null,
     sourceWaterLabel: sourceWaterLabel(findings.system_card?.source_type),
     reportYear: ccr.report_year ?? null,
-    contaminants: ccr.contaminants ?? [],
+    contaminants: displayedContaminants,
     detected,
     freeTestingOffer: ccr.free_testing_offer ?? null,
     adminContact: findings.branch_metadata?.admin_contact ?? null,
