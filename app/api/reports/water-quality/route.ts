@@ -148,10 +148,10 @@ export async function GET(): Promise<Response> {
   if (pwsid && reportYear !== null) {
     const { data: reportRow } = await supabase
       .from("water_system_reports")
-      .select("uploaded_by, created_at")
+      .select("uploaded_by, extracted_at")
       .eq("pwsid", pwsid)
       .eq("report_year", reportYear)
-      .order("created_at", { ascending: false })
+      .order("extracted_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
@@ -167,8 +167,8 @@ export async function GET(): Promise<Response> {
             : null;
       const uploadedByName =
         currentUser && reportRow.uploaded_by === currentUser.id ? selfName : null;
-      const uploadedOnLabel = reportRow.created_at
-        ? longDate.format(new Date(reportRow.created_at))
+      const uploadedOnLabel = reportRow.extracted_at
+        ? longDate.format(new Date(reportRow.extracted_at))
         : null;
       ccrProvenance = { year: reportYear, uploadedByName, uploadedOnLabel };
     }
