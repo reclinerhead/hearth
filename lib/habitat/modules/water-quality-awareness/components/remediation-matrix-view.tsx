@@ -67,7 +67,13 @@ export function RemediationMatrixView({
     ccrFindings: findings.ccr_findings ?? null,
     leadCopper: findings.lead_copper_summary ?? null,
   });
-  const personalized = personalizeRemediationMatrix(detected);
+  // Detected rows float to the top so the user's own contaminants read
+  // as a block, then the rest of the reference matrix follows. Stable
+  // sort preserves the declared (mockup) order within each group, so
+  // it never looks shuffled.
+  const personalized = [...personalizeRemediationMatrix(detected)].sort(
+    (a, b) => Number(b.detected) - Number(a.detected),
+  );
   const combo = recommendRemediationCombination(detected);
 
   const ccrYear =
