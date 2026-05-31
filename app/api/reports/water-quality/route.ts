@@ -40,6 +40,15 @@ export const maxDuration = 60;
 
 const WQA_MODULE_KEY = "water_quality_awareness";
 
+/**
+ * TEMPORARY (issue #207 iteration): bypass the report cache so layout/copy
+ * changes show on every Generate without bumping the template version each
+ * time. While true, the route always renders fresh and does not read or
+ * write the cache. Flip back to `false` (or remove this guard) once the
+ * report format is locked in, to re-enable serve-from-cache.
+ */
+const BYPASS_REPORT_CACHE = true;
+
 function sourceWaterLabel(
   sourceType: NonNullable<WqaFindings["system_card"]>["source_type"] | undefined,
 ): string | null {
@@ -138,14 +147,17 @@ export async function GET(): Promise<Response> {
 
   const signature = waterQualityReportSignature(findingRow.checked_at ?? null);
 
-  // Cache hit → serve the stored PDF without re-rendering.
-  const cached = await getCachedReportPdf({
-    supabase,
-    houseId,
-    reportType: WATER_QUALITY_REPORT_TYPE,
-    signature,
-  });
-  if (cached) return pdfResponse(cached);
+  // Cache hit → serve the stored PDF without re-rendering. Skipped while
+  // BYPASS_REPORT_CACHE is on (format iteration).
+  if (!BYPASS_REPORT_CACHE) {
+    const cached = await getCachedReportPdf({
+      supabase,
+      houseId,
+      reportType: WATER_QUALITY_REPORT_TYPE,
+      signature,
+    });
+    if (cached) return pdfResponse(cached);
+  }
 
   // Miss → render fresh, persist best-effort, serve.
   let pdf: Buffer;
@@ -156,14 +168,16 @@ export async function GET(): Promise<Response> {
     return jsonError("We couldn't generate your report just now. Please try again.", 500);
   }
 
-  await persistReport({
-    supabase,
-    houseId,
-    reportType: WATER_QUALITY_REPORT_TYPE,
-    signature,
-    pdf,
-    generatedAtIso: new Date().toISOString(),
-  });
+  if (!BYPASS_REPORT_CACHE) {
+    await persistReport({
+      supabase,
+      houseId,
+      reportType: WATER_QUALITY_REPORT_TYPE,
+      signature,
+      pdf,
+      generatedAtIso: new Date().toISOString(),
+    });
+  }
 
   return pdfResponse(pdf);
 }

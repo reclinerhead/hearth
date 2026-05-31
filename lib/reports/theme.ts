@@ -73,10 +73,10 @@ function baseStylesheet(): string {
   return `
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
 
-@page {
-  size: Letter;
-  margin: 16mm 16mm 22mm 16mm;
-}
+/* Page size + margins are set via page.pdf() in render.ts (Puppeteer's
+   margin option overrides CSS @page margins), so we don't declare them
+   here — doing so would just fight the renderer. The bottom margin there
+   reserves the band this footer sits in. */
 
 * { box-sizing: border-box; }
 
@@ -146,7 +146,7 @@ a { color: ${c.accent}; text-decoration: none; }
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 6mm;
+  bottom: 8mm;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 6.5pt;
   font-weight: 400;

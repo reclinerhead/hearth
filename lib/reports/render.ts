@@ -101,9 +101,15 @@ export async function renderReportPdf(html: string): Promise<Buffer> {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "load" });
     await page.evaluateHandle("document.fonts.ready");
+    // Margins are set here (not only via CSS @page) because page.pdf()
+    // applies its own margins and overrides the stylesheet — relying on
+    // @page alone left content flowing to the page edge and colliding with
+    // the fixed footer. The generous bottom margin reserves the band the
+    // running footer sits in, so content flow stops well above it.
     const pdf = await page.pdf({
       printBackground: true,
-      preferCSSPageSize: true,
+      format: "letter",
+      margin: { top: "16mm", right: "16mm", bottom: "22mm", left: "16mm" },
     });
     return Buffer.from(pdf);
   } finally {
