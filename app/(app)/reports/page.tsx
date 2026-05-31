@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import type { CSSProperties, ReactNode } from "react";
 import { Icon, type IconName } from "@/components/icon";
 import { SectionHeader } from "@/components/ui";
 import { WaterQualityGenerateButton } from "./water-quality-generate-button";
+
+/** The water-quality module thumbnail, reused as the featured card's hero. */
+const WATER_QUALITY_HERO = "/habitat_module_images/WQA.jpg";
 
 /**
  * Hearth Reporting — the central hub for synthesis reports generated
@@ -56,12 +60,31 @@ type ReportGroup = {
 };
 
 /**
- * Three groups, ordered Forward-looking → Retrospective → External.
- * Forward-looking leads because it's the most novel surface and the
- * one that does the most marketing work for the maintenance module's
- * intelligence layer.
+ * Four groups. "Your home's habitat" leads because it holds the one report
+ * that's actually live (the Water Quality Report) — the first thing a
+ * visitor should see is the thing they can do right now. The remaining three
+ * (Forward-looking → Retrospective → External) are the still-mocked taxonomy.
  */
 const GROUPS: ReportGroup[] = [
+  {
+    id: "habitat",
+    eyebrow: "The world around your home",
+    title: "Your home's habitat",
+    blurb:
+      "Reports built from the environmental data Hearth gathers about your address — your water, the ground beneath you, the hazards nearby. The first one is live.",
+    reports: [
+      {
+        id: "water-quality",
+        title: "Water Quality Report",
+        description:
+          "A plain-language briefing on what's actually in your tap water: every contaminant your utility detected, what each one means, and which treatment genuinely addresses it — ending on what to do, not what to fear. Built to forward to a parent, a partner, or a contractor.",
+        icon: "droplet",
+        previewLabel: "Forward-ready water briefing",
+        previewIcon: "droplet",
+        live: true,
+      },
+    ],
+  },
   {
     id: "forward-looking",
     eyebrow: "Forecast of what's coming",
@@ -172,25 +195,6 @@ const GROUPS: ReportGroup[] = [
       },
     ],
   },
-  {
-    id: "habitat",
-    eyebrow: "The world around your home",
-    title: "Your home's habitat",
-    blurb:
-      "Reports built from the environmental data Hearth gathers about your address — your water, the ground beneath you, the hazards nearby. The first one is live.",
-    reports: [
-      {
-        id: "water-quality",
-        title: "Water Quality Report",
-        description:
-          "A plain-language briefing on what's actually in your tap water: every contaminant your utility detected, what each one means, and which treatment genuinely addresses it — ending on what to do, not what to fear. Built to forward to a parent, a partner, or a contractor.",
-        icon: "droplet",
-        previewLabel: "Forward-ready water briefing",
-        previewIcon: "droplet",
-        live: true,
-      },
-    ],
-  },
 ];
 
 const sectionStyle: CSSProperties = {
@@ -260,9 +264,13 @@ export default function ReportsPage() {
               gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
             }}
           >
-            {group.reports.map((report) => (
-              <ReportCardView key={report.id} report={report} />
-            ))}
+            {group.reports.map((report) =>
+              report.live ? (
+                <FeaturedReportCard key={report.id} report={report} />
+              ) : (
+                <ReportCardView key={report.id} report={report} />
+              ),
+            )}
           </div>
         </section>
       ))}
@@ -347,35 +355,121 @@ function ReportCardView({ report }: { report: ReportCard }) {
         icon={report.previewIcon ?? report.icon}
       />
 
-      {report.live ? (
-        <WaterQualityGenerateButton />
-      ) : (
-        <div
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "var(--space-3)",
+          marginTop: "auto",
+        }}
+      >
+        <ComingSoonChip />
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled
+          aria-disabled
+          title="Coming soon"
           style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "var(--space-3)",
-            marginTop: "auto",
+            opacity: 0.55,
+            cursor: "not-allowed",
           }}
         >
-          <ComingSoonChip />
-          <button
-            type="button"
-            className="btn btn-ghost"
-            disabled
-            aria-disabled
-            title="Coming soon"
+          Generate
+          <Icon name="arrow-right" size={14} />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+/**
+ * The one live report (issue #207). Distinct from the mocked `ReportCardView`
+ * on purpose — it leads the page, so it earns a hero treatment: the
+ * water-quality module thumbnail as a full-bleed banner with the title set
+ * over a scrim, then the description and the real Generate action. No
+ * "Coming soon" chip, no stub preview placeholder.
+ */
+function FeaturedReportCard({ report }: { report: ReportCard }) {
+  return (
+    <article
+      className="surface"
+      style={{
+        padding: 0,
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <div
+        className="relative"
+        style={{ width: "100%", aspectRatio: "16 / 8" }}
+      >
+        <Image
+          src={WATER_QUALITY_HERO}
+          alt=""
+          fill
+          sizes="(max-width: 640px) 100vw, 400px"
+          style={{ objectFit: "cover" }}
+        />
+        {/* Scrim so the title stays legible over the photo. */}
+        <div
+          aria-hidden
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(to top, rgba(20,17,15,0.82) 0%, rgba(20,17,15,0.35) 42%, rgba(20,17,15,0) 70%)",
+          }}
+        />
+        <div
+          className="absolute flex items-center gap-2.5"
+          style={{
+            left: "var(--space-4)",
+            right: "var(--space-4)",
+            bottom: "var(--space-3)",
+          }}
+        >
+          <span
+            aria-hidden
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
             style={{
-              opacity: 0.55,
-              cursor: "not-allowed",
+              backgroundColor:
+                "color-mix(in oklab, var(--color-accent) 22%, rgba(20,17,15,0.55))",
+              color: "var(--color-accent)",
+              border:
+                "1px solid color-mix(in oklab, var(--color-accent) 40%, transparent)",
+              backdropFilter: "blur(2px)",
             }}
           >
-            Generate
-            <Icon name="arrow-right" size={14} />
-          </button>
+            <Icon name={report.icon} size={16} />
+          </span>
+          <h3
+            className="h3"
+            style={{ margin: 0, lineHeight: 1.2, color: "#f5f0e8" }}
+          >
+            {report.title}
+          </h3>
         </div>
-      )}
+      </div>
+
+      <div
+        style={{
+          padding: "var(--space-4)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--space-3)",
+          flex: 1,
+        }}
+      >
+        <p
+          className="text-small"
+          style={{ margin: 0, color: "var(--color-text-secondary)" }}
+        >
+          {report.description}
+        </p>
+        <WaterQualityGenerateButton />
+      </div>
     </article>
   );
 }

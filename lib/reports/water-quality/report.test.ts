@@ -50,7 +50,7 @@ function baseInput(overrides: Partial<WaterQualityReportInput> = {}): WaterQuali
     detected,
     freeTestingOffer: null,
     usedSdwis: true,
-    ccrProvenance: { year: 2024, uploadedByName: "Todd Wyatt", uploadedOnLabel: "May 31, 2026" },
+    ccrProvenance: { year: 2024, uploadedByName: null, uploadedOnLabel: "May 31, 2026" },
     adminContact: { name: "James Baker", email: "water@kalamazoo.gov", phone: "(269) 555-0100" },
     ccrArchiveUrl: null,
     ...overrides,
@@ -137,14 +137,16 @@ describe("buildWaterQualityReport", () => {
     expect(withoutPwsid).not.toContain("Public Water Supply ID (PWSID)");
   });
 
-  it("lists data sources with acronyms spelled out and CCR provenance", () => {
+  it("lists data sources with acronyms spelled out and a dated CCR provenance (no name)", () => {
     const html = buildWaterQualityReport(baseInput());
     expect(html).toContain("Where this data comes from");
     expect(html).toContain("Consumer Confidence Report (CCR)");
     expect(html).toContain("Safe Drinking Water Information System (SDWIS)");
-    expect(html).toContain("uploaded by Todd Wyatt");
-    expect(html).toContain("on May 31, 2026");
     expect(html).toContain("2024 Consumer Confidence Report");
+    // Dated provenance, but the uploader's name is intentionally not shown
+    // (the report is forwardable — name + address shouldn't travel together).
+    expect(html).toContain("uploaded May 31, 2026");
+    expect(html).not.toContain("uploaded by");
   });
 
   it("omits the SDWIS bullet when SDWIS wasn't a source", () => {
@@ -152,12 +154,11 @@ describe("buildWaterQualityReport", () => {
     expect(html).not.toContain("Safe Drinking Water Information System");
   });
 
-  it("omits the uploader credit when the uploader isn't the current user", () => {
+  it("still supports an uploader name when one is supplied (template capability)", () => {
     const html = buildWaterQualityReport(
-      baseInput({ ccrProvenance: { year: 2024, uploadedByName: null, uploadedOnLabel: "May 31, 2026" } }),
+      baseInput({ ccrProvenance: { year: 2024, uploadedByName: "Todd Wyatt", uploadedOnLabel: "May 31, 2026" } }),
     );
-    expect(html).toContain("Consumer Confidence Report (CCR)");
-    expect(html).not.toContain("uploaded by");
+    expect(html).toContain("uploaded by Todd Wyatt on May 31, 2026");
   });
 
   it("renders a clean-water message when nothing was detected", () => {

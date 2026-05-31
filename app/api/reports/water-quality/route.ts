@@ -148,7 +148,7 @@ export async function GET(): Promise<Response> {
   if (pwsid && reportYear !== null) {
     const { data: reportRow } = await supabase
       .from("water_system_reports")
-      .select("uploaded_by, extracted_at")
+      .select("extracted_at")
       .eq("pwsid", pwsid)
       .eq("report_year", reportYear)
       .order("extracted_at", { ascending: false })
@@ -156,21 +156,14 @@ export async function GET(): Promise<Response> {
       .maybeSingle();
 
     if (reportRow) {
-      const { data: authData } = await supabase.auth.getUser();
-      const currentUser = authData?.user ?? null;
-      const meta = currentUser?.user_metadata ?? {};
-      const selfName =
-        typeof meta.full_name === "string"
-          ? meta.full_name
-          : typeof meta.name === "string"
-            ? meta.name
-            : null;
-      const uploadedByName =
-        currentUser && reportRow.uploaded_by === currentUser.id ? selfName : null;
+      // Name intentionally omitted: the report is built to be forwarded and
+      // may be reshared, so we keep the dated provenance but not the
+      // uploader's name — that would pair a personal name with the home
+      // address on a document we can't control once it leaves. (issue #207)
       const uploadedOnLabel = reportRow.extracted_at
         ? longDate.format(new Date(reportRow.extracted_at))
         : null;
-      ccrProvenance = { year: reportYear, uploadedByName, uploadedOnLabel };
+      ccrProvenance = { year: reportYear, uploadedByName: null, uploadedOnLabel };
     }
   }
 

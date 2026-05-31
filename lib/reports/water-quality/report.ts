@@ -375,10 +375,12 @@ function buildDataSources(input: WaterQualityReportInput): string {
   const prov = input.ccrProvenance;
   if (prov) {
     const yearPart = prov.year ? `${prov.year} ` : "";
-    const credit: string[] = [];
-    if (prov.uploadedByName) credit.push(`uploaded by ${escapeHtml(prov.uploadedByName)}`);
-    if (prov.uploadedOnLabel) credit.push(`on ${escapeHtml(prov.uploadedOnLabel)}`);
-    const creditText = credit.length > 0 ? ` (${credit.join(" ")})` : "";
+    const name = prov.uploadedByName ? escapeHtml(prov.uploadedByName) : null;
+    const date = prov.uploadedOnLabel ? escapeHtml(prov.uploadedOnLabel) : null;
+    let creditText = "";
+    if (name && date) creditText = ` (uploaded by ${name} on ${date})`;
+    else if (date) creditText = ` (uploaded ${date})`;
+    else if (name) creditText = ` (uploaded by ${name})`;
     items.push(
       `<li><b>Your utility's ${yearPart}Consumer Confidence Report (CCR)</b> — the annual water-quality report every community water system is required to publish for its customers${creditText}. It's the source of the detected-contaminant levels in this report.</li>`,
     );
