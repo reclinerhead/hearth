@@ -41,13 +41,14 @@ import {
   isValidPwsid,
   normalizePwsid,
 } from "../pwsid-validation";
+import { buildDisplayedCcrContaminants } from "../ccr";
 import type {
   CcrFindings,
   CcrSummarizedContaminant,
   CcrContaminantTier,
 } from "../ccr";
 import type { CcrDetectedContaminant } from "@/lib/documents/ai/ccr-schema";
-import type { LcrMeasurement } from "../lcr";
+import type { LcrMeasurement, LeadCopperSummary } from "../lcr";
 import {
   APPROACHING_THRESHOLD_RATIO,
   COPPER_ACTION_LEVEL_MG_L,
@@ -1261,13 +1262,19 @@ function DetectedInWater({ findings }: { findings: WqaFindings }) {
     return null;
   }
 
-  // On cws_with_ccr, the CCR's contaminant list is the canonical "what's
-  // in your water" view — it covers lead/copper plus everything else the
-  // utility tested. We render that in place of the SDWIS-only lead/copper
-  // rows. On other CWS branches (cws_no_ccr, non_community) we fall
-  // back to the SDWIS lead/copper view.
+  // On cws_with_ccr, the CCR is the canonical "what's in your water"
+  // view — but it reports detections across three sections (the
+  // regulated table, the lead/copper distribution, and the UCMR block),
+  // so the list is assembled by buildDisplayedCcrContaminants (issue
+  // #224). We render that in place of the SDWIS-only lead/copper rows.
+  // On other CWS branches (cws_no_ccr, non_community) we fall back to
+  // the SDWIS lead/copper view.
   const renderCcr =
-    findings.branch === "cws_with_ccr" && ccr && ccr.contaminants !== null;
+    findings.branch === "cws_with_ccr" &&
+    !!ccr &&
+    (ccr.contaminants !== null ||
+      ccr.lead_copper_distribution !== null ||
+      (ccr.ucmr_results?.length ?? 0) > 0);
 
   return (
     <section aria-labelledby="wqa-detected-heading">
@@ -1275,7 +1282,7 @@ function DetectedInWater({ findings }: { findings: WqaFindings }) {
         Detected in your water
       </div>
       {renderCcr ? (
-        <CcrContaminantList ccr={ccr!} />
+        <CcrContaminantList ccr={ccr!} lcr={lcr ?? null} />
       ) : !lcr || lcr.status === "unavailable" ? (
         <EmptyDetected
           body="We couldn't read your utility's lead-and-copper samples on this run. We'll try again on the next refresh."
@@ -1311,8 +1318,18 @@ function DetectedInWater({ findings }: { findings: WqaFindings }) {
  * CCR; the disclosure expands to the contaminant-reference description
  * when one is on file.
  */
-function CcrContaminantList({ ccr }: { ccr: CcrFindings }) {
-  const contaminants = ccr.contaminants ?? [];
+function CcrContaminantList({
+  ccr,
+  lcr,
+}: {
+  ccr: CcrFindings;
+  lcr: LeadCopperSummary | null;
+}) {
+  // Issue #224: the displayed list is the regulated-contaminant table
+  // PLUS lead/copper (from the CCR distribution, falling back to EPA's
+  // LCR samples) PLUS detected UCMR rows (PFAS). Without this, lead and
+  // PFAS dropped off the panel the moment a CCR was uploaded.
+  const contaminants = buildDisplayedCcrContaminants(ccr, lcr);
 
   if (contaminants.length === 0) {
     // The extraction returned a clean contaminant table — a positive

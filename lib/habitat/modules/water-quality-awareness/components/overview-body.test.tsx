@@ -617,6 +617,47 @@ describe("WqaOverviewBody — CCR contaminant list (issue #199)", () => {
   });
 });
 
+describe("WqaOverviewBody — CCR lead & PFAS surface in the panel (issue #224)", () => {
+  it("renders lead from the CCR lead/copper distribution", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Atrazine", level: 0.5, mcl: 3, tier: "context" },
+    ]);
+    findings.ccr_findings!.lead_copper_distribution = {
+      lead: {
+        percentile_90: 0.009,
+        unit: "mg/L",
+        action_level: 0.015,
+        samples_collected: null,
+        samples_exceeding_action_level: null,
+        monitoring_period: "2024",
+      },
+      copper: null,
+      lead_service_line_count: null,
+    };
+    render(findings);
+    expect(text()).toContain("Detected in your water");
+    expect(text()).toContain("Lead");
+    expect(text()).toContain("0.009");
+  });
+
+  it("renders PFAS reported only in the CCR UCMR section", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Atrazine", level: 0.5, mcl: 3, tier: "context" },
+    ]);
+    findings.ccr_findings!.ucmr_results = [
+      {
+        contaminant_name: "PFOA",
+        detected_level: 2.2,
+        unit: "ng/L",
+        monitoring_period: "2024",
+      },
+    ];
+    render(findings);
+    expect(text()).toContain("PFOA");
+    expect(text()).toContain("2.2");
+  });
+});
+
 describe("WqaOverviewBody — cws_unmapped", () => {
   it("renders the unmapped header strip with disabled CCR upload affordance", () => {
     const findings: WqaFindings = {

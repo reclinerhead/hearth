@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCcrFindings,
+  buildDisplayedCcrContaminants,
   CAUTION_RATIO,
   ccrHasCautionSignal,
   ccrHasConcernSignal,
@@ -10,7 +11,9 @@ import {
   mclRatio,
   normalizeContaminantGroupKey,
   PFAS_NAME_HINTS,
+  type CcrFindings,
 } from "./ccr";
+import type { LeadCopperSummary } from "./lcr";
 import type {
   CcrDetectedContaminant,
   CcrExtractionResult,
@@ -863,5 +866,142 @@ describe("ccrHasConcernSignal / ccrHasCautionSignal", () => {
     });
     expect(ccrHasCautionSignal(f)).toBe(true);
     expect(ccrHasConcernSignal(f)).toBe(false);
+  });
+});
+
+describe("buildDisplayedCcrContaminants (issue #224)", () => {
+  function findingsWith(over: Partial<CcrExtractionResult>): CcrFindings {
+    return buildCcrFindings({
+      reportYear: 2024,
+      publishedDate: null,
+      extractedData: extracted(over),
+    });
+  }
+
+  function leadDist(
+    leadP90: number | null,
+    copperP90: number | null = null,
+  ): CcrExtractionResult["lead_copper_distribution"] {
+    const entry = (p90: number | null, action: number) =>
+      p90 === null
+        ? null
+        : {
+            percentile_90: p90,
+            unit: "mg/L",
+            action_level: action,
+            samples_collected: null,
+            samples_exceeding_action_level: null,
+            monitoring_period: "2024",
+          };
+    return {
+      lead: entry(leadP90, 0.015),
+      copper: entry(copperP90, 1.3),
+      lead_service_line_count: null,
+    };
+  }
+
+  function lcrSummary(
+    leadValue: number,
+    sign: "<" | "=" | ">",
+  ): LeadCopperSummary {
+    return {
+      status: "available",
+      sampling_period_count: 1,
+      most_recent_sampling_period: {
+        sampling_end_date: null,
+        lead_90th_percentile: {
+          value: leadValue,
+          unit: "mg/L",
+          sign,
+          sample_id: "MI381874",
+        },
+        copper_90th_percentile: null,
+      },
+    };
+  }
+
+  const names = (rows: ReturnType<typeof buildDisplayedCcrContaminants>) =>
+    rows.map((r) => r.contaminant_name);
+
+  it("surfaces lead from the CCR distribution even when the contaminants table omits it", () => {
+    const f = findingsWith({
+      detected_contaminants: [
+        contaminant({ contaminant_name: "Atrazine", detected_level: 0.5, mcl: 3 }),
+      ],
+      lead_copper_distribution: leadDist(0.009),
+    });
+    const rows = buildDisplayedCcrContaminants(f, null);
+    const lead = rows.find((r) => r.contaminant_name === "Lead");
+    expect(lead).toBeDefined();
+    // #188: any detected lead is floored at caution, so it surfaces as a
+    // headline row above the context-tier Atrazine.
+    expect(lead!.tier).toBe("caution");
+    expect(rows[0].contaminant_name).toBe("Lead");
+  });
+
+  it("tiers lead at/above the action level as concern, not just caution", () => {
+    const f = findingsWith({ lead_copper_distribution: leadDist(0.02) });
+    const lead = buildDisplayedCcrContaminants(f, null).find(
+      (r) => r.contaminant_name === "Lead",
+    )!;
+    expect(lead.tier).toBe("concern");
+  });
+
+  it("surfaces PFAS reported only in the UCMR section", () => {
+    const f = findingsWith({
+      detected_contaminants: [contaminant({ contaminant_name: "Atrazine" })],
+      ucmr_results: [
+        { contaminant_name: "PFOA", detected_level: 2.2, unit: "ng/L", monitoring_period: "2024" },
+        { contaminant_name: "PFOS", detected_level: 4.0, unit: "ng/L", monitoring_period: "2024" },
+      ],
+    });
+    const rows = buildDisplayedCcrContaminants(f, null);
+    expect(names(rows)).toEqual(expect.arrayContaining(["PFOA", "PFOS"]));
+    expect(rows.find((r) => r.contaminant_name === "PFOA")!.tier).toBe("caution");
+  });
+
+  it("falls back to EPA LCR samples for lead when the CCR didn't print a distribution", () => {
+    const f = findingsWith({ detected_contaminants: [], lead_copper_distribution: null });
+    const rows = buildDisplayedCcrContaminants(f, lcrSummary(0.0053, "="));
+    expect(names(rows)).toContain("Lead");
+  });
+
+  it("does not add below-detection LCR lead ('<' sign)", () => {
+    const f = findingsWith({ lead_copper_distribution: null });
+    const rows = buildDisplayedCcrContaminants(f, lcrSummary(0.001, "<"));
+    expect(names(rows)).not.toContain("Lead");
+  });
+
+  it("skips UCMR rows that were monitored but not detected", () => {
+    const f = findingsWith({
+      ucmr_results: [
+        { contaminant_name: "PFNA", detected_level: null, unit: "ng/L", monitoring_period: null },
+        { contaminant_name: "PFBS", detected_level: 0, unit: "ng/L", monitoring_period: null },
+        { contaminant_name: "PFOA", detected_level: 2.2, unit: "ng/L", monitoring_period: null },
+      ],
+    });
+    const rows = buildDisplayedCcrContaminants(f, null);
+    expect(names(rows)).toEqual(["PFOA"]);
+  });
+
+  it("dedupes an analyte that appears in both the contaminants table and UCMR", () => {
+    const f = findingsWith({
+      detected_contaminants: [
+        contaminant({ contaminant_name: "PFOA", detected_level: 2.2, unit: "ng/L", mcl: null }),
+      ],
+      ucmr_results: [
+        { contaminant_name: "PFOA", detected_level: 2.2, unit: "ng/L", monitoring_period: null },
+      ],
+    });
+    const rows = buildDisplayedCcrContaminants(f, null);
+    expect(
+      rows.filter((r) => r.contaminant_name.toLowerCase() === "pfoa"),
+    ).toHaveLength(1);
+  });
+
+  it("returns the base list unchanged when there's nothing to merge", () => {
+    const f = findingsWith({ detected_contaminants: [contaminant()] });
+    const rows = buildDisplayedCcrContaminants(f, null);
+    expect(names(rows)).toEqual(["Atrazine"]);
   });
 });
