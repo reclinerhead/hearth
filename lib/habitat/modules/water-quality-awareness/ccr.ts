@@ -35,6 +35,11 @@ import type {
   CcrUcmrResult,
   CcrFreeTestingOffer,
 } from "@/lib/documents/ai/ccr-schema";
+import {
+  COPPER_ACTION_LEVEL_MG_L,
+  LEAD_ACTION_LEVEL_MG_L,
+  type LeadCopperSummary,
+} from "./lcr";
 
 /**
  * Tier classification for one CCR-detected contaminant. Mirrors the
@@ -446,6 +451,187 @@ function groupAndSummarizeContaminants(
       return a.firstIdx - b.firstIdx;
     })
     .map(({ summarized }) => summarized);
+}
+
+/**
+ * The COMPLETE list of detected contaminants to show a homeowner from a
+ * CCR — issue #224.
+ *
+ * A CCR reports detections across three sections, and the findings
+ * view's `contaminants` array only carries the first:
+ *   - the regulated-contaminant table (`contaminants`);
+ *   - the Lead-and-Copper-Rule distribution (`lead_copper_distribution`)
+ *     — lead/copper are printed apart from the regulated table;
+ *   - the UCMR block (`ucmr_results`) — PFAS is monitored under UCMR and
+ *     printed in its own section.
+ * Rendering only `contaminants` made lead and PFAS vanish from the
+ * "Detected in your water" panel the moment a CCR was uploaded, even
+ * though they were extracted and persisted. This folds the lead/copper
+ * and detected-UCMR rows into the displayed list, deduped by name and
+ * re-sorted with the same tier → ratio comparator the regulated rows
+ * use. Pure; the persisted `contaminants` array is unchanged (the
+ * remediation matrix's `deriveDetectedContaminants` reads all three
+ * sections itself, so we must NOT pre-merge into the stored payload).
+ *
+ * `lcrFallback` is the SDWIS lead/copper summary; it backs lead/copper
+ * when the CCR didn't print its own distribution. Detected lead/copper
+ * are floored at the `caution` tier per the #188 decision ("any
+ * detected lead/copper is worth knowing — EPA's action level is a
+ * regulatory threshold, not a health-safety one"), so they surface as
+ * headline rows rather than sinking into the low-level disclosure.
+ */
+export function buildDisplayedCcrContaminants(
+  ccr: CcrFindings,
+  lcrFallback: LeadCopperSummary | null,
+): CcrSummarizedContaminant[] {
+  const base = ccr.contaminants ?? [];
+  const seen = new Set(
+    base.map((c) => normalizeContaminantGroupKey(c.contaminant_name)),
+  );
+  const extra: CcrSummarizedContaminant[] = [];
+
+  // UCMR section — PFAS and other unregulated monitoring. Include only
+  // positively-detected rows (null / zero level is a monitored-but-clean
+  // row). PFAS tiers to `caution` via the PFAS name hint already.
+  for (const u of ccr.ucmr_results ?? []) {
+    if (u.detected_level === null || u.detected_level <= 0) continue;
+    const key = normalizeContaminantGroupKey(u.contaminant_name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    extra.push(
+      makeSynthesizedContaminant({
+        name: u.contaminant_name,
+        detected_level: u.detected_level,
+        unit: u.unit,
+        monitoring_period: u.monitoring_period,
+      }),
+    );
+  }
+
+  // Lead and copper — from the CCR's own distribution, falling back to
+  // EPA's LCR samples.
+  for (const metal of ["lead", "copper"] as const) {
+    const synthesized = synthesizeMetalRow(
+      metal,
+      ccr.lead_copper_distribution,
+      lcrFallback,
+    );
+    if (!synthesized) continue;
+    const key = normalizeContaminantGroupKey(synthesized.contaminant_name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    extra.push(synthesized);
+  }
+
+  if (extra.length === 0) return base;
+
+  // Re-sort the combined list with the same comparator the regulated
+  // rows were sorted by (tier asc, then detected/limit ratio desc, then
+  // stable by position).
+  return [...base, ...extra]
+    .map((c, idx) => ({ c, idx }))
+    .sort((a, b) => {
+      const tierDiff = TIER_ORDER[a.c.tier] - TIER_ORDER[b.c.tier];
+      if (tierDiff !== 0) return tierDiff;
+      const ratioA = mclRatio(a.c);
+      const ratioB = mclRatio(b.c);
+      if (ratioA === null && ratioB === null) return a.idx - b.idx;
+      if (ratioA === null) return 1;
+      if (ratioB === null) return -1;
+      if (ratioA !== ratioB) return ratioB - ratioA;
+      return a.idx - b.idx;
+    })
+    .map(({ c }) => c);
+}
+
+/**
+ * Build a single-observation summarized row from synthesized values
+ * (lead/copper distribution or a UCMR row). `caution_floor` raises a
+ * detected row that would otherwise tier as `context` up to `caution`
+ * — used for lead/copper per #188.
+ */
+function makeSynthesizedContaminant(args: {
+  name: string;
+  detected_level: number | null;
+  unit: string | null;
+  mcl_action_level?: number | null;
+  monitoring_period?: string | null;
+  caution_floor?: boolean;
+}): CcrSummarizedContaminant {
+  const base: CcrDetectedContaminant = {
+    contaminant_name: args.name,
+    contaminant_code: null,
+    detected_level: args.detected_level,
+    unit: args.unit,
+    mcl: null,
+    mclg: null,
+    mcl_action_level: args.mcl_action_level ?? null,
+    sources: null,
+    monitoring_period: args.monitoring_period ?? null,
+    violation_in_period_ind: null,
+    notes: null,
+    source_table_label: null,
+  };
+  let tier = classifyContaminantTier(base);
+  if (
+    args.caution_floor &&
+    args.detected_level !== null &&
+    args.detected_level > 0 &&
+    tier === "context"
+  ) {
+    tier = "caution";
+  }
+  return {
+    ...base,
+    tier,
+    has_multiple_observations: false,
+    other_observations: [],
+  };
+}
+
+/**
+ * A synthesized lead or copper row, preferring the CCR's own
+ * distribution and falling back to the SDWIS LCR samples. Null when
+ * neither source has a positive detection.
+ */
+function synthesizeMetalRow(
+  metal: "lead" | "copper",
+  distribution: CcrLeadCopperDistribution | null,
+  lcrFallback: LeadCopperSummary | null,
+): CcrSummarizedContaminant | null {
+  const name = metal === "lead" ? "Lead" : "Copper";
+  const actionLevel =
+    metal === "lead" ? LEAD_ACTION_LEVEL_MG_L : COPPER_ACTION_LEVEL_MG_L;
+
+  const entry = distribution?.[metal] ?? null;
+  if (entry && entry.percentile_90 !== null && entry.percentile_90 > 0) {
+    return makeSynthesizedContaminant({
+      name,
+      detected_level: entry.percentile_90,
+      unit: entry.unit,
+      mcl_action_level: entry.action_level ?? actionLevel,
+      monitoring_period: entry.monitoring_period,
+      caution_floor: true,
+    });
+  }
+
+  if (lcrFallback && lcrFallback.status === "available") {
+    const measurement =
+      metal === "lead"
+        ? lcrFallback.most_recent_sampling_period.lead_90th_percentile
+        : lcrFallback.most_recent_sampling_period.copper_90th_percentile;
+    if (measurement && measurement.sign !== "<" && measurement.value > 0) {
+      return makeSynthesizedContaminant({
+        name,
+        detected_level: measurement.value,
+        unit: measurement.unit,
+        mcl_action_level: actionLevel,
+        caution_floor: true,
+      });
+    }
+  }
+
+  return null;
 }
 
 /**
