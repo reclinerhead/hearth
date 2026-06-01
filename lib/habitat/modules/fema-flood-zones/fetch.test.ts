@@ -485,6 +485,71 @@ describe("fetchFloodZonesAtPoint — retry behavior", () => {
     expect(call).toBe(1);
   });
 
+  // Issue #204 hypothesis 1: ArcGIS sometimes answers HTTP 200 with an
+  // `{ error: { code, message } }` envelope instead of a `features[]`
+  // array during brownouts. That's a transient outage, NOT a genuine
+  // empty-coverage result — it must be retryable, and it must never
+  // reach the caller as `features: []`.
+  it("classifies an ArcGIS error envelope (HTTP 200, no features[]) as retryable", async () => {
+    const fetchImpl = vi.fn(async () =>
+      fakeResponse({ error: { code: 500, message: "Unable to complete operation." } }),
+    ) as unknown as typeof fetch;
+    try {
+      await fetchFloodZonesAtPoint(42.262, -85.589, {
+        fetchImpl,
+        retryPolicy: SINGLE_SHOT,
+      });
+      expect.fail("expected NfhlFetchError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(NfhlFetchError);
+      const e = err as NfhlFetchError;
+      expect(e.retryable).toBe(true);
+      expect(e.message).toContain("ArcGIS error envelope");
+    }
+  });
+
+  it("retries an ArcGIS error envelope and succeeds on the next attempt", async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call++;
+      if (call === 1) {
+        return fakeResponse({ error: { code: 503, message: "busy" } });
+      }
+      return fakeResponse({
+        features: [
+          {
+            attributes: {
+              OBJECTID: 1,
+              DFIRM_ID: "26077C",
+              FLD_AR_ID: "26077C_3766",
+              STUDY_TYP: "NP",
+              FLD_ZONE: "X",
+              ZONE_SUBTY: "AREA OF MINIMAL FLOOD HAZARD",
+              SFHA_TF: "F",
+              STATIC_BFE: -9999,
+              V_DATUM: null,
+              DEPTH: -9999,
+              LEN_UNIT: null,
+              VELOCITY: -9999,
+              VEL_UNIT: null,
+              BFE_REVERT: -9999,
+              DEP_REVERT: -9999,
+              DUAL_ZONE: null,
+              SOURCE_CIT: "26077C_STUDY2",
+            },
+          },
+        ],
+      });
+    }) as unknown as typeof fetch;
+    const zones = await fetchFloodZonesAtPoint(42.262, -85.589, {
+      fetchImpl,
+      sleepImpl: NO_SLEEP,
+    });
+    expect(call).toBe(2);
+    expect(zones).toHaveLength(1);
+    expect(zones[0].fldZone).toBe("X");
+  });
+
   it("gives up after 3 attempts when every retry fails (5xx)", async () => {
     let call = 0;
     const fetchImpl = vi.fn(async () => {

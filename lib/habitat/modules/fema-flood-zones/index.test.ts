@@ -9,8 +9,10 @@ import FemaFloodZonesModule, {
   buildMscAddressQuery,
   buildOnboardingMessage,
   buildUnreachableActions,
+  summarizeFemaRecheckChanges,
   type FemaFloodZoneFindings,
 } from "./index";
+import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import { classifyFloodZone } from "./classify";
 import {
   CACHE_TTL_DAYS,
@@ -440,10 +442,11 @@ describe("FemaFloodZonesModule.check — no coverage", () => {
     expect(finding.headline).toBe("FEMA hasn't mapped flood zones in your area");
   });
 
-  it("persists coverage:false and no zone block", async () => {
+  it("persists coverage:false, uncovered_reason 'no_coverage', and no zone block", async () => {
     const finding = await FemaFloodZonesModule.check(makeHouse());
     const f = finding.findings as FemaFloodZoneFindings;
     expect(f.coverage).toBe(false);
+    expect(f.uncovered_reason).toBe("no_coverage");
     expect(f.zone).toBeUndefined();
     expect(f.source.queried_coordinates).toEqual({
       lat: 42.262,
@@ -536,9 +539,39 @@ describe("FemaFloodZonesModule.check — FEMA unreachable, no cache", () => {
     expect(finding.headline).toBe(
       "We couldn't reach FEMA's flood maps right now",
     );
+    // Issue #204: a transient failure must never render the no-coverage
+    // finding, and the persisted discriminator must say 'unreachable'
+    // so downstream consumers don't mistake it for genuine no-coverage.
+    expect(finding.headline).not.toBe(
+      "FEMA hasn't mapped flood zones in your area",
+    );
     const f = finding.findings as FemaFloodZoneFindings;
     expect(f.coverage).toBe(false);
+    expect(f.uncovered_reason).toBe("unreachable");
     expect(f.zone).toBeUndefined();
+  });
+
+  // Issue #204 hypothesis 1: an ArcGIS HTTP 200 error envelope (no
+  // features[]) on every attempt must resolve to the unreachable
+  // finding — never the no-coverage finding (which would falsely tell a
+  // covered user FEMA has no data for them).
+  it("routes a persistent ArcGIS error envelope to the unreachable finding, not no-coverage", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        async json() {
+          return { error: { code: 500, message: "Unable to complete operation." } };
+        },
+      })) as unknown as typeof fetch,
+    );
+    const finding = await FemaFloodZonesModule.check(makeHouse());
+    expect(finding.headline).toBe(
+      "We couldn't reach FEMA's flood maps right now",
+    );
+    const f = finding.findings as FemaFloodZoneFindings;
+    expect(f.uncovered_reason).toBe("unreachable");
   });
 
   it("emits a 4-step log (fetch / compute / decide / finding) on unreachable", async () => {
@@ -780,10 +813,11 @@ describe("buildOnboardingMessage — all branches", () => {
     };
   }
 
-  it("returns the no-coverage line when coverage is false", () => {
+  it("returns the no-coverage line for a genuine no-coverage finding", () => {
     const msg = buildOnboardingMessage(
       makeFinding({
         coverage: false,
+        uncovered_reason: "no_coverage",
         source: {
           dfirm_id: null,
           fld_ar_id: null,
@@ -796,6 +830,50 @@ describe("buildOnboardingMessage — all branches", () => {
     expect(msg).toBe(
       "FEMA hasn't mapped flood zones in your area, so I couldn't pull a designation.",
     );
+  });
+
+  // Issue #204: the unreachable finding shares `coverage: false` with
+  // no-coverage but must NOT borrow its copy — that's the exact bug the
+  // user reported (an unreachable result read as "your house isn't in
+  // the data").
+  it("returns the unreachable line when uncovered_reason is 'unreachable'", () => {
+    const msg = buildOnboardingMessage(
+      makeFinding({
+        coverage: false,
+        uncovered_reason: "unreachable",
+        source: {
+          dfirm_id: null,
+          fld_ar_id: null,
+          study_type: null,
+          source_citation: null,
+          queried_coordinates: { lat: 42.262, lon: -85.589 },
+        },
+      }),
+    );
+    expect(msg).toBe(
+      "I couldn't reach FEMA's flood maps just now, so I don't have a designation yet — I'll re-check on your next visit.",
+    );
+    expect(msg).not.toContain("hasn't mapped flood zones");
+  });
+
+  it("falls back to the headline for an unreachable row written before the discriminator", () => {
+    const finding: HabitatFinding = {
+      severity: "neutral",
+      headline: "We couldn't reach FEMA's flood maps right now",
+      summary: "s",
+      findings: {
+        coverage: false,
+        source: {
+          dfirm_id: null,
+          fld_ar_id: null,
+          study_type: null,
+          source_citation: null,
+          queried_coordinates: { lat: 0, lon: 0 },
+        },
+      } as unknown as Record<string, unknown>,
+    };
+    const msg = buildOnboardingMessage(finding);
+    expect(msg).toContain("couldn't reach FEMA's flood maps");
   });
 
   it("returns the favorable line for Zone X minimal", () => {
@@ -958,5 +1036,143 @@ describe("buildOnboardingMessage — all branches", () => {
       }),
     );
     expect(msg).toBe("FEMA has mapped your home in a coastal high-hazard zone.");
+  });
+});
+
+describe("summarizeFemaRecheckChanges — issue #204", () => {
+  /**
+   * Minimal HabitatFindingRow for the recheck summary. Only the fields
+   * summarizeFemaRecheckChanges reads (status, severity, headline,
+   * findings, checked_at) need to be meaningful.
+   */
+  function makeRow(overrides: Partial<HabitatFindingRow>): HabitatFindingRow {
+    return {
+      module_key: "fema_flood_zones",
+      status: "completed",
+      severity: "neutral",
+      headline: "h",
+      summary: "s",
+      findings: {},
+      source_url: null,
+      error: null,
+      actions: null,
+      activity_log: null,
+      checked_at: "2026-06-01T00:00:00.000Z",
+      ...overrides,
+    } as unknown as HabitatFindingRow;
+  }
+
+  function unreachableRow(): HabitatFindingRow {
+    return makeRow({
+      severity: "neutral",
+      headline: "We couldn't reach FEMA's flood maps right now",
+      findings: {
+        coverage: false,
+        uncovered_reason: "unreachable",
+        source: {
+          dfirm_id: null,
+          fld_ar_id: null,
+          study_type: null,
+          source_citation: null,
+          queried_coordinates: { lat: 0, lon: 0 },
+        },
+      } as unknown as Record<string, unknown>,
+    });
+  }
+
+  function zoneXRow(): HabitatFindingRow {
+    return makeRow({
+      severity: "favorable",
+      headline: "Good news — your home isn't in a FEMA flood zone",
+      findings: {
+        coverage: true,
+        zone: {
+          code: "X",
+          subtype: "AREA OF MINIMAL FLOOD HAZARD",
+          is_sfha: false,
+          static_bfe: null,
+          v_datum: null,
+          depth: null,
+          velocity: null,
+          floodway: false,
+        },
+        source: {
+          dfirm_id: "26077C",
+          fld_ar_id: "26077C_3766",
+          study_type: "NP",
+          source_citation: "26077C_STUDY2",
+          queried_coordinates: { lat: 0, lon: 0 },
+        },
+      } as unknown as Record<string, unknown>,
+    });
+  }
+
+  it("surfaces a banner when a recheck recovers from unreachable to a real zone", () => {
+    // The reported bug: this transition used to return null, so the
+    // modal showed "no new changes" even though FEMA answered this time.
+    const summary = summarizeFemaRecheckChanges(
+      unreachableRow(),
+      zoneXRow(),
+      "manual",
+    );
+    expect(summary).not.toBeNull();
+    expect(summary?.headline).toContain("We reached FEMA this time");
+    expect(summary?.headline).toContain("Zone X");
+    expect(summary?.tone).toBe("success");
+  });
+
+  it("surfaces a recovery banner when FEMA confirms no-coverage after being unreachable", () => {
+    const after = makeRow({
+      severity: "neutral",
+      headline: "FEMA hasn't mapped flood zones in your area",
+      findings: {
+        coverage: false,
+        uncovered_reason: "no_coverage",
+        source: {
+          dfirm_id: null,
+          fld_ar_id: null,
+          study_type: null,
+          source_citation: null,
+          queried_coordinates: { lat: 0, lon: 0 },
+        },
+      } as unknown as Record<string, unknown>,
+    });
+    const summary = summarizeFemaRecheckChanges(unreachableRow(), after, "manual");
+    expect(summary).not.toBeNull();
+    expect(summary?.headline).toContain("outside their mapped flood-zone coverage");
+  });
+
+  it("returns null when an unchanged finding is re-checked (no false 'changed' banner)", () => {
+    const summary = summarizeFemaRecheckChanges(zoneXRow(), zoneXRow(), "manual");
+    expect(summary).toBeNull();
+  });
+
+  it("returns null when the recheck is still unreachable (no recovery)", () => {
+    const summary = summarizeFemaRecheckChanges(
+      unreachableRow(),
+      unreachableRow(),
+      "manual",
+    );
+    expect(summary).toBeNull();
+  });
+
+  it("surfaces a severity transition between two resolved findings", () => {
+    const before = makeRow({
+      severity: "concern",
+      headline: "FEMA has mapped your home in the 100-year floodplain",
+      findings: {
+        coverage: true,
+        zone: { code: "AE", subtype: null, is_sfha: true, static_bfe: null, v_datum: null, depth: null, velocity: null, floodway: false },
+        source: { dfirm_id: "x", fld_ar_id: "x", study_type: "x", source_citation: "x", queried_coordinates: { lat: 0, lon: 0 } },
+      } as unknown as Record<string, unknown>,
+    });
+    const summary = summarizeFemaRecheckChanges(before, zoneXRow(), "manual");
+    expect(summary).not.toBeNull();
+    expect(summary?.tone).toBe("success");
+  });
+
+  it("returns null when there is no prior row to diff against", () => {
+    const summary = summarizeFemaRecheckChanges(null, zoneXRow(), "manual");
+    expect(summary).toBeNull();
   });
 });

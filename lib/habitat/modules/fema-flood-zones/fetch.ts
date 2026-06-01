@@ -404,6 +404,30 @@ async function fetchFloodZonesSingleAttempt(
     });
   }
 
+  // ArcGIS brownout signature: a HTTP 200 whose body is an error
+  // envelope (`{ error: { code, message } }`) instead of a `features[]`
+  // array. FEMA's ArcGIS proxy returns this during deploys and partial
+  // outages — it's transient, so it's retryable. Detected ahead of the
+  // `features` guard below so it's classified as a retry-worthy outage
+  // rather than falling through to the non-retryable "unexpected shape"
+  // path (which is reserved for a genuine FEMA schema change) — and so
+  // it never reaches the caller as an empty-coverage `features: []`.
+  const errorEnvelope = (payload as { error?: unknown }).error;
+  if (errorEnvelope && typeof errorEnvelope === "object") {
+    const e = errorEnvelope as { code?: unknown; message?: unknown };
+    const code = typeof e.code === "number" ? e.code : null;
+    const detail =
+      typeof e.message === "string" && e.message.length > 0
+        ? e.message
+        : "no message";
+    throw new NfhlFetchError({
+      message: `FEMA NFHL returned an ArcGIS error envelope (HTTP ${response.status}, code ${code ?? "?"}): ${detail}`,
+      retryable: true,
+      status: response.status,
+      attempt,
+    });
+  }
+
   const features = (payload as { features?: unknown }).features;
   if (!Array.isArray(features)) {
     throw new NfhlFetchError({
