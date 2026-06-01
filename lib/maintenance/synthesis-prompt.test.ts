@@ -74,6 +74,34 @@ describe("buildSynthesisSystemPrompt", () => {
       /not automatically separate tasks/i,
     );
   });
+
+  it("routes one-time setup checks away from recurring intervals", () => {
+    const prompt = buildSynthesisSystemPrompt();
+    expect(prompt).toMatch(/one-time setup/i);
+    expect(prompt).toMatch(/cadence\.kind = 'one_time'/);
+  });
+
+  it("omits installer setup checks like leveling entirely, not even as one_time", () => {
+    const prompt = buildSynthesisSystemPrompt();
+    expect(prompt).toMatch(/installer setup/i);
+    expect(prompt).toMatch(/do not emit them, not even as a one_time task/i);
+  });
+
+  it("routes symptom-conditional service to per-use awareness, not interval", () => {
+    const prompt = buildSynthesisSystemPrompt();
+    expect(prompt).toMatch(/symptom-conditional/i);
+    expect(prompt).toMatch(/do not emit these as interval/i);
+  });
+
+  it("treats conditional symptom-watch as a per-use case", () => {
+    const prompt = buildSynthesisSystemPrompt();
+    expect(prompt).toMatch(/conditional symptom-watch is also per-use/i);
+  });
+
+  it("keeps the fuel-burning clearance baseline distinct from conditional service", () => {
+    const prompt = buildSynthesisSystemPrompt();
+    expect(prompt).toMatch(/don't conflate .*combustibles.* with .*leak-tested/i);
+  });
 });
 
 describe("buildSynthesisUserMessage", () => {
