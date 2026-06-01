@@ -1004,4 +1004,61 @@ describe("buildDisplayedCcrContaminants (issue #224)", () => {
     const rows = buildDisplayedCcrContaminants(f, null);
     expect(names(rows)).toEqual(["Atrazine"]);
   });
+
+  // Issue #245: lead/copper are sampled twice a year under the LCR, so the
+  // CCR distribution's monitoring_period often concatenates both semi-annual
+  // rounds. The detected-in-your-water list renders it verbatim, so the
+  // synthesized row must carry just the year — matching every other row.
+  describe("lead/copper monitoring period (issue #245)", () => {
+    function leadDistWithPeriod(
+      period: string | null,
+    ): CcrExtractionResult["lead_copper_distribution"] {
+      const entry = (p90: number, action: number) => ({
+        percentile_90: p90,
+        unit: "mg/L",
+        action_level: action,
+        samples_collected: null,
+        samples_exceeding_action_level: null,
+        monitoring_period: period,
+      });
+      return {
+        lead: entry(0.009, 0.015),
+        copper: entry(0.2, 1.3),
+        lead_service_line_count: null,
+      };
+    }
+
+    it("collapses a doubled LCR sampling period to a single year", () => {
+      const f = findingsWith({
+        lead_copper_distribution: leadDistWithPeriod(
+          "Jan 1-Jun 30, 2024 July 1-Dec 31, 2024",
+        ),
+      });
+      const rows = buildDisplayedCcrContaminants(f, null);
+      const lead = rows.find((r) => r.contaminant_name === "Lead")!;
+      const copper = rows.find((r) => r.contaminant_name === "Copper")!;
+      expect(lead.monitoring_period).toBe("2024");
+      expect(copper.monitoring_period).toBe("2024");
+    });
+
+    it("picks the most-recent year when the period spans two years", () => {
+      const f = findingsWith({
+        lead_copper_distribution: leadDistWithPeriod("2023-2024"),
+      });
+      const lead = buildDisplayedCcrContaminants(f, null).find(
+        (r) => r.contaminant_name === "Lead",
+      )!;
+      expect(lead.monitoring_period).toBe("2024");
+    });
+
+    it("leaves the period null when no year is parseable", () => {
+      const f = findingsWith({
+        lead_copper_distribution: leadDistWithPeriod("monitoring period unknown"),
+      });
+      const lead = buildDisplayedCcrContaminants(f, null).find(
+        (r) => r.contaminant_name === "Lead",
+      )!;
+      expect(lead.monitoring_period).toBeNull();
+    });
+  });
 });
