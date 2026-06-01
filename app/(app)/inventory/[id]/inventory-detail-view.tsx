@@ -50,6 +50,7 @@ import { useCachedSignedUrl } from "@/lib/house-image/use-cached-signed-url";
 import type { SynthesisRunLog } from "@/lib/maintenance/types";
 import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { PhotoLightbox } from "./photo-lightbox";
+import { ReceiptExtractionPeek } from "./receipt-extraction-peek";
 import { ReceiptPageFlipModal } from "./receipt-page-flip-modal";
 import {
   Breadcrumb,
@@ -2344,6 +2345,23 @@ function DocumentsPanel({
   itemName: string;
   onOpenReceipt: (documentId: string) => void;
 }) {
+  // Device-appropriate peek entry gesture (issue #259). On hover-capable
+  // pointers (desktop / laptop) the peek opens on tile hover; on touch it
+  // gets an explicit "What we found" affordance instead. We branch on the
+  // pointer capability, never on viewport width — a touch laptop and a
+  // desktop both deserve the correct behaviour. Defaults to hover-capable so
+  // the desktop majority sees no first-paint flicker; the effect corrects to
+  // the explicit affordance on touch right after mount.
+  const [hoverCapable, setHoverCapable] = useState(true);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const update = () => setHoverCapable(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
   return (
     <section className="surface p-4 sm:p-5">
       <div className="flex items-end justify-between mb-3">
@@ -2368,6 +2386,7 @@ function DocumentsPanel({
               <ReceiptListRow
                 receipt={r}
                 itemName={itemName}
+                hoverCapable={hoverCapable}
                 onOpen={() => onOpenReceipt(r.id)}
               />
             </li>
@@ -2378,13 +2397,22 @@ function DocumentsPanel({
   );
 }
 
+// Intent + grace delays for the desktop hover peek. The open delay keeps the
+// panel from firing on cursor pass-through; the close delay is the hoverable
+// bridge that lets the cursor cross the gap from tile into the floating panel
+// without dismissing it.
+const PEEK_OPEN_DELAY_MS = 400;
+const PEEK_CLOSE_DELAY_MS = 160;
+
 function ReceiptListRow({
   receipt,
   itemName,
+  hoverCapable,
   onOpen,
 }: {
   receipt: InventoryReceipt;
   itemName: string;
+  hoverCapable: boolean;
   onOpen: () => void;
 }) {
   // 96-thumb is plenty at the list row size; same sessionStorage-cached
@@ -2409,67 +2437,187 @@ function ReceiptListRow({
   const pageLabel =
     receipt.pageCount > 1 ? `${receipt.pageCount} pages` : null;
 
+  // The extraction peek is independent of the tile-click → page-flip modal:
+  // tile click still opens the original pages (onOpen); the peek is the
+  // "what we found" surface. The tile is the anchor for the desktop popover.
+  const [peekOpen, setPeekOpen] = useState(false);
+  const tileRef = useRef<HTMLDivElement | null>(null);
+  const openTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+
+  const clearOpenTimer = useCallback(() => {
+    if (openTimerRef.current) {
+      clearTimeout(openTimerRef.current);
+      openTimerRef.current = undefined;
+    }
+  }, []);
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = undefined;
+    }
+  }, []);
+
+  // Tear down any pending timers on unmount.
+  useEffect(
+    () => () => {
+      clearOpenTimer();
+      clearCloseTimer();
+    },
+    [clearOpenTimer, clearCloseTimer],
+  );
+
+  const closePeek = useCallback(() => {
+    clearOpenTimer();
+    clearCloseTimer();
+    setPeekOpen(false);
+  }, [clearOpenTimer, clearCloseTimer]);
+
+  // Desktop hover handlers — only attached when the device is hover-capable.
+  const handleTileEnter = useCallback(() => {
+    clearCloseTimer();
+    if (peekOpen) return;
+    clearOpenTimer();
+    openTimerRef.current = setTimeout(
+      () => setPeekOpen(true),
+      PEEK_OPEN_DELAY_MS,
+    );
+  }, [peekOpen, clearOpenTimer, clearCloseTimer]);
+  const handleTileLeave = useCallback(() => {
+    clearOpenTimer();
+    if (!peekOpen) return;
+    closeTimerRef.current = setTimeout(
+      () => setPeekOpen(false),
+      PEEK_CLOSE_DELAY_MS,
+    );
+  }, [peekOpen, clearOpenTimer]);
+  // Hoverable bridge: re-entering the floating panel cancels the close;
+  // leaving it schedules one.
+  const cancelClose = useCallback(() => clearCloseTimer(), [clearCloseTimer]);
+  const scheduleClose = useCallback(() => {
+    closeTimerRef.current = setTimeout(
+      () => setPeekOpen(false),
+      PEEK_CLOSE_DELAY_MS,
+    );
+  }, []);
+
+  const handleViewOriginal = useCallback(() => {
+    closePeek();
+    onOpen();
+  }, [closePeek, onOpen]);
+
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label={`Open ${title} receipt for ${itemName}`}
-      className="flex w-full items-center gap-3 rounded-[var(--radius-md)] p-2 text-left transition-colors"
+    <div
+      ref={tileRef}
+      className="overflow-hidden"
       style={{
-        backgroundColor: "transparent",
         border: "1px solid var(--color-border-subtle)",
+        borderRadius: "var(--radius-md)",
       }}
+      onMouseEnter={hoverCapable ? handleTileEnter : undefined}
+      onMouseLeave={hoverCapable ? handleTileLeave : undefined}
     >
-      <span
-        className="shrink-0 overflow-hidden"
-        style={{
-          height: 56,
-          width: 42,
-          borderRadius: 6,
-          border: "1px solid var(--color-border-subtle)",
-          backgroundColor: "var(--color-bg-surface-raised)",
+      <button
+        type="button"
+        onClick={() => {
+          closePeek();
+          onOpen();
         }}
+        aria-label={`Open ${title} receipt for ${itemName}`}
+        className="flex w-full items-center gap-3 p-2 text-left transition-colors"
+        style={{ backgroundColor: "transparent" }}
       >
-        {thumbUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={thumbUrl}
-            alt=""
-            className="h-full w-full object-cover"
-            aria-hidden
-          />
-        ) : (
-          <span className="block h-full w-full" aria-hidden />
-        )}
-      </span>
-      <span className="min-w-0 flex-1">
         <span
-          className="block truncate"
-          style={{ fontSize: 14, fontWeight: 500 }}
-        >
-          {title}
-        </span>
-        <span
-          className="block truncate text-small"
-          style={{ color: "var(--color-text-tertiary)" }}
-        >
-          {[dateLabel, pageLabel].filter(Boolean).join(" · ") ||
-            "Receipt"}
-        </span>
-      </span>
-      {totalLabel ? (
-        <span
-          className="shrink-0"
+          className="shrink-0 overflow-hidden"
           style={{
-            fontSize: 14,
-            fontWeight: 500,
-            color: "var(--color-text-primary)",
+            height: 56,
+            width: 42,
+            borderRadius: 6,
+            border: "1px solid var(--color-border-subtle)",
+            backgroundColor: "var(--color-bg-surface-raised)",
           }}
         >
-          {totalLabel}
+          {thumbUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={thumbUrl}
+              alt=""
+              className="h-full w-full object-cover"
+              aria-hidden
+            />
+          ) : (
+            <span className="block h-full w-full" aria-hidden />
+          )}
         </span>
+        <span className="min-w-0 flex-1">
+          <span
+            className="block truncate"
+            style={{ fontSize: 14, fontWeight: 500 }}
+          >
+            {title}
+          </span>
+          <span
+            className="block truncate text-small"
+            style={{ color: "var(--color-text-tertiary)" }}
+          >
+            {[dateLabel, pageLabel].filter(Boolean).join(" · ") ||
+              "Receipt"}
+          </span>
+        </span>
+        {totalLabel ? (
+          <span
+            className="shrink-0"
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: "var(--color-text-primary)",
+            }}
+          >
+            {totalLabel}
+          </span>
+        ) : null}
+      </button>
+
+      {/* Touch devices have no hover, and the tile-tap is taken by the
+          page-flip modal — so they get an explicit, labeled path into the
+          peek. Gated off the same hover:hover signal so exactly one entry
+          gesture is live per device. */}
+      {!hoverCapable ? (
+        <button
+          type="button"
+          onClick={() => setPeekOpen(true)}
+          aria-label={`See what we found in the ${title} receipt`}
+          className="flex w-full items-center justify-center gap-1.5 p-2 transition-colors"
+          style={{
+            borderTop: "1px solid var(--color-border-subtle)",
+            color: "var(--color-accent)",
+            backgroundColor: "transparent",
+            fontSize: 13,
+            fontWeight: 500,
+          }}
+        >
+          <Icon name="sparkles" size={13} />
+          What we found
+        </button>
       ) : null}
-    </button>
+
+      {peekOpen ? (
+        <ReceiptExtractionPeek
+          metadata={receipt.metadata}
+          variant={hoverCapable ? "popover" : "sheet"}
+          anchorRef={tileRef}
+          itemName={itemName}
+          onClose={closePeek}
+          onViewOriginal={handleViewOriginal}
+          onPointerEnter={hoverCapable ? cancelClose : undefined}
+          onPointerLeave={hoverCapable ? scheduleClose : undefined}
+        />
+      ) : null}
+    </div>
   );
 }
 

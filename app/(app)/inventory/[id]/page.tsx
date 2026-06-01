@@ -15,6 +15,10 @@ import type {
   ManufactureDatePrecision,
 } from "@/lib/inventory/first-date-tile";
 import type { SynthesisRunLog } from "@/lib/maintenance/types";
+import {
+  parseReceiptMetadata,
+  type ReceiptMetadata,
+} from "@/lib/documents/metadata-schemas";
 import { createClient } from "@/lib/supabase/server";
 import type { InventorySubtype } from "@/types/document";
 import { InventoryDetailView, type HistoryEvent } from "./inventory-detail-view";
@@ -65,6 +69,13 @@ export type InventoryReceipt = {
   transactionType: string | null;
   /** Total pages = 1 (parent storage_path) + N (document_pages rows). */
   pageCount: number;
+  // Full parsed extraction metadata (issue #259). The thin fields above
+  // drive the list-row tile; this carries everything Hearth read off the
+  // receipt — line items, vendor contact, cost breakdown, identifiers — for
+  // the extraction peek panel to render. Parsed server-side via
+  // parseReceiptMetadata so the panel is a pure render of props with no
+  // client Supabase round-trip.
+  metadata: ReceiptMetadata;
 };
 
 export type InventoryDetailItem = {
@@ -355,6 +366,7 @@ export default async function InventoryDetailPage({
           ? md.transaction_type
           : null,
       pageCount: 1 + extra,
+      metadata: parseReceiptMetadata(r.metadata),
     };
   });
 
