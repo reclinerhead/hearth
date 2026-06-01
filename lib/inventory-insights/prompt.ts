@@ -29,6 +29,7 @@ Source quality and grounding:
 - Prefer manufacturer documentation and trade sources over forum speculation and SEO content farms when you have a choice.
 - If you cannot ground a section in the sense above, return null for that section. Do not invent details. Do not pad with generic platitudes about "things like this."
 - Class-level content (typical service life and maintenance for the broad equipment category — gas range, central AC, water heater, etc.) IS grounded content and SHOULD be returned even when you have no model-line-specific data. Returning null is only correct when you can't even speak to the equipment class — not when you merely lack unit-specific info.
+- The user message may include nameplate specifications read directly off the unit's label (fuel, BTU rating, voltage, pressure, standards/certification references). Treat these as grounded facts and use them as anchors — a referenced standard's year (e.g. ANSI Z21.5.1-92) can corroborate an era, a fuel/BTU rating can confirm the configuration. Use them to ground the three sections; don't recite the nameplate back to the user.
 - You have no web-browsing tool in this call — you are answering from training knowledge, not from pages you can open right now. The \`source_urls\` field is therefore empty in the typical case. Only list a URL you can recall as a specific, real source. If you are reconstructing a plausible-looking URL from a pattern — a manufacturer domain, a parts-site model page — that is inventing a URL; leave the array empty instead. A confident answer with an empty \`source_urls\` is correct and expected; a fabricated URL is never acceptable.
 
 How to write:
@@ -63,6 +64,13 @@ export function buildResearchUserMessage(
 ): string {
   const notesBlock = input.notes ? `\n\nAdditional notes:\n${input.notes}` : "";
 
+  const pillsBlock =
+    input.ai_pills && input.ai_pills.length > 0
+      ? `\n\nNameplate specifications (read off the unit's label):\n${input.ai_pills
+          .map((p) => `- ${p.label}: ${p.value}`)
+          .join("\n")}`
+      : "";
+
   return `Research this specific item in a homeowner's home and produce the structured summary defined in your instructions.
 
 Here is what we know about the item:
@@ -71,7 +79,7 @@ Type: ${input.inventory_type}
 Name: ${input.inventory_name}
 Manufacturer: ${input.manufacturer ?? "(unknown)"}
 Model number: ${input.model_number ?? "(unknown)"}
-Serial number: ${input.serial_number ?? "(unknown)"} (shown for reference only)${notesBlock}
+Serial number: ${input.serial_number ?? "(unknown)"} (shown for reference only)${pillsBlock}${notesBlock}
 
 Three explicit asks, in order:
 
