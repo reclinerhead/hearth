@@ -29,7 +29,8 @@ Source quality and grounding:
 - Prefer manufacturer documentation and trade sources over forum speculation and SEO content farms when you have a choice.
 - If you cannot ground a section in the sense above, return null for that section. Do not invent details. Do not pad with generic platitudes about "things like this."
 - Class-level content (typical service life and maintenance for the broad equipment category — gas range, central AC, water heater, etc.) IS grounded content and SHOULD be returned even when you have no model-line-specific data. Returning null is only correct when you can't even speak to the equipment class — not when you merely lack unit-specific info.
-- The \`source_urls\` field is for specific URLs you actually consulted or grounded a non-obvious claim against. It may legitimately be empty when the answer comes from training knowledge with no specific document to cite. Do not invent URLs.
+- The user message may include nameplate specifications read directly off the unit's label (fuel, BTU rating, voltage, pressure, standards/certification references). Treat these as grounded facts and use them as anchors — a referenced standard's year (e.g. ANSI Z21.5.1-92) can corroborate an era, a fuel/BTU rating can confirm the configuration. Use them to ground the three sections; don't recite the nameplate back to the user.
+- You have no web-browsing tool in this call — you are answering from training knowledge, not from pages you can open right now. The \`source_urls\` field is therefore empty in the typical case. Only list a URL you can recall as a specific, real source. If you are reconstructing a plausible-looking URL from a pattern — a manufacturer domain, a parts-site model page — that is inventing a URL; leave the array empty instead. A confident answer with an empty \`source_urls\` is correct and expected; a fabricated URL is never acceptable.
 
 How to write:
 - Write for a homeowner, not a technician. Avoid jargon when plain language works.
@@ -37,14 +38,15 @@ How to write:
 - Be specific. "Compressors in this generation typically last 12-15 years" is useful. "It is built to last" is not.
 - Aim for 300–500 characters per section when the section is grounded. Stop earlier if you've genuinely said what's worth saying — don't pad to hit the floor. The 1200-character ceiling is a hard maximum; don't exceed it. If a section would be just generic platitudes that could apply to any equipment, prefer null; but if it's substantive class-level content, populate it even if it ends up briefer than 300 characters.
 
-Do not attempt to decode the serial number to a manufacture date — a separate process handles that. Stay focused on the three asks below.
+Do not attempt to decode the serial number to a manufacture date — a separate process handles that. Stay focused on the three sections defined below.
 
 Output structure:
 
-- headline: A one-line category description for the item. Examples:
+- headline: A one-line category description for the item (under 120 characters). Examples:
    - "Built-in residential dishwashers, mid-2010s Maytag"
    - "40-gallon natural gas water heaters, Rheem ProValue line"
    - "Central air condensers, 14 SEER, Carrier Comfort series"
+   Name the equipment category with confidence. Include a model line, manufacturer, or era in the headline only when you can ground it — if you are inferring the maker or the production years, keep them out of the headline (you may still discuss them, hedged, in the overview).
 
 - overview: What is distinctive about this model line — design choices, market positioning, where it sits in the manufacturer's range, how it compares to alternatives in its class. Or null if you can't ground it.
 
@@ -52,7 +54,7 @@ Output structure:
 
 - maintenance: Recommended homeowner-doable maintenance tasks and their cadence (monthly / annually / every few years). What happens if those tasks are skipped. What requires a professional vs. what the homeowner can do. Or null if you can't ground it.
 
-- source_urls: URLs of any specific sources you grounded against. May be empty if the answer comes from training knowledge with no specific document to cite — do not invent URLs to fill it.
+- source_urls: Specific, real URLs you can recall grounding against. You have no browsing tool in this call, so this is empty in the typical case — do not reconstruct or guess URLs to fill it.
 
 - found_specific_model: a boolean. Set to true when (1) the headline names the specific model or model line (e.g., "Rheem Professional Classic Plus, 40-gallon natural gas", "Maytag MDB49 series dishwashers"), AND (2) at least one section includes information specific to that named line, not just the broader equipment class. Set to false when you have no model-specific information and the sections are entirely class-level.`;
 }
@@ -62,6 +64,13 @@ export function buildResearchUserMessage(
 ): string {
   const notesBlock = input.notes ? `\n\nAdditional notes:\n${input.notes}` : "";
 
+  const pillsBlock =
+    input.ai_pills && input.ai_pills.length > 0
+      ? `\n\nNameplate specifications (read off the unit's label):\n${input.ai_pills
+          .map((p) => `- ${p.label}: ${p.value}`)
+          .join("\n")}`
+      : "";
+
   return `Research this specific item in a homeowner's home and produce the structured summary defined in your instructions.
 
 Here is what we know about the item:
@@ -70,7 +79,7 @@ Type: ${input.inventory_type}
 Name: ${input.inventory_name}
 Manufacturer: ${input.manufacturer ?? "(unknown)"}
 Model number: ${input.model_number ?? "(unknown)"}
-Serial number: ${input.serial_number ?? "(unknown)"}${notesBlock}
+Serial number: ${input.serial_number ?? "(unknown)"} (shown for reference only)${pillsBlock}${notesBlock}
 
 Three explicit asks, in order:
 

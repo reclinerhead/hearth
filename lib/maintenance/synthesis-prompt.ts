@@ -27,7 +27,7 @@ The test for per-use vs. scheduled:
 - If the action's natural cadence is *every month* or *every 3 months* or *annually* — and the action happens whether or not the appliance is currently in use — it's scheduled (interval or seasonal). Inspecting clearances, replacing a filter, professional service all qualify.
 - If you find yourself writing an interval task that's actually "do this every time you use it" — like "Check rinse aid monthly" (real cadence: every cycle), or "Listen for unusual sounds every 6 months" (real cadence: notice during operation), or "Watch for water leaks quarterly" (real cadence: whenever you're near it) — that's a per-use task miscoded as interval. Fix it.
 
-Per-use practices still get full reasoning: cadence_basis explains why this matters every time, modifiers describe environmental adjustments (hard water makes the rinse aid check more critical), and anchor stays 'synthesis_default' because there's no install date or receipt to anchor against.
+Per-use practices still get full reasoning: cadence_basis explains why this matters every time, modifiers describe environmental adjustments (hard water makes the rinse aid check more critical), and anchor stays 'synthesis_default' because there's no install date or receipt to anchor against. For per-use tasks, set first_occurrence_days_out to 0 — it isn't used for rows with no calendar due date, so 0 keeps it unambiguous.
 
 CADENCE DISCIPLINE:
 
@@ -48,19 +48,25 @@ If a finding doesn't change anything for this item, don't reference it. Don't re
 
 USING SERVICE HISTORY:
 
-The user message may include linked service receipts. If a receipt's transaction_date is a meaningful anchor for a task — last year's furnace service is the anchor for next year's furnace service — set the task's reasoning.anchor.kind to 'receipt_anchored' and reference the receipt's document_id. Otherwise anchor from install_date (when known) or synthesis_default (start the clock at the synthesis run time).
+The user message may include linked service receipts. If a receipt's transaction_date is a meaningful anchor for a task — last year's furnace service is the anchor for next year's furnace service — set reasoning.anchor.kind to 'receipt', put the receipt's document_id on reasoning.anchor.document_id, and set reasoning.source_kind to 'receipt_anchored'. Otherwise anchor from the install date (anchor.kind 'install_date', when known) or from the synthesis run time (anchor.kind 'synthesis_default').
 
-The first_occurrence_days_out field is how you express the anchor in concrete terms — if last year's furnace service was 9 months ago and the cadence is annual, first_occurrence_days_out is 90.
+The first_occurrence_days_out field is how you express the anchor in concrete terms — if last year's furnace service was 9 months ago and the cadence is annual, first_occurrence_days_out is 90. The user message states today's date; compute days_out relative to it.
 
 REASONING TRANSPARENCY:
 
 Every task you emit is paired with a reasoning object that explains why it's on the list and how its cadence was chosen. This is rendered to the user in a "Why this task" expand on the task detail. Be specific. "Manufacturer recommends annual flush" is useful. "Standard maintenance" is not.
 
-cadence_basis is the headline explanation in plain language. modifiers is the structured list of environmental or contextual adjustments you made. anchor is where the first occurrence is grounded.
+The reasoning object has four parts:
+- source_kind — the primary basis for the task. Use 'manufacturer_guidance' when the item's recommended-maintenance text or the manufacturer drives it; 'class_default' when it's a sensible norm for the equipment class rather than something specific to this item; 'habitat_modifier' when a habitat finding is the main reason the task exists at all (rare — findings usually modulate an existing task, they don't generate new ones); 'installation_anchored' or 'receipt_anchored' when the defining feature of the task is that its schedule is anchored to the install date or a service receipt.
+- cadence_basis — the plain-language headline explanation, rendered to the user. Be specific.
+- modifiers — the structured list of contextual adjustments you made. Each has a kind: 'habitat' (a habitat finding changes the cadence — cite its finding_module_key), 'system_age' (the unit's age or position in its service life shortens an interval or raises the stakes — finding_module_key is null), or 'environment' (a non-habitat environmental factor — finding_module_key is null). When the item's expected service life plus its age — or a missing install date on an evidently old unit — materially changes an interval or the stakes, add a 'system_age' modifier rather than leaving that reasoning implicit. Leave the array empty when nothing adjusts the base cadence.
+- anchor — where the first occurrence is grounded: 'receipt' (with the document_id), 'install_date', or 'synthesis_default'.
 
 OUTPUT:
 
 A single structured object with overall_notes (a brief summary, optional) and tasks (the array). Adhere to the schema strictly. Tasks that don't validate will be dropped.
+
+Each task has a kind describing the nature of the work: 'service' (professional or technician work), 'inspection' (look, check, or test), 'consumable' (clean or replace a wearing part or supply), or 'seasonal' (a task whose nature is seasonal preparation). This is separate from cadence.kind, which carries timing — a task can be kind 'inspection' with a 'seasonal' cadence, so don't conflate the two.
 
 CONSOLIDATION PASS:
 
@@ -110,7 +116,10 @@ export type SynthesisInput = {
   }>;
 };
 
-export function buildSynthesisUserMessage(input: SynthesisInput): string {
+export function buildSynthesisUserMessage(
+  input: SynthesisInput,
+  runDate: Date,
+): string {
   const item = input.inventory;
   const itemHeader = `Item: ${item.name}
 Type: ${item.type}${item.subtype ? ` (${item.subtype})` : ""}
@@ -165,5 +174,15 @@ ${habitatBlock}
 
 ${receiptsBlock}
 
+Today's date is ${formatUtcDate(runDate)}. Express each task's first_occurrence_days_out as a whole number of days from today; when a task is anchored to a receipt or install date, compute days_out relative to today.
+
 Produce a structured maintenance plan for this item per your instructions.`;
+}
+
+/** UTC YYYY-MM-DD — matches how the workflow stamps next_due_at. */
+function formatUtcDate(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }

@@ -41,6 +41,20 @@ describe("buildResearchSystemPrompt", () => {
     expect(buildResearchSystemPrompt()).toContain("found_specific_model");
   });
 
+  it("states there is no browsing tool so source_urls stays empty by default", () => {
+    expect(buildResearchSystemPrompt()).toMatch(
+      /no web-browsing tool|no browsing tool|no web access/i,
+    );
+  });
+
+  it("constrains ungrounded era/maker claims out of the headline", () => {
+    expect(buildResearchSystemPrompt()).toMatch(/only when you can ground it/i);
+  });
+
+  it("tells the model to treat nameplate specs as grounding anchors", () => {
+    expect(buildResearchSystemPrompt()).toMatch(/nameplate specifications/i);
+  });
+
   it("includes the honesty rule allowing null per section", () => {
     const prompt = buildResearchSystemPrompt();
     expect(prompt).toMatch(/return null for that section/i);
@@ -128,6 +142,31 @@ describe("buildResearchUserMessage", () => {
     it("reinforces the 'null is the correct answer' rule", () => {
       const message = buildResearchUserMessage(baseInput);
       expect(message).toMatch(/Returning null is the correct answer/i);
+    });
+  });
+
+  describe("nameplate specifications block", () => {
+    it("renders ai_pills as a labeled block when present", () => {
+      const message = buildResearchUserMessage({
+        ...baseInput,
+        ai_pills: [
+          { label: "Fuel", value: "Natural Gas" },
+          { label: "Input BTU/hr", value: "22000" },
+        ],
+      });
+      expect(message).toMatch(/Nameplate specifications/i);
+      expect(message).toContain("Fuel: Natural Gas");
+      expect(message).toContain("Input BTU/hr: 22000");
+    });
+
+    it("omits the nameplate block when ai_pills is null", () => {
+      const message = buildResearchUserMessage({ ...baseInput, ai_pills: null });
+      expect(message).not.toMatch(/Nameplate specifications/i);
+    });
+
+    it("omits the nameplate block when ai_pills is an empty array", () => {
+      const message = buildResearchUserMessage({ ...baseInput, ai_pills: [] });
+      expect(message).not.toMatch(/Nameplate specifications/i);
     });
   });
 
