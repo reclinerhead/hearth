@@ -338,20 +338,20 @@ export function InventoryDetailView({
   const [synthesisInFlight, setSynthesisInFlight] = useState(false);
   const [synthesisError, setSynthesisError] = useState<string | null>(null);
 
-  // Drives the awareness-framed caption that sits in a reserved slot
-  // directly beneath the Build / Rebuild button (issue #248). One state
-  // serves both trigger paths so the in-flight message is identical
-  // whether the user clicked Build or the research auto-chain started it:
+  // Drives the awareness-framed progress line that lives at the bottom of
+  // the "What we know" panel (issue #254 relocated it out of the under-
+  // button caption slot from #248). One state serves both trigger paths so
+  // the in-flight message is identical whether the user clicked Build or
+  // the research auto-chain started it:
   //   "building" — synthesis is running; show "Building your plan…".
-  //   "ready"    — synthesis just completed; show a momentary, gratitude-
-  //                framed confirmation that clears itself after a few seconds.
-  //   "idle"     — slot is empty (its height stays reserved, so nothing
-  //                below the button ever shifts).
+  //   "idle"     — no run in flight. The persistent completion line at the
+  //                panel bottom is driven by `hasPriorPlan`, not by this
+  //                machine, so there is no longer a transient "ready" state.
   // This is purely presentational; the workflow runs server-side
-  // regardless. The same Realtime / polling completion detection that
-  // flips the button out of its in-flight state advances this to "ready".
+  // regardless. The same Realtime / polling completion detection that flips
+  // the button out of its in-flight state returns this to "idle".
   const [planMessageState, setPlanMessageState] = useState<
-    "idle" | "building" | "ready"
+    "idle" | "building"
   >("idle");
   // Set in the research stream's onFinish (defined above, before the
   // synthesis state exists) and consumed in the effect below, mirroring
@@ -402,10 +402,10 @@ export function InventoryDetailView({
               setSynthesisError(next.error);
               setPlanMessageState("idle");
             } else {
-              // Advance the caption to its momentary "ready" state only
-              // when we were the ones building — guards against a stray
-              // cross-device completion flashing a confirmation here.
-              setPlanMessageState((s) => (s === "building" ? "ready" : "idle"));
+              // Return to idle; the persistent completion line at the
+              // panel bottom (driven by hasPriorPlan, which flips true
+              // once liveSynthesisRun lands error-free) takes over.
+              setPlanMessageState("idle");
               // The workflow writes maintenance_tasks rows before
               // persisting the trace, so by the time this fires the new
               // tasks are already in the DB. Re-run the server component
@@ -460,7 +460,9 @@ export function InventoryDetailView({
             setSynthesisError(next.error);
             setPlanMessageState("idle");
           } else {
-            setPlanMessageState((s) => (s === "building" ? "ready" : "idle"));
+            // Return to idle; the persistent completion line keyed on
+            // hasPriorPlan takes over from here.
+            setPlanMessageState("idle");
             // Same rationale as the realtime branch — the maintenance
             // panel is server-rendered and won't reflect the new rows
             // without a refresh.
@@ -547,15 +549,6 @@ export function InventoryDetailView({
     }
   });
 
-  // The "ready" confirmation is momentary by design (gratitude/noticing
-  // tone, no badge, no points — per the brand reward principle). Clear it
-  // after a few seconds so the caption slot settles back to empty.
-  useEffect(() => {
-    if (planMessageState !== "ready") return;
-    const timer = setTimeout(() => setPlanMessageState("idle"), 6000);
-    return () => clearTimeout(timer);
-  }, [planMessageState]);
-
   // Source-of-truth for "has a successful prior run" — prefer the live
   // trace from realtime (newer than first paint) but fall back to the
   // server-rendered value so refreshes get the right copy on first
@@ -564,6 +557,11 @@ export function InventoryDetailView({
   const hasPriorPlan = Boolean(
     effectiveSynthesisRun && !effectiveSynthesisRun.error,
   );
+
+  // Gate for the lifted Research button (issue #254 moved it out of the
+  // ResearchPanel header into the unified action row). Same rule the panel
+  // used: needs a manufacturer + model number to look anything up.
+  const canResearch = Boolean(item.manufacturer && item.model_number);
 
   const [editOpen, setEditOpen] = useState(false);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -714,72 +712,14 @@ export function InventoryDetailView({
               onClose={() => setLightboxOpen(false)}
             />
           ) : null}
-          <button
-            ref={addPhotoTriggerRef}
-            type="button"
-            onClick={() => setUploaderKind("photo")}
-            className="btn btn-ghost w-full mt-2"
-            aria-label={`Add another photo of ${item.name}`}
-          >
-            <Icon name="camera" size={16} />
-            Add photo
-          </button>
-          <button
-            ref={addDocumentTriggerRef}
-            type="button"
-            onClick={() => setUploaderKind("receipt")}
-            className="btn btn-ghost w-full mt-2"
-            aria-label={`Add a document or receipt for ${item.name}`}
-          >
-            <Icon name="file-text" size={16} />
-            Add document
-          </button>
         </div>
 
         <div className="flex flex-col gap-3 min-w-0">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="eyebrow">{eyebrow}</div>
-              <h1 className="h1" style={{ marginTop: 4 }}>
-                {title}
-              </h1>
-            </div>
-            <div className="flex flex-col items-end gap-1.5 shrink-0">
-              <div className="flex flex-wrap items-start justify-end gap-2">
-                {hasMaintenanceInsight ? (
-                  <BuildMaintenancePlanButton
-                    hasPriorPlan={hasPriorPlan}
-                    inFlight={synthesisInFlight}
-                    onClick={handleBuildMaintenancePlan}
-                  />
-                ) : null}
-                <button
-                  ref={editTriggerRef}
-                  type="button"
-                  onClick={() => setEditOpen(true)}
-                  className="btn btn-ghost shrink-0"
-                  aria-label={`Edit details for ${item.name}`}
-                >
-                  <Icon name="edit" size={14} />
-                  <span className="hidden sm:inline">Edit details</span>
-                  <span className="sm:hidden">Edit</span>
-                </button>
-              </div>
-              {/*
-                Reserved caption slot directly beneath the button (issue
-                #248). Its height is always held when the Build button is
-                present, so the in-flight / ready message fades in and out
-                without ever shifting the stat tiles below. Carries the
-                awareness-framed progress copy for both the manual click
-                and the research auto-chain.
-              */}
-              {hasMaintenanceInsight ? (
-                <MaintenancePlanCaption
-                  state={planMessageState}
-                  hasPriorPlan={hasPriorPlan}
-                />
-              ) : null}
-            </div>
+          <div className="min-w-0">
+            <div className="eyebrow">{eyebrow}</div>
+            <h1 className="h1" style={{ marginTop: 4 }}>
+              {title}
+            </h1>
           </div>
           {synthesisError ? (
             <p
@@ -820,6 +760,90 @@ export function InventoryDetailView({
         </div>
       </section>
 
+      {/*
+        Unified action row (issue #254). All applicable actions live in a
+        single full-width, equal-width row beneath the item header — order:
+        Add photo, Add document, Research, Build/Rebuild plan, Edit details.
+        Each button sits in a `flex-1 basis-52` (208px) cell, so widths are
+        pinned by the flex distribution rather than by label length: the
+        in-flight label swaps (Research → Researching…, Build → Building
+        plan…) never shift layout. 208px is the widest basis that still lets
+        all five share the ~1168px content width on one row; below ~1100px
+        the row wraps to additional equal-width rows, down to one button per
+        row on phones. `[&>*]:w-full` forces whatever the cell holds —
+        a bare button or a Tooltip-wrapped one — to fill its cell. The
+        buttons that don't apply to an item simply omit their cell:
+        Research is appliance/system/exterior-only, Build appears once a
+        maintenance insight exists.
+      */}
+      <div className="flex flex-wrap gap-2">
+        <div className="flex-1 basis-52 min-w-0 flex [&>*]:w-full [&>*]:min-w-0">
+          <button
+            ref={addPhotoTriggerRef}
+            type="button"
+            onClick={() => setUploaderKind("photo")}
+            className="btn btn-ghost"
+            aria-label={`Add another photo of ${item.name}`}
+          >
+            <Icon name="camera" size={16} />
+            Add photo
+          </button>
+        </div>
+        <div className="flex-1 basis-52 min-w-0 flex [&>*]:w-full [&>*]:min-w-0">
+          <button
+            ref={addDocumentTriggerRef}
+            type="button"
+            onClick={() => setUploaderKind("receipt")}
+            className="btn btn-ghost"
+            aria-label={`Add a document or receipt for ${item.name}`}
+          >
+            <Icon name="file-text" size={16} />
+            Add document
+          </button>
+        </div>
+        {isProperty ? null : (
+          <div className="flex-1 basis-52 min-w-0 flex [&>*]:w-full [&>*]:min-w-0">
+            <ResearchButton
+              disabled={!canResearch}
+              loading={researchPending}
+              // A research run on an item with a maintenance plan auto-chains
+              // into a rebuild, so once synthesis is in flight Research is
+              // locked too — both unlock together when the plan lands.
+              busy={synthesisInFlight}
+              hasResults={Boolean(displayInsights)}
+              onClick={handleResearch}
+            />
+          </div>
+        )}
+        {hasMaintenanceInsight ? (
+          <div className="flex-1 basis-52 min-w-0 flex [&>*]:w-full [&>*]:min-w-0">
+            <BuildMaintenancePlanButton
+              hasPriorPlan={hasPriorPlan}
+              inFlight={synthesisInFlight}
+              // Lock the button while a research run is in flight: research
+              // auto-chains into a rebuild on finish, so the user shouldn't
+              // (and needn't) trigger one by hand in the meantime. It shows
+              // its spinner only once synthesis actually starts (inFlight);
+              // during the research window it's a plain disabled state.
+              disabled={researchPending || synthesisInFlight}
+              onClick={handleBuildMaintenancePlan}
+            />
+          </div>
+        ) : null}
+        <div className="flex-1 basis-52 min-w-0 flex [&>*]:w-full [&>*]:min-w-0">
+          <button
+            ref={editTriggerRef}
+            type="button"
+            onClick={() => setEditOpen(true)}
+            className="btn btn-ghost"
+            aria-label={`Edit details for ${item.name}`}
+          >
+            <Icon name="edit" size={14} />
+            Edit details
+          </button>
+        </div>
+      </div>
+
       {isProperty ? null : (
         // Property doesn't use the "Research this model" panel — it's
         // tuned for appliances and systems (service life, maintenance,
@@ -836,6 +860,8 @@ export function InventoryDetailView({
           isRegenerating={isRegenerating}
           error={researchError}
           onResearch={handleResearch}
+          planBuilding={planMessageState === "building"}
+          hasPriorPlan={hasPriorPlan}
         />
       )}
 
@@ -915,8 +941,17 @@ export function InventoryDetailView({
         the layout decision documented in the issue. Per-use practices
         (issue #135) render as a dedicated "Every time you use it" tier
         inside this same panel.
+
+        While synthesis is in flight the tasks below are being rewritten,
+        so a semi-opaque refresh overlay sits over the whole section to
+        reinforce that the plan beneath is reloading (issue #254 testing
+        feedback). It blocks interaction with the soon-to-be-stale rows
+        and clears itself the moment the run completes.
       */}
-      <section>{maintenancePanelSlot}</section>
+      <section className="relative">
+        {maintenancePanelSlot}
+        {synthesisInFlight ? <MaintenanceRefreshOverlay /> : null}
+      </section>
 
       <section className="grid gap-4 md:grid-cols-2">
         <DocumentsPanel
@@ -1423,15 +1458,25 @@ function ResearchPanel({
   isRegenerating,
   error,
   onResearch,
+  planBuilding,
+  hasPriorPlan,
 }: {
   item: InventoryDetailItem;
   insights: PanelInsights | null;
   isPending: boolean;
   isRegenerating: boolean;
   error: string | null;
+  // The Research action now lives in the unified row above the panel
+  // (issue #254); the panel keeps `onResearch` only for the inline
+  // "Try again?" retry on the error path.
   onResearch: () => void;
+  // Maintenance synthesis progress + completion now render at the bottom
+  // of this panel rather than beneath the Build button (issue #254).
+  // `planBuilding` is the in-flight line; `hasPriorPlan` drives the
+  // persistent completion line on every load.
+  planBuilding: boolean;
+  hasPriorPlan: boolean;
 }) {
-  const canResearch = Boolean(item.manufacturer && item.model_number);
   const itemTypeLabel = TYPE_EYEBROW_LABEL[item.type].toLowerCase();
   const itemTypePlural = pluralizeTypeLabel(item.type, item.subtype);
 
@@ -1448,49 +1493,37 @@ function ResearchPanel({
   const showOverlay =
     isPending && !insights?.headline && !insights?.overview;
 
-  // The "research has results" state for the button — true any time we
-  // have content to show, whether persisted or streaming.
-  const hasResults = Boolean(insights);
-
   return (
     <section className="surface-ai p-4 sm:p-5">
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span style={{ color: "var(--color-accent)" }}>
-              <Icon name="sparkles" size={14} />
+      <div className="mb-3">
+        <div className="flex items-center gap-2 mb-1">
+          <span style={{ color: "var(--color-accent)" }}>
+            <Icon name="sparkles" size={14} />
+          </span>
+          <span className="eyebrow">{eyebrow}</span>
+          {isRegenerating ? (
+            <span
+              className="text-small regenerating-pill"
+              style={{
+                marginLeft: 6,
+                padding: "1px 8px",
+                borderRadius: 999,
+                border: "1px solid var(--color-border-subtle)",
+                color: "var(--color-text-secondary)",
+                background:
+                  "color-mix(in oklab, var(--color-bg-surface-ai) 70%, transparent)",
+              }}
+              aria-live="polite"
+            >
+              Regenerating…
             </span>
-            <span className="eyebrow">{eyebrow}</span>
-            {isRegenerating ? (
-              <span
-                className="text-small regenerating-pill"
-                style={{
-                  marginLeft: 6,
-                  padding: "1px 8px",
-                  borderRadius: 999,
-                  border: "1px solid var(--color-border-subtle)",
-                  color: "var(--color-text-secondary)",
-                  background:
-                    "color-mix(in oklab, var(--color-bg-surface-ai) 70%, transparent)",
-                }}
-                aria-live="polite"
-              >
-                Regenerating…
-              </span>
-            ) : null}
-          </div>
-          {insights?.headline ? (
-            <div className="h3 insights-appear" style={{ marginTop: 2 }}>
-              {insights.headline}
-            </div>
           ) : null}
         </div>
-        <ResearchButton
-          disabled={!canResearch}
-          loading={isPending}
-          hasResults={hasResults}
-          onClick={onResearch}
-        />
+        {insights?.headline ? (
+          <div className="h3 insights-appear" style={{ marginTop: 2 }}>
+            {insights.headline}
+          </div>
+        ) : null}
       </div>
 
       <div className="relative">
@@ -1549,6 +1582,26 @@ function ResearchPanel({
           </p>
         ) : null}
       </div>
+
+      {/*
+        Maintenance synthesis progress + completion (issue #254). Lives at
+        the very bottom of the panel — beneath the Maintenance section and
+        the Sources subsection — rather than under the Build button. While a
+        run is in flight it shows the animated "Building/Rebuilding your plan
+        — about 30s" line; once a successful run exists it settles into a
+        persistent completion line that points the user at the maintenance
+        panel directly below. Rendered outside the dim-on-regenerate wrapper
+        so a research re-run never dims it. `researchInFlight` hides the
+        stale prior-run completion line the moment a fresh research stream
+        starts — it reappears on its own once the auto-chained rebuild
+        begins (building) and then completes.
+      */}
+      <MaintenancePlanPanelMessage
+        building={planBuilding}
+        hasPriorPlan={hasPriorPlan}
+        researchInFlight={isPending}
+        itemTypeWord={itemTypeLabel}
+      />
 
       {/*
         Fade + slight slide-in on first mount for each progressively-
@@ -1863,11 +1916,18 @@ function ResearchLoadingOverlay({
 function ResearchButton({
   disabled,
   loading,
+  busy,
   hasResults,
   onClick,
 }: {
+  // `disabled` is the can't-research gate (missing manufacturer/model) and
+  // is the only state that surfaces the explanatory tooltip. `busy` is the
+  // research-auto-chains-into-a-rebuild lock — it disables the button while
+  // synthesis runs but carries no tooltip, since the reason isn't missing
+  // fields. `loading` is this button's own in-flight research stream.
   disabled: boolean;
   loading: boolean;
+  busy: boolean;
   hasResults: boolean;
   onClick: () => void;
 }) {
@@ -1876,15 +1936,24 @@ function ResearchButton({
   // ~15s before stream content starts arriving. Opacity drop + the
   // refresh-cw icon spinning gives an immediate "I heard you" signal,
   // and the disabled attribute already prevents repeat submissions.
-  const inactive = disabled || loading;
+  const inactive = disabled || loading || busy;
 
   const button = (
     <button
       type="button"
       disabled={inactive}
       onClick={onClick}
-      className="btn btn-ghost research-button"
+      className="btn btn-ghost research-button w-full"
       aria-disabled={inactive ? "true" : "false"}
+      aria-label={
+        loading
+          ? hasResults
+            ? "Regenerating…"
+            : "Researching…"
+          : hasResults
+            ? "Research again"
+            : "Research this model"
+      }
       data-loading={loading ? "true" : "false"}
       style={inactive ? { opacity: 0.55 } : undefined}
     >
@@ -1892,7 +1961,9 @@ function ResearchButton({
         className={loading && hasResults ? "research-button-icon-spin" : ""}
         style={{ display: "inline-flex", alignItems: "center" }}
       >
-        <Icon name={hasResults ? "refresh-cw" : "sparkles"} size={14} />
+        {/* The re-run state earns the more expressive wand-sparkles glyph
+            (issue #254); the first-run state keeps the plain sparkles. */}
+        <Icon name={hasResults ? "wand-sparkles" : "sparkles"} size={14} />
       </span>
       {loading
         ? hasResults
@@ -1928,42 +1999,50 @@ function ResearchButton({
 function BuildMaintenancePlanButton({
   hasPriorPlan,
   inFlight,
+  disabled,
   onClick,
 }: {
   hasPriorPlan: boolean;
+  // `inFlight` is this button's own synthesis run — it shows the spinner +
+  // in-flight label. `disabled` is the broader lock that also covers the
+  // research window before the auto-chained rebuild starts: the button is
+  // non-clickable but stays in its resting label (no spinner) until
+  // synthesis actually begins. `inFlight` always implies disabled.
   inFlight: boolean;
+  disabled: boolean;
   onClick: () => void;
 }) {
+  const isDisabled = disabled || inFlight;
   // First build is a call-to-action — surface it with the primary
   // accent treatment so a user with research insights actually notices
   // the next step. After a successful build the action drops to ghost:
   // the work is done, rebuild is a maintenance affordance rather than
   // a "do this next" pointer.
   const variantClass = hasPriorPlan ? "btn btn-ghost" : "btn btn-primary";
-  const iconName: IconName = hasPriorPlan ? "refresh-cw" : "sparkles";
+  // The rebuild state earns the more expressive wand-sparkles glyph (issue
+  // #254); the first build keeps the plain sparkles call-to-action icon.
+  const iconName: IconName = hasPriorPlan ? "wand-sparkles" : "sparkles";
 
-  // Resting and in-flight labels for each breakpoint. The resting copy is
-  // always the longer of the pair, so stacking both in a single grid cell
-  // (below) pins the button to the resting width — clicking into the
-  // in-flight state swaps the text without resizing the button, which is
-  // the whole point of the stack (issue #248).
-  const restingLong = hasPriorPlan
-    ? "Rebuild maintenance plan"
-    : "Build maintenance plan";
-  const inFlightLong = hasPriorPlan ? "Rebuilding plan…" : "Building plan…";
-  const restingShort = hasPriorPlan ? "Rebuild plan" : "Build plan";
-  const inFlightShort = hasPriorPlan ? "Rebuilding…" : "Building…";
+  // Resting and in-flight labels. The "maintenance" word is abbreviated to
+  // "maint" rather than dropped — it keeps the button specific ("Rebuild
+  // maint" reads as maintenance, not a generic "plan") while staying narrow
+  // enough for the equal-width five-button row to share the ~1168px content
+  // width (the verbose "Rebuild maintenance plan" was the one label too wide
+  // to fit). The resting copy and the in-flight copy are stacked in a single
+  // grid cell (below) so the visible text stays centered when it flips.
+  const restingLabel = hasPriorPlan ? "Rebuild maint" : "Build maint";
+  const inFlightLabel = hasPriorPlan ? "Rebuilding maint…" : "Building maint…";
 
   return (
     <button
       type="button"
-      disabled={inFlight}
+      disabled={isDisabled}
       onClick={onClick}
-      className={`${variantClass} shrink-0 build-plan-button`}
-      aria-disabled={inFlight ? "true" : "false"}
-      aria-label={inFlight ? inFlightLong : restingLong}
+      className={`${variantClass} build-plan-button`}
+      aria-disabled={isDisabled ? "true" : "false"}
+      aria-label={inFlight ? inFlightLabel : restingLabel}
       data-loading={inFlight ? "true" : "false"}
-      style={inFlight ? { opacity: 0.65 } : undefined}
+      style={isDisabled ? { opacity: inFlight ? 0.65 : 0.55 } : undefined}
     >
       <span
         className={inFlight ? "build-plan-icon-spin" : ""}
@@ -1973,25 +2052,16 @@ function BuildMaintenancePlanButton({
       </span>
       {/*
         Same-cell label stack. Both the resting and in-flight strings
-        occupy grid cell 1/1, so the track sizes to the wider (resting)
-        label and the button width never changes when it flips in-flight.
-        The hidden label keeps its box via visibility:hidden rather than
-        display:none, which is what reserves the width.
+        occupy grid cell 1/1, so the track sizes to the wider label and the
+        text stays centered when it flips in-flight. The hidden label keeps
+        its box via visibility:hidden rather than display:none.
       */}
-      <span className="hidden sm:grid build-plan-label-stack" aria-hidden="true">
+      <span className="grid build-plan-label-stack" aria-hidden="true">
         <span className="build-plan-label-cell" data-on={!inFlight}>
-          {restingLong}
+          {restingLabel}
         </span>
         <span className="build-plan-label-cell" data-on={inFlight}>
-          {inFlightLong}
-        </span>
-      </span>
-      <span className="grid sm:hidden build-plan-label-stack" aria-hidden="true">
-        <span className="build-plan-label-cell" data-on={!inFlight}>
-          {restingShort}
-        </span>
-        <span className="build-plan-label-cell" data-on={inFlight}>
-          {inFlightShort}
+          {inFlightLabel}
         </span>
       </span>
       <style>{`
@@ -2014,79 +2084,176 @@ function BuildMaintenancePlanButton({
   );
 }
 
-// Awareness-framed progress caption that lives in a fixed-height slot
-// directly beneath the Build / Rebuild button (issue #248). Renders for
-// both the manual click and the research auto-chain — the in-flight copy
-// reads as Hearth doing the work, and the momentary "ready" confirmation
-// is gratitude/noticing-framed (no badge, no points). The slot reserves
-// its height even when idle so the stat tiles below never shift.
-function MaintenancePlanCaption({
-  state,
+// Maintenance synthesis progress + completion message that lives at the
+// bottom of the "What we know" panel (issue #254 relocated it out of the
+// under-button caption slot from #248). Two states drive its copy:
+//   - `building` — a run is in flight (manual click or research auto-chain).
+//     Shows the awareness-framed "Building/Rebuilding your plan — about 30s"
+//     line with a spinning glyph; the ~30s estimate is a deliberate product
+//     choice (the run itself takes ~50-60s).
+//   - else `hasPriorPlan` — a successful run exists. Shows a persistent
+//     completion line that stays on every load and points the user at the
+//     "On your plate" maintenance panel rendered directly below this one.
+// Nothing renders before a plan has ever been built, and a latest run that
+// errored is handled by the inline error path, not here. Unlike the old
+// caption there is no transient "ready" state — completion is persistent.
+function MaintenancePlanPanelMessage({
+  building,
   hasPriorPlan,
+  researchInFlight,
+  itemTypeWord,
 }: {
-  state: "idle" | "building" | "ready";
+  building: boolean;
   hasPriorPlan: boolean;
+  // True while a fresh research stream is running. The prior run's
+  // completion line is stale the instant a re-research starts, so we hide
+  // it immediately; the auto-chained rebuild then re-surfaces the in-flight
+  // line (building) and, on finish, the new completion line — all on their
+  // own. The in-flight line itself is never suppressed.
+  researchInFlight: boolean;
+  // The item-type label ("appliance" / "system" / "exterior"), lowercased
+  // for inline use in the completion sentence.
+  itemTypeWord: string;
 }) {
-  const building = state === "building";
-  const ready = state === "ready";
+  if (researchInFlight && !building) return null;
+  if (!building && !hasPriorPlan) return null;
+
   const text = building
     ? hasPriorPlan
       ? "Rebuilding your plan — about 30s"
       : "Building your plan — about 30s"
-    : ready
-      ? "Your maintenance plan is ready"
-      : null;
+    : `We've finished generating maintenance events for this ${itemTypeWord}. Please review those below.`;
 
   return (
     <div
-      className="text-small maintenance-plan-caption"
+      className="maintenance-plan-panel-message insights-appear"
       aria-live="polite"
       style={{
-        minHeight: "1.2rem",
+        marginTop: 16,
+        paddingTop: 14,
+        borderTop: "1px solid var(--color-border-subtle)",
         display: "flex",
         alignItems: "center",
-        justifyContent: "flex-end",
-        gap: 6,
+        gap: 8,
+        fontSize: 13,
         fontWeight: 500,
-        color: ready ? "var(--color-accent)" : "var(--color-text-secondary)",
-        textAlign: "right",
-        whiteSpace: "nowrap",
+        color: building
+          ? "var(--color-text-secondary)"
+          : "var(--color-accent)",
       }}
     >
-      {text ? (
-        <span className="maintenance-plan-caption-row">
-          <span
-            className={building ? "maintenance-plan-caption-spin" : ""}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              color: "var(--color-accent)",
-            }}
-            aria-hidden
-          >
-            <Icon name={ready ? "circle-check" : "refresh-cw"} size={13} />
-          </span>
-          <span>{text}</span>
-        </span>
-      ) : null}
+      <span
+        className={building ? "maintenance-plan-panel-message-spin" : ""}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          flexShrink: 0,
+          color: "var(--color-accent)",
+        }}
+        aria-hidden
+      >
+        <Icon name={building ? "refresh-cw" : "circle-check"} size={14} />
+      </span>
+      <span>{text}</span>
       <style>{`
-        .maintenance-plan-caption-row {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          animation: maintenance-plan-caption-fade 220ms ease-out both;
-        }
-        @keyframes maintenance-plan-caption-fade {
-          from { opacity: 0; transform: translateY(2px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes maintenance-plan-caption-rotate { to { transform: rotate(360deg); } }
-        .maintenance-plan-caption-spin {
-          animation: maintenance-plan-caption-rotate 0.9s linear infinite;
+        @keyframes maintenance-plan-panel-message-rotate { to { transform: rotate(360deg); } }
+        .maintenance-plan-panel-message-spin {
+          animation: maintenance-plan-panel-message-rotate 0.9s linear infinite;
         }
         @media (prefers-reduced-motion: reduce) {
-          .maintenance-plan-caption-spin,
-          .maintenance-plan-caption-row { animation: none; }
+          .maintenance-plan-panel-message-spin { animation: none; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// Semi-opaque "refreshing" overlay laid over the whole "On your plate"
+// maintenance section while synthesis is in flight (issue #254 testing
+// feedback). The tasks beneath are being rewritten, so the overlay frosts
+// + dims them, runs an accent shimmer sweep to read as "reloading," and
+// blocks clicks on the soon-to-be-stale rows. It's purely decorative
+// (`aria-hidden`) — the panel-bottom progress line already announces state
+// via aria-live — and clears itself the moment the run completes.
+function MaintenanceRefreshOverlay() {
+  return (
+    <div
+      className="maintenance-refresh-overlay"
+      aria-hidden
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 5,
+        borderRadius: "var(--radius-lg)",
+        overflow: "hidden",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        paddingTop: 52,
+        backgroundColor:
+          "color-mix(in oklab, var(--color-bg-base) 58%, transparent)",
+        backdropFilter: "blur(1.5px)",
+        WebkitBackdropFilter: "blur(1.5px)",
+      }}
+    >
+      <span className="maintenance-refresh-shimmer" aria-hidden />
+      <span
+        className="maintenance-refresh-badge"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 14px",
+          borderRadius: 999,
+          fontSize: 13,
+          fontWeight: 500,
+          color: "var(--color-accent)",
+          backgroundColor: "var(--color-bg-surface-raised)",
+          border: "1px solid var(--color-border-subtle)",
+          boxShadow: "0 6px 18px rgba(0, 0, 0, 0.25)",
+        }}
+      >
+        <span
+          className="maintenance-refresh-spin"
+          style={{ display: "inline-flex", alignItems: "center" }}
+        >
+          <Icon name="refresh-cw" size={14} />
+        </span>
+        Refreshing your maintenance plan…
+      </span>
+      <style>{`
+        .maintenance-refresh-overlay {
+          animation: maintenance-refresh-fade 200ms ease-out both;
+        }
+        @keyframes maintenance-refresh-fade {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        .maintenance-refresh-shimmer {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background: linear-gradient(
+            105deg,
+            transparent 35%,
+            color-mix(in oklab, var(--color-accent) 14%, transparent) 50%,
+            transparent 65%
+          );
+          background-size: 220% 100%;
+          animation: maintenance-refresh-shimmer-move 1.6s linear infinite;
+        }
+        @keyframes maintenance-refresh-shimmer-move {
+          from { background-position: 130% 0; }
+          to { background-position: -130% 0; }
+        }
+        @keyframes maintenance-refresh-spin-kf { to { transform: rotate(360deg); } }
+        .maintenance-refresh-spin {
+          animation: maintenance-refresh-spin-kf 0.9s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .maintenance-refresh-overlay,
+          .maintenance-refresh-shimmer,
+          .maintenance-refresh-spin { animation: none; }
         }
       `}</style>
     </div>

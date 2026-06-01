@@ -53,6 +53,7 @@ export type IconName =
   | "edit"
   | "arrow-right"
   | "refresh-cw"
+  | "wand-sparkles"
   | "external-link"
   | "car"
   | "paw"
@@ -358,6 +359,20 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M3 4v5h5" />
       <path d="M4 13a8 8 0 0 0 13.7 4.7L21 15" />
       <path d="M21 20v-5h-5" />
+    </>
+  ),
+  "wand-sparkles": (
+    // A wand with a 4-point sparkle at its tip and two small twinkles —
+    // the "re-run / regenerate" glyph for the AI-authored actions
+    // (Research again, Rebuild maintenance plan), more expressive than
+    // the plain refresh-cw loop.
+    <>
+      <path d="M4 20 15 9" />
+      <path d="M17.5 3.5 18.6 5.4 20.5 6.5 18.6 7.6 17.5 9.5 16.4 7.6 14.5 6.5 16.4 5.4z" />
+      <path d="M6 5v2" />
+      <path d="M5 6h2" />
+      <path d="M20 13v2" />
+      <path d="M19 14h2" />
     </>
   ),
   "external-link": (
