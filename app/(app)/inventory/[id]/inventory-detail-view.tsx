@@ -806,6 +806,10 @@ export function InventoryDetailView({
             <ResearchButton
               disabled={!canResearch}
               loading={researchPending}
+              // A research run on an item with a maintenance plan auto-chains
+              // into a rebuild, so once synthesis is in flight Research is
+              // locked too — both unlock together when the plan lands.
+              busy={synthesisInFlight}
               hasResults={Boolean(displayInsights)}
               onClick={handleResearch}
             />
@@ -816,6 +820,12 @@ export function InventoryDetailView({
             <BuildMaintenancePlanButton
               hasPriorPlan={hasPriorPlan}
               inFlight={synthesisInFlight}
+              // Lock the button while a research run is in flight: research
+              // auto-chains into a rebuild on finish, so the user shouldn't
+              // (and needn't) trigger one by hand in the meantime. It shows
+              // its spinner only once synthesis actually starts (inFlight);
+              // during the research window it's a plain disabled state.
+              disabled={researchPending || synthesisInFlight}
               onClick={handleBuildMaintenancePlan}
             />
           </div>
@@ -1893,11 +1903,18 @@ function ResearchLoadingOverlay({
 function ResearchButton({
   disabled,
   loading,
+  busy,
   hasResults,
   onClick,
 }: {
+  // `disabled` is the can't-research gate (missing manufacturer/model) and
+  // is the only state that surfaces the explanatory tooltip. `busy` is the
+  // research-auto-chains-into-a-rebuild lock — it disables the button while
+  // synthesis runs but carries no tooltip, since the reason isn't missing
+  // fields. `loading` is this button's own in-flight research stream.
   disabled: boolean;
   loading: boolean;
+  busy: boolean;
   hasResults: boolean;
   onClick: () => void;
 }) {
@@ -1906,7 +1923,7 @@ function ResearchButton({
   // ~15s before stream content starts arriving. Opacity drop + the
   // refresh-cw icon spinning gives an immediate "I heard you" signal,
   // and the disabled attribute already prevents repeat submissions.
-  const inactive = disabled || loading;
+  const inactive = disabled || loading || busy;
 
   const button = (
     <button
@@ -1969,12 +1986,20 @@ function ResearchButton({
 function BuildMaintenancePlanButton({
   hasPriorPlan,
   inFlight,
+  disabled,
   onClick,
 }: {
   hasPriorPlan: boolean;
+  // `inFlight` is this button's own synthesis run — it shows the spinner +
+  // in-flight label. `disabled` is the broader lock that also covers the
+  // research window before the auto-chained rebuild starts: the button is
+  // non-clickable but stays in its resting label (no spinner) until
+  // synthesis actually begins. `inFlight` always implies disabled.
   inFlight: boolean;
+  disabled: boolean;
   onClick: () => void;
 }) {
+  const isDisabled = disabled || inFlight;
   // First build is a call-to-action — surface it with the primary
   // accent treatment so a user with research insights actually notices
   // the next step. After a successful build the action drops to ghost:
@@ -1985,27 +2010,26 @@ function BuildMaintenancePlanButton({
   // #254); the first build keeps the plain sparkles call-to-action icon.
   const iconName: IconName = hasPriorPlan ? "wand-sparkles" : "sparkles";
 
-  // Resting and in-flight labels. The label drops the "maintenance" word
-  // it carried under #248 — in the equal-width row (issue #254) the verbose
-  // "Rebuild maintenance plan" is the one label too wide to let five buttons
-  // share the ~1168px content width, and the "On your plate" panel directly
-  // below already names what's being built. The resting copy is the longer
-  // of the pair, so stacking both in a single grid cell (below) keeps the
-  // text centered consistently when it flips in-flight (the equal-width cell
-  // already pins the button width, so this is belt-and-suspenders).
-  const restingLabel = hasPriorPlan ? "Rebuild plan" : "Build plan";
-  const inFlightLabel = hasPriorPlan ? "Rebuilding plan…" : "Building plan…";
+  // Resting and in-flight labels. The "maintenance" word is abbreviated to
+  // "maint" rather than dropped — it keeps the button specific ("Rebuild
+  // maint" reads as maintenance, not a generic "plan") while staying narrow
+  // enough for the equal-width five-button row to share the ~1168px content
+  // width (the verbose "Rebuild maintenance plan" was the one label too wide
+  // to fit). The resting copy and the in-flight copy are stacked in a single
+  // grid cell (below) so the visible text stays centered when it flips.
+  const restingLabel = hasPriorPlan ? "Rebuild maint" : "Build maint";
+  const inFlightLabel = hasPriorPlan ? "Rebuilding maint…" : "Building maint…";
 
   return (
     <button
       type="button"
-      disabled={inFlight}
+      disabled={isDisabled}
       onClick={onClick}
       className={`${variantClass} build-plan-button`}
-      aria-disabled={inFlight ? "true" : "false"}
+      aria-disabled={isDisabled ? "true" : "false"}
       aria-label={inFlight ? inFlightLabel : restingLabel}
       data-loading={inFlight ? "true" : "false"}
-      style={inFlight ? { opacity: 0.65 } : undefined}
+      style={isDisabled ? { opacity: inFlight ? 0.65 : 0.55 } : undefined}
     >
       <span
         className={inFlight ? "build-plan-icon-spin" : ""}
