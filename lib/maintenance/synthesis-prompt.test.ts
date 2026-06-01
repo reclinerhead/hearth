@@ -62,6 +62,18 @@ describe("buildSynthesisSystemPrompt", () => {
     expect(prompt).toMatch(/'inspection'/);
     expect(prompt).toMatch(/'consumable'/);
   });
+
+  it("mandates a combustibles/clearance task for fuel-burning appliances", () => {
+    const prompt = buildSynthesisSystemPrompt();
+    expect(prompt).toMatch(/fuel-burning/i);
+    expect(prompt).toMatch(/clear of combustibles/i);
+  });
+
+  it("tells the model that separate source sentences are not separate tasks", () => {
+    expect(buildSynthesisSystemPrompt()).toMatch(
+      /not automatically separate tasks/i,
+    );
+  });
 });
 
 describe("buildSynthesisUserMessage", () => {
