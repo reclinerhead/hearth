@@ -16,6 +16,16 @@ The test for whether something belongs on the list is: can the homeowner say "I 
 
 Most items will have somewhere between 4 and 8 meaningful recurring tasks. If you find yourself emitting more than 10, prioritize the highest-value ones. The hard ceiling is 20; output beyond that will be rejected.
 
+NOT EVERYTHING THAT'S A TASK RECURS:
+
+Passing the "I did that today" test makes something a task — it does not make it a *recurring* task. Two kinds of work routinely get miscoded onto a calendar interval when they don't belong there:
+
+1. One-time setup and commissioning checks. Verifying the unit is level, confirming an anti-tip bracket is installed, checking initial clearances at install, registering the warranty. These are done once when the appliance is placed and do not drift on a schedule — a range that's level today does not need re-leveling every 30 days. Emit these with cadence.kind = 'one_time'. If the unit is already in service and the check was plausibly done at install, you may omit it entirely rather than surface a one-time task the homeowner already completed.
+
+2. Symptom-conditional professional service. "Have a slow-to-heat oven serviced by a pro," "call a technician if the igniter is slow," "schedule a leak inspection if you smell gas." The triggering condition is a symptom, not a date — there is no honest interval for "inspect for a problem that may never occur." Do NOT emit these as interval tasks. Instead, recast the homeowner's side as a per-use awareness practice ("Notice if the oven is slow to light or heat unevenly while using it" → per_use), which naturally prompts the service call when the symptom appears. If a conditional item has no per-use awareness form, drop it — a calendared "professional inspection" the homeowner has no reason to schedule erodes trust in the whole list.
+
+This is distinct from the fuel-burning combustibles/clearance baseline below, which IS a legitimate recurring interval (you're checking storage that accumulates over time, not inspecting for a symptom). Don't conflate "keep the area clear of combustibles" (recurring) with "have the gas connections professionally leak-tested" (symptom-conditional — not a calendar task).
+
 SAFETY BASELINE FOR FUEL-BURNING APPLIANCES:
 
 When the item burns fuel — natural gas, propane, or oil (you'll see this in the fuel type, BTU rating, or the overview) — always emit a recurring task to check that the area around and behind the unit is clear of combustibles and lint buildup, even when the item's maintenance guidance doesn't mention it. Restricted clearance and accumulated lint are baseline fire risks for any combustion appliance, so this task must be present every time. Use a 12-month interval (it's an awareness-independent-of-use check, not per-use), and keep it as its own task — distinct from the annual hands-on deep clean and from professional fuel/burner service. This directive does not apply to electric-only appliances; don't manufacture a clearance task where there's no combustion.
@@ -28,6 +38,7 @@ For these, set cadence.kind = 'per_use'. Leave interval_months and seasonal_anch
 
 The test for per-use vs. scheduled:
 - If the action happens *during operation*, *while running*, *every load*, *every cycle*, or *every refill* — it's per-use. Listening for sounds, noticing smells, watching gauges during use, refilling something between cycles, cleaning a screen after a load all qualify.
+- Conditional symptom-watch is also per-use. "Notice if the oven is slow to light," "watch for uneven heating," "be alert to a burner flame that turns yellow" are things the homeowner registers while using the appliance — the natural moment is during operation, not on a calendar. These are the per-use awareness form of a symptom-conditional service item (see NOT EVERYTHING THAT'S A TASK RECURS above): the per-use practice is what prompts the eventual service call.
 - If the action's natural cadence is *every month* or *every 3 months* or *annually* — and the action happens whether or not the appliance is currently in use — it's scheduled (interval or seasonal). Inspecting clearances, replacing a filter, professional service all qualify.
 - If you find yourself writing an interval task that's actually "do this every time you use it" — like "Check rinse aid monthly" (real cadence: every cycle), or "Listen for unusual sounds every 6 months" (real cadence: notice during operation), or "Watch for water leaks quarterly" (real cadence: whenever you're near it) — that's a per-use task miscoded as interval. Fix it.
 
@@ -40,7 +51,7 @@ For each task, choose the cadence shape that best fits:
 - 'seasonal' for tasks tied to a time of year (annual furnace service before heating season, gutter cleaning in fall). Specify both the interval (how often it repeats) and the seasonal anchor (when in the year).
 - 'one_time' for tasks that should be done once and never recur (registering an appliance warranty within 90 days of install).
 
-Don't invent cadences. Ground them in what you know about the equipment class — if the manufacturer recommends an annual flush, the cadence is 12 months. If you're recommending a homeowner-friendly inspection that isn't in the manual, pick a reasonable cadence and explain that choice in your reasoning.
+Don't invent cadences. Ground them in what you know about the equipment class — if the manufacturer recommends an annual flush, the cadence is 12 months. If you're recommending a homeowner-friendly inspection that isn't in the manual, pick a reasonable cadence and explain that choice in your reasoning — but only when the work genuinely recurs on a clock. If the work is a one-time setup check or symptom-conditional service, route it per NOT EVERYTHING THAT'S A TASK RECURS instead of assigning it an interval. A made-up interval on work that doesn't recur is worse than no task at all.
 
 USING HABITAT CONTEXT:
 
