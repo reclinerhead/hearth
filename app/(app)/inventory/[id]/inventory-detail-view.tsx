@@ -941,8 +941,17 @@ export function InventoryDetailView({
         the layout decision documented in the issue. Per-use practices
         (issue #135) render as a dedicated "Every time you use it" tier
         inside this same panel.
+
+        While synthesis is in flight the tasks below are being rewritten,
+        so a semi-opaque refresh overlay sits over the whole section to
+        reinforce that the plan beneath is reloading (issue #254 testing
+        feedback). It blocks interaction with the soon-to-be-stale rows
+        and clears itself the moment the run completes.
       */}
-      <section>{maintenancePanelSlot}</section>
+      <section className="relative">
+        {maintenancePanelSlot}
+        {synthesisInFlight ? <MaintenanceRefreshOverlay /> : null}
+      </section>
 
       <section className="grid gap-4 md:grid-cols-2">
         <DocumentsPanel
@@ -1582,11 +1591,15 @@ function ResearchPanel({
         — about 30s" line; once a successful run exists it settles into a
         persistent completion line that points the user at the maintenance
         panel directly below. Rendered outside the dim-on-regenerate wrapper
-        so a research re-run never dims it.
+        so a research re-run never dims it. `researchInFlight` hides the
+        stale prior-run completion line the moment a fresh research stream
+        starts — it reappears on its own once the auto-chained rebuild
+        begins (building) and then completes.
       */}
       <MaintenancePlanPanelMessage
         building={planBuilding}
         hasPriorPlan={hasPriorPlan}
+        researchInFlight={isPending}
         itemTypeWord={itemTypeLabel}
       />
 
@@ -2087,14 +2100,22 @@ function BuildMaintenancePlanButton({
 function MaintenancePlanPanelMessage({
   building,
   hasPriorPlan,
+  researchInFlight,
   itemTypeWord,
 }: {
   building: boolean;
   hasPriorPlan: boolean;
+  // True while a fresh research stream is running. The prior run's
+  // completion line is stale the instant a re-research starts, so we hide
+  // it immediately; the auto-chained rebuild then re-surfaces the in-flight
+  // line (building) and, on finish, the new completion line — all on their
+  // own. The in-flight line itself is never suppressed.
+  researchInFlight: boolean;
   // The item-type label ("appliance" / "system" / "exterior"), lowercased
   // for inline use in the completion sentence.
   itemTypeWord: string;
 }) {
+  if (researchInFlight && !building) return null;
   if (!building && !hasPriorPlan) return null;
 
   const text = building
@@ -2141,6 +2162,98 @@ function MaintenancePlanPanelMessage({
         }
         @media (prefers-reduced-motion: reduce) {
           .maintenance-plan-panel-message-spin { animation: none; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// Semi-opaque "refreshing" overlay laid over the whole "On your plate"
+// maintenance section while synthesis is in flight (issue #254 testing
+// feedback). The tasks beneath are being rewritten, so the overlay frosts
+// + dims them, runs an accent shimmer sweep to read as "reloading," and
+// blocks clicks on the soon-to-be-stale rows. It's purely decorative
+// (`aria-hidden`) — the panel-bottom progress line already announces state
+// via aria-live — and clears itself the moment the run completes.
+function MaintenanceRefreshOverlay() {
+  return (
+    <div
+      className="maintenance-refresh-overlay"
+      aria-hidden
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 5,
+        borderRadius: "var(--radius-lg)",
+        overflow: "hidden",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        paddingTop: 52,
+        backgroundColor:
+          "color-mix(in oklab, var(--color-bg-base) 58%, transparent)",
+        backdropFilter: "blur(1.5px)",
+        WebkitBackdropFilter: "blur(1.5px)",
+      }}
+    >
+      <span className="maintenance-refresh-shimmer" aria-hidden />
+      <span
+        className="maintenance-refresh-badge"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 14px",
+          borderRadius: 999,
+          fontSize: 13,
+          fontWeight: 500,
+          color: "var(--color-accent)",
+          backgroundColor: "var(--color-bg-surface-raised)",
+          border: "1px solid var(--color-border-subtle)",
+          boxShadow: "0 6px 18px rgba(0, 0, 0, 0.25)",
+        }}
+      >
+        <span
+          className="maintenance-refresh-spin"
+          style={{ display: "inline-flex", alignItems: "center" }}
+        >
+          <Icon name="refresh-cw" size={14} />
+        </span>
+        Refreshing your maintenance plan…
+      </span>
+      <style>{`
+        .maintenance-refresh-overlay {
+          animation: maintenance-refresh-fade 200ms ease-out both;
+        }
+        @keyframes maintenance-refresh-fade {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        .maintenance-refresh-shimmer {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background: linear-gradient(
+            105deg,
+            transparent 35%,
+            color-mix(in oklab, var(--color-accent) 14%, transparent) 50%,
+            transparent 65%
+          );
+          background-size: 220% 100%;
+          animation: maintenance-refresh-shimmer-move 1.6s linear infinite;
+        }
+        @keyframes maintenance-refresh-shimmer-move {
+          from { background-position: 130% 0; }
+          to { background-position: -130% 0; }
+        }
+        @keyframes maintenance-refresh-spin-kf { to { transform: rotate(360deg); } }
+        .maintenance-refresh-spin {
+          animation: maintenance-refresh-spin-kf 0.9s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .maintenance-refresh-overlay,
+          .maintenance-refresh-shimmer,
+          .maintenance-refresh-spin { animation: none; }
         }
       `}</style>
     </div>
