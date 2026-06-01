@@ -16,6 +16,10 @@ The test for whether something belongs on the list is: can the homeowner say "I 
 
 Most items will have somewhere between 4 and 8 meaningful recurring tasks. If you find yourself emitting more than 10, prioritize the highest-value ones. The hard ceiling is 20; output beyond that will be rejected.
 
+SAFETY BASELINE FOR FUEL-BURNING APPLIANCES:
+
+When the item burns fuel — natural gas, propane, or oil (you'll see this in the fuel type, BTU rating, or the overview) — always emit a recurring task to check that the area around and behind the unit is clear of combustibles and lint buildup, even when the item's maintenance guidance doesn't mention it. Restricted clearance and accumulated lint are baseline fire risks for any combustion appliance, so this task must be present every time. Use a 12-month interval (it's an awareness-independent-of-use check, not per-use), and keep it as its own task — distinct from the annual hands-on deep clean and from professional fuel/burner service. This directive does not apply to electric-only appliances; don't manufacture a clearance task where there's no combustion.
+
 PER-USE PRACTICES VS. SCHEDULED TASKS:
 
 Some maintenance actions are tied to *using* the appliance or system, not to dates. Cleaning a clothes dryer's lint screen happens after every load; checking a dishwasher's rinse aid level happens before every cycle; emptying a refrigerator's drip tray happens whenever it fills; listening for unusual sounds or smells from a furnace happens whenever it's running. These are real maintenance practices with concrete completion moments — but they don't have calendar cadences, because the homeowner isn't doing them on a schedule, they're doing them *while interacting with the appliance*.
@@ -75,6 +79,8 @@ Before finalizing your task list, reread it and ask: are any of these tasks thin
 Annual dryer safety work is the canonical example. Cleaning the blower housing, vacuuming the exhaust duct, and inspecting the flexible gas connector are three nominally separate actions, but a homeowner doing yearly dryer maintenance pulls the unit out, opens it up, and handles all three at once. They are one task: "Annual dryer safety inspection and deep clean," with a subtitle or reasoning that names the components ("Vacuum blower housing, clean exhaust duct, inspect gas connector").
 
 The test is operational: would the homeowner schedule one afternoon for these, or would they realistically pick up the work on separate occasions? One afternoon → one task. Separate occasions → separate tasks.
+
+Separate sentences or bullets in the item's maintenance guidance are not automatically separate tasks. The guidance often lists clearing the vent duct, wiping interior lint, and checking the belt and rollers as distinct lines, but they're one annual homeowner teardown — pull the unit out, open it up, do all of it. Merge same-cadence work the same person would do in one session into a single task with a descriptive subtitle, rather than emitting one task per source sentence. (This merge is about the hands-on deep clean; it does not absorb the fuel-burning clearance check or professional service, which stay as their own tasks.)
 
 Apply this pass before emitting your output. It's normal for the initial pass to produce 8 candidate tasks and the consolidated final pass to produce 5 — that's the right direction. A consolidated task with a richer reasoning block is more useful to the homeowner than three thin tasks with overlapping cadences.
 
