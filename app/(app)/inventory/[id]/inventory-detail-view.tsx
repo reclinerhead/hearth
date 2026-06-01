@@ -205,6 +205,18 @@ export function InventoryDetailView({
       // held by the hook until clear() runs, so the user sees no flash.
       if (object && !error) {
         router.refresh();
+
+        // Mirror the server-side maintenance auto-chain (issue #248): the
+        // research route starts synthesis in its own onFinish when the
+        // result carries a non-null maintenance section. Flag it here so
+        // the effect below can flip the Build button into its in-flight
+        // state and surface the handoff message. We only set a ref — the
+        // synthesis state setters live further down this component, and
+        // the consuming effect has a non-stale view of liveSynthesisRun.
+        const maintenance = (object as StreamingInsights).maintenance;
+        if (typeof maintenance === "string" && maintenance.trim().length > 0) {
+          pendingAutoChainRef.current = true;
+        }
       }
     },
   });
@@ -326,6 +338,28 @@ export function InventoryDetailView({
   const [synthesisInFlight, setSynthesisInFlight] = useState(false);
   const [synthesisError, setSynthesisError] = useState<string | null>(null);
 
+  // Drives the awareness-framed caption that sits in a reserved slot
+  // directly beneath the Build / Rebuild button (issue #248). One state
+  // serves both trigger paths so the in-flight message is identical
+  // whether the user clicked Build or the research auto-chain started it:
+  //   "building" — synthesis is running; show "Building your plan…".
+  //   "ready"    — synthesis just completed; show a momentary, gratitude-
+  //                framed confirmation that clears itself after a few seconds.
+  //   "idle"     — slot is empty (its height stays reserved, so nothing
+  //                below the button ever shifts).
+  // This is purely presentational; the workflow runs server-side
+  // regardless. The same Realtime / polling completion detection that
+  // flips the button out of its in-flight state advances this to "ready".
+  const [planMessageState, setPlanMessageState] = useState<
+    "idle" | "building" | "ready"
+  >("idle");
+  // Set in the research stream's onFinish (defined above, before the
+  // synthesis state exists) and consumed in the effect below, mirroring
+  // the pendingResearchTriggerRef pattern. The consuming effect reads the
+  // freshest liveSynthesisRun for the baseline, avoiding the stale closure
+  // the early onFinish callback would otherwise capture.
+  const pendingAutoChainRef = useRef(false);
+
   // Subscribe to UPDATE events on this inventory row so the button
   // can flip out of its in-flight state the moment the workflow
   // finishes. Same pattern as useHouseRealtime, but narrow enough that
@@ -366,7 +400,12 @@ export function InventoryDetailView({
             setSynthesisInFlight(false);
             if (next.error) {
               setSynthesisError(next.error);
+              setPlanMessageState("idle");
             } else {
+              // Advance the caption to its momentary "ready" state only
+              // when we were the ones building — guards against a stray
+              // cross-device completion flashing a confirmation here.
+              setPlanMessageState((s) => (s === "building" ? "ready" : "idle"));
               // The workflow writes maintenance_tasks rows before
               // persisting the trace, so by the time this fires the new
               // tasks are already in the DB. Re-run the server component
@@ -419,7 +458,9 @@ export function InventoryDetailView({
           setSynthesisInFlight(false);
           if (next.error) {
             setSynthesisError(next.error);
+            setPlanMessageState("idle");
           } else {
+            setPlanMessageState((s) => (s === "building" ? "ready" : "idle"));
             // Same rationale as the realtime branch — the maintenance
             // panel is server-rendered and won't reflect the new rows
             // without a refresh.
@@ -437,6 +478,7 @@ export function InventoryDetailView({
       () => {
         if (cancelled) return;
         setSynthesisInFlight(false);
+        setPlanMessageState("idle");
         setSynthesisError(
           "We didn't hear back from the synthesis run in time. Check the inventory dashboard — your plan may have been written even though this page didn't see it. If not, try again.",
         );
@@ -453,6 +495,7 @@ export function InventoryDetailView({
 
   const handleBuildMaintenancePlan = useCallback(async () => {
     setSynthesisError(null);
+    setPlanMessageState("building");
     setSynthesisInFlight(true);
     synthesisBaselineRef.current =
       liveSynthesisRun?.completed_at ??
@@ -476,6 +519,42 @@ export function InventoryDetailView({
       );
     }
   }, [item.id, item.last_synthesis_run, liveSynthesisRun]);
+
+  // Capture the completion baseline and flip into the in-flight state for
+  // the research auto-chain (issue #248). Same body shape as the head of
+  // handleBuildMaintenancePlan, but reads the freshest liveSynthesisRun
+  // for the baseline rather than the stale value the early research
+  // onFinish closure would capture.
+  const beginAutoChainInFlight = useCallback(() => {
+    setSynthesisError(null);
+    synthesisBaselineRef.current =
+      liveSynthesisRun?.completed_at ??
+      item.last_synthesis_run?.completed_at ??
+      null;
+    setSynthesisInFlight(true);
+    setPlanMessageState("building");
+  }, [liveSynthesisRun, item.last_synthesis_run]);
+
+  // Consume the auto-chain flag the research stream's onFinish sets.
+  // Mirrors the pendingResearchTriggerRef idiom above: onFinish only sets
+  // a ref, and this effect runs after the synthesis state exists. The
+  // existing Realtime / polling effects then drive it to completion
+  // exactly as they do for a manual click.
+  useEffect(() => {
+    if (pendingAutoChainRef.current) {
+      pendingAutoChainRef.current = false;
+      beginAutoChainInFlight();
+    }
+  });
+
+  // The "ready" confirmation is momentary by design (gratitude/noticing
+  // tone, no badge, no points — per the brand reward principle). Clear it
+  // after a few seconds so the caption slot settles back to empty.
+  useEffect(() => {
+    if (planMessageState !== "ready") return;
+    const timer = setTimeout(() => setPlanMessageState("idle"), 6000);
+    return () => clearTimeout(timer);
+  }, [planMessageState]);
 
   // Source-of-truth for "has a successful prior run" — prefer the live
   // trace from realtime (newer than first paint) but fall back to the
@@ -665,36 +744,43 @@ export function InventoryDetailView({
                 {title}
               </h1>
             </div>
-            <div className="flex flex-wrap items-start justify-end gap-2 shrink-0">
+            <div className="flex flex-col items-end gap-1.5 shrink-0">
+              <div className="flex flex-wrap items-start justify-end gap-2">
+                {hasMaintenanceInsight ? (
+                  <BuildMaintenancePlanButton
+                    hasPriorPlan={hasPriorPlan}
+                    inFlight={synthesisInFlight}
+                    onClick={handleBuildMaintenancePlan}
+                  />
+                ) : null}
+                <button
+                  ref={editTriggerRef}
+                  type="button"
+                  onClick={() => setEditOpen(true)}
+                  className="btn btn-ghost shrink-0"
+                  aria-label={`Edit details for ${item.name}`}
+                >
+                  <Icon name="edit" size={14} />
+                  <span className="hidden sm:inline">Edit details</span>
+                  <span className="sm:hidden">Edit</span>
+                </button>
+              </div>
+              {/*
+                Reserved caption slot directly beneath the button (issue
+                #248). Its height is always held when the Build button is
+                present, so the in-flight / ready message fades in and out
+                without ever shifting the stat tiles below. Carries the
+                awareness-framed progress copy for both the manual click
+                and the research auto-chain.
+              */}
               {hasMaintenanceInsight ? (
-                <BuildMaintenancePlanButton
+                <MaintenancePlanCaption
+                  state={planMessageState}
                   hasPriorPlan={hasPriorPlan}
-                  inFlight={synthesisInFlight}
-                  onClick={handleBuildMaintenancePlan}
                 />
               ) : null}
-              <button
-                ref={editTriggerRef}
-                type="button"
-                onClick={() => setEditOpen(true)}
-                className="btn btn-ghost shrink-0"
-                aria-label={`Edit details for ${item.name}`}
-              >
-                <Icon name="edit" size={14} />
-                <span className="hidden sm:inline">Edit details</span>
-                <span className="sm:hidden">Edit</span>
-              </button>
             </div>
           </div>
-          {synthesisInFlight ? (
-            <p
-              className="text-small"
-              style={{ color: "var(--color-text-tertiary)" }}
-              aria-live="polite"
-            >
-              This usually takes about a minute.
-            </p>
-          ) : null}
           {synthesisError ? (
             <p
               className="text-small"
@@ -1855,20 +1941,18 @@ function BuildMaintenancePlanButton({
   // a "do this next" pointer.
   const variantClass = hasPriorPlan ? "btn btn-ghost" : "btn btn-primary";
   const iconName: IconName = hasPriorPlan ? "refresh-cw" : "sparkles";
-  const labelLong = inFlight
-    ? hasPriorPlan
-      ? "Rebuilding plan…"
-      : "Building plan…"
-    : hasPriorPlan
-      ? "Rebuild maintenance plan"
-      : "Build maintenance plan";
-  const labelShort = inFlight
-    ? hasPriorPlan
-      ? "Rebuilding…"
-      : "Building…"
-    : hasPriorPlan
-      ? "Rebuild plan"
-      : "Build plan";
+
+  // Resting and in-flight labels for each breakpoint. The resting copy is
+  // always the longer of the pair, so stacking both in a single grid cell
+  // (below) pins the button to the resting width — clicking into the
+  // in-flight state swaps the text without resizing the button, which is
+  // the whole point of the stack (issue #248).
+  const restingLong = hasPriorPlan
+    ? "Rebuild maintenance plan"
+    : "Build maintenance plan";
+  const inFlightLong = hasPriorPlan ? "Rebuilding plan…" : "Building plan…";
+  const restingShort = hasPriorPlan ? "Rebuild plan" : "Build plan";
+  const inFlightShort = hasPriorPlan ? "Rebuilding…" : "Building…";
 
   return (
     <button
@@ -1877,7 +1961,7 @@ function BuildMaintenancePlanButton({
       onClick={onClick}
       className={`${variantClass} shrink-0 build-plan-button`}
       aria-disabled={inFlight ? "true" : "false"}
-      aria-label={labelLong}
+      aria-label={inFlight ? inFlightLong : restingLong}
       data-loading={inFlight ? "true" : "false"}
       style={inFlight ? { opacity: 0.65 } : undefined}
     >
@@ -1887,9 +1971,37 @@ function BuildMaintenancePlanButton({
       >
         <Icon name={iconName} size={14} />
       </span>
-      <span className="hidden sm:inline">{labelLong}</span>
-      <span className="sm:hidden">{labelShort}</span>
+      {/*
+        Same-cell label stack. Both the resting and in-flight strings
+        occupy grid cell 1/1, so the track sizes to the wider (resting)
+        label and the button width never changes when it flips in-flight.
+        The hidden label keeps its box via visibility:hidden rather than
+        display:none, which is what reserves the width.
+      */}
+      <span className="hidden sm:grid build-plan-label-stack" aria-hidden="true">
+        <span className="build-plan-label-cell" data-on={!inFlight}>
+          {restingLong}
+        </span>
+        <span className="build-plan-label-cell" data-on={inFlight}>
+          {inFlightLong}
+        </span>
+      </span>
+      <span className="grid sm:hidden build-plan-label-stack" aria-hidden="true">
+        <span className="build-plan-label-cell" data-on={!inFlight}>
+          {restingShort}
+        </span>
+        <span className="build-plan-label-cell" data-on={inFlight}>
+          {inFlightShort}
+        </span>
+      </span>
       <style>{`
+        .build-plan-label-stack { justify-items: center; }
+        .build-plan-label-cell {
+          grid-column: 1;
+          grid-row: 1;
+          white-space: nowrap;
+        }
+        .build-plan-label-cell[data-on="false"] { visibility: hidden; }
         @keyframes build-plan-icon-rotate { to { transform: rotate(360deg); } }
         .build-plan-icon-spin {
           animation: build-plan-icon-rotate 0.9s linear infinite;
@@ -1899,6 +2011,85 @@ function BuildMaintenancePlanButton({
         }
       `}</style>
     </button>
+  );
+}
+
+// Awareness-framed progress caption that lives in a fixed-height slot
+// directly beneath the Build / Rebuild button (issue #248). Renders for
+// both the manual click and the research auto-chain — the in-flight copy
+// reads as Hearth doing the work, and the momentary "ready" confirmation
+// is gratitude/noticing-framed (no badge, no points). The slot reserves
+// its height even when idle so the stat tiles below never shift.
+function MaintenancePlanCaption({
+  state,
+  hasPriorPlan,
+}: {
+  state: "idle" | "building" | "ready";
+  hasPriorPlan: boolean;
+}) {
+  const building = state === "building";
+  const ready = state === "ready";
+  const text = building
+    ? hasPriorPlan
+      ? "Rebuilding your plan — about 30s"
+      : "Building your plan — about 30s"
+    : ready
+      ? "Your maintenance plan is ready"
+      : null;
+
+  return (
+    <div
+      className="text-small maintenance-plan-caption"
+      aria-live="polite"
+      style={{
+        minHeight: "1.2rem",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        gap: 6,
+        fontWeight: 500,
+        color: ready ? "var(--color-accent)" : "var(--color-text-secondary)",
+        textAlign: "right",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {text ? (
+        <span className="maintenance-plan-caption-row">
+          <span
+            className={building ? "maintenance-plan-caption-spin" : ""}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              color: "var(--color-accent)",
+            }}
+            aria-hidden
+          >
+            <Icon name={ready ? "circle-check" : "refresh-cw"} size={13} />
+          </span>
+          <span>{text}</span>
+        </span>
+      ) : null}
+      <style>{`
+        .maintenance-plan-caption-row {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          animation: maintenance-plan-caption-fade 220ms ease-out both;
+        }
+        @keyframes maintenance-plan-caption-fade {
+          from { opacity: 0; transform: translateY(2px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes maintenance-plan-caption-rotate { to { transform: rotate(360deg); } }
+        .maintenance-plan-caption-spin {
+          animation: maintenance-plan-caption-rotate 0.9s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .maintenance-plan-caption-spin,
+          .maintenance-plan-caption-row { animation: none; }
+        }
+      `}</style>
+    </div>
   );
 }
 
