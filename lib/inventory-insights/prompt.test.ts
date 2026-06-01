@@ -41,6 +41,16 @@ describe("buildResearchSystemPrompt", () => {
     expect(buildResearchSystemPrompt()).toContain("found_specific_model");
   });
 
+  it("states there is no browsing tool so source_urls stays empty by default", () => {
+    expect(buildResearchSystemPrompt()).toMatch(
+      /no web-browsing tool|no browsing tool|no web access/i,
+    );
+  });
+
+  it("constrains ungrounded era/maker claims out of the headline", () => {
+    expect(buildResearchSystemPrompt()).toMatch(/only when you can ground it/i);
+  });
+
   it("includes the honesty rule allowing null per section", () => {
     const prompt = buildResearchSystemPrompt();
     expect(prompt).toMatch(/return null for that section/i);

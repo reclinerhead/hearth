@@ -363,7 +363,7 @@ async function callModel(input: SynthesisInput): Promise<{
   }
 
   const systemPrompt = buildSynthesisSystemPrompt();
-  const userMessage = buildSynthesisUserMessage(input);
+  const userMessage = buildSynthesisUserMessage(input, new Date());
 
   const callStartMs = Date.now();
   const result = await generateObject({
