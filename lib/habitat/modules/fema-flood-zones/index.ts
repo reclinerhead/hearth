@@ -65,9 +65,12 @@ import type {
   FindingAction,
   HabitatFinding,
   HabitatModule,
+  HabitatRecheckSource,
+  HabitatRecheckSummary,
   HabitatSeverity,
   HouseContext,
 } from "@/lib/habitat/types";
+import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import {
   buildNfhlQueryUrl,
   type NormalizedFloodZone,
@@ -116,6 +119,24 @@ const SOURCE_URL =
  */
 export type FemaFloodZoneFindings = {
   coverage: boolean;
+  /**
+   * Why `coverage` is false. Absent on covered findings (coverage:
+   * true). The two coverage:false findings are semantically distinct
+   * and must never be confused (issue #204):
+   *
+   *   - "no_coverage": FEMA returned an empty `features[]` — the address
+   *     is genuinely outside NFHL digital coverage (~10% of US
+   *     addresses, mostly rural/remote).
+   *   - "unreachable": FEMA was unreachable after every retry AND no
+   *     cached row existed. Transient. Surfacing the no-coverage copy
+   *     here would falsely tell the user "your home isn't in FEMA's
+   *     data" when really we just couldn't reach the service.
+   *
+   * Persisted so every downstream consumer (the onboarding one-liner,
+   * the recheck banner) can tell the two apart off the stored row
+   * rather than re-deriving it from the headline string.
+   */
+  uncovered_reason?: "no_coverage" | "unreachable";
   zone?: {
     code: string;
     subtype: string | null;
@@ -301,6 +322,17 @@ export function buildOnboardingMessage(finding: HabitatFinding): string {
   const f = finding.findings as FemaFloodZoneFindings;
 
   if (!f?.coverage) {
+    // Two distinct coverage:false outcomes (issue #204). An unreachable
+    // result must NOT borrow the no-coverage copy — that would tell the
+    // user their home isn't in FEMA's data when we simply couldn't reach
+    // the service. The discriminator is read off the persisted row; old
+    // rows written before #204 lack it and fall back to the headline.
+    const unreachable =
+      f?.uncovered_reason === "unreachable" ||
+      finding.headline === UNREACHABLE_HEADLINE;
+    if (unreachable) {
+      return "I couldn't reach FEMA's flood maps just now, so I don't have a designation yet — I'll re-check on your next visit.";
+    }
     return "FEMA hasn't mapped flood zones in your area, so I couldn't pull a designation.";
   }
 
@@ -338,6 +370,99 @@ export function buildOnboardingMessage(finding: HabitatFinding): string {
   // them as 'caution'; surface a matching one-liner instead of pretending
   // we know what the zone is.
   return `FEMA returned a flood zone we don't recognize (Zone ${zoneCode}).`;
+}
+
+/**
+ * Read the FEMA findings payload off a habitat row, narrowed to the
+ * typed shape. Returns null when the row has no findings yet (e.g. a
+ * fresh `running` row whose check() hasn't completed).
+ */
+function femaFindings(
+  row: HabitatFindingRow | null,
+): FemaFloodZoneFindings | null {
+  if (!row?.findings) return null;
+  return row.findings as unknown as FemaFloodZoneFindings;
+}
+
+/**
+ * Was this row the "couldn't reach FEMA" finding? Reads the #204
+ * discriminator off the persisted payload, falling back to the headline
+ * for rows written before the discriminator existed.
+ */
+function rowWasUnreachable(row: HabitatFindingRow | null): boolean {
+  if (!row) return false;
+  return (
+    femaFindings(row)?.uncovered_reason === "unreachable" ||
+    row.headline === UNREACHABLE_HEADLINE
+  );
+}
+
+/**
+ * FEMA's implementation of `HabitatModule.summarizeRecheckChanges`
+ * (issue #204, the recheck half of the unreachable/no-coverage fix).
+ *
+ * Pure: takes the previous and just-completed `HabitatFindingRow`s plus
+ * the recheck source and returns a one-line banner headline — or null
+ * when nothing user-visible changed (the modal shell then shows its
+ * generic "Recheck complete — no new changes." copy).
+ *
+ * The load-bearing case is **recovery from unreachable**. The reported
+ * bug: a user whose first check landed on the unreachable finding
+ * clicked Recheck, FEMA answered this time with a real Zone X, and the
+ * banner still read "no new changes" — because FEMA had no
+ * summarizeRecheckChanges and the modal fell through to that fallback.
+ * A recovery is unambiguously new information, so we surface it.
+ *
+ * Two transitions surface a banner:
+ *   1. Recovery: `before` was the unreachable finding and `after`
+ *      resolved to a real designation (a zone, or a genuine
+ *      no-coverage result). Source-agnostic — recovering is news
+ *      however the recheck was triggered.
+ *   2. Severity change between two resolved findings (e.g. a cached AE
+ *      superseded by a fresh X after a LOMR). Skips neutral→neutral,
+ *      the common no-change result not worth a banner.
+ */
+export function summarizeFemaRecheckChanges(
+  before: HabitatFindingRow | null,
+  after: HabitatFindingRow,
+  _source: HabitatRecheckSource,
+): HabitatRecheckSummary | null {
+  const afterF = femaFindings(after);
+  if (!afterF) return null;
+
+  // ---- Case 1: recovery from "couldn't reach FEMA" --------------------
+  if (rowWasUnreachable(before) && !rowWasUnreachable(after)) {
+    if (afterF.coverage && afterF.zone) {
+      const code = afterF.zone.code;
+      return {
+        headline: `We reached FEMA this time — your home is in Zone ${code}. The full designation is below.`,
+        tone: after.severity === "favorable" ? "success" : "info",
+      };
+    }
+    // Recovered, but FEMA confirmed the address is outside NFHL coverage.
+    return {
+      headline:
+        "We reached FEMA this time — your address sits outside their mapped flood-zone coverage.",
+      tone: "info",
+    };
+  }
+
+  // ---- Case 2: severity transition between two resolved findings ------
+  if (
+    before &&
+    !rowWasUnreachable(before) &&
+    before.severity &&
+    after.severity &&
+    before.severity !== after.severity
+  ) {
+    return {
+      headline:
+        "Recheck complete — your flood-zone finding changed. Review the update below.",
+      tone: after.severity === "favorable" ? "success" : "info",
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -544,6 +669,8 @@ const FemaFloodZonesModule: HabitatModule = {
   getOnboardingMessage(finding): string {
     return buildOnboardingMessage(finding);
   },
+
+  summarizeRecheckChanges: summarizeFemaRecheckChanges,
 };
 
 /**
@@ -659,6 +786,7 @@ function buildNoCoverageFinding(input: {
 
   const findings: FemaFloodZoneFindings = {
     coverage: false,
+    uncovered_reason: "no_coverage",
     source: {
       dfirm_id: null,
       fld_ar_id: null,
@@ -730,6 +858,7 @@ function buildUnreachableFinding(input: {
 
   const findings: FemaFloodZoneFindings = {
     coverage: false,
+    uncovered_reason: "unreachable",
     source: {
       dfirm_id: null,
       fld_ar_id: null,
