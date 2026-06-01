@@ -81,6 +81,12 @@ describe("buildSynthesisSystemPrompt", () => {
     expect(prompt).toMatch(/cadence\.kind = 'one_time'/);
   });
 
+  it("omits installer setup checks like leveling entirely, not even as one_time", () => {
+    const prompt = buildSynthesisSystemPrompt();
+    expect(prompt).toMatch(/installer setup/i);
+    expect(prompt).toMatch(/do not emit them, not even as a one_time task/i);
+  });
+
   it("routes symptom-conditional service to per-use awareness, not interval", () => {
     const prompt = buildSynthesisSystemPrompt();
     expect(prompt).toMatch(/symptom-conditional/i);
