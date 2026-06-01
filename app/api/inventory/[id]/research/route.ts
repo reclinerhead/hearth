@@ -23,6 +23,7 @@ import path from "node:path";
 import { streamObject } from "ai";
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+import { start } from "workflow/api";
 import {
   buildResearchSystemPrompt,
   buildResearchUserMessage,
@@ -34,6 +35,7 @@ import {
   type InsightsResult,
 } from "@/lib/inventory-insights/research";
 import { createClient } from "@/lib/supabase/server";
+import { runMaintenanceSynthesis } from "@/workflows/maintenance-synthesis";
 
 type InventoryItemRow = {
   id: string;
@@ -134,6 +136,38 @@ export async function POST(
           );
         } else {
           revalidatePath(`/inventory/${inventoryId}`);
+
+          // Auto-chain the maintenance-synthesis workflow off the back of a
+          // successful research write (issue #248). We only reach this branch
+          // when the model finished AND we persisted, so a tab-close
+          // mid-stream (which kills this onFinish on Fluid Compute) never
+          // starts synthesis — exactly the correctness property we want.
+          //
+          // Gate on a non-null maintenance section: synthesis has nothing to
+          // work from otherwise, the same precondition buildMaintenancePlanAction
+          // enforces. Wrapped in its own try/catch with the same
+          // MAINTENANCE_SYNTHESIS_MODEL-unset guard shape — research has
+          // already succeeded by this point, so a synthesis-start failure is
+          // logged and swallowed rather than failing the response.
+          const maintenance = validated.maintenance;
+          if (typeof maintenance === "string" && maintenance.trim().length > 0) {
+            try {
+              if (!process.env.MAINTENANCE_SYNTHESIS_MODEL) {
+                console.warn(
+                  "[inventory-insights] skipping maintenance auto-chain: MAINTENANCE_SYNTHESIS_MODEL is not set.",
+                );
+              } else {
+                await start(runMaintenanceSynthesis, [inventoryId]);
+              }
+            } catch (chainError) {
+              console.error(
+                "[inventory-insights] failed to auto-start maintenance synthesis:",
+                chainError instanceof Error
+                  ? chainError.message
+                  : String(chainError),
+              );
+            }
+          }
         }
       }
 
