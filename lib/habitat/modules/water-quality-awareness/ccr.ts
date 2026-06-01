@@ -590,6 +590,21 @@ function makeSynthesizedContaminant(args: {
 }
 
 /**
+ * Collapse a CCR lead/copper monitoring period to its year (issue #245).
+ * Lead and copper are sampled twice a year under the Lead and Copper
+ * Rule, so the distribution's `monitoring_period` frequently concatenates
+ * both semi-annual rounds (e.g. "Jan 1-Jun 30, 2024 July 1-Dec 31, 2024").
+ * The "Detected in your water" list renders the period verbatim, so we
+ * reduce it to the most-recent year — matching the single-year suffix
+ * every other contaminant in that list already shows. Stays null when no
+ * year is parseable, which the display layer renders as no suffix.
+ */
+function leadCopperPeriodYear(period: string | null): string | null {
+  const year = extractMostRecentYear(period);
+  return year === null ? null : String(year);
+}
+
+/**
  * A synthesized lead or copper row, preferring the CCR's own
  * distribution and falling back to the SDWIS LCR samples. Null when
  * neither source has a positive detection.
@@ -610,7 +625,7 @@ function synthesizeMetalRow(
       detected_level: entry.percentile_90,
       unit: entry.unit,
       mcl_action_level: entry.action_level ?? actionLevel,
-      monitoring_period: entry.monitoring_period,
+      monitoring_period: leadCopperPeriodYear(entry.monitoring_period),
       caution_floor: true,
     });
   }
