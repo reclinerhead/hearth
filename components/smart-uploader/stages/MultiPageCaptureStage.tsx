@@ -24,6 +24,7 @@ export function MultiPageCaptureStage({
   phase,
   error,
   targetInventoryName,
+  targetIsVehicle = false,
   onAddPage,
   onRemovePage,
   onFinalize,
@@ -33,6 +34,7 @@ export function MultiPageCaptureStage({
   phase: ReceiptUploadPhase;
   error: string | null;
   targetInventoryName?: string | null;
+  targetIsVehicle?: boolean;
   onAddPage: (file: File) => void;
   onRemovePage: (pageNumber: number) => void;
   onFinalize: () => void;
@@ -96,9 +98,11 @@ export function MultiPageCaptureStage({
   const canFinalize = pageCount >= 1 && phase !== "adding-page";
 
   const nextPageNumber = pageCount + 1;
-  const introCopy = isTargetMode
-    ? `Capture each page of the receipt. We'll extract the vendor, date, total, and line items, then attach it to ${targetInventoryName}.`
-    : "Capture each page of the receipt. We'll extract the vendor, date, total, and line items, then help you attach it to the right inventory item.";
+  const introCopy = targetIsVehicle
+    ? `For a vehicle we support photos of its registration and insurance — those are the documents we can read. Capture each page and we'll pull out the details and set up a reminder for ${targetInventoryName}'s next renewal automatically.`
+    : isTargetMode
+      ? `Capture each page of the receipt. We'll extract the vendor, date, total, and line items, then attach it to ${targetInventoryName}.`
+      : "Capture each page of the receipt. We'll extract the vendor, date, total, and line items, then help you attach it to the right inventory item.";
 
   return (
     <div className="flex flex-col gap-4">
