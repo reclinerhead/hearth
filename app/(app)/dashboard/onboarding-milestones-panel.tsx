@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { markFoundationCelebrationSeenAction } from "@/app/actions/houses/mark-foundation-celebration-seen";
 import { Icon } from "@/components/icon";
 import { SmartUploader } from "@/components/smart-uploader/SmartUploader";
 import {
@@ -57,12 +58,20 @@ function scrollToAnchor(id: string) {
 export function OnboardingMilestonesPanel({
   houseId,
   milestones,
+  celebrationSeen,
   reopened = false,
   onCloseReopen,
   onOpenHomeDetails,
 }: {
   houseId: string;
   milestones: Milestone[];
+  /**
+   * Durable server flag (issue #269): true once the foundation-complete
+   * celebration has auto-shown. Decided server-side from
+   * `houses.onboarding_state.foundation_celebration_seen` so the beat appears
+   * exactly once, ever, and never re-surfaces in a later session.
+   */
+  celebrationSeen: boolean;
   /** True when the dashboard `?` trigger has opened the go-deeper panel. */
   reopened?: boolean;
   /** Close the reopened go-deeper panel (the `?`-opened one). */
@@ -78,25 +87,24 @@ export function OnboardingMilestonesPanel({
     null,
   );
 
-  // The "foundation set" reward beat is a momentary, per-session thing. We
-  // start assuming it's already been seen (so SSR + the first client render
-  // agree — no hydration flash and no beat for a returning user), then the
-  // effect below reveals it exactly once per tab on the final-flip load.
+  // The "foundation set" celebration is a one-time reward beat. Whether it has
+  // already been seen is now durable server state (`celebrationSeen`, issue
+  // #269), so SSR and the first client render agree (no hydration flash) and
+  // the beat never re-surfaces in a later session. `dismissed` only hides the
+  // live view when the user clicks the `x` this load — the durable stamp below
+  // is what keeps it gone afterward.
   const allComplete = isAllComplete(milestones);
-  const [retireBeatShown, setRetireBeatShown] = useState(true);
+  const [dismissed, setDismissed] = useState(false);
 
+  // Stamp the durable flag the moment the celebration auto-shows, so it never
+  // auto-returns in a later session. Fire-and-forget and idempotent (the action
+  // skips the write when already set) — mirrors the habitat-reviewed stamp. The
+  // `?` reopen path is independent and never stamps.
   useEffect(() => {
-    if (!allComplete) return;
-    const key = `hearthMilestonesRetireBeat:${houseId}`;
-    try {
-      if (sessionStorage.getItem(key) === "1") return; // already shown this tab
-      sessionStorage.setItem(key, "1");
-      setRetireBeatShown(false); // reveal the beat for this load only
-    } catch {
-      // sessionStorage can throw in incognito with quota disabled; skipping
-      // the beat is the safe degradation.
+    if (allComplete && !celebrationSeen) {
+      void markFoundationCelebrationSeenAction(houseId);
     }
-  }, [allComplete, houseId]);
+  }, [allComplete, celebrationSeen, houseId]);
 
   function runAction(action: MilestoneAction) {
     switch (action) {
@@ -129,7 +137,7 @@ export function OnboardingMilestonesPanel({
     }
   }
 
-  const view = resolvePanelView(milestones, retireBeatShown);
+  const view = resolvePanelView(milestones, celebrationSeen || dismissed);
 
   // The go-deeper panel: `reopen` (manual `?` override) takes precedence over
   // the auto `celebration` beat on the final-flip load. It's independent of
@@ -183,10 +191,10 @@ export function OnboardingMilestonesPanel({
             if (goDeeperMode === "reopen") {
               onCloseReopen?.();
             } else {
-              // Celebration dismiss: the reveal effect has already written the
-              // session flag, so flipping this hides the beat now and it stays
-              // hidden on reload this tab (existing retire mechanics).
-              setRetireBeatShown(true);
+              // Celebration dismiss: hide the beat now. The reveal effect has
+              // already stamped the durable flag, so it stays gone across this
+              // and every future session (issue #269).
+              setDismissed(true);
             }
           }}
         />

@@ -178,24 +178,26 @@ export function isAllComplete(milestones: Milestone[]): boolean {
  * What the panel should render this load.
  *
  *   - `cards`       — at least one pending milestone; render the pending cards.
- *   - `retire-beat` — all complete AND the momentary "foundation set" reward
- *                     line hasn't been shown yet (the final-flip load).
- *   - `hidden`      — all complete and the reward beat has already been shown;
+ *   - `retire-beat` — all complete AND the "foundation set" celebration hasn't
+ *                     been seen yet (the final-flip load).
+ *   - `hidden`      — all complete and the celebration has already been seen;
  *                     render nothing, no layout hole.
  *
- * `retireBeatShown` is a per-session client flag (sessionStorage), not
- * persisted server state — re-showing the beat in a brand-new session is an
- * accepted non-goal (it's a momentary reward, and guaranteeing exactly-once
- * display is more machinery than the moment warrants — issue #216 open Q4).
+ * `celebrationSeen` is now a **durable** flag persisted in
+ * `houses.onboarding_state.foundation_celebration_seen` (issue #269), decided
+ * server-side — so the celebration auto-shows exactly once, ever, and never
+ * re-appears in a later session. (It was previously a per-tab `sessionStorage`
+ * flag, which re-revealed the beat every new session — issue #216 open Q4.)
+ * The dashboard `?` trigger remains the deliberate way back into the panel.
  */
 export type MilestonePanelView = "cards" | "retire-beat" | "hidden";
 
 export function resolvePanelView(
   milestones: Milestone[],
-  retireBeatShown: boolean,
+  celebrationSeen: boolean,
 ): MilestonePanelView {
   if (!isAllComplete(milestones)) return "cards";
-  return retireBeatShown ? "hidden" : "retire-beat";
+  return celebrationSeen ? "hidden" : "retire-beat";
 }
 
 /**

@@ -120,6 +120,9 @@ export default async function DashboardPage() {
         key={house.id}
         houseId={house.id}
         milestones={milestones}
+        celebrationSeen={
+          house.onboarding_state?.foundation_celebration_seen === true
+        }
         initialHouse={house}
         lifecycleOutlookSlot={<LifecycleOutlookPanel houseId={house.id} />}
       />
