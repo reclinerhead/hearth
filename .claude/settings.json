@@ -33,15 +33,30 @@
       "Skill(frontend-design:frontend-design:*)",
       "Bash(xxd)",
       "PowerShell(npx tsc --noEmit; echo \"exit=$LASTEXITCODE\")",
-      "Bash(python -c \"import json,sys; print\\(json.dumps\\(json.load\\(sys.stdin\\).get\\('scripts', {}\\), indent=2\\)\\)\")",
-      "WebFetch(domain:enviro.epa.gov)",
-      "WebFetch(domain:cumulis.epa.gov)",
-      "Bash(python -c \"import json,sys; d=json.loads\\(sys.stdin.read\\(\\)\\); print\\(f'{len\\(d\\)} sites'\\); [print\\(f\\\\\"  {r['site_id']:>10} | {r['name'][:60]}\\\\\"\\) for r in d[:5]]\")",
-      "Bash(findstr /i \"test\")"
+      "PowerShell(pnpm lint*)",
+      "PowerShell(pnpm test*)",
+      "PowerShell(pnpm exec tsc*)",
+      "PowerShell(pnpm exec eslint*)",
+      "PowerShell(pnpm exec next lint*)",
+      "PowerShell(git status*)",
+      "PowerShell(git log*)",
+      "PowerShell(git diff*)",
+      "PowerShell(git show*)",
+      "PowerShell(git branch*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(pwd)",
+      "Bash(which:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)"
     ],
-    "additionalDirectories": [
-      "C:\\Users\\toddw\\AppData\\Local\\Temp",
-      "\\tmp"
-    ]
+    "additionalDirectories": ["C:\\Users\\toddw\\AppData\\Local\\Temp", "\\tmp"]
   }
 }
