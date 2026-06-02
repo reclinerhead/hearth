@@ -564,6 +564,75 @@ export function InventoryDetailView({
   // used: needs a manufacturer + model number to look anything up.
   const canResearch = Boolean(item.manufacturer && item.model_number);
 
+  // Vehicle VIN decode (issue #263). The trigger lives in the unified
+  // action row below, so the decode state and handler are lifted out of
+  // PropertyDetailsBlock to this parent level — the button can't sit in the
+  // row (rendered here) while its state lives in a child. The decode itself
+  // POSTs to /api/inventory/[id]/decode-vin and refreshes the view on
+  // success; behaviour is unchanged from when it lived in the header.
+  const canDecodeVin = isVehicle && Boolean(item.serial_number);
+  const hasVinDecode =
+    isVehicle && Boolean(parseVehicleMetadata(item.metadata).vin_decode);
+  const [vinDecoding, setVinDecoding] = useState(false);
+  const [vinDecodeError, setVinDecodeError] = useState<string | null>(null);
+  const [vinDecodeToast, setVinDecodeToast] = useState<string | null>(null);
+
+  const handleDecodeVin = useCallback(async () => {
+    setVinDecodeError(null);
+    setVinDecoding(true);
+    try {
+      const response = await fetch(`/api/inventory/${item.id}/decode-vin`, {
+        method: "POST",
+      });
+      const body = (await response.json()) as
+        | {
+            result: { raw: Record<string, string | null> };
+            applied: {
+              name: string | null;
+              manufacturer: string | null;
+              model_number: string | null;
+              model_year: number | null;
+              manufacture_date: string | null;
+            };
+          }
+        | { error: string };
+      if (!response.ok || "error" in body) {
+        setVinDecodeError(
+          "error" in body
+            ? body.error
+            : "Couldn't reach NHTSA. Try again in a moment.",
+        );
+        return;
+      }
+      // Prefer the server-applied name (already title-cased and
+      // year-prefixed) when the route rewrote it. Falls back to the raw
+      // NHTSA fields when the row's name was already personalized and we
+      // left it alone.
+      const applied = body.applied;
+      const summary =
+        applied.name ??
+        [
+          applied.model_year ? String(applied.model_year) : null,
+          applied.manufacturer ?? body.result.raw.Make,
+          applied.model_number ?? body.result.raw.Model,
+        ]
+          .filter(Boolean)
+          .join(" ");
+      setVinDecodeToast(
+        summary ? `We decoded your VIN: ${summary}` : "We decoded your VIN.",
+      );
+      router.refresh();
+    } catch (err) {
+      setVinDecodeError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong decoding the VIN.",
+      );
+    } finally {
+      setVinDecoding(false);
+    }
+  }, [item.id, router]);
+
   const [editOpen, setEditOpen] = useState(false);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
   // The Smart Uploader can be opened in two target modes: photo (the
@@ -744,18 +813,28 @@ export function InventoryDetailView({
 
           <PillCluster item={item} />
 
-          {isProperty ? (
-            <PropertyDetailsBlock
-              item={item}
-              isVehicle={isVehicle}
-              isPet={isPet}
-            />
+          {vinDecodeError ? (
+            <p
+              className="text-small"
+              role="alert"
+              style={{ color: "var(--color-danger)" }}
+            >
+              {vinDecodeError}
+            </p>
           ) : null}
+
+          {isPet ? <PetDetails meta={parsePetMetadata(item.metadata)} /> : null}
 
           {decodedToast ? (
             <Toast
               message={decodedToast}
               onClose={() => setDecodedToast(null)}
+            />
+          ) : null}
+          {vinDecodeToast ? (
+            <Toast
+              message={vinDecodeToast}
+              onClose={() => setVinDecodeToast(null)}
             />
           ) : null}
         </div>
@@ -775,7 +854,8 @@ export function InventoryDetailView({
         a bare button or a Tooltip-wrapped one — to fill its cell. The
         buttons that don't apply to an item simply omit their cell:
         Research is appliance/system/exterior-only, Build appears once a
-        maintenance insight exists.
+        maintenance insight exists, and Decode / Re-decode VIN (issue #263)
+        appears only for vehicles — slotted immediately before Edit details.
       */}
       <div className="flex flex-wrap gap-2">
         <div className="flex-1 basis-52 min-w-0 flex [&>*]:w-full [&>*]:min-w-0">
@@ -828,6 +908,16 @@ export function InventoryDetailView({
               // during the research window it's a plain disabled state.
               disabled={researchPending || synthesisInFlight}
               onClick={handleBuildMaintenancePlan}
+            />
+          </div>
+        ) : null}
+        {isVehicle ? (
+          <div className="flex-1 basis-52 min-w-0 flex [&>*]:w-full [&>*]:min-w-0">
+            <DecodeVinButton
+              canDecode={canDecodeVin}
+              decoding={vinDecoding}
+              hasDecoded={hasVinDecode}
+              onClick={handleDecodeVin}
             />
           </div>
         ) : null}
@@ -1185,11 +1275,18 @@ function PillCluster({ item }: { item: InventoryDetailItem }) {
   const isVehicle = item.type === "property" && item.subtype === "vehicle";
   const vmeta = isVehicle ? parseVehicleMetadata(item.metadata) : null;
   const hasVehiclePlate = Boolean(vmeta?.license_plate);
+  // Decoded NHTSA facts now flow into this same cluster (issue #263) rather
+  // than rendering as a separate row beneath a header button. With the VIN
+  // button moved into the action row, the VIN/SN identifier pill and the
+  // decoded facts read as one wrapping group instead of the VIN sitting
+  // alone on its own row above the facts.
+  const vinFacts = vmeta?.vin_decode ? vinDecodeFactRows(vmeta.vin_decode) : [];
 
   if (
     !item.serial_number &&
     aiPills.length === 0 &&
-    !hasVehiclePlate
+    !hasVehiclePlate &&
+    vinFacts.length === 0
   ) {
     return null;
   }
@@ -1198,10 +1295,11 @@ function PillCluster({ item }: { item: InventoryDetailItem }) {
   // (uniquely identifies this physical unit), so it gets the brighter
   // accent treatment. For vehicles the same column carries the VIN,
   // which is even more clearly "the identifier" — relabel the chip
-  // accordingly. The AI-extracted spec pills are reference facts and
-  // use the muted base chip so they don't compete with the SN for
-  // attention. License plate sits between the two — second-most-
-  // identifying for a vehicle, but not a unique-forever identity.
+  // accordingly. The AI-extracted spec pills and the decoded NHTSA facts
+  // are reference facts and use the muted base chip so they don't compete
+  // with the SN for attention. License plate sits between the two —
+  // second-most-identifying for a vehicle, but not a unique-forever
+  // identity.
   return (
     <div className="flex flex-wrap gap-2 pt-1">
       {item.serial_number ? (
@@ -1227,156 +1325,26 @@ function PillCluster({ item }: { item: InventoryDetailItem }) {
           <span>{pill.value}</span>
         </span>
       ))}
+      {vinFacts.map((r) => (
+        <span key={r.label} className="chip">
+          <span style={{ color: "var(--color-text-tertiary)" }}>
+            {r.label}
+          </span>
+          <span>{r.value}</span>
+        </span>
+      ))}
     </div>
   );
 }
 
-function PropertyDetailsBlock({
-  item,
-  isVehicle,
-  isPet,
-}: {
-  item: InventoryDetailItem;
-  isVehicle: boolean;
-  isPet: boolean;
-}) {
-  const router = useRouter();
-  const [decoding, setDecoding] = useState(false);
-  const [decodeError, setDecodeError] = useState<string | null>(null);
-  const [decodeToast, setDecodeToast] = useState<string | null>(null);
-
-  if (!isVehicle && !isPet) return null;
-
-  const vmeta: VehicleMetadata = isVehicle
-    ? parseVehicleMetadata(item.metadata)
-    : {};
-  const pmeta = isPet ? parsePetMetadata(item.metadata) : null;
-  const hasVinDecode = isVehicle && Boolean(vmeta.vin_decode);
-  const canDecodeVin = isVehicle && Boolean(item.serial_number);
-
-  async function handleDecodeVin() {
-    setDecodeError(null);
-    setDecoding(true);
-    try {
-      const response = await fetch(
-        `/api/inventory/${item.id}/decode-vin`,
-        { method: "POST" },
-      );
-      const body = (await response.json()) as
-        | {
-            result: { raw: Record<string, string | null> };
-            applied: {
-              name: string | null;
-              manufacturer: string | null;
-              model_number: string | null;
-              model_year: number | null;
-              manufacture_date: string | null;
-            };
-          }
-        | { error: string };
-      if (!response.ok || "error" in body) {
-        setDecodeError(
-          "error" in body
-            ? body.error
-            : "Couldn't reach NHTSA. Try again in a moment.",
-        );
-        return;
-      }
-      // Prefer the server-applied name (already title-cased and
-      // year-prefixed) when the route rewrote it. Falls back to the
-      // raw NHTSA fields when the row's name was already personalized
-      // and we left it alone.
-      const applied = body.applied;
-      const summary =
-        applied.name ??
-        [
-          applied.model_year ? String(applied.model_year) : null,
-          applied.manufacturer ?? body.result.raw.Make,
-          applied.model_number ?? body.result.raw.Model,
-        ]
-          .filter(Boolean)
-          .join(" ");
-      setDecodeToast(
-        summary
-          ? `We decoded your VIN: ${summary}`
-          : "We decoded your VIN.",
-      );
-      router.refresh();
-    } catch (err) {
-      setDecodeError(
-        err instanceof Error
-          ? err.message
-          : "Something went wrong decoding the VIN.",
-      );
-    } finally {
-      setDecoding(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-3 pt-1">
-      {isVehicle ? (
-        <>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleDecodeVin}
-              disabled={!canDecodeVin || decoding}
-              className={hasVinDecode ? "btn btn-ghost" : "btn btn-primary"}
-              style={!canDecodeVin || decoding ? { opacity: 0.55 } : undefined}
-              aria-disabled={!canDecodeVin || decoding ? "true" : "false"}
-            >
-              <Icon name={hasVinDecode ? "refresh-cw" : "sparkles"} size={14} />
-              {decoding
-                ? "Decoding…"
-                : hasVinDecode
-                  ? "Re-decode VIN"
-                  : "Decode VIN"}
-            </button>
-            {!canDecodeVin ? (
-              <span
-                className="text-small"
-                style={{ color: "var(--color-text-tertiary)" }}
-              >
-                Add the VIN above to decode this vehicle.
-              </span>
-            ) : null}
-          </div>
-          {decodeError ? (
-            <p
-              className="text-small"
-              role="alert"
-              style={{ color: "var(--color-danger)" }}
-            >
-              {decodeError}
-            </p>
-          ) : null}
-          {hasVinDecode ? (
-            <VinDecodeFacts decode={vmeta.vin_decode!} />
-          ) : null}
-        </>
-      ) : null}
-
-      {isPet && pmeta ? <PetDetails meta={pmeta} /> : null}
-
-      {decodeToast ? (
-        <Toast
-          message={decodeToast}
-          onClose={() => setDecodeToast(null)}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function VinDecodeFacts({
-  decode,
-}: {
-  decode: NonNullable<VehicleMetadata["vin_decode"]>;
-}) {
-  // Cherry-pick the fields a homeowner actually cares about. NHTSA
-  // returns ~130 variables per VIN, most of which are blank or
-  // industry-internal (NCSA body type code, trim-level data, etc.).
+// Cherry-pick the handful of NHTSA variables a homeowner actually cares
+// about from the ~130 returned per VIN — most are blank or industry-internal
+// (NCSA body type code, trim-level data, etc.). Returns the decoded facts as
+// {label, value} rows; PillCluster folds them in alongside the VIN identifier
+// and spec pills (issue #263) so everything reads as one wrapping group.
+function vinDecodeFactRows(
+  decode: NonNullable<VehicleMetadata["vin_decode"]>,
+): { label: string; value: string }[] {
   const rows: { label: string; value: string }[] = [];
   const raw = decode.raw;
   const pick = (key: string, label: string) => {
@@ -1389,20 +1357,56 @@ function VinDecodeFacts({
   pick("FuelTypePrimary", "Fuel");
   pick("DriveType", "Drive");
   pick("PlantCountry", "Built in");
+  return rows;
+}
 
-  if (rows.length === 0) return null;
+// VIN decode trigger for the unified action row (issue #263). Mirrors the
+// other action-row cells: btn btn-ghost, equal-width via the cell wrapper,
+// refresh-cw / sparkles glyph, and the Decoding… / Re-decode VIN / Decode
+// VIN label logic the header button used. When the vehicle has no VIN yet
+// the button renders disabled (consistent with how Research disables) — the
+// inline "Add the VIN above" helper sentence has no home in the equal-width
+// row, so the reason moves to a tooltip.
+function DecodeVinButton({
+  canDecode,
+  decoding,
+  hasDecoded,
+  onClick,
+}: {
+  canDecode: boolean;
+  decoding: boolean;
+  hasDecoded: boolean;
+  onClick: () => void;
+}) {
+  const inactive = !canDecode || decoding;
+  const label = decoding
+    ? "Decoding…"
+    : hasDecoded
+      ? "Re-decode VIN"
+      : "Decode VIN";
+
+  const button = (
+    <button
+      type="button"
+      disabled={inactive}
+      onClick={onClick}
+      className="btn btn-ghost w-full"
+      aria-disabled={inactive ? "true" : "false"}
+      aria-label={label}
+      data-loading={decoding ? "true" : "false"}
+      style={inactive ? { opacity: 0.55 } : undefined}
+    >
+      <Icon name={hasDecoded ? "refresh-cw" : "sparkles"} size={14} />
+      {label}
+    </button>
+  );
+
+  if (canDecode) return button;
 
   return (
-    <div className="flex flex-wrap gap-2">
-      {rows.map((r) => (
-        <span key={r.label} className="chip">
-          <span style={{ color: "var(--color-text-tertiary)" }}>
-            {r.label}
-          </span>
-          <span>{r.value}</span>
-        </span>
-      ))}
-    </div>
+    <Tooltip content="Add the VIN above to decode this vehicle." side="bottom">
+      {button}
+    </Tooltip>
   );
 }
 
