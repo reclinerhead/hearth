@@ -54,6 +54,26 @@ export type InventoryPhoto = {
   thumbnailPath: string;
 };
 
+// Renewal document rendered by the inventory detail page's Documents
+// section (issue #280). A registration/insurance card photographed
+// through the create-from-document path is a `nameplate`/`photo` row
+// (so it doubles as the item's hero photo) that carries an extracted
+// `metadata.expiration_date`. The Documents panel lists these alongside
+// receipts so the scan is previewable as a document, matching the
+// add-document-to-existing flow. The `id` matches an entry in `photos`,
+// which is how the panel opens the scan in the shared lightbox.
+export type InventoryRenewalDocument = {
+  id: string;
+  thumbnailPath: string;
+  storagePath: string;
+  createdAt: string;
+  // Issuing authority / vendor (metadata.vendor_name) — the row title.
+  // Null falls back to a generic "Renewal document" label in the view.
+  title: string | null;
+  // Validated YYYY-MM-DD expiration the renewal task was anchored to.
+  expirationDate: string;
+};
+
 // Receipt rendered by the inventory detail page's Documents section.
 // Issue #117 — multi-page receipt attachment. The list view uses just
 // the page-1 thumbnail and a few high-value metadata fields; the
@@ -237,7 +257,7 @@ export default async function InventoryDetailPage({
         .eq("inventory_id", row.id),
       supabase
         .from("documents")
-        .select("id, storage_path, thumbnail_path")
+        .select("id, storage_path, thumbnail_path, metadata, created_at")
         .eq("inventory_id", row.id)
         .eq("status", "attached")
         .in("kind", ["nameplate", "photo"])
@@ -286,10 +306,17 @@ export default async function InventoryDetailPage({
   // automatically; this client-side reorder also no-ops cleanly when
   // the pinned id isn't present in the photos list for any other
   // reason (e.g. status change pushing it out of the kind filter).
-  const orderedDocs = (heroDocsResult.data ?? []).filter(
-    (
-      d,
-    ): d is { id: string; storage_path: string; thumbnail_path: string } =>
+  // Cast the loosely-typed PostgREST rows once; both the photo list and
+  // the renewal-document derivation (issue #280) read from this shape.
+  const heroDocRows = (heroDocsResult.data ?? []) as Array<{
+    id: string;
+    storage_path: string;
+    thumbnail_path: string;
+    metadata: Record<string, unknown> | null;
+    created_at: string;
+  }>;
+  const orderedDocs = heroDocRows.filter(
+    (d) =>
       typeof d.id === "string" &&
       typeof d.storage_path === "string" &&
       typeof d.thumbnail_path === "string",
@@ -309,6 +336,33 @@ export default async function InventoryDetailPage({
     storagePath: d.storage_path,
     thumbnailPath: d.thumbnail_path,
   }));
+
+  // Renewal documents (issue #280). The same attached nameplate/photo
+  // rows fetched above, narrowed to those carrying a valid extracted
+  // expiration date (written by the #277 create-from-document path).
+  // These double as the item's hero photo *and* get a previewable entry
+  // in the Documents panel — the registration/insurance card the user
+  // photographed to create the vehicle, shown as the document it is.
+  // Receipt-kind renewal docs (insurance via "Add document") already
+  // surface in that panel as receipts, so they're intentionally not
+  // re-listed here. `id` matches a `photos` entry, which is how the view
+  // opens the scan in the shared lightbox.
+  const renewalDocuments: InventoryRenewalDocument[] = [];
+  for (const d of heroDocRows) {
+    const md = (d.metadata ?? {}) as Record<string, unknown>;
+    const exp = md.expiration_date;
+    if (typeof exp !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(exp)) continue;
+    const vendor = md.vendor_name;
+    renewalDocuments.push({
+      id: d.id,
+      thumbnailPath: d.thumbnail_path,
+      storagePath: d.storage_path,
+      createdAt: d.created_at,
+      title:
+        typeof vendor === "string" && vendor.length > 0 ? vendor : null,
+      expirationDate: exp,
+    });
+  }
 
   // Receipt page counts. One follow-up query against document_pages
   // for all attached receipts at once, then we bucket by document_id
@@ -457,6 +511,7 @@ export default async function InventoryDetailPage({
       rooms={roomOptions}
       linkedDocumentCount={linkedDocumentCount}
       receipts={receipts}
+      renewalDocuments={renewalDocuments}
       historyEvents={historyEvents}
       maintenancePanelSlot={
         <MaintenancePanelItem
