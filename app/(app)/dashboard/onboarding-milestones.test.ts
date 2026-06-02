@@ -105,7 +105,9 @@ describe("buildMilestones", () => {
 });
 
 describe("resolvePanelView", () => {
-  it("renders cards while any milestone is pending (retire flag irrelevant)", () => {
+  // The second arg is the durable `celebrationSeen` flag (issue #269), read
+  // server-side from `houses.onboarding_state.foundation_celebration_seen`.
+  it("renders cards while any milestone is pending (celebration flag irrelevant)", () => {
     const milestones = buildMilestones(NONE);
     expect(resolvePanelView(milestones, false)).toBe("cards");
     expect(resolvePanelView(milestones, true)).toBe("cards");
@@ -116,13 +118,15 @@ describe("resolvePanelView", () => {
     expect(resolvePanelView(milestones, false)).toBe("cards");
   });
 
-  it("shows the retire beat on the final-flip load (all complete, beat unseen)", () => {
+  it("shows the celebration on the final-flip load (all complete, not yet seen)", () => {
     const milestones = buildMilestones(ALL);
     expect(resolvePanelView(milestones, false)).toBe("retire-beat");
   });
 
-  it("hides entirely once all complete and the retire beat has been seen", () => {
+  it("hides entirely once all complete and the celebration has been seen", () => {
     const milestones = buildMilestones(ALL);
+    // Durable: a returning user (new session) reads `seen === true` and gets
+    // no auto-beat — the regression this issue fixes.
     expect(resolvePanelView(milestones, true)).toBe("hidden");
   });
 });

@@ -26,11 +26,14 @@ import { OnboardingMilestonesPanel } from "./onboarding-milestones-panel";
 export function DashboardOnboarding({
   houseId,
   milestones,
+  celebrationSeen,
   initialHouse,
   lifecycleOutlookSlot,
 }: {
   houseId: string;
   milestones: Milestone[];
+  /** Durable flag (issue #269): true once the foundation celebration has shown. */
+  celebrationSeen: boolean;
   initialHouse: House;
   lifecycleOutlookSlot?: ReactNode;
 }) {
@@ -42,6 +45,7 @@ export function DashboardOnboarding({
       <OnboardingMilestonesPanel
         houseId={houseId}
         milestones={milestones}
+        celebrationSeen={celebrationSeen}
         reopened={helpOpen}
         onCloseReopen={() => setHelpOpen(false)}
         onOpenHomeDetails={() => setEditOpen(true)}

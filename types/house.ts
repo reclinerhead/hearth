@@ -30,12 +30,17 @@ export type WaterSystemPwsidConfidence = "user_confirmed" | "user_corrected";
  * from their own tables and never live here.
  *
  * `habitat_reviewed` is set true (fire-and-forget) the first time the
- * user opens a habitat finding modal. The blob shape is deliberately
- * open-ended so future view-event milestones extend it without a new
- * column — read keys defensively (a freshly-migrated row is `{}`).
+ * user opens a habitat finding modal. `foundation_celebration_seen` is
+ * set true (issue #269) the first time the foundation-complete celebration
+ * auto-shows, so that one-time reward beat never re-appears in a later
+ * session — the dashboard `?` trigger remains the way back into it. The
+ * blob shape is deliberately open-ended so future view-event / UI-beat
+ * milestones extend it without a new column — read keys defensively (a
+ * freshly-migrated row is `{}`).
  */
 export type OnboardingState = {
   habitat_reviewed?: boolean;
+  foundation_celebration_seen?: boolean;
 };
 
 export type House = {
