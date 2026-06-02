@@ -40,11 +40,17 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   // Route protection: redirect unauthenticated users to /login,
-  // except when they're already on a public auth route.
+  // except when they're already on a public auth route. `/api/cron/*`
+  // is public here because a Vercel Cron request carries no session
+  // cookie — without the exemption the auth gate would 307 it to /login
+  // and the handler would never run. The handlers themselves gate on the
+  // `Authorization: Bearer ${CRON_SECRET}` header Vercel sends, so they're
+  // not actually open (see app/api/cron/storage-sweep/route.ts).
   const isPublicRoute =
     pathname === "/" ||
     pathname.startsWith("/login") ||
-    pathname.startsWith("/auth");
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/api/cron");
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();

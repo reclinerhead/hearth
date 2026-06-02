@@ -10,6 +10,17 @@
 export const HEARTH_DOCUMENTS_BUCKET = "hearth-documents";
 export const HEARTH_EMERGENCY_VIDEOS_BUCKET = "hearth-emergency-videos";
 
+/**
+ * User-uploaded house photo bucket. One object per house at
+ * `{house_id}/photo` (no extension — the stored content-type carries the
+ * MIME). The leaf filename matches `USER_PHOTO_PATH` in DashboardLive's
+ * upload handler, which is the source of truth for the path. Lives here
+ * with the other bucket-name constants so cleanup / reconciliation code
+ * has a single import for every private bucket.
+ */
+export const HOUSE_PHOTOS_BUCKET = "house-photos";
+export const USER_PHOTO_FILENAME = "photo";
+
 export const OPTIMIZED_FILENAME = "optimized.jpg";
 export const THUMBNAIL_FILENAME = "thumb.jpg";
 
