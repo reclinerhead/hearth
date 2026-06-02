@@ -146,7 +146,7 @@ The two assets co-exist as long as the SVG is component-local — the user can r
 
 One private bucket for user photos:
 
-- **`house-photos`** — Path layout `{house_id}/photo` (no extension; the stored content-type is the source of truth for the MIME). One object per house. Owners can read, insert, update (upsert), and delete via RLS. The "Remove photo" affordance deletes the object and clears the row columns; deletion is best-effort while the row update is authoritative (an orphan object will be overwritten on the next upload).
+- **`house-photos`** — Path layout `{house_id}/photo` (no extension; the stored content-type is the source of truth for the MIME). One object per house. Owners can read, insert, update (upsert), and delete via RLS. The "Remove photo" affordance deletes the object and clears the row columns; deletion is best-effort while the row update is authoritative (an orphan object is overwritten on the next upload, and a `{house_id}/photo` whose row no longer points at it — `user_image_url IS NULL`, or the whole house deleted — is swept by the storage reconciliation job; see [storage-reconciliation.md](storage-reconciliation.md)). `deleteHouseAction` also removes this object best-effort when a property is deleted, since it doesn't cascade with the `houses` row.
 
 The `house-images` bucket and the `hearth.houses.generated_image_*` columns survive in the database but are vestigial — nothing writes to them, nothing reads from them. They're left in place because post-beta data cannot be wiped; a follow-up cleanup migration will drop both. See [Vestigial columns and buckets](#vestigial-columns-and-buckets) below.
 

@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import {
   documentDirectoryPath,
   HEARTH_DOCUMENTS_BUCKET,
+  HOUSE_PHOTOS_BUCKET,
+  USER_PHOTO_FILENAME,
 } from "@/lib/documents/paths";
 import { createClient } from "@/lib/supabase/server";
 
@@ -204,6 +206,22 @@ export async function deleteHouseAction(
     } catch (err) {
       console.warn("deleteHouseAction storage cleanup failed", err);
     }
+  }
+
+  // Best-effort: remove the user-uploaded house photo (house-photos
+  // bucket), which doesn't cascade with the houses row. Deterministic
+  // single-object path (`{house_id}/photo`), so no directory listing
+  // needed. Same best-effort trade-off as the hearth-documents sweep
+  // above — a transient failure here is caught by the storage
+  // reconciliation sweep (app/api/cron/storage-sweep), which flags a
+  // `house-photos/{house_id}/photo` object whose houses row no longer
+  // exists as a house-directory orphan.
+  try {
+    await supabase.storage
+      .from(HOUSE_PHOTOS_BUCKET)
+      .remove([`${houseId}/${USER_PHOTO_FILENAME}`]);
+  } catch (err) {
+    console.warn("deleteHouseAction house-photos cleanup failed", err);
   }
 
   // Layout-wide revalidation so the property switcher's house list,
