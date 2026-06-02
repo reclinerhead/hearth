@@ -31,9 +31,8 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  documentDirectoryPath,
   HEARTH_DOCUMENTS_BUCKET,
-  optimizedObjectPath,
-  thumbnailObjectPath,
 } from "@/lib/documents/paths";
 import { createClient } from "@/lib/supabase/server";
 
@@ -98,14 +97,30 @@ export async function deleteInventoryItemAction(
         return { data: null, error: docsDeleteError.message };
       }
 
-      const storagePaths = docIds.flatMap((docId) => [
-        optimizedObjectPath({ houseId: inv.house_id, documentId: docId }),
-        thumbnailObjectPath({ houseId: inv.house_id, documentId: docId }),
-      ]);
+      // Sweep each document's directory rather than enumerating known
+      // filenames. A multi-page receipt has page-2+ images
+      // (page-{N}-optimized.jpg / page-{N}-thumb.jpg) alongside the
+      // page-1 optimized.jpg / thumb.jpg; listing the directory removes
+      // every object regardless of page count, where the old
+      // optimized+thumb enumeration left page-2+ bytes orphaned. Same
+      // directory-sweep pattern as cleanupDocumentAction.
       try {
-        await supabase.storage
-          .from(HEARTH_DOCUMENTS_BUCKET)
-          .remove(storagePaths);
+        await Promise.all(
+          docIds.map(async (docId) => {
+            const directory = documentDirectoryPath({
+              houseId: inv.house_id,
+              documentId: docId,
+            });
+            const { data: files } = await supabase.storage
+              .from(HEARTH_DOCUMENTS_BUCKET)
+              .list(directory);
+            if (files && files.length > 0) {
+              await supabase.storage
+                .from(HEARTH_DOCUMENTS_BUCKET)
+                .remove(files.map((f) => `${directory}/${f.name}`));
+            }
+          }),
+        );
       } catch {
         // Best-effort — orphaned bytes get picked up by a future
         // periodic sweep. Don't fail the delete on a storage hiccup.

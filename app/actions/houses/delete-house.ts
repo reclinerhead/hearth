@@ -3,9 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
+  documentDirectoryPath,
   HEARTH_DOCUMENTS_BUCKET,
-  optimizedObjectPath,
-  thumbnailObjectPath,
 } from "@/lib/documents/paths";
 import { createClient } from "@/lib/supabase/server";
 
@@ -161,10 +160,7 @@ export async function deleteHouseAction(
     };
   }
 
-  const storagePaths = (docs ?? []).flatMap((d) => [
-    optimizedObjectPath({ houseId, documentId: d.id }),
-    thumbnailObjectPath({ houseId, documentId: d.id }),
-  ]);
+  const documentIds = (docs ?? []).map((d) => d.id);
 
   // Authoritative delete. The cascading FKs on rooms / inventory /
   // documents / habitat_findings fire as part of the same transaction.
@@ -184,12 +180,27 @@ export async function deleteHouseAction(
   // Best-effort storage cleanup AFTER the row delete succeeds. A
   // storage hiccup here doesn't undo the delete; orphaned bytes get
   // picked up by a future periodic sweep, matching the trade-off in
-  // `cleanupDocumentAction` and `deleteInventoryItemAction`.
-  if (storagePaths.length > 0) {
+  // `cleanupDocumentAction` and `deleteInventoryItemAction`. Sweep each
+  // document's directory rather than enumerating optimized.jpg /
+  // thumb.jpg — a multi-page receipt also has page-{N}-*.jpg objects
+  // that filename enumeration would leave orphaned. The storage objects
+  // survive the row cascade (storage isn't tied to the DB rows), so the
+  // directory listing still works after the houses row is gone.
+  if (documentIds.length > 0) {
     try {
-      await supabase.storage
-        .from(HEARTH_DOCUMENTS_BUCKET)
-        .remove(storagePaths);
+      await Promise.all(
+        documentIds.map(async (documentId) => {
+          const directory = documentDirectoryPath({ houseId, documentId });
+          const { data: files } = await supabase.storage
+            .from(HEARTH_DOCUMENTS_BUCKET)
+            .list(directory);
+          if (files && files.length > 0) {
+            await supabase.storage
+              .from(HEARTH_DOCUMENTS_BUCKET)
+              .remove(files.map((f) => `${directory}/${f.name}`));
+          }
+        }),
+      );
     } catch (err) {
       console.warn("deleteHouseAction storage cleanup failed", err);
     }

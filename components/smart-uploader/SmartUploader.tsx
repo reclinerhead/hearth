@@ -430,6 +430,18 @@ export function SmartUploader(props: SmartUploaderProps) {
   // intermediate "adding-page" loop; we only transition the modal on
   // the terminal phases ("processing" / "done" / "error").
   useEffect(() => {
+    if (receiptState.phase === "duplicate" && receiptState.duplicate) {
+      // Page 1 was a byte-identical re-upload — reuse the shared
+      // DuplicateStage, same short-circuit the photo path lands on. No
+      // row or storage object was created, so handleClose treats this
+      // like the photo duplicate case (nothing of ours to clean up).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStage({
+        name: "duplicate",
+        existingDocument: receiptState.duplicate,
+      });
+      return;
+    }
     if (receiptState.phase === "processing") {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStage({ name: "receipt-processing" });
@@ -453,7 +465,12 @@ export function SmartUploader(props: SmartUploaderProps) {
     // as a defensive guard for "are we past the capture loop?", and
     // including it would re-run this effect on every stage tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [receiptState.phase, receiptState.extraction, receiptState.error]);
+  }, [
+    receiptState.phase,
+    receiptState.duplicate,
+    receiptState.extraction,
+    receiptState.error,
+  ]);
 
   const cleanupCurrentDocument = useCallback(async () => {
     const docId = cleanupRef.current.documentId;
