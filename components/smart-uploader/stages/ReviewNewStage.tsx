@@ -125,10 +125,21 @@ export function ReviewNewStage({
   const decodeStartedRef = useRef(false);
 
   useEffect(() => {
+    // `decodeStartedRef` is the one-shot guard: the deps below never
+    // change during this stage's life, so the only thing that re-fires
+    // this effect is React StrictMode's dev-only double-invoke. The ref
+    // makes the fetch run exactly once and survive that double-invoke.
+    //
+    // Deliberately NO cleanup-based cancellation here. An earlier version
+    // flipped a `cancelled` flag in the effect cleanup; under StrictMode
+    // that cleanup ran between the two mounts and permanently cancelled
+    // the single fetch the ref-guard allows, so the result was ignored
+    // and "Reading your VIN…" never cleared. The ref-guard already
+    // prevents duplicate work; a setState after a genuine unmount (modal
+    // closed mid-decode) is a harmless no-op in React 18.
     if (!shouldAutoDecode || decodeStartedRef.current) return;
     decodeStartedRef.current = true;
     const vin = (extractedVin ?? "").trim();
-    let cancelled = false;
     setVinDecodeStatus("decoding");
     (async () => {
       try {
@@ -142,7 +153,6 @@ export function ReviewNewStage({
           result: VinDecodeResult;
           prefill: VinPrefill;
         };
-        if (cancelled) return;
         const { prefill } = body;
         // Prefill only empty fields — anything the user already edited
         // while the decode was in flight wins. The name is rewritten
@@ -164,12 +174,9 @@ export function ReviewNewStage({
       } catch {
         // Silent — the manual detail-page Decode VIN button is the
         // fallback. Reset to idle so no banner renders.
-        if (!cancelled) setVinDecodeStatus("idle");
+        setVinDecodeStatus("idle");
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [shouldAutoDecode, extractedVin]);
 
   // Thumbnail for the new document's optimized image.
