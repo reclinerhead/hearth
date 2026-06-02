@@ -31,6 +31,12 @@ import {
   isValidVinFormat,
   type VinDecodeResult,
 } from "@/lib/vin-decode/decode";
+import {
+  composeVehicleName,
+  isGenericVehicleName,
+  parseModelYear,
+  toTitleCase,
+} from "@/lib/vin-decode/prefill";
 
 type InventoryRow = {
   id: string;
@@ -189,75 +195,4 @@ export async function POST(
     } satisfies { result: VinDecodeResult; applied: Record<string, unknown> },
     { status: 200 },
   );
-}
-
-// Parse NHTSA's ModelYear string. The endpoint returns it as a
-// numeric string ("2018") or null/empty when the year isn't encoded
-// (some pre-1981 VINs, some non-US vehicles).
-function parseModelYear(raw: string | null | undefined): number | null {
-  if (!raw) return null;
-  const parsed = parseInt(raw, 10);
-  if (Number.isNaN(parsed) || parsed < 1900 || parsed > 2100) return null;
-  return parsed;
-}
-
-// Compose a "YYYY Make Model" display name from the available fields.
-// Returns null when not enough is known — we won't rewrite the row's
-// name with a partial value like "Toyota" alone.
-function composeVehicleName(args: {
-  year: number | null;
-  make: string | null;
-  model: string | null;
-}): string | null {
-  const parts = [
-    args.year ? String(args.year) : null,
-    args.make ?? null,
-    args.model ?? null,
-  ].filter((p): p is string => Boolean(p && p.trim()));
-  if (parts.length < 2) return null;
-  return parts.join(" ");
-}
-
-// Heuristic: does the row's `name` look like a generic placeholder
-// the user would be happy to see replaced? The list covers the
-// vocabulary we've seen in practice plus the empty / whitespace
-// case. Anything else is treated as personalized — we don't touch
-// "Beth's Car" or "Dad's Truck" even though they're short, because
-// the user clearly meant something specific.
-const GENERIC_VEHICLE_NAMES = new Set([
-  "vehicle",
-  "car",
-  "truck",
-  "suv",
-  "van",
-  "minivan",
-  "motorcycle",
-  "bike",
-  "auto",
-  "automobile",
-  "my car",
-  "my truck",
-  "my vehicle",
-]);
-
-function isGenericVehicleName(name: string | null | undefined): boolean {
-  if (!name) return true;
-  const normalized = name.trim().toLowerCase();
-  if (normalized === "") return true;
-  return GENERIC_VEHICLE_NAMES.has(normalized);
-}
-
-// NHTSA returns Make / Manufacturer fields in SCREAMING CAPS. Match
-// the Hearth voice — Title Case — so the inventory row reads cleanly
-// alongside user-entered manufacturers like "Whirlpool" or "Carrier".
-function toTitleCase(raw: string): string {
-  return raw
-    .toLowerCase()
-    .split(/(\s+|-)/)
-    .map((token) => {
-      if (token.length === 0) return token;
-      if (/^\s+$/.test(token) || token === "-") return token;
-      return token.charAt(0).toUpperCase() + token.slice(1);
-    })
-    .join("");
 }
