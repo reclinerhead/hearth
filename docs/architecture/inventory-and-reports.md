@@ -230,6 +230,8 @@ The module at [`lib/vin-decode/decode.ts`](../../lib/vin-decode/decode.ts) owns 
 - `buildNhtsaDecodeUrl()` builds the endpoint URL — kept as a one-liner helper so a future swap (DecodeVinValuesExtended, a different API) is one line.
 - `extractVinFields()` cherry-picks the handful of NHTSA variables we surface (`Make`, `Model`, `ModelYear`, `BodyClass`, `VehicleType`, `EngineCylinders`, `FuelTypePrimary`, `DriveType`, `Manufacturer`, `ManufacturerId`, `PlantCity`, `PlantState`, `PlantCountry`) from the ~130 NHTSA returns per VIN, and collapses NHTSA's sentinel values (`""`, `"Not Applicable"`, `"Not Available"`, `"0"`) to null so the renderer's "render only if present" rule doesn't paint stub strings as facts.
 
+The pure display helpers live in [`lib/vin-decode/prefill.ts`](../../lib/vin-decode/prefill.ts) — `parseModelYear` (with the 1900–2100 sanity window), `toTitleCase` (SCREAMING CAPS → Hearth voice), `composeVehicleName` (`"YYYY Make Model"`, null below two known parts), `isGenericVehicleName` / `GENERIC_VEHICLE_NAMES`, and `buildVinPrefill(result)` (the composed `{ manufacturer, model, modelYear, displayName }`). They were extracted from the detail-page route in #274 so the two decode callers — the detail-page route and the pre-save route below — title-case, parse, and name identically. They're pure (no I/O), unit-tested in `prefill.test.ts`, and import-safe in the client review stage.
+
 **Persistence policy** (write only when empty, except where noted):
 
 - `metadata.vin_decode` — **always overwrites** with the fresh payload (the user clicked decode; they want the latest read). Carries `source: "nhtsa_vdecoder"`, `decoded_at: <iso>`, and the trimmed `raw` map.
@@ -242,6 +244,8 @@ The module at [`lib/vin-decode/decode.ts`](../../lib/vin-decode/decode.ts) owns 
 **Anything the user explicitly entered wins** for the structured columns, with the deliberate exception of the name rewrite documented above.
 
 A 10-second AbortSignal timeout guards against transient NHTSA outages. Failures (invalid VIN format, NHTSA unreachable, empty NHTSA response) surface inline as `decodeError` rather than blowing up the page. The route's JSON response carries both the raw decode and an `applied` block telling the client which structured fields were actually written, so the success toast can surface the canonical "YYYY Make Model" string rather than re-deriving it from the raw response.
+
+**Pre-save decode (issue #274).** A second, **stateless** decode route at [`/api/vin/decode`](../../app/api/vin/decode/route.ts) exists for the Smart Uploader review stage, which runs before any inventory row exists. It takes a raw VIN in the POST body, validates the format, calls the same `decodeVinFromNhtsa` core, and returns `{ result, prefill }` — no row load, no DB write, no `applied` block (there's nothing to persist yet). `prefill` is `buildVinPrefill(result)`. The review stage applies it to its empty fields and persists `vin_decode` + `model_year` into `inventory.metadata` at Save time; the persistence policy above (write-only-when-empty, name-rewrite-only-when-generic) is enforced client-side there rather than by the route. See the Smart Uploader review-stage flow in [ingestion.md](ingestion.md). The detail-page route remains the row-bound enrichment path and the manual re-decode fallback.
 
 ### Deferred for the property type
 

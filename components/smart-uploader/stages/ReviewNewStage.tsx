@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { attachDocumentToInventoryAction } from "@/app/actions/documents/attach-document-to-inventory";
 import { createInventoryFromDocumentAction } from "@/app/actions/documents/create-inventory-from-document";
 import type { MatchingInventoryItem } from "@/app/actions/documents/find-matching-inventory";
 import { HEARTH_DOCUMENTS_BUCKET } from "@/lib/documents/paths";
 import { createClient } from "@/lib/supabase/client";
+import { isValidVinFormat, type VinDecodeResult } from "@/lib/vin-decode/decode";
+import { isGenericVehicleName, type VinPrefill } from "@/lib/vin-decode/prefill";
 import type {
   AppliancePhotoExtraction,
   EquipmentType,
@@ -96,6 +98,80 @@ export function ReviewNewStage({
   const [error, setError] = useState<string | null>(null);
   const [showMatchPicker, setShowMatchPicker] = useState(matches.length > 0);
 
+  // Auto VIN decode (issue #274). When the extraction recognized a
+  // vehicle and pulled a valid-looking VIN out of the photo, decode it
+  // through NHTSA the moment this stage opens and prefill the empty
+  // Manufacturer / Model / Name fields — no separate trip to the detail
+  // page to click "Decode VIN". The raw decode is held so the Save path
+  // can persist it (plus model_year) into inventory.metadata, matching
+  // what the detail-page button would have produced. Failures are
+  // silent: the form still works and the detail-page button remains the
+  // manual fallback.
+  const extractedVin = isNameplate
+    ? (analysis as NameplateExtraction).extracted.serial_number
+    : null;
+  const isVehicleExtraction =
+    defaultType === "property" && defaultSubtype === "vehicle";
+  const shouldAutoDecode =
+    isVehicleExtraction && isValidVinFormat(extractedVin);
+
+  const [vinDecodeStatus, setVinDecodeStatus] = useState<
+    "idle" | "decoding" | "done"
+  >("idle");
+  const [vinDecodeResult, setVinDecodeResult] = useState<VinDecodeResult | null>(
+    null,
+  );
+  const [vinPrefill, setVinPrefill] = useState<VinPrefill | null>(null);
+  const decodeStartedRef = useRef(false);
+
+  useEffect(() => {
+    if (!shouldAutoDecode || decodeStartedRef.current) return;
+    decodeStartedRef.current = true;
+    const vin = (extractedVin ?? "").trim();
+    let cancelled = false;
+    setVinDecodeStatus("decoding");
+    (async () => {
+      try {
+        const res = await fetch("/api/vin/decode", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ vin }),
+        });
+        if (!res.ok) throw new Error(`decode failed: ${res.status}`);
+        const body = (await res.json()) as {
+          result: VinDecodeResult;
+          prefill: VinPrefill;
+        };
+        if (cancelled) return;
+        const { prefill } = body;
+        // Prefill only empty fields — anything the user already edited
+        // while the decode was in flight wins. The name is rewritten
+        // only when it's still a generic placeholder ("Vehicle", "Truck").
+        if (prefill.manufacturer) {
+          setManufacturer((prev) => (prev.trim() ? prev : prefill.manufacturer ?? ""));
+        }
+        if (prefill.model) {
+          setModelNumber((prev) => (prev.trim() ? prev : prefill.model ?? ""));
+        }
+        if (prefill.displayName) {
+          setName((prev) =>
+            isGenericVehicleName(prev) ? prefill.displayName ?? prev : prev,
+          );
+        }
+        setVinDecodeResult(body.result);
+        setVinPrefill(prefill);
+        setVinDecodeStatus("done");
+      } catch {
+        // Silent — the manual detail-page Decode VIN button is the
+        // fallback. Reset to idle so no banner renders.
+        if (!cancelled) setVinDecodeStatus("idle");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldAutoDecode, extractedVin]);
+
   // Thumbnail for the new document's optimized image.
   useEffect(() => {
     let cancelled = false;
@@ -168,9 +244,19 @@ export function ReviewNewStage({
           purchased_on: null,
           estimated_value_cents: null,
         },
-        // Empty metadata bag at create-time. The Edit modal is where
-        // vehicle plates, pet microchip numbers, etc. land.
-        metadata: {},
+        // Metadata bag at create-time. Normally empty — the Edit modal
+        // is where vehicle plates, pet microchip numbers, etc. land. The
+        // exception is an auto-decoded VIN: persist the raw decode and
+        // model_year here (only while the item is still a vehicle) so
+        // the saved row matches what the detail-page Decode VIN button
+        // would have produced — Model year tile and decoded pills with
+        // no extra click.
+        metadata: buildSaveMetadata({
+          type,
+          subtype,
+          vinDecodeResult,
+          modelYear: vinPrefill?.modelYear ?? null,
+        }),
         notes: emptyToNull(notes),
       });
       if (result.error || !result.data) {
@@ -183,8 +269,72 @@ export function ReviewNewStage({
     }
   }
 
+  // What to brag about in the success banner: the composed
+  // "YYYY Make Model" when we have it, else whatever make/model landed.
+  // Null when the decode came back without anything nameable, in which
+  // case the banner stays hidden (nothing to celebrate).
+  const vinDecodeTitle = vinPrefill
+    ? vinPrefill.displayName ??
+      ([vinPrefill.manufacturer, vinPrefill.model]
+        .filter(Boolean)
+        .join(" ") ||
+        null)
+    : null;
+
   return (
     <div className="flex flex-col gap-4">
+      {vinDecodeStatus === "decoding" ? (
+        <div
+          className="flex items-center gap-2 text-small"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          <SparkleIcon spinning />
+          <span>Reading your VIN…</span>
+        </div>
+      ) : null}
+
+      {vinDecodeStatus === "done" && vinDecodeTitle ? (
+        <div
+          className="flex items-start gap-3 p-3 sm:p-4"
+          style={{
+            borderRadius: "var(--radius-md)",
+            background:
+              "color-mix(in oklab, var(--color-accent) 12%, transparent)",
+            border:
+              "1px solid color-mix(in oklab, var(--color-accent) 38%, transparent)",
+          }}
+          role="status"
+        >
+          <span
+            style={{ color: "var(--color-accent)", marginTop: 2 }}
+            aria-hidden
+          >
+            <SparkleIcon />
+          </span>
+          <div className="min-w-0 flex flex-col gap-0.5">
+            <div className="eyebrow" style={{ color: "var(--color-accent)" }}>
+              VIN decoded automatically
+            </div>
+            <div
+              style={{
+                fontFamily: "var(--font-serif)",
+                fontSize: 18,
+                fontWeight: 500,
+              }}
+            >
+              {vinDecodeTitle}
+            </div>
+            <div
+              className="text-small"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              We filled in the details below from your VIN — review them and
+              save.
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {!isManual && showMatchPicker && matches.length > 0 ? (
         <div
           className="surface-ai p-3 sm:p-4 flex flex-col gap-3"
@@ -497,6 +647,27 @@ function ExtractedPills({
   );
 }
 
+// Assemble the metadata bag written at create-time. Empty for every
+// item except an auto-decoded vehicle, where we persist the raw VIN
+// decode and model_year so the saved row matches the detail-page decode
+// (issue #274). Defends against stale UI state: if the user flipped the
+// item away from property/vehicle after the decode ran, no vehicle
+// metadata is written.
+function buildSaveMetadata(args: {
+  type: EquipmentType;
+  subtype: InventorySubtype | null;
+  vinDecodeResult: VinDecodeResult | null;
+  modelYear: number | null;
+}): Record<string, unknown> {
+  const { type, subtype, vinDecodeResult, modelYear } = args;
+  if (type !== "property" || subtype !== "vehicle" || !vinDecodeResult) {
+    return {};
+  }
+  const metadata: Record<string, unknown> = { vin_decode: vinDecodeResult };
+  if (modelYear !== null) metadata.model_year = modelYear;
+  return metadata;
+}
+
 function emptyToNull(s: string): string | null {
   const trimmed = s.trim();
   return trimmed === "" ? null : trimmed;
@@ -510,4 +681,27 @@ function capitalize(s: string): string {
 function indefiniteArticle(noun: string): string {
   const first = noun.trim().charAt(0).toLowerCase();
   return "aeiou".includes(first) ? "an" : "a";
+}
+
+// Four-point sparkle — the AI-enrichment glyph used elsewhere in the
+// app (the detail-page Decode VIN button). `spinning` adds a gentle
+// pulse for the in-flight "Reading your VIN…" line.
+function SparkleIcon({ spinning = false }: { spinning?: boolean }) {
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={spinning ? "animate-pulse" : undefined}
+      aria-hidden
+    >
+      <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
+      <path d="M12 8a4 4 0 0 0 4 4 4 4 0 0 0-4 4 4 4 0 0 0-4-4 4 4 0 0 0 4-4Z" />
+    </svg>
+  );
 }
