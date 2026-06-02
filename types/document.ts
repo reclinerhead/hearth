@@ -139,6 +139,18 @@ export type NameplateExtraction = {
     // re-labels the field "VIN" when the row is a vehicle.
     serial_number: string | null;
     installed_on: string | null;
+    // Expiration / valid-through date for a time-bounded grant document
+    // photographed through the nameplate path (vehicle registration,
+    // insurance card, warranty certificate). Null on ordinary nameplates.
+    // Seeded into hearth.documents.metadata.expiration_date by the
+    // create-from-document path and consumed by the direct-event
+    // maintenance pipeline — the same renewal task the receipt path
+    // produces. Issue #277.
+    expiration_date: string | null;
+    // Issuing authority / vendor for that renewal document (SOS office,
+    // insurance carrier). Feeds the renewal classifier; null when
+    // expiration_date is null. Issue #277.
+    issuing_authority: string | null;
     notes: string | null;
     pills: NameplateExtractionPill[];
   };

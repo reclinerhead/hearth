@@ -248,15 +248,23 @@ describe("processDirectEventTaskFromDocument — gating", () => {
     expect(captured.insertPayload).toBeUndefined();
   });
 
-  it("returns null when the document is not a receipt", async () => {
+  it("creates a renewal task for a non-receipt document carrying an expiration (issue #277)", async () => {
+    // The pipeline no longer gates on kind === 'receipt'. A vehicle
+    // created from a registration is a nameplate-kind document whose
+    // expiration_date was copied into metadata by the create-from-
+    // document path; it must seed a renewal the same as a receipt would.
     const { supabase, captured } = makeSupabaseMock(
       defaultResponses({
-        document: { data: audiRegistrationDoc({ kind: "photo" }) },
+        document: { data: audiRegistrationDoc({ kind: "nameplate" }) },
       }),
     );
     const result = await processDirectEventTaskFromDocument("doc-1", supabase);
-    expect(result).toEqual({ created_task_id: null, closed_task_id: null });
-    expect(captured.insertPayload).toBeUndefined();
+    expect(result.created_task_id).toBe("task-new");
+    expect(captured.insertPayload).toMatchObject({
+      kind: "renewal",
+      title: "Vehicle registration renewal",
+      next_due_at: "2028-01-18",
+    });
   });
 
   it("returns null when the document has no inventory_id", async () => {

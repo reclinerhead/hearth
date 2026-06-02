@@ -72,6 +72,8 @@ describe("buildClassifyPrompt", () => {
       "model_number",
       "serial_number",
       "installed_on",
+      "expiration_date",
+      "issuing_authority",
       "notes",
     ]) {
       expect(prompt).toContain(field);
@@ -127,6 +129,50 @@ describe("buildClassifyPrompt", () => {
     it("tells the model to return an empty array when there is nothing to extract", () => {
       const prompt = buildClassifyPrompt();
       expect(prompt).toMatch(/empty array/i);
+    });
+  });
+
+  describe("renewal-document guidance on the nameplate path (#277)", () => {
+    // A vehicle registration or insurance card photographed to capture a
+    // VIN classifies as a nameplate but also carries an expiration. These
+    // assertions pin the load-bearing pieces that let the create-from-
+    // document path seed a renewal task — and the discipline that keeps
+    // the model from inventing expirations on ordinary equipment labels.
+
+    it("names expiration_date and issuing_authority as nameplate fields", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toContain("expiration_date");
+      expect(prompt).toContain("issuing_authority");
+    });
+
+    it("scopes the fields to time-bounded grant documents", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/time-bounded grant/i);
+      expect(prompt).toMatch(/vehicle registration/i);
+      expect(prompt).toMatch(/insurance card/i);
+      expect(prompt).toMatch(/warranty/i);
+    });
+
+    it("tells the model to leave both null on ordinary equipment nameplates", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/Equipment labels don't expire/i);
+    });
+
+    it("tells the model a VIN plate with no printed expiration leaves the fields null", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/VIN still goes in serial_number/i);
+    });
+
+    it("carries the 'wrong date is worse than a null' calibration framing", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/renewal reminder/i);
+      expect(prompt).toMatch(/wrong date is worse than a null/i);
+    });
+
+    it("uses placeholder syntax (not literal dates) in the renewal examples", () => {
+      const prompt = buildClassifyPrompt();
+      expect(prompt).toMatch(/<expiration date as printed>/);
+      expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     });
   });
 

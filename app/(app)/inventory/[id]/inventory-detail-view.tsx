@@ -63,6 +63,7 @@ import type {
   InventoryDetailItem,
   InventoryInsights,
   InventoryReceipt,
+  InventoryRenewalDocument,
   RoomOption,
 } from "./page";
 
@@ -138,6 +139,7 @@ export function InventoryDetailView({
   rooms,
   linkedDocumentCount,
   receipts,
+  renewalDocuments,
   historyEvents,
   maintenancePanelSlot,
 }: {
@@ -145,6 +147,7 @@ export function InventoryDetailView({
   rooms: RoomOption[];
   linkedDocumentCount: number;
   receipts: InventoryReceipt[];
+  renewalDocuments: InventoryRenewalDocument[];
   historyEvents: HistoryEvent[];
   /**
    * Server-rendered maintenance panel for this inventory item. Rendered
@@ -660,12 +663,26 @@ export function InventoryDetailView({
     null,
   );
 
-  // Lightbox open state. `index` is which slide the lightbox opens to;
-  // future surfaces (e.g. a thumbnail strip) could pass non-zero. The
-  // hero only ever opens at index 0.
+  // Lightbox open state. `index` is which slide the lightbox opens to.
+  // The hero opens at 0; a renewal-document row in the Documents panel
+  // (issue #280) opens at that document's slide via openScanForDocument.
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const photoCount = item.photos.length;
   const hasPhotos = photoCount > 0;
+
+  // Open the shared photo lightbox at a specific document's slide. The
+  // renewal-document scan is one of the item's photos (same nameplate
+  // row that serves as the hero), so we find its index and open there.
+  // Falls back to slide 0 if the id isn't in the photo set.
+  const openScanForDocument = useCallback(
+    (documentId: string) => {
+      const idx = item.photos.findIndex((p) => p.id === documentId);
+      setLightboxIndex(idx >= 0 ? idx : 0);
+      setLightboxOpen(true);
+    },
+    [item.photos],
+  );
 
   const editableItem: EditableInventoryRow = {
     id: item.id,
@@ -711,7 +728,10 @@ export function InventoryDetailView({
           {heroUrl ? (
             <button
               type="button"
-              onClick={() => setLightboxOpen(true)}
+              onClick={() => {
+                setLightboxIndex(0);
+                setLightboxOpen(true);
+              }}
               aria-label={
                 photoCount > 1
                   ? `View ${photoCount} photos of ${item.name}`
@@ -776,7 +796,7 @@ export function InventoryDetailView({
           {hasPhotos ? (
             <PhotoLightbox
               open={lightboxOpen}
-              index={0}
+              index={lightboxIndex}
               photos={item.photos}
               altPrefix={item.name}
               onClose={() => setLightboxOpen(false)}
@@ -1048,8 +1068,10 @@ export function InventoryDetailView({
       <section className="grid gap-4 md:grid-cols-2">
         <DocumentsPanel
           receipts={receipts}
+          renewalDocuments={renewalDocuments}
           itemName={item.name}
           onOpenReceipt={setOpenReceiptId}
+          onOpenScan={openScanForDocument}
         />
         <PlaceholderPanel
           title="Notes & photos"
@@ -2343,12 +2365,16 @@ function PlaceholderPanel({
 
 function DocumentsPanel({
   receipts,
+  renewalDocuments,
   itemName,
   onOpenReceipt,
+  onOpenScan,
 }: {
   receipts: InventoryReceipt[];
+  renewalDocuments: InventoryRenewalDocument[];
   itemName: string;
   onOpenReceipt: (documentId: string) => void;
+  onOpenScan: (documentId: string) => void;
 }) {
   // Device-appropriate peek entry gesture (issue #259). On hover-capable
   // pointers (desktop / laptop) the peek opens on tile hover; on touch it
@@ -2375,17 +2401,30 @@ function DocumentsPanel({
           <div className="h3 mt-0.5">Documents</div>
         </div>
       </div>
-      {receipts.length === 0 ? (
+      {receipts.length === 0 && renewalDocuments.length === 0 ? (
         <p
           className="text-small"
           style={{ color: "var(--color-text-tertiary)" }}
         >
-          No receipts attached yet. Tap <strong>Add document</strong>{" "}
-          above to capture one — a service receipt, invoice, or other
-          paperwork — and we&apos;ll read the details for you.
+          Nothing on file yet. Tap <strong>Add document</strong>{" "}
+          above to capture one — a service receipt, invoice, registration,
+          or other paperwork — and we&apos;ll read the details for you.
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
+          {/* Renewal documents first — a registration/insurance card the
+              user photographed to create the item (issue #280). They open
+              the scan in the shared lightbox rather than the receipt
+              page-flip modal. */}
+          {renewalDocuments.map((d) => (
+            <li key={d.id}>
+              <RenewalDocumentRow
+                document={d}
+                itemName={itemName}
+                onOpen={() => onOpenScan(d.id)}
+              />
+            </li>
+          ))}
           {receipts.map((r) => (
             <li key={r.id}>
               <ReceiptListRow
@@ -2399,6 +2438,91 @@ function DocumentsPanel({
         </ul>
       )}
     </section>
+  );
+}
+
+// A renewal-document row in the Documents panel (issue #280). Visually a
+// sibling of ReceiptListRow — same thumbnail + title + secondary-line
+// shape — but simpler: no extraction-peek popover (the registration's
+// extracted fields are already the pill cluster at the top of the page),
+// and the tile opens the scan in the photo lightbox rather than the
+// receipt page-flip modal. The document is one of the item's photos, so
+// onOpen routes through the parent's openScanForDocument.
+function RenewalDocumentRow({
+  document,
+  itemName,
+  onOpen,
+}: {
+  document: InventoryRenewalDocument;
+  itemName: string;
+  onOpen: () => void;
+}) {
+  const thumbUrl = useCachedSignedUrl(
+    "hearth-documents",
+    document.thumbnailPath,
+    null,
+  );
+  const title = document.title ?? "Renewal document";
+  const expiresLabel = `Expires ${formatReceiptDate(document.expirationDate)}`;
+
+  return (
+    <div
+      className="overflow-hidden"
+      style={{
+        border: "1px solid var(--color-border-subtle)",
+        borderRadius: "var(--radius-md)",
+      }}
+    >
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`View the ${title} scan for ${itemName}`}
+        className="flex w-full items-center gap-3 p-2 text-left transition-colors"
+        style={{ backgroundColor: "transparent" }}
+      >
+        <span
+          className="shrink-0 overflow-hidden"
+          style={{
+            height: 56,
+            width: 42,
+            borderRadius: 6,
+            border: "1px solid var(--color-border-subtle)",
+            backgroundColor: "var(--color-bg-surface-raised)",
+          }}
+        >
+          {thumbUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={thumbUrl}
+              alt=""
+              className="h-full w-full object-cover"
+              aria-hidden
+            />
+          ) : (
+            <span className="block h-full w-full" aria-hidden />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span
+            className="block truncate"
+            style={{ fontSize: 14, fontWeight: 500 }}
+          >
+            {title}
+          </span>
+          <span
+            className="block truncate text-small"
+            style={{ color: "var(--color-text-tertiary)" }}
+          >
+            {expiresLabel}
+          </span>
+        </span>
+        <Icon
+          name="chevron-right"
+          size={16}
+          style={{ color: "var(--color-text-tertiary)" }}
+        />
+      </button>
+    </div>
   );
 }
 
