@@ -71,6 +71,14 @@ export type SmartUploaderProps = {
    */
   targetInventoryName?: string;
   /**
+   * Whether the target item is a vehicle (property subtype 'vehicle').
+   * Only affects the multi-page document capture stage's intro copy,
+   * which swaps the receipt framing for registration/insurance guidance
+   * since vehicles take renewal documents, not service receipts.
+   * Ignored when targetInventoryId is unset.
+   */
+  targetIsVehicle?: boolean;
+  /**
    * In target mode, which uploader path to land on. Defaults to
    * 'photo' — the original "Add photo" button on the inventory detail
    * page. 'receipt' is the entry point from the "Add document" button
@@ -139,6 +147,7 @@ export function SmartUploader(props: SmartUploaderProps) {
     houseId,
     targetInventoryId,
     targetInventoryName,
+    targetIsVehicle,
     targetKind,
     onSaved,
     initialEmergencyEntry,
@@ -944,6 +953,7 @@ export function SmartUploader(props: SmartUploaderProps) {
               phase={receiptState.phase}
               error={receiptState.error}
               targetInventoryName={targetInventoryName ?? null}
+              targetIsVehicle={targetIsVehicle ?? false}
               onAddPage={(file) => void addReceiptPage(file)}
               onRemovePage={(n) => void removeReceiptPage(n)}
               onFinalize={() => void finalizeReceipt()}

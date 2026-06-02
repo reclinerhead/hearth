@@ -1015,6 +1015,7 @@ export function InventoryDetailView({
           houseId={item.house_id}
           targetInventoryId={item.id}
           targetInventoryName={item.name}
+          targetIsVehicle={isVehicle}
           targetKind={uploaderKind}
           onSaved={() => {
             // Pull the just-attached document into the photos array so
