@@ -3,9 +3,18 @@
 import { useEffect, useState } from "react";
 import { HEARTH_DOCUMENTS_BUCKET } from "@/lib/documents/paths";
 import { createClient } from "@/lib/supabase/client";
-import type { DocumentRow } from "@/types/document";
+import type { DocumentKind, DocumentRow } from "@/types/document";
 
 const SIGNED_URL_TTL_SECONDS = 300;
+
+// The duplicate short-circuit is reached from both the photo path and
+// the receipt path, so the copy reads off the existing document's kind
+// rather than assuming "photo". nameplate/photo are camera shots of an
+// item; everything else (receipts, manuals, permits, …) reads as a
+// "document". Falls back to the generic noun for any future kind.
+function duplicateNoun(kind: DocumentKind): string {
+  return kind === "photo" || kind === "nameplate" ? "photo" : "document";
+}
 
 /**
  * Stage 4a — Duplicate short-circuit. Shows the existing document's
@@ -56,8 +65,8 @@ export function DuplicateStage({
         className="text-small"
         style={{ color: "var(--color-text-secondary)" }}
       >
-        You&apos;ve already uploaded this photo. We didn&apos;t add it a
-        second time.
+        You&apos;ve already uploaded this {duplicateNoun(existingDocument.kind)}.
+        We didn&apos;t add it a second time.
       </p>
 
       <div

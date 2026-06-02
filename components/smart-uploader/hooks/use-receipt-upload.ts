@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { addDocumentPageAction } from "@/app/actions/documents/add-document-page";
 import { analyzeReceiptAction } from "@/app/actions/documents/analyze-receipt";
+import { checkDocumentDuplicateAction } from "@/app/actions/documents/check-duplicate";
 import { createPendingDocumentAction } from "@/app/actions/documents/create-pending";
 import { deleteDocumentPageAction } from "@/app/actions/documents/delete-document-page";
 import {
@@ -16,7 +17,7 @@ import {
   uploadDocumentPageFiles,
 } from "@/lib/documents/upload";
 import { createClient } from "@/lib/supabase/client";
-import type { ReceiptExtraction } from "@/types/document";
+import type { DocumentRow, ReceiptExtraction } from "@/types/document";
 
 /**
  * The orchestration hook for the multi-page receipt path of the Smart
@@ -43,6 +44,7 @@ import type { ReceiptExtraction } from "@/types/document";
 export type ReceiptUploadPhase =
   | "idle"
   | "adding-page"
+  | "duplicate"
   | "processing"
   | "saving"
   | "done"
@@ -63,6 +65,14 @@ export type ReceiptUploadState = {
   pages: ReceiptPage[];
   extraction: ReceiptExtraction | null;
   matches: FindInventoryByReceiptResult | null;
+  /**
+   * Set when page 1 is a byte-identical re-upload of a document already
+   * in this house. The Smart Uploader surfaces the shared DuplicateStage
+   * and no new row or storage object is created. Only the page-1 branch
+   * can populate this — pages 2+ aren't under the house-scoped unique
+   * index.
+   */
+  duplicate: DocumentRow | null;
   error: string | null;
 };
 
@@ -72,6 +82,7 @@ const INITIAL_STATE: ReceiptUploadState = {
   pages: [],
   extraction: null,
   matches: null,
+  duplicate: null,
   error: null,
 };
 
@@ -130,6 +141,32 @@ export function useReceiptUpload(
           throw new Error(
             `Page ${dupPage.pageNumber} is already in this receipt — pick a different photo or retake that page.`,
           );
+        }
+
+        // Page 1 only: cross-document, house-scoped duplicate pre-check —
+        // the same guard the photo path runs (use-document-upload.ts). A
+        // byte-identical re-upload short-circuits to the duplicate stage
+        // before we touch storage or insert, instead of tripping the
+        // documents_house_id_content_hash_unique index and surfacing a
+        // raw Postgres error in the UI. Pages 2+ aren't under that index
+        // (they live in hearth.document_pages and use content_hash for
+        // in-session dedup only), so we guard page 1 exclusively.
+        if (state.pages.length === 0) {
+          const dupCheck = await checkDocumentDuplicateAction({
+            houseId: args.houseId,
+            contentHash,
+          });
+          if (dupCheck.error !== null) throw new Error(dupCheck.error);
+          if (dupCheck.data.exists) {
+            URL.revokeObjectURL(previewUrl);
+            setState((s) => ({
+              ...s,
+              phase: "duplicate",
+              duplicate: dupCheck.data.existingDocument,
+              error: null,
+            }));
+            return;
+          }
         }
 
         const { optimized, thumbnail } = await processImage(file);
