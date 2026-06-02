@@ -127,6 +127,20 @@ export function CaptureStage({
           : "Take a clear photo of the nameplate or identifying sticker. If there's no visible label, a photo of the unit itself works."}
       </p>
 
+      {!isTargetMode ? (
+        <p
+          className="text-small"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          <span style={{ fontWeight: 500, color: "var(--color-text-secondary)" }}>
+            Adding a vehicle?
+          </span>{" "}
+          A photo of the VIN — or any document that shows it, like your
+          registration — works just as well. We&rsquo;ll read the VIN and fill
+          in the details for you.
+        </p>
+      ) : null}
+
       <input
         ref={fileInputRef}
         type="file"
