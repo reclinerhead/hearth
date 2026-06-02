@@ -86,9 +86,12 @@ export async function processDirectEventTaskFromDocument(
   if (docError || !doc) return empty;
   const document = doc as DocumentRow;
 
-  // Gate 1: receipts are the only kind that carries metadata.expiration_date today.
-  if (document.kind !== "receipt") return empty;
-
+  // Gate 1: the document must carry a valid expiration date. This is the
+  // real gate — any document kind that grows expiration support feeds in
+  // here. Receipts (the receipt extraction path, issue #131) and
+  // nameplate-classified renewal documents (registration/insurance used
+  // to create a vehicle, issue #277) both reach this point; the kind
+  // itself no longer gates, only the presence of an expiration.
   const expirationDate = extractExpirationDate(document.metadata);
   if (!expirationDate) return empty;
 

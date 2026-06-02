@@ -16,6 +16,8 @@ describe("classificationSchema", () => {
         model_number: "58CTA070",
         serial_number: "0419A12345",
         installed_on: "2018-04-12",
+        expiration_date: null,
+        issuing_authority: null,
         notes: "Gas, 70k BTU",
         pills: [
           { label: "BTU Input", value: "70,000" },
@@ -48,6 +50,8 @@ describe("classificationSchema", () => {
           model_number: null,
           serial_number: null,
           installed_on: null,
+          expiration_date: null,
+          issuing_authority: null,
           notes: null,
           pills: [],
         },
@@ -255,6 +259,8 @@ describe("classificationSchema", () => {
         model_number: "Land Cruiser",
         serial_number: "JTEZU17R868001234",
         installed_on: null,
+        expiration_date: null,
+        issuing_authority: null,
         notes: null,
         pills: [],
       },
@@ -267,6 +273,26 @@ describe("classificationSchema", () => {
         expect(parsed.classification.type).toBe("property");
         expect(parsed.classification.subtype).toBe("vehicle");
         expect(parsed.extracted.serial_number).toBe("JTEZU17R868001234");
+      }
+    });
+
+    it("parses a registration nameplate carrying expiration_date + issuing_authority (#277)", () => {
+      // A registration/insurance card photographed to create a vehicle
+      // classifies as a nameplate but carries the renewal handle the
+      // create-from-document path seeds a renewal task from.
+      const parsed = classificationSchema.parse({
+        ...validPropertyVehicle,
+        extracted: {
+          ...validPropertyVehicle.extracted,
+          expiration_date: "2028-01-18",
+          issuing_authority: "Michigan Secretary of State",
+        },
+      });
+      if (parsed.photo_kind === "nameplate") {
+        expect(parsed.extracted.expiration_date).toBe("2028-01-18");
+        expect(parsed.extracted.issuing_authority).toBe(
+          "Michigan Secretary of State",
+        );
       }
     });
 

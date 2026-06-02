@@ -69,6 +69,8 @@ For nameplate only, also extract identifying details if legible. Leave fields nu
    - model_number: the model/catalog number, exactly as printed
    - serial_number: the serial number, exactly as printed
    - installed_on: an installation date if one is hand-written or stickered onto the label (not the manufacture date). Format as YYYY-MM-DD if you can determine the full date, otherwise null.
+   - expiration_date: the expiration / valid-through / policy-period-end date, in YYYY-MM-DD form, populated ONLY when the photo is a time-bounded grant document (see "Renewal documents" below). Leave null for ordinary appliance/system/equipment nameplates — those don't expire.
+   - issuing_authority: the office or company that issued a renewal document — the Secretary of State / DMV for a vehicle registration, the insurance carrier for an insurance card, the manufacturer or administrator for a warranty. Populate it only alongside expiration_date; leave null otherwise.
    - notes: free-form, capture anything else useful — BTU ratings, capacity, efficiency ratings, voltage, fuel type, etc. Keep brief.
 
 For nameplate only, also extract a "pills" array of discrete facts pulled from the label. Each pill is { label: <short>, value: <fact> }.
@@ -92,7 +94,24 @@ Rules for pills:
    - Skip facts already captured as named extracted fields (manufacturer, model_number, serial_number) — those have their own structured place.
    - Return an empty array [] if the label has no extractable facts.
 
-The free-form notes field should still summarize anything notable about the label that doesn't fit neatly into pills — they serve different purposes.`;
+The free-form notes field should still summarize anything notable about the label that doesn't fit neatly into pills — they serve different purposes.
+
+Renewal documents and expiration_date:
+
+Some "nameplates" a homeowner photographs are not equipment labels at all but time-bounded grant documents — most commonly a vehicle registration card or an insurance card photographed to capture a VIN. These still classify as nameplate (you can read identifying details off them), but they additionally carry an expiration.
+
+Populate expiration_date and issuing_authority ONLY for these time-bounded grant documents: a vehicle registration, an insurance card/policy, a warranty certificate, a permit, a professional license. In those cases, read the date the document gives as its expiration / valid-through / policy-period-end and emit it as an ISO YYYY-MM-DD date, and put the issuing office or company in issuing_authority.
+
+Examples of when to populate them:
+- A vehicle registration card showing "Expires <expiration date as printed>" → expiration_date is that date; issuing_authority is the issuing office (e.g. the state Secretary of State / DMV as printed).
+- An insurance card with a coverage period "<start> to <end>" → expiration_date is the end of the period; issuing_authority is the carrier as printed.
+
+Examples of when to leave both null:
+- An appliance, system, or equipment nameplate (furnace, water heater, dishwasher data plate). Equipment labels don't expire. Null.
+- A vehicle VIN plate or a car body badge with no expiration printed on it. The VIN still goes in serial_number, but there is no expiration. Null.
+- Any photo where you cannot find an explicit expiration / valid-through date. Don't guess. Null.
+
+The principle: expiration_date represents a date the user will need to renew the document. A downstream pipeline creates a renewal reminder from it, so a wrong date is worse than a null. If no explicit expiration is present and unambiguous, leave both fields null.`;
 
 const DELTA_SYSTEM_PROMPT = `You are an expert at identifying home appliances, systems, and equipment from photographs.
 

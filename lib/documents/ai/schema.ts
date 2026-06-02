@@ -48,6 +48,20 @@ const nameplateBranch = z.object({
     model_number: z.string().nullable(),
     serial_number: z.string().nullable(),
     installed_on: z.string().nullable(),
+    // Expiration / valid-through date for time-bounded grant documents
+    // photographed through the nameplate path — a vehicle registration
+    // card, an insurance card, a warranty certificate. Null on ordinary
+    // appliance/system nameplates and on any photo where no explicit
+    // expiration is printed. When present (with issuing_authority), the
+    // create-from-document path seeds a renewal task via the direct-event
+    // maintenance pipeline — the same task the receipt path produces.
+    // Issue #277.
+    expiration_date: z.string().nullable(),
+    // Issuing authority / vendor for a renewal document — the Secretary
+    // of State office for a registration, the carrier for an insurance
+    // card. Feeds the renewal classifier's per-issuer matching. Null when
+    // expiration_date is null. Issue #277.
+    issuing_authority: z.string().nullable(),
     notes: z.string().nullable(),
     pills: z.array(pillSchema),
   }),

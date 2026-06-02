@@ -1,6 +1,7 @@
 "use server";
 
 import { normalizeModelNumberForCreate } from "@/lib/inventory/model-number";
+import { processDirectEventTaskFromDocument } from "@/lib/maintenance/direct-event";
 import { createClient } from "@/lib/supabase/server";
 import type {
   AiExtraction,
@@ -61,7 +62,7 @@ export async function createInventoryFromDocumentAction(
   // RLS ensures the caller can only load documents in their own houses.
   const { data: doc, error: docError } = await supabase
     .from("documents")
-    .select("house_id, ai_extraction")
+    .select("house_id, ai_extraction, metadata")
     .eq("id", input.documentId)
     .single();
 
@@ -108,12 +109,36 @@ export async function createInventoryFromDocumentAction(
     };
   }
 
+  // When the source document is a renewal document (a registration /
+  // insurance card the user photographed to create this vehicle), the
+  // nameplate extraction carried an expiration_date + issuing_authority.
+  // Copy them into documents.metadata under the same keys the receipt
+  // path uses (expiration_date / vendor_name) so the direct-event
+  // pipeline below — which reads metadata, not ai_extraction — can seed
+  // the renewal task. Merged over any existing metadata to stay
+  // defensive against future writers. Issue #277.
+  const renewal = extractRenewalMetadata(doc.ai_extraction as AiExtraction | null);
+  const updatePayload: {
+    inventory_id: string;
+    status: "attached";
+    metadata?: Record<string, unknown>;
+  } = {
+    inventory_id: inv.id,
+    status: "attached",
+  };
+  if (renewal) {
+    const existingMetadata =
+      (doc.metadata as Record<string, unknown> | null) ?? {};
+    updatePayload.metadata = {
+      ...existingMetadata,
+      expiration_date: renewal.expiration_date,
+      vendor_name: renewal.vendor_name,
+    };
+  }
+
   const { data: updatedDoc, error: updateError } = await supabase
     .from("documents")
-    .update({
-      inventory_id: inv.id,
-      status: "attached",
-    })
+    .update(updatePayload)
     .eq("id", input.documentId)
     .select("*")
     .single();
@@ -125,12 +150,42 @@ export async function createInventoryFromDocumentAction(
     };
   }
 
+  // Seed the renewal maintenance task now that the document is attached,
+  // mirroring saveReceiptAction. Awaited so the inventory detail page
+  // re-renders with the task already visible. The pipeline gates
+  // internally on expiration_date / inventory_id / status, so a non-
+  // renewal create (an appliance from its nameplate) exits cheaply
+  // without a write. Issue #277.
+  if (renewal) {
+    await processDirectEventTaskFromDocument(input.documentId);
+  }
+
   return {
     data: {
       inventoryId: inv.id,
       document: updatedDoc as DocumentRow,
     },
     error: null,
+  };
+}
+
+// Pull the renewal handle (expiration date + issuing authority) out of a
+// nameplate extraction, if present. Returns null for any non-nameplate
+// extraction, and for nameplates that carry no expiration (ordinary
+// equipment labels, a bare VIN plate) — those create an inventory item
+// with no renewal task. The expiration_date shape is validated by the
+// direct-event pipeline's own YYYY-MM-DD guard, so this helper only
+// needs presence, not format-correctness. Issue #277.
+function extractRenewalMetadata(
+  extraction: AiExtraction | null,
+): { expiration_date: string; vendor_name: string | null } | null {
+  if (!extraction || extraction.mode !== "classification") return null;
+  if (extraction.photo_kind !== "nameplate") return null;
+  const expiration = extraction.extracted.expiration_date;
+  if (typeof expiration !== "string" || expiration.length === 0) return null;
+  return {
+    expiration_date: expiration,
+    vendor_name: extraction.extracted.issuing_authority,
   };
 }
 
