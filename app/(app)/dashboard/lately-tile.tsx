@@ -60,11 +60,11 @@ export function LatelyTile({ entry }: { entry: ActivityEntry }) {
         aria-hidden
         className="absolute inset-x-0 bottom-0 h-3/5"
         style={{
-          // 82% top stop — matches InventoryTile, since these tiles carry an
-          // eyebrow + title and the small eyebrow text needs the extra
-          // contrast on bright photos.
+          // Stronger than InventoryTile's scrim — these tiles run two-up
+          // (narrower, busier photos) and the small uppercase eyebrow needs
+          // the extra dimming to stay legible on bright images.
           background:
-            "linear-gradient(to top, color-mix(in oklab, #000 82%, transparent), color-mix(in oklab, #000 20%, transparent) 60%, transparent)",
+            "linear-gradient(to top, color-mix(in oklab, #000 90%, transparent), color-mix(in oklab, #000 35%, transparent) 55%, transparent)",
         }}
       />
 
@@ -72,10 +72,13 @@ export function LatelyTile({ entry }: { entry: ActivityEntry }) {
         <div
           className="truncate"
           style={{
-            color: "color-mix(in oklab, #fff 78%, transparent)",
-            letterSpacing: 0.5,
+            // Smaller, bolder, and brighter than the inventory eyebrow so
+            // the detail line reads cleanly over the photo.
+            color: "color-mix(in oklab, #fff 92%, transparent)",
+            letterSpacing: 0.4,
             textTransform: "uppercase",
-            fontSize: 11,
+            fontSize: 10,
+            fontWeight: 500,
           }}
         >
           {entry.eyebrow}

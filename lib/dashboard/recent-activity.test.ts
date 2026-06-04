@@ -179,14 +179,21 @@ describe("buildRecentActivity", () => {
   });
 
   it("caps the entries at ACTIVITY_LIMIT but reports the full total", () => {
-    const inventoryAdded = Array.from({ length: 5 }, (_, i) =>
-      // Descending dates so id order matches date order.
-      entry(`i${i}`, "inventory_added", `2026-05-0${5 - i}T00:00:00Z`),
+    const count = ACTIVITY_LIMIT + 2;
+    const inventoryAdded = Array.from({ length: count }, (_, i) =>
+      // Descending dates (zero-padded) so id order matches date order.
+      entry(
+        `i${i}`,
+        "inventory_added",
+        `2026-05-${String(count - i).padStart(2, "0")}T00:00:00Z`,
+      ),
     );
     const result = buildRecentActivity(sources({ inventoryAdded }), NOW);
     expect(result.entries).toHaveLength(ACTIVITY_LIMIT);
-    expect(result.entries.map((e) => e.id)).toEqual(["i0", "i1", "i2"]);
-    expect(result.totalCount).toBe(5);
+    expect(result.entries.map((e) => e.id)).toEqual(
+      Array.from({ length: ACTIVITY_LIMIT }, (_, i) => `i${i}`),
+    );
+    expect(result.totalCount).toBe(count);
   });
 
   it("breaks ties by kind (completion > document > inventory) then id", () => {
@@ -203,7 +210,7 @@ describe("buildRecentActivity", () => {
       NOW,
     );
     // task first, then the two documents ordered by id, then inventory.
-    expect(result.entries.map((e) => e.id)).toEqual(["q", "a", "m"]);
+    expect(result.entries.map((e) => e.id)).toEqual(["q", "a", "m", "z"]);
   });
 
   it("drops future-dated and unparseable timestamps", () => {

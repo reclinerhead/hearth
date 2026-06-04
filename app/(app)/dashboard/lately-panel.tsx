@@ -20,6 +20,7 @@ import Link from "next/link";
 import { Icon } from "@/components/icon";
 import { SectionHeader } from "@/components/ui";
 import {
+  ACTIVITY_LIMIT,
   buildRecentActivity,
   MIN_ACTIVITY,
   shapeDocumentAttached,
@@ -53,7 +54,7 @@ const ACTIVITY_DOCUMENT_KINDS: DocumentKind[] = [
 
 // Per source we only need its own newest few — the global newest-N is a
 // subset of (newest-N per source). Matches the panel's ACTIVITY_LIMIT.
-const PER_SOURCE_LIMIT = 3;
+const PER_SOURCE_LIMIT = ACTIVITY_LIMIT;
 
 export async function LatelyPanel({ houseId }: { houseId: string }) {
   const supabase = await createClient();

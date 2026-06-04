@@ -23,9 +23,9 @@ import type {
   InventorySubtype,
 } from "@/types/document";
 
-// Top-N entries the panel renders. Three fills the right column to
-// rough parity with the house-photo column.
-export const ACTIVITY_LIMIT = 3;
+// Top-N entries the panel renders. Four fills the right column as a clean
+// 2×2 grid (two per row) to rough parity with the house-photo column.
+export const ACTIVITY_LIMIT = 4;
 
 // Below this many merged entries the panel shows the awareness nudge
 // instead of a (lonely-or-blank) tile list. With 1–2 entries we render
