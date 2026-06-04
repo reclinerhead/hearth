@@ -31,6 +31,7 @@ import {
   type SeededRoomOption,
 } from "./stages/ReviewNewStage";
 import { ReviewReceiptStage } from "./stages/ReviewReceiptStage";
+import type { RenewalToastInfo } from "@/lib/maintenance/renewal-toast";
 
 /**
  * Smart Uploader — top-level modal for the photo-capture flow. Owns
@@ -95,7 +96,13 @@ export type SmartUploaderProps = {
    * dashboard refresh — Smart Uploader doesn't know which refresh
    * pattern the host page wants.
    */
-  onSaved?: (result: { inventoryId: string }) => void;
+  onSaved?: (result: {
+    inventoryId: string;
+    // Populated only when the saved document produced a renewal task
+    // (issue #283) — null on photo/nameplate saves and on non-renewal
+    // receipts. The host turns this into the renewal-reminder toast.
+    renewal?: RenewalToastInfo | null;
+  }) => void;
   /**
    * Pre-routes into the emergency-procedure-video flow. Two shapes:
    *
@@ -696,8 +703,15 @@ export function SmartUploader(props: SmartUploaderProps) {
     onOpenChange(false);
   }
 
-  function handleSaved(inventoryId: string) {
-    onSaved?.({ inventoryId });
+  // `renewal` is only ever populated by the receipt review stage (which is
+  // where an expiration-bearing document can produce a renewal task); the
+  // nameplate / photo stages call this with one argument, so it defaults to
+  // null and the host simply gets no renewal toast.
+  function handleSaved(
+    inventoryId: string,
+    renewal?: RenewalToastInfo | null,
+  ) {
+    onSaved?.({ inventoryId, renewal: renewal ?? null });
     setStage({ name: "success" });
     // Brief "Saved!" confirmation, then close.
     setTimeout(() => {

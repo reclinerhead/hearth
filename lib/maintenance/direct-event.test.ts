@@ -226,7 +226,12 @@ describe("processDirectEventTaskFromDocument — gating", () => {
       }),
     );
     const result = await processDirectEventTaskFromDocument("doc-1", supabase);
-    expect(result).toEqual({ created_task_id: null, closed_task_id: null });
+    expect(result).toEqual({
+      created_task_id: null,
+      closed_task_id: null,
+      created_task_title: null,
+      created_task_next_due_at: null,
+    });
     expect(captured.insertPayload).toBeUndefined();
   });
 
@@ -244,7 +249,12 @@ describe("processDirectEventTaskFromDocument — gating", () => {
       }),
     );
     const result = await processDirectEventTaskFromDocument("doc-1", supabase);
-    expect(result).toEqual({ created_task_id: null, closed_task_id: null });
+    expect(result).toEqual({
+      created_task_id: null,
+      closed_task_id: null,
+      created_task_title: null,
+      created_task_next_due_at: null,
+    });
     expect(captured.insertPayload).toBeUndefined();
   });
 
@@ -274,7 +284,12 @@ describe("processDirectEventTaskFromDocument — gating", () => {
       }),
     );
     const result = await processDirectEventTaskFromDocument("doc-1", supabase);
-    expect(result).toEqual({ created_task_id: null, closed_task_id: null });
+    expect(result).toEqual({
+      created_task_id: null,
+      closed_task_id: null,
+      created_task_title: null,
+      created_task_next_due_at: null,
+    });
     expect(captured.insertPayload).toBeUndefined();
   });
 
@@ -285,7 +300,12 @@ describe("processDirectEventTaskFromDocument — gating", () => {
       }),
     );
     const result = await processDirectEventTaskFromDocument("doc-1", supabase);
-    expect(result).toEqual({ created_task_id: null, closed_task_id: null });
+    expect(result).toEqual({
+      created_task_id: null,
+      closed_task_id: null,
+      created_task_title: null,
+      created_task_next_due_at: null,
+    });
     expect(captured.insertPayload).toBeUndefined();
   });
 
@@ -294,7 +314,12 @@ describe("processDirectEventTaskFromDocument — gating", () => {
       defaultResponses({ inventory: { data: null } }),
     );
     const result = await processDirectEventTaskFromDocument("doc-1", supabase);
-    expect(result).toEqual({ created_task_id: null, closed_task_id: null });
+    expect(result).toEqual({
+      created_task_id: null,
+      closed_task_id: null,
+      created_task_title: null,
+      created_task_next_due_at: null,
+    });
     expect(captured.insertPayload).toBeUndefined();
   });
 });
@@ -349,7 +374,12 @@ describe("processDirectEventTaskFromDocument — chaining", () => {
       }),
     );
     const result = await processDirectEventTaskFromDocument("doc-1", supabase);
-    expect(result).toEqual({ created_task_id: null, closed_task_id: null });
+    expect(result).toEqual({
+      created_task_id: null,
+      closed_task_id: null,
+      created_task_title: null,
+      created_task_next_due_at: null,
+    });
     expect(captured.insertPayload).toBeUndefined();
   });
 });

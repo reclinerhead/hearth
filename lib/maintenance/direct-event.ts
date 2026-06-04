@@ -21,6 +21,7 @@ import {
   type RenewalDocumentClassification,
 } from "./renewal-terms";
 import type { TaskReasoning } from "./types";
+import type { RenewalToastInfo } from "./renewal-toast";
 import type { EquipmentType, InventorySubtype } from "@/types/document";
 
 // SupabaseClient generics are invariant; the hearth client is pinned
@@ -29,10 +30,11 @@ import type { EquipmentType, InventorySubtype } from "@/types/document";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySupabaseClient = SupabaseClient<any, any, any>;
 
-export type ProcessDirectEventResult = {
-  created_task_id: string | null;
-  closed_task_id: string | null;
-};
+// The result carries everything the phase-7 renewal toast needs so the
+// caller can assemble the confirmation without re-querying — see
+// lib/maintenance/renewal-toast.ts. RenewalToastInfo IS this shape; we
+// alias it so the pure toast layer and the pipeline never drift.
+export type ProcessDirectEventResult = RenewalToastInfo;
 
 type DocumentRow = {
   id: string;
@@ -75,6 +77,8 @@ export async function processDirectEventTaskFromDocument(
   const empty: ProcessDirectEventResult = {
     created_task_id: null,
     closed_task_id: null,
+    created_task_title: null,
+    created_task_next_due_at: null,
   };
 
   const { data: doc, error: docError } = await supabase
@@ -240,10 +244,20 @@ export async function processDirectEventTaskFromDocument(
       "[direct-event] failed to insert renewal task after closing prior:",
       insertError?.message,
     );
-    return { created_task_id: null, closed_task_id };
+    return {
+      created_task_id: null,
+      closed_task_id,
+      created_task_title: null,
+      created_task_next_due_at: null,
+    };
   }
 
-  return { created_task_id: inserted.id as string, closed_task_id };
+  return {
+    created_task_id: inserted.id as string,
+    closed_task_id,
+    created_task_title: classification.task_title,
+    created_task_next_due_at: expirationDate,
+  };
 }
 
 function extractExpirationDate(

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FindInventoryByReceiptResult, ReceiptInventoryCandidate } from "@/app/actions/documents/find-inventory-by-receipt";
 import { saveReceiptAction } from "@/app/actions/documents/save-receipt";
+import type { RenewalToastInfo } from "@/lib/maintenance/renewal-toast";
 import { createClient } from "@/lib/supabase/client";
 import type { EquipmentType, ReceiptExtraction } from "@/types/document";
 import type { ReceiptPage } from "../hooks/use-receipt-upload";
@@ -44,7 +45,7 @@ export function ReviewReceiptStage({
   matches: FindInventoryByReceiptResult;
   targetInventoryId?: string;
   targetInventoryName?: string | null;
-  onSaved: (inventoryId: string) => void;
+  onSaved: (inventoryId: string, renewal: RenewalToastInfo | null) => void;
   onCancel: () => void;
 }) {
   const lowConfidence = extraction.ai_confidence < RECEIPT_CONFIDENCE_THRESHOLD;
@@ -114,7 +115,7 @@ export function ReviewReceiptStage({
       setError(result.error);
       return;
     }
-    onSaved(selectedInventoryId);
+    onSaved(selectedInventoryId, result.renewal);
   }
 
   const strongMatch = matches.strong_match;
