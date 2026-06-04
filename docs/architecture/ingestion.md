@@ -401,11 +401,16 @@ Both fire `onSaved({ inventoryId })`. The modal then drops into the `success` st
 
 Close-mid-flow cleanup: the modal tracks the currently-displayed stage and the current document id in a ref. On close, if the stage is one where a row was created but not attached (`review-new`, `manual-entry`, `not-useful`, `analysis-failed`), it fires `cleanupDocumentAction` so the row and its storage objects don't linger. Duplicate doesn't need cleanup — the row we'd be removing belongs to the previous, legitimate upload. Path-picker / capture / processing close paths don't have a document id yet (or the in-flight upload's id never reached the database before close) — the hook's own `runningRef` and the modal's `reset()` on next open handle the in-memory cleanup, and any orphaned storage bytes from a half-completed upload land in the same future periodic sweep documented elsewhere.
 
-### Refresh on save
+### What the host does on save: redirect vs. refresh
 
-`onSaved` calls `router.refresh()` from inside `TopNav` — the same pattern the home-details edit modal uses. `router.refresh()` re-runs server components without a full page reload, which means the dashboard's `InventoryPreview` server component re-queries `hearth.inventory` and the new item appears in the tile list automatically.
+The Smart Uploader doesn't decide what happens after a save — it hands the host the saved `inventoryId` via `onSaved` and the host picks the navigation. The split is by **mount mode**:
 
-The home-details modal *also* dispatches the `HOUSE_UPDATED_EVENT` because `useHouseRealtime` is unreliable in some browsers (see "Cross-tree refresh signal" in the hub's Frontend design system section). Smart Uploader does *not* dispatch a custom event because the dashboard's inventory tiles are server-rendered, not driven by a Realtime hook — a server-component re-render is the only signal the surface listens for, so `router.refresh()` is sufficient.
+- **Discovery-mode hosts redirect to the new item (issue #262).** A discovery-mode mount (no `targetInventoryId`) means the user just created — or matched into — an item from a global entry point, so the host calls `router.push(\`/inventory/${result.inventoryId}\`)` to land them on that item's detail page. This is a fresh server-rendered load, so it replaces the older `router.refresh()` outright (no separate refresh needed). Two hosts do this: `TopNav`'s "+ Add" flow, and the dashboard onboarding-milestones panel's "add a first appliance" card. The **attach-to-existing** path returns the *matched* item's id, so the redirect correctly lands on "where your photo went" rather than a new row. Emergency-video saves never fire `onSaved` (there's no inventory row), so the onboarding panel's emergency flow stays on the dashboard and refreshes on close instead.
+- **Target-mode hosts refresh in place.** A target-mode mount on `/inventory/[id]` (Add photo / Add document for the item you're already viewing) keeps `router.refresh()` — attaching to the item you're looking at shouldn't navigate you away. `router.refresh()` re-runs server components without a full page reload, so the detail page's photo strip / Documents panel pick up the new attachment.
+
+The 2s "Saved!" success beat still plays inside the modal before `onOpenChange(false)`; the discovery-mode `router.push` fires immediately in `onSaved` and the success stage + auto-close resolve over the new page.
+
+The home-details modal (a separate surface) *also* dispatches the `HOUSE_UPDATED_EVENT` because `useHouseRealtime` is unreliable in some browsers (see "Cross-tree refresh signal" in the hub's Frontend design system section). Smart Uploader does *not* dispatch a custom event because the surfaces it feeds are server-rendered, not driven by a Realtime hook — a redirect or a server-component re-render is the only signal they need.
 
 ### Dashboard inventory tiles
 

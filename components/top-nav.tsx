@@ -210,12 +210,17 @@ export function TopNav({
           open={uploaderOpen}
           onOpenChange={setUploaderOpen}
           houseId={house.id}
-          onSaved={() => {
-            // Same refresh pattern the home-details modal uses: refresh
-            // server components so the dashboard's inventory query
-            // re-renders with the new item. See
-            // edit-home-details-modal.tsx for the precedent.
-            router.refresh();
+          onSaved={(result) => {
+            // The top-nav uploader is always a discovery-mode mount (no
+            // targetInventoryId), so a save here always means the user just
+            // created — or matched into — an inventory item from the global
+            // "+ Add" flow. Land them on that item's detail page rather than
+            // only refreshing in place (issue #262). router.push to the
+            // detail route is a fresh server-rendered load, so it replaces
+            // the old router.refresh() outright — no separate refresh needed.
+            // The attach-to-existing path returns the matched item's id, so
+            // this correctly lands on "where your photo went" too.
+            router.push(`/inventory/${result.inventoryId}`);
           }}
         />
       ) : null}
