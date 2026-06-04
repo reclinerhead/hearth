@@ -251,7 +251,7 @@ function ViewAllLink() {
       className="inline-flex items-center gap-1 text-small"
       style={{ color: "var(--color-text-secondary)" }}
     >
-      View all
+      View all inventory
       <Icon name="chevron-right" size={14} />
     </Link>
   );
