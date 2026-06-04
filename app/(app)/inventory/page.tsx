@@ -4,6 +4,7 @@ import { Icon, type IconName } from "@/components/icon";
 import { InventoryThumbnail } from "@/components/inventory-thumbnail";
 import { SectionHeader } from "@/components/ui";
 import { resolveActiveHouseId } from "@/lib/houses/active-house";
+import { selectHeroPhoto } from "@/lib/inventory/hero-photo";
 import { displayModelNumber } from "@/lib/inventory/model-number";
 import { parseVehicleMetadata } from "@/lib/inventory/metadata-schemas";
 import { createClient } from "@/lib/supabase/server";
@@ -399,52 +400,49 @@ async function loadInventory(houseId: string): Promise<InventoryItem[]> {
 
   const ids = rowList.map((r) => r.id);
 
-  // Most-recent attached photo per inventory item. Same query shape as
-  // the dashboard preview: PostgREST can't do "latest per parent" as a
-  // one-liner, so we pull every attached doc for the batch and pick the
-  // most-recent per inventory_id in JS. Filter to actual photos so
-  // future receipts / manuals stay out of the thumbnail slot.
-  //
-  // When an inventory row has a `hero_document_id` (issue #105) we
-  // prefer that document's thumbnail over the most-recent one. Falls
-  // back cleanly to the most-recent rule when the FK is null or the
-  // pinned doc isn't in the batch.
+  // Hero-eligible photos for the batch. PostgREST can't do "hero per
+  // parent" as a one-liner, so we pull every attached photo for the batch
+  // and apply the shared hero rule per item in JS. Filter to actual
+  // photos so receipts / manuals stay out of the thumbnail slot.
   const { data: docs } = await supabase
     .from("documents")
-    .select("id, inventory_id, thumbnail_path, analyzed_at, created_at")
+    .select("id, inventory_id, thumbnail_path, created_at")
     .in("inventory_id", ids)
     .eq("status", "attached")
     .in("kind", ["nameplate", "photo"])
-    .order("analyzed_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
 
-  const pinnedHeroIdByInventory = new Map<string, string>();
-  for (const r of rowList) {
-    if (r.hero_document_id) {
-      pinnedHeroIdByInventory.set(r.id, r.hero_document_id);
-    }
-  }
-
-  const heroByInventory = new Map<string, string>();
-  const pinnedThumbByInventory = new Map<string, string>();
+  // Group photos by item, then resolve each item's hero via the shared
+  // rule (selectHeroPhoto, issue #282): the user's pinned `hero_document_id`
+  // (issue #105) wins when present, else the most-recently-uploaded photo.
+  const docsByInventory = new Map<
+    string,
+    Array<{ id: string; created_at: string; thumbnail_path: string }>
+  >();
   for (const d of (docs ?? []) as Array<{
     id: string | null;
     inventory_id: string | null;
     thumbnail_path: string | null;
+    created_at: string;
   }>) {
-    if (!d.inventory_id || !d.thumbnail_path) continue;
-    if (!heroByInventory.has(d.inventory_id)) {
-      heroByInventory.set(d.inventory_id, d.thumbnail_path);
-    }
-    const pinnedId = pinnedHeroIdByInventory.get(d.inventory_id);
-    if (pinnedId && d.id === pinnedId) {
-      pinnedThumbByInventory.set(d.inventory_id, d.thumbnail_path);
-    }
+    if (!d.id || !d.inventory_id || !d.thumbnail_path) continue;
+    const entry = {
+      id: d.id,
+      created_at: d.created_at,
+      thumbnail_path: d.thumbnail_path,
+    };
+    const group = docsByInventory.get(d.inventory_id);
+    if (group) group.push(entry);
+    else docsByInventory.set(d.inventory_id, [entry]);
   }
 
   return rowList.map((r) => {
     const roomEntry = Array.isArray(r.room) ? r.room[0] : r.room;
     const roomName = roomEntry?.name ?? "Unknown";
+    const hero = selectHeroPhoto(
+      docsByInventory.get(r.id) ?? [],
+      r.hero_document_id,
+    );
     return {
       id: r.id,
       name: r.name,
@@ -455,8 +453,7 @@ async function loadInventory(houseId: string): Promise<InventoryItem[]> {
       modelNumber: r.model_number,
       installedOn: r.installed_on,
       metadata: r.metadata,
-      thumbnailPath:
-        pinnedThumbByInventory.get(r.id) ?? heroByInventory.get(r.id) ?? null,
+      thumbnailPath: hero?.thumbnail_path ?? null,
     };
   });
 }

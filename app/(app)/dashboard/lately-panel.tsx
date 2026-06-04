@@ -29,6 +29,7 @@ import {
   type ActivityEntry,
   type TaskKind,
 } from "@/lib/dashboard/recent-activity";
+import { selectHeroPhoto } from "@/lib/inventory/hero-photo";
 import { createClient } from "@/lib/supabase/server";
 import type {
   DocumentKind,
@@ -293,11 +294,11 @@ function unique(ids: string[]): string[] {
 }
 
 /**
- * Resolve each inventory id to its hero thumbnail path, mirroring the
- * inventory list/preview rule: prefer the pinned `hero_document_id`'s
- * thumbnail, else the most-recent attached photo. Two small reads
- * (hero-doc ids + their thumbnails); returns an empty map on any error so
- * the caller cleanly falls back to type/kind icons.
+ * Resolve each inventory id to its hero thumbnail path via the shared
+ * hero rule (selectHeroPhoto, issue #282): the pinned `hero_document_id`
+ * wins when present, else the most-recently-uploaded photo. Two small
+ * reads (hero-doc ids + their photos); returns an empty map on any error
+ * so the caller cleanly falls back to type/kind icons.
  */
 async function resolveHeroThumbnails(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -310,44 +311,51 @@ async function resolveHeroThumbnails(
     .select("id, hero_document_id")
     .in("id", inventoryIds);
 
-  const pinnedHeroIdByInventory = new Map<string, string>();
+  const pinnedHeroIdByInventory = new Map<string, string | null>();
   for (const o of (owners ?? []) as Array<{
     id: string;
     hero_document_id: string | null;
   }>) {
-    if (o.hero_document_id) pinnedHeroIdByInventory.set(o.id, o.hero_document_id);
+    pinnedHeroIdByInventory.set(o.id, o.hero_document_id);
   }
 
   const { data: docs } = await supabase
     .from("documents")
-    .select("id, inventory_id, thumbnail_path, analyzed_at, created_at")
+    .select("id, inventory_id, thumbnail_path, created_at")
     .in("inventory_id", inventoryIds)
     .eq("status", "attached")
     .in("kind", ["nameplate", "photo"])
-    .order("analyzed_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
 
-  const heroByInventory = new Map<string, string>();
-  const pinnedThumbByInventory = new Map<string, string>();
+  // Group photos by item, then pick each item's hero with the shared rule.
+  const docsByInventory = new Map<
+    string,
+    Array<{ id: string; created_at: string; thumbnail_path: string }>
+  >();
   for (const d of (docs ?? []) as Array<{
     id: string | null;
     inventory_id: string | null;
     thumbnail_path: string | null;
+    created_at: string;
   }>) {
-    if (!d.inventory_id || !d.thumbnail_path) continue;
-    if (!heroByInventory.has(d.inventory_id)) {
-      heroByInventory.set(d.inventory_id, d.thumbnail_path);
-    }
-    const pinnedId = pinnedHeroIdByInventory.get(d.inventory_id);
-    if (pinnedId && d.id === pinnedId) {
-      pinnedThumbByInventory.set(d.inventory_id, d.thumbnail_path);
-    }
+    if (!d.id || !d.inventory_id || !d.thumbnail_path) continue;
+    const entry = {
+      id: d.id,
+      created_at: d.created_at,
+      thumbnail_path: d.thumbnail_path,
+    };
+    const group = docsByInventory.get(d.inventory_id);
+    if (group) group.push(entry);
+    else docsByInventory.set(d.inventory_id, [entry]);
   }
 
   const out = new Map<string, string>();
   for (const id of inventoryIds) {
-    const thumb = pinnedThumbByInventory.get(id) ?? heroByInventory.get(id);
-    if (thumb) out.set(id, thumb);
+    const hero = selectHeroPhoto(
+      docsByInventory.get(id) ?? [],
+      pinnedHeroIdByInventory.get(id) ?? null,
+    );
+    if (hero) out.set(id, hero.thumbnail_path);
   }
   return out;
 }
