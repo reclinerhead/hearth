@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { processDirectEventTaskFromDocument } from "@/lib/maintenance/direct-event";
+import type { RenewalToastInfo } from "@/lib/maintenance/renewal-toast";
 import type { DocumentRow } from "@/types/document";
 
 export type SaveReceiptInput = {
@@ -33,7 +34,7 @@ export type SaveReceiptInput = {
 export async function saveReceiptAction(
   input: SaveReceiptInput,
 ): Promise<
-  | { data: DocumentRow; error: null }
+  | { data: DocumentRow; error: null; renewal: RenewalToastInfo }
   | { data: null; error: string }
 > {
   const supabase = await createClient();
@@ -67,11 +68,11 @@ export async function saveReceiptAction(
   // Fire the direct-event maintenance pipeline now that the document is
   // attached. Awaited (not fire-and-forget) so the inventory detail page
   // re-renders with the new task already visible, and so the result is
-  // available for phase 7's "renewed via document upload" toast to
-  // consume off the returned value. The pipeline gates internally on
-  // expiration_date / inventory_id / status, so non-renewal receipts
-  // exit cheaply.
-  await processDirectEventTaskFromDocument(input.documentId);
+  // returned for the "we scheduled a renewal reminder" toast to consume
+  // (issue #283). The pipeline gates internally on expiration_date /
+  // inventory_id / status, so non-renewal receipts exit cheaply and
+  // return a null created_task_id (→ no toast).
+  const renewal = await processDirectEventTaskFromDocument(input.documentId);
 
-  return { data: data as DocumentRow, error: null };
+  return { data: data as DocumentRow, error: null, renewal };
 }

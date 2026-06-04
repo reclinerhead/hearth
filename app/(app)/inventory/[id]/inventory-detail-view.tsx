@@ -33,6 +33,7 @@ import {
 import { Icon, type IconName } from "@/components/icon";
 import { SmartUploader } from "@/components/smart-uploader/SmartUploader";
 import { Toast } from "@/components/toast";
+import { buildRenewalToastMessage } from "@/lib/maintenance/renewal-toast";
 import { Tooltip } from "@/components/tooltip";
 import {
   formatManufactureDate,
@@ -235,6 +236,9 @@ export function InventoryDetailView({
   // The decode in-flight state is tracked separately from researchPending
   // so cancelling one doesn't affect the other.
   const [decodedToast, setDecodedToast] = useState<string | null>(null);
+  // "We scheduled a renewal reminder" affirmation (issue #283) — set when a
+  // document attached via the Smart Uploader produced a renewal task.
+  const [renewalToast, setRenewalToast] = useState<string | null>(null);
   const decodeRequestIdRef = useRef(0);
   const handleResearch = useCallback(() => {
     submitResearch({});
@@ -857,6 +861,13 @@ export function InventoryDetailView({
               onClose={() => setVinDecodeToast(null)}
             />
           ) : null}
+          {renewalToast ? (
+            <Toast
+              message={renewalToast}
+              icon="calendar"
+              onClose={() => setRenewalToast(null)}
+            />
+          ) : null}
         </div>
       </section>
 
@@ -1037,10 +1048,19 @@ export function InventoryDetailView({
           targetInventoryName={item.name}
           targetIsVehicle={isVehicle}
           targetKind={uploaderKind}
-          onSaved={() => {
+          onSaved={(result) => {
             // Pull the just-attached document into the photos array so
             // the hero / photo strip surfaces it on the next paint.
             router.refresh();
+            // If the document produced a renewal task (registration /
+            // insurance / warranty with an expiration), confirm it with a
+            // toast so the user knows we read it and scheduled a reminder
+            // (issue #283). Null renewal → no toast (photos, non-renewal
+            // receipts), so we never claim a reminder that wasn't set.
+            const message = result.renewal
+              ? buildRenewalToastMessage(result.renewal)
+              : null;
+            if (message) setRenewalToast(message);
           }}
         />
       ) : null}
