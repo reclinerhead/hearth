@@ -212,11 +212,18 @@ export function OnboardingMilestonesPanel({
               setUploader(null);
               // Pull the freshly-derived milestone states so the just-added
               // milestone flips to its green "done" tile on the spot rather
-              // than waiting for a manual reload.
+              // than waiting for a manual reload. (Only reached for the
+              // emergency flow now — the appliance flow redirects away in
+              // onSaved before this fires.)
               router.refresh();
             }
           }}
-          onSaved={() => router.refresh()}
+          // The "add a first appliance" milestone is a discovery-mode mount,
+          // so it's the same "land on what you made" seam as the top-nav
+          // (issue #262): a successful appliance save routes to the new item's
+          // detail page. Emergency-video saves never fire onSaved (no
+          // inventory row), so they stay on the dashboard and refresh on close.
+          onSaved={(result) => router.push(`/inventory/${result.inventoryId}`)}
         />
       ) : null}
     </>

@@ -15,6 +15,7 @@ import type {
   ManufactureDatePrecision,
 } from "@/lib/inventory/first-date-tile";
 import type { SynthesisRunLog } from "@/lib/maintenance/types";
+import { deriveIsFirstUnresearchedItem } from "@/lib/inventory/first-unresearched";
 import { orderPhotosHeroFirst } from "@/lib/inventory/hero-photo";
 import {
   parseReceiptMetadata,
@@ -246,6 +247,7 @@ export default async function InventoryDetailPage({
     heroDocsResult,
     receiptsResult,
     completedTasksResult,
+    researchedCountResult,
   ] = await Promise.all([
       supabase
         .from("rooms")
@@ -285,6 +287,16 @@ export default async function InventoryDetailPage({
         .eq("inventory_id", row.id)
         .eq("status", "completed")
         .order("completed_at", { ascending: false }),
+      // First-research onboarding signal (issue #262): has *any* item in this
+      // house been researched yet? One house-scoped, RLS-bound count of rows
+      // carrying non-null ai_insights. head:true so we pay for the count only,
+      // not the rows. Combined with this item's own ai_insights state below to
+      // decide whether the "Research this model" coachmark teaches.
+      supabase
+        .from("inventory")
+        .select("id", { count: "exact", head: true })
+        .eq("house_id", row.house_id)
+        .not("ai_insights", "is", null),
     ]);
 
   const roomOptions: RoomOption[] = (roomsResult.data ?? []).map((r) => ({
@@ -471,6 +483,15 @@ export default async function InventoryDetailPage({
     ((insights as { maintenance?: string }).maintenance ?? "").length > 0
   );
 
+  // First-research coachmark eligibility (issue #262): true when this item has
+  // no ai_insights AND no item in the house has been researched yet. The view
+  // applies the remaining surface gates (property has no Research; an item with
+  // no manufacturer/model can't be researched) before actually showing it.
+  const isFirstUnresearchedItem = deriveIsFirstUnresearchedItem({
+    itemHasInsights: !!insights,
+    houseHasResearchedItem: (researchedCountResult.count ?? 0) > 0,
+  });
+
   const detail: InventoryDetailItem = {
     id: row.id,
     house_id: row.house_id,
@@ -507,6 +528,7 @@ export default async function InventoryDetailPage({
       receipts={receipts}
       renewalDocuments={renewalDocuments}
       historyEvents={historyEvents}
+      isFirstUnresearchedItem={isFirstUnresearchedItem}
       maintenancePanelSlot={
         <MaintenancePanelItem
           inventoryId={detail.id}

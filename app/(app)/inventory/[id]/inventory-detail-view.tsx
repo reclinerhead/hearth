@@ -142,6 +142,7 @@ export function InventoryDetailView({
   receipts,
   renewalDocuments,
   historyEvents,
+  isFirstUnresearchedItem,
   maintenancePanelSlot,
 }: {
   item: InventoryDetailItem;
@@ -150,6 +151,16 @@ export function InventoryDetailView({
   receipts: InventoryReceipt[];
   renewalDocuments: InventoryRenewalDocument[];
   historyEvents: HistoryEvent[];
+  /**
+   * First-research onboarding signal (issue #262), derived server-side in
+   * page.tsx: this item has no ai_insights AND no item in the house has been
+   * researched yet. Gates the dismissible "Research this model" coachmark —
+   * which is further suppressed for property items and items that can't be
+   * researched (no manufacturer/model). Because it's server-derived, the
+   * coachmark keeps reappearing on return visits until the household's first
+   * research run exists, then never again, with no flag to persist.
+   */
+  isFirstUnresearchedItem: boolean;
   /**
    * Server-rendered maintenance panel for this inventory item. Rendered
    * from page.tsx so the panel keeps its own RLS-scoped Supabase server
@@ -571,6 +582,27 @@ export function InventoryDetailView({
   // used: needs a manufacturer + model number to look anything up.
   const canResearch = Boolean(item.manufacturer && item.model_number);
 
+  // First-research coachmark (issue #262). The server signal
+  // (isFirstUnresearchedItem) is the durable "until they research anything"
+  // gate; this session-local flag is the within-session "Got it" dismiss, so
+  // dismissing without researching doesn't nag on every soft navigation this
+  // session. A fresh load returns the coachmark if still unresearched.
+  const [coachmarkDismissed, setCoachmarkDismissed] = useState(false);
+  // Show only when: the server says this is the house's first unresearched
+  // item, the item can actually be researched (skip the disabled-button case
+  // for v1 — open question 3), it's not a property item (no Research panel),
+  // the user hasn't dismissed it this session, and no research has started or
+  // landed yet (clicking Research clears it — researchPending / displayInsights
+  // both flip the moment a run begins, and the server signal flips to false
+  // after the run completes and refreshes).
+  const showCoachmark =
+    isFirstUnresearchedItem &&
+    !isProperty &&
+    canResearch &&
+    !coachmarkDismissed &&
+    !researchPending &&
+    !displayInsights;
+
   // Vehicle VIN decode (issue #263). The trigger lives in the unified
   // action row below, so the decode state and handler are lifted out of
   // PropertyDetailsBlock to this parent level — the button can't sit in the
@@ -872,21 +904,38 @@ export function InventoryDetailView({
       </section>
 
       {/*
-        Unified action row (issue #254). All applicable actions live in a
-        single full-width, equal-width row beneath the item header — order:
-        Add photo, Add document, Research, Build/Rebuild plan, Edit details.
-        Each button sits in a `flex-1 basis-52` (208px) cell, so widths are
-        pinned by the flex distribution rather than by label length: the
-        in-flight label swaps (Research → Researching…, Build → Building
-        plan…) never shift layout. 208px is the widest basis that still lets
-        all five share the ~1168px content width on one row; below ~1100px
-        the row wraps to additional equal-width rows, down to one button per
-        row on phones. `[&>*]:w-full` forces whatever the cell holds —
-        a bare button or a Tooltip-wrapped one — to fill its cell. The
-        buttons that don't apply to an item simply omit their cell:
-        Research is appliance/system/exterior-only, Build appears once a
-        maintenance insight exists, and Decode / Re-decode VIN (issue #263)
-        appears only for vehicles — slotted immediately before Edit details.
+        First-research coachmark (issue #262). Sits directly above the action
+        row so it points the new user straight at the accent-treated Research
+        button below. The button emphasis IS the Part 3 accent treatment —
+        no separate ring/pulse, one accent signal. Dismissed by "Got it"
+        (session-local) or by clicking Research (the showCoachmark gate).
+      */}
+      {showCoachmark ? (
+        <ResearchCoachmark
+          itemTypePlural={pluralizeTypeLabel(item.type, item.subtype)}
+          onDismiss={() => setCoachmarkDismissed(true)}
+        />
+      ) : null}
+
+      {/*
+        Unified action row (issue #254, Build rules revised by #262). All
+        applicable actions live in a single full-width, equal-width row beneath
+        the item header — order: Add photo, Add document, Research,
+        Build/Rebuild plan, Edit details. Each button sits in a `flex-1
+        basis-52` (208px) cell, so widths are pinned by the flex distribution
+        rather than by label length: the in-flight label swaps (Research →
+        Researching…, Build → Building plan…) never shift layout. 208px is the
+        widest basis that still lets all five share the ~1168px content width on
+        one row; below ~1100px the row wraps to additional equal-width rows,
+        down to one button per row on phones. `[&>*]:w-full` forces whatever the
+        cell holds — a bare button or a Tooltip-wrapped one — to fill its cell.
+        For appliances/systems/exteriors the row is a stable five buttons:
+        Research and Build are both always present, with Build rendered
+        *disabled* (with an explanatory tooltip) until a maintenance insight
+        exists rather than omitting its cell (issue #262). Property items are
+        the exception — they have no Research panel and no synthesis, so both
+        Research and Build are suppressed; Decode / Re-decode VIN (issue #263)
+        takes their place for vehicles, slotted immediately before Edit details.
       */}
       <div className="flex flex-wrap gap-2">
         <div className="flex-1 basis-52 min-w-0 flex [&>*]:w-full [&>*]:min-w-0">
@@ -927,21 +976,38 @@ export function InventoryDetailView({
             />
           </div>
         )}
-        {hasMaintenanceInsight ? (
+        {isProperty ? null : (
+          // Build is always present for appliances/systems/exteriors (issue
+          // #262). When no maintenance insight exists yet it renders disabled
+          // — resting "Build maint" label, no spinner — with a tooltip naming
+          // the dependency, so the unlock path ("Research first") is legible
+          // instead of a mystery dead button. Once the insight lands it behaves
+          // exactly as before: Build/Rebuild, in-flight spinner, and the
+          // research→rebuild mutual lock.
           <div className="flex-1 basis-52 min-w-0 flex [&>*]:w-full [&>*]:min-w-0">
             <BuildMaintenancePlanButton
-              hasPriorPlan={hasPriorPlan}
-              inFlight={synthesisInFlight}
+              hasPriorPlan={hasMaintenanceInsight ? hasPriorPlan : false}
+              inFlight={hasMaintenanceInsight ? synthesisInFlight : false}
               // Lock the button while a research run is in flight: research
               // auto-chains into a rebuild on finish, so the user shouldn't
               // (and needn't) trigger one by hand in the meantime. It shows
               // its spinner only once synthesis actually starts (inFlight);
-              // during the research window it's a plain disabled state.
-              disabled={researchPending || synthesisInFlight}
+              // during the research window it's a plain disabled state. With no
+              // insight at all the button is simply disabled outright.
+              disabled={
+                hasMaintenanceInsight
+                  ? researchPending || synthesisInFlight
+                  : true
+              }
+              tooltip={
+                hasMaintenanceInsight
+                  ? undefined
+                  : "Research this model first to build a maintenance plan."
+              }
               onClick={handleBuildMaintenancePlan}
             />
           </div>
-        ) : null}
+        )}
         {isVehicle ? (
           <div className="flex-1 basis-52 min-w-0 flex [&>*]:w-full [&>*]:min-w-0">
             <DecodeVinButton
@@ -1986,12 +2052,22 @@ function ResearchButton({
   // and the disabled attribute already prevents repeat submissions.
   const inactive = disabled || loading || busy;
 
+  // Accent (gold) CTA treatment while Research is the user's actual next step:
+  // no insights yet AND the button is actionable (issue #262). Once insights
+  // exist ("Research again") it drops to ghost — re-running is a maintenance
+  // affordance, not a CTA — mirroring how the Build button falls from
+  // btn-primary to btn-ghost after its first run. When the button can't be
+  // researched (missing manufacturer/model), it stays ghost so the accent
+  // never lands on a disabled button; the inactive opacity treatment below
+  // then applies over whichever resting variant is chosen.
+  const variantClass = !hasResults && !disabled ? "btn btn-primary" : "btn btn-ghost";
+
   const button = (
     <button
       type="button"
       disabled={inactive}
       onClick={onClick}
-      className="btn btn-ghost research-button w-full"
+      className={`${variantClass} research-button w-full`}
       aria-disabled={inactive ? "true" : "false"}
       aria-label={
         loading
@@ -2049,6 +2125,7 @@ function BuildMaintenancePlanButton({
   inFlight,
   disabled,
   onClick,
+  tooltip,
 }: {
   hasPriorPlan: boolean;
   // `inFlight` is this button's own synthesis run — it shows the spinner +
@@ -2059,6 +2136,11 @@ function BuildMaintenancePlanButton({
   inFlight: boolean;
   disabled: boolean;
   onClick: () => void;
+  // Optional explanatory tooltip, surfaced for the disabled-until-insights
+  // state (issue #262) — "Research this model first to build a maintenance
+  // plan." Mirrors how ResearchButton / DecodeVinButton tooltip their own
+  // disabled gates. When omitted the bare button renders as before.
+  tooltip?: string;
 }) {
   const isDisabled = disabled || inFlight;
   // First build is a call-to-action — surface it with the primary
@@ -2081,7 +2163,7 @@ function BuildMaintenancePlanButton({
   const restingLabel = hasPriorPlan ? "Rebuild maint" : "Build maint";
   const inFlightLabel = hasPriorPlan ? "Rebuilding maint…" : "Building maint…";
 
-  return (
+  const button = (
     <button
       type="button"
       disabled={isDisabled}
@@ -2129,6 +2211,64 @@ function BuildMaintenancePlanButton({
         }
       `}</style>
     </button>
+  );
+
+  if (!tooltip) return button;
+
+  return (
+    <Tooltip content={tooltip} side="bottom">
+      {button}
+    </Tooltip>
+  );
+}
+
+// First-research coachmark (issue #262). A dismissible, awareness-voiced
+// callout that teaches a brand-new user what the keystone "Research this
+// model" action does — shown above the action row only until the household
+// has researched its first item. It deliberately carries no ring/pulse of its
+// own: the emphasis is the accent (btn-primary) Research button directly below
+// (Part 3), so the callout and the glowing button reinforce one accent signal
+// rather than competing. Dismissed by "Got it" (session-local) or by clicking
+// Research; never blocks or disables the button.
+function ResearchCoachmark({
+  itemTypePlural,
+  onDismiss,
+}: {
+  itemTypePlural: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <section
+      aria-label="Getting started with Research"
+      className="surface-ai flex items-start gap-3 p-4 sm:p-5"
+    >
+      <span
+        aria-hidden
+        style={{ color: "var(--color-accent)", marginTop: 2 }}
+      >
+        <Icon name="sparkles" size={18} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="eyebrow mb-1">Start here</div>
+        <p
+          className="text-small"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          Tap{" "}
+          <span style={{ color: "var(--color-text-primary)", fontWeight: 500 }}>
+            Research this model
+          </span>{" "}
+          and Hearth will look up what it knows about {itemTypePlural} like
+          yours: expected service life, maintenance needs, and what to watch
+          for. It&apos;ll also set up a maintenance plan tuned to this item.
+        </p>
+        <div className="mt-3">
+          <button type="button" onClick={onDismiss} className="btn btn-ghost">
+            Got it
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 
