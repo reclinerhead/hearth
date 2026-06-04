@@ -205,7 +205,13 @@ export async function LatelyPanel({ houseId }: { houseId: string }) {
 
   return (
     <PanelShell>
-      <div className="flex flex-1 flex-col gap-2">
+      {/*
+        One column on mobile, two on md+. `flex-1` + `auto-rows-fr` keeps
+        the grid filling the panel height (rows stretch equally) so the
+        right column still tracks the house-photo column. With 3 entries
+        the second row carries a single tile in the left cell.
+      */}
+      <div className="grid flex-1 auto-rows-fr grid-cols-1 gap-2 md:grid-cols-2">
         {entries.map((entry) => (
           <LatelyTile key={entry.id} entry={entry} />
         ))}
