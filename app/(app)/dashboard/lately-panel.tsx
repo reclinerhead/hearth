@@ -65,7 +65,14 @@ export async function LatelyPanel({ houseId }: { houseId: string }) {
       .limit(PER_SOURCE_LIMIT),
     supabase
       .from("documents")
-      .select("id, inventory_id, kind, thumbnail_path, created_at, inventory(name)")
+      // Disambiguate the embed: there are TWO FKs between documents and
+      // inventory (documents.inventory_id → inventory, and
+      // inventory.hero_document_id → documents), so a bare `inventory(name)`
+      // is an ambiguous embed (PGRST201). The `!inventory_id` hint pins it
+      // to the parent-item relationship.
+      .select(
+        "id, inventory_id, kind, thumbnail_path, created_at, inventory!inventory_id(name)",
+      )
       .eq("house_id", houseId)
       .eq("status", "attached")
       .not("inventory_id", "is", null)
@@ -82,7 +89,13 @@ export async function LatelyPanel({ houseId }: { houseId: string }) {
       .limit(PER_SOURCE_LIMIT),
   ]);
 
-  if (addedRes.error || docsRes.error || tasksRes.error) {
+  const loadError = addedRes.error ?? docsRes.error ?? tasksRes.error;
+  if (loadError) {
+    // Surface the real message rather than collapsing into a silent/empty
+    // state — as the app approaches real users, schema drift / RLS misconfig
+    // / transient outages should be visible (feedback_surface_loader_errors,
+    // matching EmergencyReferencePanel).
+    console.error("LatelyPanel load failed", loadError);
     return (
       <PanelShell>
         <div
@@ -97,8 +110,7 @@ export async function LatelyPanel({ houseId }: { houseId: string }) {
             className="text-small"
             style={{ color: "var(--color-text-secondary)" }}
           >
-            We couldn&rsquo;t load your recent activity just now. Refresh in a
-            moment — if it keeps happening, let us know.
+            We couldn&rsquo;t load your recent activity: {loadError.message}
           </p>
         </div>
       </PanelShell>
