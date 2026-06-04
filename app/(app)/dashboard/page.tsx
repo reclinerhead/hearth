@@ -7,7 +7,7 @@ import type { House } from "@/types/house";
 import { DashboardOnboarding } from "./dashboard-onboarding";
 import { EmergencyReferencePanel } from "./emergency-reference-panel";
 import { HabitatPreviewPanel } from "./habitat-preview-panel";
-import { LifecycleOutlookPanel } from "./lifecycle-outlook-panel";
+import { LatelyPanel } from "./lately-panel";
 import { MaintenancePanelDashboard } from "./maintenance-panel-dashboard";
 import { buildMilestones } from "./onboarding-milestones";
 
@@ -124,7 +124,7 @@ export default async function DashboardPage() {
           house.onboarding_state?.foundation_celebration_seen === true
         }
         initialHouse={house}
-        lifecycleOutlookSlot={<LifecycleOutlookPanel houseId={house.id} />}
+        latelySlot={<LatelyPanel houseId={house.id} />}
       />
 
       {/*

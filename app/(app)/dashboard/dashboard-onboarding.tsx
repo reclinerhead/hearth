@@ -28,14 +28,14 @@ export function DashboardOnboarding({
   milestones,
   celebrationSeen,
   initialHouse,
-  lifecycleOutlookSlot,
+  latelySlot,
 }: {
   houseId: string;
   milestones: Milestone[];
   /** Durable flag (issue #269): true once the foundation celebration has shown. */
   celebrationSeen: boolean;
   initialHouse: House;
-  lifecycleOutlookSlot?: ReactNode;
+  latelySlot?: ReactNode;
 }) {
   const [editOpen, setEditOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -53,7 +53,7 @@ export function DashboardOnboarding({
       <DashboardLive
         houseId={houseId}
         initialHouse={initialHouse}
-        lifecycleOutlookSlot={lifecycleOutlookSlot}
+        latelySlot={latelySlot}
         editOpen={editOpen}
         onEditOpenChange={setEditOpen}
         onOpenHelp={() => setHelpOpen(true)}

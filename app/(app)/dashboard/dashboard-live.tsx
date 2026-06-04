@@ -523,7 +523,7 @@ function useFirstRunDiscoveryModal(house: House | null): {
 export function DashboardLive({
   houseId,
   initialHouse,
-  lifecycleOutlookSlot,
+  latelySlot,
   editOpen,
   onEditOpenChange,
   onOpenHelp,
@@ -535,13 +535,14 @@ export function DashboardLive({
   // hook's Realtime subscription and same-tab refresh listener still
   // run normally on top of the seed.
   initialHouse: House;
-  // Server-rendered lifecycle outlook panel (issue #212), passed in as a
-  // ReactNode slot from page.tsx. DashboardLive is a client component, so
-  // the panel — which runs a server Supabase query — is rendered on the
+  // Server-rendered "Lately" recent-activity panel (issue #279), passed in
+  // as a ReactNode slot from page.tsx. DashboardLive is a client component,
+  // so the panel — which runs server Supabase queries — is rendered on the
   // server and handed down rather than fetched inside the client tree.
   // Same server-component-inside-client pattern the inventory detail page
-  // uses for its maintenance panel slot.
-  lifecycleOutlookSlot?: React.ReactNode;
+  // uses for its maintenance panel slot. (Replaced the lifecycle outlook
+  // slot, which moved to the future /maintenance timeline page.)
+  latelySlot?: React.ReactNode;
   // Home-details edit-modal open state, lifted to the dashboard coordinator
   // (issue #220) so the go-deeper panel's "house facts" card can open the
   // same modal the address-row pencil opens. DashboardLive still owns the
@@ -882,11 +883,11 @@ export function DashboardLive({
           </div>
 
           {/*
-            Lifecycle outlook fills the dead space the removed Zillow
-            description left beneath the facts cards (issue #212). It's a
-            server-rendered slot — see the prop comment above.
+            "Lately" recent-activity panel beneath the facts cards (issue
+            #279) — a server-rendered slot (see the prop comment above) that
+            flex-fills the right column to rough parity with the photo.
           */}
-          {lifecycleOutlookSlot}
+          {latelySlot}
         </div>
       </section>
       {showDiscoveryModal ? (
