@@ -62,9 +62,11 @@ export function LatelyTile({ entry }: { entry: ActivityEntry }) {
         style={{
           // Stronger than InventoryTile's scrim — these tiles run two-up
           // (narrower, busier photos) and the small uppercase eyebrow needs
-          // the extra dimming to stay legible on bright images.
+          // the extra dimming to stay legible on bright images. The extra
+          // mid stop keeps the gradient dark through the band where the
+          // eyebrow sits (~40-50% up) instead of fading to light too early.
           background:
-            "linear-gradient(to top, color-mix(in oklab, #000 90%, transparent), color-mix(in oklab, #000 35%, transparent) 55%, transparent)",
+            "linear-gradient(to top, color-mix(in oklab, #000 92%, transparent), color-mix(in oklab, #000 70%, transparent) 45%, color-mix(in oklab, #000 24%, transparent) 75%, transparent)",
         }}
       />
 
