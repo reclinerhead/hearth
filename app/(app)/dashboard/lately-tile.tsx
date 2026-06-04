@@ -70,7 +70,7 @@ export function LatelyTile({ entry }: { entry: ActivityEntry }) {
         }}
       />
 
-      <div className="absolute inset-x-0 bottom-0 px-4 pb-3 pt-6">
+      <div className="absolute inset-x-0 bottom-0 px-4 pb-1.5 pt-6">
         <div
           className="truncate"
           style={{
