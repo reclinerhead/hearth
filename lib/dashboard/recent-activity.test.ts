@@ -69,7 +69,7 @@ describe("shapeInventoryAdded", () => {
 });
 
 describe("shapeDocumentAttached", () => {
-  it("resolves the parent name into the eyebrow and the kind into the title", () => {
+  it("resolves the parent name into the eyebrow and a generic title for receipts", () => {
     const entry = shapeDocumentAttached({
       id: "doc-1",
       inventoryId: "inv-9",
@@ -78,12 +78,27 @@ describe("shapeDocumentAttached", () => {
       createdAt: "2026-05-03T12:00:00Z",
       thumbnailPath: "house/doc-1/thumb.jpg",
     });
-    expect(entry.eyebrow).toBe("WATER HEATER · RECEIPT ATTACHED");
-    expect(entry.title).toBe("Service receipt");
+    // The receipt kind is overloaded (registrations, insurance, warranties),
+    // so it surfaces generically rather than as "Service receipt".
+    expect(entry.eyebrow).toBe("WATER HEATER · DOCUMENT ATTACHED");
+    expect(entry.title).toBe("Document");
     // href targets the parent item, but the entry id is the document's own.
     expect(entry.href).toBe("/inventory/inv-9");
     expect(entry.id).toBe("doc-1");
     expect(entry.fallbackIcon).toBe("file-text");
+  });
+
+  it("keeps a specific label for non-overloaded kinds", () => {
+    const entry = shapeDocumentAttached({
+      id: "doc-2",
+      inventoryId: "inv-9",
+      parentName: "Water heater",
+      kind: "manual",
+      createdAt: "2026-05-03T12:00:00Z",
+      thumbnailPath: null,
+    });
+    expect(entry.eyebrow).toBe("WATER HEATER · MANUAL ATTACHED");
+    expect(entry.title).toBe("Manual");
   });
 });
 

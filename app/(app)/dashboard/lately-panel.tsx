@@ -16,6 +16,8 @@
 // errors surface loudly rather than collapsing into a silent empty state
 // (feedback_surface_loader_errors, as EmergencyReferencePanel does).
 
+import Link from "next/link";
+import { Icon } from "@/components/icon";
 import { SectionHeader } from "@/components/ui";
 import {
   buildRecentActivity,
@@ -204,7 +206,7 @@ export async function LatelyPanel({ houseId }: { houseId: string }) {
   }
 
   return (
-    <PanelShell>
+    <PanelShell trailing={<ViewAllLink />}>
       {/*
         One column on mobile, two on md+. `flex-1` + `auto-rows-fr` keeps
         the grid filling the panel height (rows stretch equally) so the
@@ -220,15 +222,37 @@ export async function LatelyPanel({ houseId }: { houseId: string }) {
   );
 }
 
-function PanelShell({ children }: { children: React.ReactNode }) {
+function PanelShell({
+  children,
+  trailing,
+}: {
+  children: React.ReactNode;
+  trailing?: React.ReactNode;
+}) {
   // flex-1 so the panel grows to fill the right column to rough parity with
   // the house-photo column on desktop; on mobile the grid collapses to one
   // column and the panel simply takes its content height.
   return (
     <section className="surface flex flex-1 flex-col p-4 sm:p-5">
-      <SectionHeader eyebrow="Recent activity" title="Lately" />
+      <SectionHeader eyebrow="Recent activity" title="Lately" trailing={trailing} />
       {children}
     </section>
+  );
+}
+
+// "View all" → the inventory list, mirroring the maintenance panel's
+// header affordance. Only shown on the populated state — pointing it at
+// the inventory page next to the empty-house nudge would be contradictory.
+function ViewAllLink() {
+  return (
+    <Link
+      href="/inventory"
+      className="inline-flex items-center gap-1 text-small"
+      style={{ color: "var(--color-text-secondary)" }}
+    >
+      View all
+      <Icon name="chevron-right" size={14} />
+    </Link>
   );
 }
 

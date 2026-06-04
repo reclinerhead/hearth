@@ -115,8 +115,12 @@ const SUBTYPE_FALLBACK_ICON: Record<InventorySubtype, IconName> = {
 };
 
 // Human title shown in the tile's title slot for an attached document.
+// `receipt` stays generic ("Document") on purpose: the receipt kind is
+// overloaded — it backs vehicle registrations, insurance cards, and
+// warranties via the renewal path as well as actual service receipts —
+// so a specific label like "Service receipt" mislabels half of them.
 const DOCUMENT_KIND_TITLE: Record<DocumentKind, string> = {
-  receipt: "Service receipt",
+  receipt: "Document",
   manual: "Manual",
   warranty: "Warranty",
   permit: "Permit",
@@ -129,9 +133,10 @@ const DOCUMENT_KIND_TITLE: Record<DocumentKind, string> = {
   other: "Document",
 };
 
-// Single word used in the eyebrow ("WATER HEATER · RECEIPT ATTACHED").
+// Single word used in the eyebrow ("WATER HEATER · DOCUMENT ATTACHED").
+// `receipt` is generic here too — see DOCUMENT_KIND_TITLE.
 const DOCUMENT_KIND_EYEBROW_WORD: Record<DocumentKind, string> = {
-  receipt: "receipt",
+  receipt: "document",
   manual: "manual",
   warranty: "warranty",
   permit: "permit",
