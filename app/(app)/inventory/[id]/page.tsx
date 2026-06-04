@@ -15,6 +15,7 @@ import type {
   ManufactureDatePrecision,
 } from "@/lib/inventory/first-date-tile";
 import type { SynthesisRunLog } from "@/lib/maintenance/types";
+import { orderPhotosHeroFirst } from "@/lib/inventory/hero-photo";
 import {
   parseReceiptMetadata,
   type ReceiptMetadata,
@@ -232,8 +233,8 @@ export default async function InventoryDetailPage({
   //   - document count drives the delete-confirm "Also delete N linked
   //     documents" copy (actual deletion still walks the rows server-side)
   //   - every attached photo for the item (`kind` filtered to actual
-  //     photos so receipts / manuals stay out), ordered by analyzed_at
-  //     desc with created_at as the tiebreaker. photos[0] is the hero;
+  //     photos so receipts / manuals stay out). orderPhotosHeroFirst
+  //     puts the hero at photos[0] (pinned-wins-else-newest, issue #282);
   //     the full set feeds the click-to-expand lightbox.
   //   - attached receipts for the Documents section (issue #117),
   //     selecting the metadata and page-1 thumbnail. Page counts come
@@ -261,7 +262,9 @@ export default async function InventoryDetailPage({
         .eq("inventory_id", row.id)
         .eq("status", "attached")
         .in("kind", ["nameplate", "photo"])
-        .order("analyzed_at", { ascending: false, nullsFirst: false })
+        // Ordering is applied authoritatively by orderPhotosHeroFirst
+        // below (pinned-wins-else-newest by upload time); created_at desc
+        // here just keeps the pre-helper rows in a sensible order.
         .order("created_at", { ascending: false }),
       supabase
         .from("documents")
@@ -291,23 +294,22 @@ export default async function InventoryDetailPage({
 
   const linkedDocumentCount = docCountResult.count ?? 0;
 
-  // Every attached photo for the item, most-recent first. The detail
-  // view's hero uses photos[0].thumbnailPath (600px is plenty for the
-  // 260px slot, well above 2x DPR); the lightbox steps through all
-  // photos at storagePath (1920px) on user click. Both URL sources
-  // are signed client-side via the shared sessionStorage-cached
-  // helper — see "Signed URL caching" in the Technical Guide.
+  // Every attached photo for the item, hero-first. The detail view's
+  // hero uses photos[0].thumbnailPath (600px is plenty for the 260px
+  // slot, well above 2x DPR); the lightbox steps through all photos at
+  // storagePath (1920px) on user click. Both URL sources are signed
+  // client-side via the shared sessionStorage-cached helper — see
+  // "Signed URL caching" in the Technical Guide.
   //
-  // When the user has pinned a hero via `hero_document_id` (issue
-  // #105), move that document to the front of the array so every
-  // downstream read site (hero slot, lightbox, modal default) sees
-  // the same first-photo-is-hero contract. The FK has ON DELETE SET
-  // NULL, so a deleted hero reverts to the most-recent fallback
-  // automatically; this client-side reorder also no-ops cleanly when
-  // the pinned id isn't present in the photos list for any other
-  // reason (e.g. status change pushing it out of the kind filter).
-  // Cast the loosely-typed PostgREST rows once; both the photo list and
-  // the renewal-document derivation (issue #280) read from this shape.
+  // orderPhotosHeroFirst (issue #282) applies the shared hero rule: the
+  // user's pinned `hero_document_id` (issue #105) leads when present,
+  // otherwise the most-recently-uploaded photo leads — so a freshly
+  // added photo becomes the hero without the user having to pick it. The
+  // FK has ON DELETE SET NULL, so a deleted hero reverts to that newest
+  // fallback automatically, and the helper no-ops cleanly when the pinned
+  // id isn't in the list (e.g. status change pushed it out of the kind
+  // filter). Cast the loosely-typed PostgREST rows once; both the photo
+  // list and the renewal-document derivation (issue #280) read this shape.
   const heroDocRows = (heroDocsResult.data ?? []) as Array<{
     id: string;
     storage_path: string;
@@ -315,21 +317,13 @@ export default async function InventoryDetailPage({
     metadata: Record<string, unknown> | null;
     created_at: string;
   }>;
-  const orderedDocs = heroDocRows.filter(
+  const validDocs = heroDocRows.filter(
     (d) =>
       typeof d.id === "string" &&
       typeof d.storage_path === "string" &&
       typeof d.thumbnail_path === "string",
   );
-
-  const heroId = row.hero_document_id;
-  if (heroId) {
-    const idx = orderedDocs.findIndex((d) => d.id === heroId);
-    if (idx > 0) {
-      const [hero] = orderedDocs.splice(idx, 1);
-      orderedDocs.unshift(hero);
-    }
-  }
+  const orderedDocs = orderPhotosHeroFirst(validDocs, row.hero_document_id);
 
   const photos: InventoryPhoto[] = orderedDocs.map((d) => ({
     id: d.id,
