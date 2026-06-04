@@ -157,7 +157,7 @@ export default async function InventoryPage() {
             {sectionItems.length === 0 ? (
               <EmptySection hint={section.emptyHint} />
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 mt-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-[17px]">
                 {sectionItems.map((item) => (
                   <InventoryTile key={item.id} item={item} />
                 ))}
