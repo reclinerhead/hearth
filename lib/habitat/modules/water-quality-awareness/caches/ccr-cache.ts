@@ -71,6 +71,18 @@ export interface CcrCacheStore {
    * findings view will render multi-year context in a later phase).
    */
   lookupLatest(pwsid: string): Promise<CcrCacheLookupResult>;
+  /**
+   * Look up the full multi-year history of `edition = 'primary'` CCRs
+   * for the given PWSID, newest first. Powers the year-over-year
+   * contaminant trends surfaced in the finding modal and the PDF
+   * report (issue #289). Supplements and corrections are excluded —
+   * the trend is built from the canonical annual report for each year.
+   *
+   * Soft-fail by convention: any Supabase error resolves to an empty
+   * array rather than throwing, so a cache outage degrades the trend
+   * to "no history" instead of failing the whole module run.
+   */
+  lookupHistory(pwsid: string): Promise<CcrCacheRow[]>;
 }
 
 /**
@@ -131,6 +143,48 @@ export function createSupabaseCcrCacheStore(): CcrCacheStore {
         return { kind: "miss", reason: "lookup-error" };
       }
     },
+
+    async lookupHistory(pwsid: string): Promise<CcrCacheRow[]> {
+      if (!supabaseEnvAvailable()) {
+        return [];
+      }
+      const normalized = pwsid.trim().toUpperCase();
+      try {
+        const supabase = createServiceClient();
+        const { data, error } = await supabase
+          .from("water_system_reports")
+          .select(
+            "id, pwsid, report_year, edition, extracted_data, extraction_version, published_date, extracted_at",
+          )
+          .eq("pwsid", normalized)
+          .eq("edition", "primary")
+          .order("report_year", { ascending: false });
+        if (error) {
+          console.warn(
+            "[ccr-cache] history query error, treating as empty:",
+            error.message,
+          );
+          return [];
+        }
+        if (!data) return [];
+        return data.map((row) => ({
+          id: row.id as string,
+          pwsid: row.pwsid as string,
+          report_year: row.report_year as number,
+          edition: row.edition as string,
+          extracted_data: row.extracted_data as CcrExtractionResult,
+          extraction_version: row.extraction_version as string,
+          published_date: (row.published_date as string | null) ?? null,
+          extracted_at: row.extracted_at as string,
+        }));
+      } catch (err) {
+        console.warn(
+          "[ccr-cache] history threw, treating as empty:",
+          err instanceof Error ? err.message : err,
+        );
+        return [];
+      }
+    },
   };
 }
 
@@ -155,4 +209,18 @@ export async function resolveLatestCcr(
     row: cache.kind === "hit" ? cache.row : null,
     cache,
   };
+}
+
+/**
+ * Resolve the full multi-year CCR history for a PWSID (newest first),
+ * for the contaminant-trend computation (issue #289). Thin wrapper over
+ * `store.lookupHistory` so the orchestrator can narrate the span in the
+ * activity log. Soft-fails to an empty array via the store contract.
+ */
+export async function resolveCcrHistory(
+  pwsid: string,
+  store: CcrCacheStore,
+): Promise<{ rows: CcrCacheRow[] }> {
+  const rows = await store.lookupHistory(pwsid);
+  return { rows };
 }

@@ -179,6 +179,7 @@ export async function GET(): Promise<Response> {
     sourceWaterLabel: sourceWaterLabel(findings.system_card?.source_type),
     reportYear: ccr.report_year ?? null,
     contaminants: displayedContaminants,
+    contaminantHistory: ccr.contaminant_history ?? null,
     detected,
     freeTestingOffer: ccr.free_testing_offer ?? null,
     usedSdwis,

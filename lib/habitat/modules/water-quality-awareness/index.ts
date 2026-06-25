@@ -67,9 +67,15 @@ import {
 import {
   createSupabaseCcrCacheStore,
   resolveLatestCcr,
+  resolveCcrHistory,
   type CcrCacheRow,
 } from "./caches/ccr-cache";
 import { buildCcrFindings } from "./ccr";
+import {
+  buildContaminantHistory,
+  buildCcrReportIndex,
+  applyTrendEscalation,
+} from "@/lib/habitat/water-quality/contaminants/trends";
 import {
   COMPLIANCE_RECENT_YEARS,
   countUnmappedContaminants,
@@ -89,6 +95,7 @@ import { summarizeWqaRecheckChanges } from "./recheck-summary";
 import {
   branchDecideNarration,
   ccrCacheFetchNarration,
+  ccrHistoryComputeNarration,
   complianceComputeNarration,
   EPA_CWS_SERVICE_AREAS_SOURCE,
   EPA_ENVIROFACTS_SOURCE,
@@ -597,6 +604,67 @@ const WaterQualityAwarenessModule: HabitatModule = {
             }),
           }
         : null;
+
+    // WQA trends (#289): on the CCR branch, pull every uploaded report
+    // year for this utility and build the per-analyte reading history
+    // once, here — the only place with multi-year access. It's persisted
+    // on the CCR findings so the modal and the PDF report both render the
+    // same year-over-year trend without re-querying. Soft-fails to an
+    // empty history (resolveCcrHistory never throws), in which case the
+    // surfaces just render this year's numbers with no trend.
+    if (ccrEnrichment && resolution.confidence !== "unmapped") {
+      const ccrHistoryStore = createSupabaseCcrCacheStore();
+      const { rows: historyRows } = await resolveCcrHistory(
+        resolution.pwsid,
+        ccrHistoryStore,
+      );
+      const history = buildContaminantHistory(
+        historyRows.map((r) => ({
+          report_year: r.report_year,
+          published_date: r.published_date,
+          extracted_data: r.extracted_data,
+        })),
+      );
+      ccrEnrichment.findings.contaminant_history = history;
+      // "Reports on file" index — the years backing the trend, for the
+      // system-card disclosure (issue #289). Years + dates + counts only;
+      // no file references (shared extraction, private uploads).
+      ccrEnrichment.findings.report_index = buildCcrReportIndex(
+        historyRows.map((r) => ({
+          report_year: r.report_year,
+          published_date: r.published_date,
+          extracted_at: r.extracted_at,
+          extracted_data: r.extracted_data,
+        })),
+      );
+      // Issue #291 — a contaminant below its limit but rising toward it
+      // would otherwise tier as `context` and hide in the modal's
+      // low-levels collapse. Escalate it to `caution` now (we have the
+      // history), before payload assembly derives severity — so the
+      // escalation cascades through the collapse, the badge, and the
+      // dashboard severity from this one re-tiering.
+      if (ccrEnrichment.findings.contaminants) {
+        ccrEnrichment.findings.contaminants = applyTrendEscalation(
+          ccrEnrichment.findings.contaminants,
+          history,
+        );
+      }
+
+      const years = historyRows.map((r) => r.report_year);
+      const historyStep = ccrHistoryComputeNarration({
+        yearCount: years.length,
+        firstYear: years.length > 0 ? Math.min(...years) : null,
+        lastYear: years.length > 0 ? Math.max(...years) : null,
+        analyteCount: history.length,
+      });
+      log.step({
+        kind: "compute",
+        narration: historyStep.narration,
+        detail: historyStep.detail,
+        result_summary: historyStep.result_summary,
+        source: HEARTH_CCR_CACHE_SOURCE,
+      });
+    }
 
     // WQA-6: water-touching properties (hardness, iron, manganese) read
     // from the CCR. Computed once here — both the maintenance-bridge

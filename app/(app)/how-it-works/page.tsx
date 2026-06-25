@@ -1407,7 +1407,7 @@ export default function HowItWorksPage() {
                 href: "https://www.epa.gov/ccr",
               },
             ]}
-            lastUpdated="May 27, 2026"
+            lastUpdated="June 25, 2026"
           >
             <div
               style={{
@@ -1511,6 +1511,63 @@ export default function HowItWorksPage() {
                 clean compliance record with no LCR data on file stays
                 neutral — we don&rsquo;t celebrate before we have the
                 evidence.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
+                Year-over-year trends
+              </h3>
+              <p style={{ margin: 0 }}>
+                When more than one of your utility&rsquo;s annual Water
+                Quality Reports is on file, we line up each contaminant
+                across the years and show which direction its level is
+                moving — a small arrow next to the number, and a sparkline
+                once there are three or more readings. The same indicator
+                appears in your downloadable Water Quality Report. It&rsquo;s
+                most useful for the PFAS &ldquo;forever chemicals,&rdquo;
+                which utilities only began reporting in the last few years.
+              </p>
+              <p style={{ margin: 0 }}>
+                We compare the two most recent years that each have a
+                measured value. A change within about 10% reads as
+                &ldquo;stable&rdquo; — that band keeps ordinary
+                year-to-year measurement noise (and the common case where a
+                utility on a reduced-monitoring schedule simply republishes
+                the prior sample) from looking like a real trend. Larger
+                moves read as rising or falling.
+              </p>
+              <p style={{ margin: 0 }}>
+                We will only ever show you what your reports actually
+                contain. Every trend states exactly how many readings it
+                rests on and which years they span — &ldquo;2 readings ·
+                2024–2025&rdquo; — so a short history never masquerades as a
+                long one. A contaminant a report doesn&rsquo;t list in a
+                given year leaves a gap rather than a guessed value: because
+                a report omitting a contaminant could mean it wasn&rsquo;t
+                detected <em>or</em> simply wasn&rsquo;t printed, we never
+                claim a &ldquo;new&rdquo; or &ldquo;cleared&rdquo; detection
+                we can&rsquo;t actually prove. A single year of data shows
+                this year&rsquo;s number with no arrow.
+              </p>
+              <p style={{ margin: 0 }}>
+                The trend also feeds one classification rule: a contaminant
+                that is still below its federal limit but has measured at
+                half the limit or more <em>and</em> is rising toward it
+                across your recent reports is escalated to &ldquo;worth
+                knowing&rdquo; — so it surfaces in the main list and on your
+                dashboard rather than hiding among the low-level detections.
+                It never escalates past &ldquo;worth knowing&rdquo; while
+                it&rsquo;s under the limit; we flag the direction of travel
+                without overstating where it is today.
               </p>
             </div>
           </ModuleSection>

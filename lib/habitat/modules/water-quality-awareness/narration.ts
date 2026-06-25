@@ -441,6 +441,38 @@ export function ccrCacheFetchNarration(input: {
   };
 }
 
+/**
+ * Activity-log narration for the multi-year trend history compute step
+ * (issue #289). Fires on the cws_with_ccr branch after the history is
+ * assembled. Honest about thin data — a single uploaded year names that
+ * explicitly so the log never implies a trend we can't draw.
+ */
+export function ccrHistoryComputeNarration(input: {
+  yearCount: number;
+  firstYear: number | null;
+  lastYear: number | null;
+  analyteCount: number;
+}): { narration: string; detail: string; result_summary: string } {
+  const { yearCount, firstYear, lastYear, analyteCount } = input;
+  const span =
+    firstYear !== null && lastYear !== null && firstYear !== lastYear
+      ? `${firstYear}–${lastYear}`
+      : `${lastYear ?? firstYear ?? "—"}`;
+  if (yearCount <= 1) {
+    return {
+      narration:
+        "I looked for earlier Water Quality Reports to chart how your contaminant levels have moved over time. There's only one year on file so far, so I'll show this year's numbers and start tracking the trend as more reports are added.",
+      detail: `history: ${yearCount} report year(s) for this PWSID; span=${span}; analytes_with_readings=${analyteCount}`,
+      result_summary: `${yearCount} year on file`,
+    };
+  }
+  return {
+    narration: `I gathered every Water Quality Report on file for your utility — ${yearCount} years (${span}) — and lined up each contaminant year over year so you can see which direction the numbers are moving.`,
+    detail: `history: ${yearCount} report years for this PWSID; span=${span}; analytes_with_readings=${analyteCount}`,
+    result_summary: `${yearCount} years (${span})`,
+  };
+}
+
 export function findingStepNarration(headline: string): {
   narration: string;
   result_summary: string;

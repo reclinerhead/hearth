@@ -60,6 +60,7 @@ function baseInput(overrides: Partial<WaterQualityReportInput> = {}): WaterQuali
     ccrProvenance: { year: 2024, uploadedByName: null, uploadedOnLabel: "May 31, 2026" },
     adminContact: { name: "James Baker", email: "water@kalamazoo.gov", phone: "(269) 555-0100" },
     ccrArchiveUrl: null,
+    contaminantHistory: null,
     ...overrides,
   };
 }
@@ -255,6 +256,54 @@ describe("PFAS family card rendering", () => {
     // baseInput has a single PFAS analyte (PFOA).
     const html = buildWaterQualityReport(baseInput());
     expect(html).not.toContain(PFAS_FAMILY_HEADING);
+  });
+});
+
+describe("year-over-year trend rendering (issue #289)", () => {
+  it("renders a trend direction word + prior value + data span when history exists", () => {
+    const html = buildWaterQualityReport(
+      baseInput({
+        contaminantHistory: [
+          {
+            key: "lead",
+            display_name: "Lead",
+            unit: "mg/L",
+            points: [
+              { year: 2023, level: 0.01, unit: "mg/L" },
+              { year: 2024, level: 0.018, unit: "mg/L" },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(html).toContain("Rising");
+    expect(html).toContain("was 0.01 mg/L in 2023");
+    expect(html).toContain("2 readings · 2023–2024");
+  });
+
+  it("renders a sparkline polyline once there are three or more readings", () => {
+    const html = buildWaterQualityReport(
+      baseInput({
+        contaminantHistory: [
+          {
+            key: "lead",
+            display_name: "Lead",
+            unit: "mg/L",
+            points: [
+              { year: 2022, level: 0.008, unit: "mg/L" },
+              { year: 2023, level: 0.012, unit: "mg/L" },
+              { year: 2024, level: 0.018, unit: "mg/L" },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(html).toContain("<polyline");
+  });
+
+  it("shows no trend row when there is no history (single-year upload)", () => {
+    const html = buildWaterQualityReport(baseInput({ contaminantHistory: null }));
+    expect(html).not.toContain("class=\"trend\"");
   });
 });
 

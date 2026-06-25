@@ -40,6 +40,19 @@ import {
   PFAS_FAMILY_HEADING,
   type AwarenessItem,
 } from "@/lib/habitat/water-quality/contaminants/pfas-grouping";
+import {
+  computeTrend,
+  findSeriesByName,
+  sparklineGeometry,
+  trendArrowPath,
+  trendDataSpanLabel,
+  trendPreviousLabel,
+  trendTone,
+  trendWord,
+  type ContaminantHistory,
+  type ContaminantTrend,
+  type CcrReportIndex,
+} from "@/lib/habitat/water-quality/contaminants/trends";
 import type { HabitatRecheckSource } from "@/lib/habitat/types";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import {
@@ -172,13 +185,13 @@ export function WqaOverviewBody({
           findings={f}
           houseId={houseId}
           onCorrectionSubmitted={handleCorrectionSubmitted}
-          onUploadCcrRequest={
-            card &&
-            card.latest_ccr_status === "not_uploaded" &&
-            f.branch === "cws_no_ccr"
-              ? () => setCcrModalOpen(true)
-              : null
-          }
+          // A CCR can be uploaded whenever we have a PWSID to attach it
+          // to — both when none is on file yet (the pill becomes the
+          // CTA) and when one already is (a subtle "upload another year"
+          // affordance, so newer reports and backfilled prior years can
+          // be added — issue #289). The modal itself dedups by
+          // (PWSID, year, edition), so a re-upload is harmless.
+          onUploadCcr={card?.pwsid ? () => setCcrModalOpen(true) : null}
         />
       )}
       <RecommendedActionsSection
@@ -777,7 +790,7 @@ function SystemCard({
   findings,
   houseId,
   onCorrectionSubmitted,
-  onUploadCcrRequest,
+  onUploadCcr,
 }: {
   findings: WqaFindings;
   houseId: string;
@@ -788,12 +801,13 @@ function SystemCard({
    */
   onCorrectionSubmitted: () => void;
   /**
-   * When set, the Latest CCR tile renders as an interactive button
-   * inviting the user to upload their utility's annual report. Null
-   * on every state where upload isn't the right next step (CCR
-   * already on file, non-CWS branches, cws_unmapped without a PWSID).
+   * Opens the CCR upload modal. Non-null whenever we have a PWSID to
+   * attach a report to. Drives two presentations: the Latest CCR pill
+   * becomes the upload CTA when no report is on file yet, and a subtle
+   * "upload another year" link appears beneath the grid once one is
+   * (issue #289). Null on branches without a PWSID.
    */
-  onUploadCcrRequest: (() => void) | null;
+  onUploadCcr: (() => void) | null;
 }) {
   const card = findings.system_card;
   // Issue #193 — local toggle for the inline PWSID edit affordance.
@@ -801,6 +815,18 @@ function SystemCard({
   // visually replaces the PWSID line; the rest of the card stays put.
   const [editingPwsid, setEditingPwsid] = useState(false);
   if (!card) return null;
+
+  // The Latest CCR pill becomes the upload CTA only on the first-upload
+  // state (no report on file yet, on the cws_no_ccr branch). Once a
+  // report exists, the pill goes back to showing status and the
+  // "upload another year" link below the grid carries the affordance —
+  // so the three pills stay uniform (issue #289).
+  const showFirstUploadCta =
+    onUploadCcr !== null &&
+    card.latest_ccr_status === "not_uploaded" &&
+    findings.branch === "cws_no_ccr";
+  const showUploadAnotherYear =
+    onUploadCcr !== null && card.latest_ccr_status !== "not_uploaded";
 
   const sourceLabel = (() => {
     switch (card.source_type) {
@@ -942,16 +968,16 @@ function SystemCard({
         />
         <StatTile
           label="Latest CCR"
-          value={onUploadCcrRequest ? "Upload yours" : ccr.label}
-          tone={onUploadCcrRequest ? "info" : ccr.tone}
-          icon={onUploadCcrRequest ? "upload" : ccr.icon}
+          value={showFirstUploadCta ? "Upload yours" : ccr.label}
+          tone={showFirstUploadCta ? "info" : ccr.tone}
+          icon={showFirstUploadCta ? "upload" : ccr.icon}
           tooltip={
             card.latest_ccr_status === "not_uploaded"
               ? "A Consumer Confidence Report (CCR), also called an Annual Water Quality Report, is the federally-required annual disclosure of every regulated contaminant your utility tested for and detected last year. Utilities mail or email it by July 1 each year — upload yours to populate the rest of this finding."
               : `Your utility's ${card.latest_ccr_status.year} Consumer Confidence Report is on file. The contaminants listed below — along with any free-testing offer and the recommended actions — were extracted directly from that report.`
           }
-          onClick={onUploadCcrRequest ?? undefined}
-          actionable={onUploadCcrRequest !== null}
+          onClick={showFirstUploadCta ? (onUploadCcr ?? undefined) : undefined}
+          actionable={showFirstUploadCta}
         />
         <StatTile
           label="Source"
@@ -961,6 +987,31 @@ function SystemCard({
           tooltip="Where your tap water originates, per EPA's Envirofacts WATER_SYSTEM record. Groundwater systems pump from wells or aquifers; surface-water systems draw from rivers, lakes, or reservoirs; mixed systems use groundwater under the influence of surface water."
         />
       </div>
+
+      {showUploadAnotherYear ? (
+        // Issue #289 — once a report is on file, the pill shows status,
+        // so the upload affordance lives here as a quiet accent link that
+        // leaves the three pills uniform. Covers both a newer year and
+        // backfilling prior years (the more history, the richer the
+        // year-over-year trends below).
+        <button
+          type="button"
+          onClick={() => onUploadCcr?.()}
+          className="inline-flex items-center gap-1.5 text-small"
+          style={{
+            color: "var(--color-accent)",
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            marginBottom: 12,
+          }}
+        >
+          <Icon name="upload" size={14} aria-hidden />
+          <span>Upload another year&rsquo;s report</span>
+        </button>
+      ) : null}
+
+      <ReportsOnFile reportIndex={findings.ccr_findings?.report_index ?? null} />
 
       <p
         className="text-small"
@@ -980,6 +1031,70 @@ function SystemCard({
       ) : null}
     </section>
   );
+}
+
+/**
+ * Collapsible "Reports on file" list (issue #289). Surfaces every
+ * uploaded year backing the trend — newest first, the latest tagged —
+ * with its detected count and the month it was added. Years + facts only;
+ * no PDF links (the extraction is shared across the utility, the uploaded
+ * files are private). Hidden until there are 2+ years, since a single
+ * report is already named by the "Latest CCR" pill.
+ */
+function ReportsOnFile({ reportIndex }: { reportIndex: CcrReportIndex | null }) {
+  if (!reportIndex || reportIndex.length < 2) return null;
+  return (
+    <details style={{ marginBottom: 12 }}>
+      <summary
+        className="text-small cursor-pointer"
+        style={{ color: "var(--color-accent)" }}
+      >
+        {reportIndex.length} reports on file
+      </summary>
+      <ul className="flex flex-col gap-1.5 mt-2">
+        {reportIndex.map((r, i) => (
+          <li
+            key={r.report_year}
+            className="flex items-baseline justify-between gap-3"
+          >
+            <span
+              className="text-small inline-flex items-baseline gap-2"
+              style={{ color: "var(--color-text-primary)" }}
+            >
+              {r.report_year} report
+              {i === 0 ? (
+                <span
+                  className="eyebrow"
+                  style={{ color: "var(--color-text-tertiary)", fontSize: 10 }}
+                >
+                  Latest
+                </span>
+              ) : null}
+            </span>
+            <span
+              className="mono text-small"
+              style={{ color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}
+            >
+              {r.detected_count} contaminant{r.detected_count === 1 ? "" : "s"}
+              {formatAddedMonth(r.extracted_at)
+                ? ` · added ${formatAddedMonth(r.extracted_at)}`
+                : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** "Jun 2026" from an ISO timestamp; empty string when unparseable. */
+function formatAddedMonth(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    year: "numeric",
+  }).format(d);
 }
 
 type TileTone = "neutral" | "success" | "info" | "danger";
@@ -1408,12 +1523,16 @@ function CcrContaminantList({
   const inlineItems = groupPfasFamily(collapseContext ? headlineRows : contaminants);
   const contextItems = collapseContext ? groupPfasFamily(contextRows) : [];
 
+  // Issue #289: the year-over-year reading history persisted on the
+  // finding, threaded down to each row so it can render its trend.
+  const history = ccr.contaminant_history ?? null;
+
   return (
     <div className="flex flex-col gap-2">
       {inlineItems.length > 0 ? (
         <ul className="flex flex-col gap-2">
           {inlineItems.map((item, i) => (
-            <CcrAwarenessItem key={`inline-${i}`} item={item} />
+            <CcrAwarenessItem key={`inline-${i}`} item={item} history={history} />
           ))}
         </ul>
       ) : null}
@@ -1427,7 +1546,7 @@ function CcrContaminantList({
           </summary>
           <ul className="flex flex-col gap-2 mt-2">
             {contextItems.map((item, i) => (
-              <CcrAwarenessItem key={`context-${i}`} item={item} />
+              <CcrAwarenessItem key={`context-${i}`} item={item} history={history} />
             ))}
           </ul>
         </details>
@@ -1436,11 +1555,17 @@ function CcrContaminantList({
   );
 }
 
-function CcrAwarenessItem({ item }: { item: AwarenessItem }) {
+function CcrAwarenessItem({
+  item,
+  history,
+}: {
+  item: AwarenessItem;
+  history: ContaminantHistory | null;
+}) {
   return item.kind === "pfasFamily" ? (
-    <CcrPfasFamilyCard analytes={item.analytes} />
+    <CcrPfasFamilyCard analytes={item.analytes} history={history} />
   ) : (
-    <CcrContaminantRow c={item.contaminant} />
+    <CcrContaminantRow c={item.contaminant} history={history} />
   );
 }
 
@@ -1533,8 +1658,15 @@ function CcrEpaReferenceLink({ url }: { url: string }) {
  * — issue #239), and an EPA reference link. The description + link resolve
  * from the shared contaminant reference via `findWqaContaminantByAlias`.
  */
-function CcrContaminantRow({ c }: { c: CcrSummarizedContaminant }) {
+function CcrContaminantRow({
+  c,
+  history,
+}: {
+  c: CcrSummarizedContaminant;
+  history: ContaminantHistory | null;
+}) {
   const ref = findWqaContaminantByAlias(c.contaminant_name);
+  const trend = computeTrend(findSeriesByName(history, c.contaminant_name));
   return (
     <li
       className="rounded-md p-3"
@@ -1548,6 +1680,7 @@ function CcrContaminantRow({ c }: { c: CcrSummarizedContaminant }) {
         <CcrTierBadge tier={c.tier} />
       </div>
       <CcrMeasureLine c={c} />
+      <TrendIndicator trend={trend} />
       {ref?.description ? (
         <p
           className="text-small"
@@ -1573,8 +1706,10 @@ function CcrContaminantRow({ c }: { c: CcrSummarizedContaminant }) {
  */
 function CcrPfasFamilyCard({
   analytes,
+  history,
 }: {
   analytes: CcrSummarizedContaminant[];
+  history: ContaminantHistory | null;
 }) {
   const ref = findWqaContaminantByAlias("PFAS");
   return (
@@ -1605,34 +1740,137 @@ function CcrPfasFamilyCard({
         className="flex flex-col gap-1.5 mt-2 pt-2"
         style={{ borderTop: "1px solid var(--color-border-subtle)" }}
       >
-        {analytes.map((a, i) => (
-          <li
-            key={`${a.contaminant_name}-${i}`}
-            className="flex items-baseline justify-between gap-3"
-          >
-            <span
-              className="text-small"
-              style={{ color: "var(--color-text-primary)" }}
-            >
-              {a.contaminant_name}
-            </span>
-            <span
-              className="mono text-small"
-              style={{ color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}
-            >
-              {formatDetectedAgainstLimit(a)}
-              {a.monitoring_period ? (
-                <span style={{ color: "var(--color-text-tertiary)" }}>
-                  {" "}
-                  · {a.monitoring_period}
+        {analytes.map((a, i) => {
+          const trend = computeTrend(findSeriesByName(history, a.contaminant_name));
+          return (
+            <li key={`${a.contaminant_name}-${i}`} className="flex flex-col gap-0.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <span
+                  className="text-small"
+                  style={{ color: "var(--color-text-primary)" }}
+                >
+                  {a.contaminant_name}
                 </span>
-              ) : null}
-            </span>
-          </li>
-        ))}
+                <span
+                  className="mono text-small"
+                  style={{
+                    color: "var(--color-text-secondary)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {formatDetectedAgainstLimit(a)}
+                  {a.monitoring_period ? (
+                    <span style={{ color: "var(--color-text-tertiary)" }}>
+                      {" "}
+                      · {a.monitoring_period}
+                    </span>
+                  ) : null}
+                </span>
+              </div>
+              <TrendIndicator trend={trend} />
+            </li>
+          );
+        })}
       </ul>
       {ref?.learn_more_url ? <CcrEpaReferenceLink url={ref.learn_more_url} /> : null}
     </li>
+  );
+}
+
+/* ---------- year-over-year trend indicator (issue #289) --------------- */
+
+/** Map the shared semantic tone to the modal's CSS-variable colors. */
+function trendColor(trend: ContaminantTrend): string {
+  const tone = trendTone(trend.direction);
+  if (tone === "attention") return "var(--color-accent)";
+  if (tone === "positive") return "var(--color-success)";
+  return "var(--color-text-tertiary)";
+}
+
+/**
+ * The trend row beneath a contaminant's measure line. Suppressed when we
+ * have fewer than two readings — there's nothing to compare, and the
+ * measure line already shows the single year. Honest by construction: the
+ * direction word, the prior-year value, and the exact data span all come
+ * from the shared trend module, so the modal never implies more history
+ * than the reports hold. The sparkline appears once there are 3+ readings.
+ */
+function TrendIndicator({ trend }: { trend: ContaminantTrend }) {
+  if (trend.yearsOfData < 2) return null;
+  const color = trendColor(trend);
+  const prev = trendPreviousLabel(trend);
+  const span = trendDataSpanLabel(trend);
+  return (
+    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+      <span className="inline-flex items-center gap-1" style={{ color }}>
+        <TrendArrow direction={trend.direction} />
+        <span className="text-small" style={{ fontWeight: 500 }}>
+          {trendWord(trend.direction)}
+        </span>
+      </span>
+      {trend.points.length >= 3 ? (
+        <TrendSparkline trend={trend} color={color} />
+      ) : null}
+      <span
+        className="text-small"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        {prev ? `${prev} · ` : ""}
+        {span}
+      </span>
+    </div>
+  );
+}
+
+function TrendArrow({ direction }: { direction: ContaminantTrend["direction"] }) {
+  return (
+    <svg
+      viewBox="0 0 12 12"
+      width={12}
+      height={12}
+      aria-hidden
+      style={{ display: "inline-block", verticalAlign: "middle" }}
+    >
+      <path
+        d={trendArrowPath(direction)}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function TrendSparkline({
+  trend,
+  color,
+}: {
+  trend: ContaminantTrend;
+  color: string;
+}) {
+  const geo = sparklineGeometry(trend.points, { width: 56, height: 16, padding: 2 });
+  if (!geo) return null;
+  const last = geo.dots[geo.dots.length - 1];
+  return (
+    <svg
+      viewBox={`0 0 ${geo.width} ${geo.height}`}
+      width={geo.width}
+      height={geo.height}
+      aria-hidden
+      style={{ display: "inline-block", verticalAlign: "middle" }}
+    >
+      <polyline
+        points={geo.polyline}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx={last.x} cy={last.y} r={1.8} fill={color} />
+    </svg>
   );
 }
 
@@ -1643,7 +1881,7 @@ function CcrPfasFamilyCard({
 const CCR_TIER_TOOLTIP_COPY: Record<CcrContaminantTier, string> = {
   concern: "Detected at or above the EPA's federal limit (MCL).",
   caution:
-    "Detected at 80%+ of the MCL, or any detected level of a PFAS compound (federal PFAS limits are sub-part-per-trillion, so any positive detection is meaningful).",
+    "Detected at 80%+ of the MCL; any detected level of a PFAS compound (federal PFAS limits are sub-part-per-trillion, so any positive detection is meaningful); or below the limit but rising toward it across your recent reports.",
   context: "Detected, but well below the federal limit. Informational.",
 };
 

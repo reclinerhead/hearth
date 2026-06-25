@@ -771,6 +771,127 @@ describe("WqaOverviewBody — CCR lead & PFAS surface in the panel (issue #224)"
   });
 });
 
+describe("WqaOverviewBody — upload another year (issue #289)", () => {
+  it("shows the 'upload another year' affordance once a CCR is on file", () => {
+    render(cwsWithCcrFindings([{ name: "Nitrate", level: 3.1, mcl: 10, tier: "caution" }]));
+    const uploadButton = Array.from(container.querySelectorAll("button")).find(
+      (b) => (b.textContent ?? "").includes("Upload another year"),
+    );
+    expect(uploadButton).toBeDefined();
+    // The three pills stay uniform — the first-upload CTA copy is gone
+    // because a report exists now.
+    expect(text()).toContain("2024 report on file");
+    expect(text()).not.toContain("Upload yours");
+  });
+
+  it("does NOT show 'upload another year' on cws_no_ccr (the pill is the CTA there)", () => {
+    render(cwsNoCcrFindings());
+    expect(text()).not.toContain("Upload another year");
+    // The first-upload affordance still lives on the pill.
+    expect(text()).toContain("Upload yours");
+  });
+
+  it("lists the years on file in a collapsible panel when 2+ reports exist", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Nitrate", level: 3.1, mcl: 10, tier: "caution" },
+    ]);
+    findings.ccr_findings!.report_index = [
+      { report_year: 2024, published_date: null, extracted_at: "2025-05-10T00:00:00Z", detected_count: 12 },
+      { report_year: 2023, published_date: null, extracted_at: "2024-05-10T00:00:00Z", detected_count: 9 },
+    ];
+    render(findings);
+    expect(text()).toContain("2 reports on file");
+    expect(text()).toContain("2024 report");
+    expect(text()).toContain("2023 report");
+    expect(text()).toContain("Latest");
+  });
+
+  it("does not show the reports-on-file panel with only one year", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Nitrate", level: 3.1, mcl: 10, tier: "caution" },
+    ]);
+    findings.ccr_findings!.report_index = [
+      { report_year: 2024, published_date: null, extracted_at: "2025-05-10T00:00:00Z", detected_count: 12 },
+    ];
+    render(findings);
+    expect(text()).not.toContain("reports on file");
+  });
+});
+
+describe("WqaOverviewBody — year-over-year trends (issue #289)", () => {
+  it("renders a trend direction + prior value + data span on a contaminant with history", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Nitrate", level: 3.1, mcl: 10, tier: "caution" },
+    ]);
+    findings.ccr_findings!.contaminant_history = [
+      {
+        key: "nitrate",
+        display_name: "Nitrate",
+        unit: "ppb",
+        points: [
+          { year: 2024, level: 2.4, unit: "ppb" },
+          { year: 2025, level: 3.1, unit: "ppb" },
+        ],
+      },
+    ];
+    render(findings);
+    expect(text()).toContain("Rising");
+    expect(text()).toContain("was 2.4 ppb in 2024");
+    expect(text()).toContain("2 readings · 2024–2025");
+  });
+
+  it("shows no trend row when the contaminant has only one year of data", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Nitrate", level: 3.1, mcl: 10, tier: "caution" },
+    ]);
+    findings.ccr_findings!.contaminant_history = [
+      {
+        key: "nitrate",
+        display_name: "Nitrate",
+        unit: "ppb",
+        points: [{ year: 2025, level: 3.1, unit: "ppb" }],
+      },
+    ];
+    render(findings);
+    // Single reading → no comparison, no trend word.
+    expect(text()).not.toContain("Rising");
+    expect(text()).not.toContain("Stable");
+    expect(text()).not.toContain("readings ·");
+  });
+
+  it("renders a per-analyte trend inside the PFAS family card", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Perfluorooctanoic acid (PFOA)", level: 4.0, mcl: 4, tier: "caution" },
+      { name: "Perfluorooctane sulfonic acid (PFOS)", level: 2.5, mcl: 4, tier: "caution" },
+    ]);
+    findings.ccr_findings!.contaminant_history = [
+      {
+        key: "perfluorooctanoic acid (pfoa)",
+        display_name: "Perfluorooctanoic acid (PFOA)",
+        unit: "ppt",
+        points: [
+          { year: 2024, level: 2.0, unit: "ppt" },
+          { year: 2025, level: 4.0, unit: "ppt" },
+        ],
+      },
+      {
+        key: "perfluorooctane sulfonic acid (pfos)",
+        display_name: "Perfluorooctane sulfonic acid (PFOS)",
+        unit: "ppt",
+        points: [
+          { year: 2024, level: 5.0, unit: "ppt" },
+          { year: 2025, level: 2.5, unit: "ppt" },
+        ],
+      },
+    ];
+    render(findings);
+    expect(text()).toContain(PFAS_FAMILY_HEADING);
+    // PFOA rose, PFOS fell — both directions surface in the family card.
+    expect(text()).toContain("Rising");
+    expect(text()).toContain("Falling");
+  });
+});
+
 describe("WqaOverviewBody — cws_unmapped", () => {
   it("renders the unmapped header strip with disabled CCR upload affordance", () => {
     const findings: WqaFindings = {
