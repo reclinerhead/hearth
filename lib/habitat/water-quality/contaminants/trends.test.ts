@@ -4,6 +4,7 @@ import type {
   CcrDetectedContaminant,
 } from "@/lib/documents/ai/ccr-schema";
 import {
+  buildCcrReportIndex,
   buildContaminantHistory,
   computeTrend,
   findSeriesByName,
@@ -293,6 +294,41 @@ describe("buildContaminantHistory", () => {
 
   it("returns an empty history for no uploaded years", () => {
     expect(buildContaminantHistory([])).toEqual([]);
+  });
+});
+
+/* ---------- buildCcrReportIndex ---------------------------------------- */
+
+describe("buildCcrReportIndex", () => {
+  it("returns one entry per year, newest first, with detected counts + dates", () => {
+    const index = buildCcrReportIndex([
+      {
+        report_year: 2023,
+        published_date: null,
+        extracted_at: "2024-05-01T00:00:00Z",
+        extracted_data: extraction([
+          detected({ contaminant_name: "Nitrate", detected_level: 2, unit: "ppm", mcl: 10 }),
+        ]),
+      },
+      {
+        report_year: 2025,
+        published_date: "2026-05-01",
+        extracted_at: "2026-05-10T00:00:00Z",
+        extracted_data: extraction([
+          detected({ contaminant_name: "Nitrate", detected_level: 3, unit: "ppm", mcl: 10 }),
+          detected({ contaminant_name: "Lead", detected_level: 5, unit: "ppb", mcl: 15 }),
+        ]),
+      },
+    ]);
+    expect(index.map((e) => e.report_year)).toEqual([2025, 2023]);
+    expect(index[0].detected_count).toBe(2);
+    expect(index[1].detected_count).toBe(1);
+    expect(index[0].published_date).toBe("2026-05-01");
+    expect(index[0].extracted_at).toBe("2026-05-10T00:00:00Z");
+  });
+
+  it("returns an empty index for no years", () => {
+    expect(buildCcrReportIndex([])).toEqual([]);
   });
 });
 

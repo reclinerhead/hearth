@@ -73,6 +73,26 @@ export type ContaminantSeries = {
  *  analyte seen in any uploaded year. */
 export type ContaminantHistory = ContaminantSeries[];
 
+/**
+ * One uploaded report year, for the "Reports on file" panel (issue #289).
+ * The shared, non-private facts about each year Hearth holds for the
+ * utility — never the raw PDF (the extraction is shared across the
+ * utility; the uploaded file belongs to whoever contributed it).
+ */
+export type CcrReportIndexEntry = {
+  report_year: number;
+  /** The utility's stated publication date, when the CCR printed one. */
+  published_date: string | null;
+  /** When Hearth extracted this report (ISO) — a proxy for "added". */
+  extracted_at: string;
+  /** How many contaminants that year's report surfaces (the displayed list). */
+  detected_count: number;
+};
+
+/** Persisted on `ccr_findings.report_index` — every uploaded year,
+ *  newest first. Drives the "Reports on file" disclosure. */
+export type CcrReportIndex = CcrReportIndexEntry[];
+
 export type TrendDirection =
   | "rising"
   | "falling"
@@ -180,6 +200,38 @@ export function buildContaminantHistory(
   // Stable output order: alphabetical by key (the consumer re-orders for
   // display anyway; this just keeps the persisted JSON deterministic).
   return history.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/**
+ * Build the "Reports on file" index from a utility's uploaded CCR years.
+ * Newest year first. `detected_count` is the size of the displayed
+ * contaminant list for that year (regulated table + folded-in UCMR/PFAS +
+ * lead/copper), so it matches what the "Detected in your water" panel
+ * would show for that year. Pure.
+ */
+export function buildCcrReportIndex(
+  years: Array<{
+    report_year: number;
+    published_date: string | null;
+    extracted_at: string;
+    extracted_data: CcrExtractionResult;
+  }>,
+): CcrReportIndex {
+  return years
+    .map((y) => {
+      const ccrFindings = buildCcrFindings({
+        reportYear: y.report_year,
+        publishedDate: y.published_date,
+        extractedData: y.extracted_data,
+      });
+      return {
+        report_year: y.report_year,
+        published_date: y.published_date,
+        extracted_at: y.extracted_at,
+        detected_count: buildDisplayedCcrContaminants(ccrFindings, null).length,
+      };
+    })
+    .sort((a, b) => b.report_year - a.report_year);
 }
 
 /**

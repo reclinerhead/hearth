@@ -42,7 +42,10 @@ import {
 } from "./lcr";
 // Type-only import — erased at compile time, so this does NOT create a
 // runtime cycle with trends.ts (which imports values from this file).
-import type { ContaminantHistory } from "@/lib/habitat/water-quality/contaminants/trends";
+import type {
+  ContaminantHistory,
+  CcrReportIndex,
+} from "@/lib/habitat/water-quality/contaminants/trends";
 
 /**
  * Tier classification for one CCR-detected contaminant. Mirrors the
@@ -148,6 +151,17 @@ export type CcrFindings = {
    * avoids a cycle).
    */
   contaminant_history?: ContaminantHistory | null;
+  /**
+   * Every uploaded report year for this utility, newest first (issue
+   * #289) — coverage year, publication/extraction dates, and detected
+   * count. Powers the "Reports on file" disclosure in the system card so
+   * a user can see which years back the trend. Like `contaminant_history`
+   * it's computed once in `check()` and optional/nullable for backward
+   * compatibility. Deliberately carries no file reference: the extraction
+   * is shared across the utility, but the uploaded PDFs are private to
+   * their contributors.
+   */
+  report_index?: CcrReportIndex | null;
 };
 
 /**

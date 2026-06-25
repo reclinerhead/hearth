@@ -51,6 +51,7 @@ import {
   trendWord,
   type ContaminantHistory,
   type ContaminantTrend,
+  type CcrReportIndex,
 } from "@/lib/habitat/water-quality/contaminants/trends";
 import type { HabitatRecheckSource } from "@/lib/habitat/types";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
@@ -1010,6 +1011,8 @@ function SystemCard({
         </button>
       ) : null}
 
+      <ReportsOnFile reportIndex={findings.ccr_findings?.report_index ?? null} />
+
       <p
         className="text-small"
         style={{ color: "var(--color-text-secondary)", lineHeight: 1.55 }}
@@ -1028,6 +1031,70 @@ function SystemCard({
       ) : null}
     </section>
   );
+}
+
+/**
+ * Collapsible "Reports on file" list (issue #289). Surfaces every
+ * uploaded year backing the trend — newest first, the latest tagged —
+ * with its detected count and the month it was added. Years + facts only;
+ * no PDF links (the extraction is shared across the utility, the uploaded
+ * files are private). Hidden until there are 2+ years, since a single
+ * report is already named by the "Latest CCR" pill.
+ */
+function ReportsOnFile({ reportIndex }: { reportIndex: CcrReportIndex | null }) {
+  if (!reportIndex || reportIndex.length < 2) return null;
+  return (
+    <details style={{ marginBottom: 12 }}>
+      <summary
+        className="text-small cursor-pointer"
+        style={{ color: "var(--color-accent)" }}
+      >
+        {reportIndex.length} reports on file
+      </summary>
+      <ul className="flex flex-col gap-1.5 mt-2">
+        {reportIndex.map((r, i) => (
+          <li
+            key={r.report_year}
+            className="flex items-baseline justify-between gap-3"
+          >
+            <span
+              className="text-small inline-flex items-baseline gap-2"
+              style={{ color: "var(--color-text-primary)" }}
+            >
+              {r.report_year} report
+              {i === 0 ? (
+                <span
+                  className="eyebrow"
+                  style={{ color: "var(--color-text-tertiary)", fontSize: 10 }}
+                >
+                  Latest
+                </span>
+              ) : null}
+            </span>
+            <span
+              className="mono text-small"
+              style={{ color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}
+            >
+              {r.detected_count} contaminant{r.detected_count === 1 ? "" : "s"}
+              {formatAddedMonth(r.extracted_at)
+                ? ` · added ${formatAddedMonth(r.extracted_at)}`
+                : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** "Jun 2026" from an ISO timestamp; empty string when unparseable. */
+function formatAddedMonth(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    year: "numeric",
+  }).format(d);
 }
 
 type TileTone = "neutral" | "success" | "info" | "danger";

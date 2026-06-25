@@ -790,6 +790,32 @@ describe("WqaOverviewBody — upload another year (issue #289)", () => {
     // The first-upload affordance still lives on the pill.
     expect(text()).toContain("Upload yours");
   });
+
+  it("lists the years on file in a collapsible panel when 2+ reports exist", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Nitrate", level: 3.1, mcl: 10, tier: "caution" },
+    ]);
+    findings.ccr_findings!.report_index = [
+      { report_year: 2024, published_date: null, extracted_at: "2025-05-10T00:00:00Z", detected_count: 12 },
+      { report_year: 2023, published_date: null, extracted_at: "2024-05-10T00:00:00Z", detected_count: 9 },
+    ];
+    render(findings);
+    expect(text()).toContain("2 reports on file");
+    expect(text()).toContain("2024 report");
+    expect(text()).toContain("2023 report");
+    expect(text()).toContain("Latest");
+  });
+
+  it("does not show the reports-on-file panel with only one year", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Nitrate", level: 3.1, mcl: 10, tier: "caution" },
+    ]);
+    findings.ccr_findings!.report_index = [
+      { report_year: 2024, published_date: null, extracted_at: "2025-05-10T00:00:00Z", detected_count: 12 },
+    ];
+    render(findings);
+    expect(text()).not.toContain("reports on file");
+  });
 });
 
 describe("WqaOverviewBody — year-over-year trends (issue #289)", () => {

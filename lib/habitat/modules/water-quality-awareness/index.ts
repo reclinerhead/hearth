@@ -71,7 +71,10 @@ import {
   type CcrCacheRow,
 } from "./caches/ccr-cache";
 import { buildCcrFindings } from "./ccr";
-import { buildContaminantHistory } from "@/lib/habitat/water-quality/contaminants/trends";
+import {
+  buildContaminantHistory,
+  buildCcrReportIndex,
+} from "@/lib/habitat/water-quality/contaminants/trends";
 import {
   COMPLIANCE_RECENT_YEARS,
   countUnmappedContaminants,
@@ -622,6 +625,17 @@ const WaterQualityAwarenessModule: HabitatModule = {
         })),
       );
       ccrEnrichment.findings.contaminant_history = history;
+      // "Reports on file" index — the years backing the trend, for the
+      // system-card disclosure (issue #289). Years + dates + counts only;
+      // no file references (shared extraction, private uploads).
+      ccrEnrichment.findings.report_index = buildCcrReportIndex(
+        historyRows.map((r) => ({
+          report_year: r.report_year,
+          published_date: r.published_date,
+          extracted_at: r.extracted_at,
+          extracted_data: r.extracted_data,
+        })),
+      );
 
       const years = historyRows.map((r) => r.report_year);
       const historyStep = ccrHistoryComputeNarration({
