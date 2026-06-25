@@ -7,21 +7,22 @@ import type { ActivityEntry } from "@/lib/dashboard/recent-activity";
 
 // Floor so a 1- or 2-entry panel doesn't produce a stunted tile; tiles
 // otherwise `flex-1` to fill the column to rough parity with the photo.
+// The square thumbnail tracks this height, so it doubles as the thumb size.
 const TILE_MIN_HEIGHT = 84;
 
 /**
- * Dashboard "Lately" activity tile (issue #279). A full-bleed photo (or
- * the radial-gradient fallback wash + type icon) under a bottom scrim
- * that carries the event eyebrow + entity title, wrapped in a Link to the
- * item. Modeled on the inventory list's `InventoryTile` and the Emergency
- * panel's `PrimaryTile` (issues #174 / #139).
+ * Dashboard "Lately" activity tile (issue #279). A square thumbnail of the
+ * item/document on the left (or the radial-gradient fallback wash + type
+ * icon), with the event eyebrow + entity title stacked to its right,
+ * wrapped in a Link to the item. The earlier full-bleed-photo-under-scrim
+ * treatment zoomed each photo too far to read; a contained square thumbnail
+ * shows the whole frame and keeps the detail text on the surface where it's
+ * cleanly legible.
  *
  * Client component because the thumbnail is signed via
  * `useCachedSignedUrl` — same contract as `InventoryThumbnail`: the URL
  * string caches in `sessionStorage` so the browser HTTP-cache hits the
- * immutable `hearth-documents` bytes across navigations. The overlay
- * scrim + Link wrap differ enough from the bare `InventoryThumbnail`
- * icon/img to warrant a dedicated tile rather than reusing it.
+ * immutable `hearth-documents` bytes across navigations.
  */
 export function LatelyTile({ entry }: { entry: ActivityEntry }) {
   const url = useCachedSignedUrl(
@@ -34,10 +35,10 @@ export function LatelyTile({ entry }: { entry: ActivityEntry }) {
     <Link
       href={entry.href}
       aria-label={`${entry.eyebrow}: ${entry.title}`}
-      // `block w-full` so the Link fills its flex parent; `flex-1` so three
-      // tiles share the panel height. Same hover/focus chrome as InventoryTile
-      // — a subtle accent ring, no movement of the photo itself.
-      className="group relative block w-full flex-1 overflow-hidden transition-shadow duration-150 hover:shadow-[0_0_0_1px_var(--color-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+      // `flex items-stretch` so the square thumbnail tracks the tile height;
+      // `flex-1` so the tiles share the panel height. Same hover/focus chrome
+      // as InventoryTile — a subtle accent ring, no movement.
+      className="group relative flex w-full flex-1 items-stretch overflow-hidden transition-shadow duration-150 hover:shadow-[0_0_0_1px_var(--color-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
       style={{
         minHeight: TILE_MIN_HEIGHT,
         borderRadius: "var(--radius-lg)",
@@ -45,38 +46,32 @@ export function LatelyTile({ entry }: { entry: ActivityEntry }) {
         backgroundColor: "var(--color-bg-surface-raised)",
       }}
     >
-      {url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={url}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-      ) : (
-        <TileFallbackArtwork icon={entry.fallbackIcon} />
-      )}
-
       <div
-        aria-hidden
-        className="absolute inset-x-0 bottom-0 h-3/5"
+        // Square thumbnail flush to the left edge. `self-stretch aspect-square`
+        // makes its width track the tile's (row-stretched) height, so the
+        // thumb stays square at whatever height the grid hands the tile.
+        className="relative aspect-square shrink-0 self-stretch overflow-hidden"
         style={{
-          // Stronger than InventoryTile's scrim — these tiles run two-up
-          // (narrower, busier photos) and the small uppercase eyebrow needs
-          // the extra dimming to stay legible on bright images. The extra
-          // mid stop keeps the gradient dark through the band where the
-          // eyebrow sits (~40-50% up) instead of fading to light too early.
-          background:
-            "linear-gradient(to top, color-mix(in oklab, #000 92%, transparent), color-mix(in oklab, #000 84%, transparent) 48%, color-mix(in oklab, #000 40%, transparent) 78%, transparent)",
+          borderRight: "1px solid var(--color-border-subtle)",
         }}
-      />
+      >
+        {url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={url}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : (
+          <TileFallbackArtwork icon={entry.fallbackIcon} />
+        )}
+      </div>
 
-      <div className="absolute inset-x-0 bottom-0 px-4 pb-1.5 pt-6">
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 px-3.5 py-2">
         <div
           className="truncate"
           style={{
-            // Smaller, bolder, and brighter than the inventory eyebrow so
-            // the detail line reads cleanly over the photo.
-            color: "color-mix(in oklab, #fff 92%, transparent)",
+            color: "var(--color-text-tertiary)",
             letterSpacing: 0.4,
             textTransform: "uppercase",
             fontSize: 10,
@@ -86,8 +81,15 @@ export function LatelyTile({ entry }: { entry: ActivityEntry }) {
           {entry.eyebrow}
         </div>
         <div
-          className="truncate"
-          style={{ color: "#fff", fontSize: 18, fontWeight: 500 }}
+          // Two lines max — the text column is narrower than the old full-bleed
+          // overlay, so a single line truncated most titles to uselessness.
+          className="line-clamp-2"
+          style={{
+            color: "var(--color-text-primary)",
+            fontSize: 14,
+            fontWeight: 500,
+            lineHeight: 1.3,
+          }}
         >
           {entry.title}
         </div>
@@ -113,7 +115,7 @@ function TileFallbackArtwork({ icon }: { icon: IconName }) {
       />
       <div className="absolute inset-0 flex items-center justify-center">
         <span style={{ color: "var(--color-text-tertiary)" }}>
-          <Icon name={icon} size={40} />
+          <Icon name={icon} size={26} />
         </span>
       </div>
     </>
