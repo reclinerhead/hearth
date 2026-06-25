@@ -1558,6 +1558,17 @@ export default function HowItWorksPage() {
                 we can&rsquo;t actually prove. A single year of data shows
                 this year&rsquo;s number with no arrow.
               </p>
+              <p style={{ margin: 0 }}>
+                The trend also feeds one classification rule: a contaminant
+                that is still below its federal limit but has measured at
+                half the limit or more <em>and</em> is rising toward it
+                across your recent reports is escalated to &ldquo;worth
+                knowing&rdquo; — so it surfaces in the main list and on your
+                dashboard rather than hiding among the low-level detections.
+                It never escalates past &ldquo;worth knowing&rdquo; while
+                it&rsquo;s under the limit; we flag the direction of travel
+                without overstating where it is today.
+              </p>
             </div>
           </ModuleSection>
         </section>

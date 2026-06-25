@@ -37,7 +37,9 @@ import type { CcrExtractionResult } from "@/lib/documents/ai/ccr-schema";
 import {
   buildCcrFindings,
   buildDisplayedCcrContaminants,
+  mclRatio,
   normalizeContaminantGroupKey,
+  type CcrSummarizedContaminant,
 } from "@/lib/habitat/modules/water-quality-awareness/ccr";
 
 /**
@@ -294,6 +296,46 @@ export function computeTrend(
         : "falling";
 
   return { ...base, direction, pctChange };
+}
+
+/**
+ * Ratio floor (fraction of the limit) at/above which a *rising* contaminant
+ * escalates out of the low-levels tier (issue #291). Below this it sits too
+ * far under the limit for the upward trend to be worth surfacing; at/above
+ * the existing 0.8 `CAUTION_RATIO` it already escalates on level alone,
+ * regardless of trend. So this rule only acts in the [0.5, 0.8) band. A v1
+ * heuristic, documented in /how-it-works#water-quality-awareness; tunable.
+ */
+export const APPROACHING_RISING_RATIO = 0.5;
+
+/**
+ * Trend-aware tier escalation (issue #291). A contaminant that is below the
+ * federal limit but **rising toward it** would otherwise tier as `context`
+ * and hide inside the modal's "low levels" collapse — defeating the point
+ * of the trend for users who never expand it. This bumps such a row to
+ * `caution` ("Worth knowing") so it surfaces by default; because tier is the
+ * single axis that drives the collapse, the badge, AND `deriveSeverity`, the
+ * escalation cascades through all three from this one change.
+ *
+ * Pure. Only `context` rows with a computable ratio in the
+ * [APPROACHING_RISING_RATIO, 0.8) band and a `rising` trend escalate; PFAS /
+ * lead / copper (already caution-floored), stable/falling rows, and rows
+ * without a comparable limit are untouched. Never reaches `concern` — a
+ * below-limit contaminant caps at `caution`, so the escalation can't
+ * overstate.
+ */
+export function applyTrendEscalation(
+  contaminants: CcrSummarizedContaminant[],
+  history: ContaminantHistory | null,
+): CcrSummarizedContaminant[] {
+  return contaminants.map((c) => {
+    if (c.tier !== "context") return c;
+    const ratio = mclRatio(c);
+    if (ratio === null || ratio < APPROACHING_RISING_RATIO) return c;
+    const trend = computeTrend(findSeriesByName(history, c.contaminant_name));
+    if (trend.direction !== "rising") return c;
+    return { ...c, tier: "caution" };
+  });
 }
 
 /** Find one analyte's series in a persisted history by contaminant name. */

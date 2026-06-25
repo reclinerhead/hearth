@@ -1881,7 +1881,7 @@ function TrendSparkline({
 const CCR_TIER_TOOLTIP_COPY: Record<CcrContaminantTier, string> = {
   concern: "Detected at or above the EPA's federal limit (MCL).",
   caution:
-    "Detected at 80%+ of the MCL, or any detected level of a PFAS compound (federal PFAS limits are sub-part-per-trillion, so any positive detection is meaningful).",
+    "Detected at 80%+ of the MCL; any detected level of a PFAS compound (federal PFAS limits are sub-part-per-trillion, so any positive detection is meaningful); or below the limit but rising toward it across your recent reports.",
   context: "Detected, but well below the federal limit. Informational.",
 };
 

@@ -4,6 +4,7 @@ import type {
   CcrDetectedContaminant,
 } from "@/lib/documents/ai/ccr-schema";
 import {
+  applyTrendEscalation,
   buildCcrReportIndex,
   buildContaminantHistory,
   computeTrend,
@@ -16,6 +17,7 @@ import {
   TREND_STABLE_TOLERANCE,
   type ContaminantSeries,
 } from "./trends";
+import type { CcrSummarizedContaminant } from "@/lib/habitat/modules/water-quality-awareness/ccr";
 
 /* ---------- fixtures ---------------------------------------------------- */
 
@@ -78,6 +80,31 @@ function series(
       level: p.level,
       unit: p.unit ?? null,
     })),
+  };
+}
+
+function summarized(
+  name: string,
+  tier: CcrSummarizedContaminant["tier"],
+  level: number | null,
+  mcl: number | null,
+): CcrSummarizedContaminant {
+  return {
+    contaminant_name: name,
+    contaminant_code: null,
+    detected_level: level,
+    unit: "ppb",
+    mcl,
+    mclg: null,
+    mcl_action_level: null,
+    sources: null,
+    monitoring_period: null,
+    violation_in_period_ind: null,
+    notes: null,
+    source_table_label: null,
+    tier,
+    has_multiple_observations: false,
+    other_observations: [],
   };
 }
 
@@ -294,6 +321,84 @@ describe("buildContaminantHistory", () => {
 
   it("returns an empty history for no uploaded years", () => {
     expect(buildContaminantHistory([])).toEqual([]);
+  });
+});
+
+/* ---------- applyTrendEscalation --------------------------------------- */
+
+describe("applyTrendEscalation", () => {
+  const risingArsenic = series("arsenic", [
+    { year: 2024, level: 0.64 },
+    { year: 2025, level: 7.8 },
+  ]);
+
+  it("escalates a rising, approaching context row to caution", () => {
+    // 7.8 / 10 = 0.78 — in the [0.5, 0.8) band, and rising.
+    const [out] = applyTrendEscalation(
+      [summarized("Arsenic", "context", 7.8, 10)],
+      [risingArsenic],
+    );
+    expect(out.tier).toBe("caution");
+  });
+
+  it("leaves a rising row that is still far below the limit", () => {
+    const lowRising = series("nitrate", [
+      { year: 2024, level: 1 },
+      { year: 2025, level: 2 },
+    ]);
+    const [out] = applyTrendEscalation(
+      [summarized("Nitrate", "context", 2, 10)], // ratio 0.2 < floor
+      [lowRising],
+    );
+    expect(out.tier).toBe("context");
+  });
+
+  it("leaves an approaching but falling row alone", () => {
+    const falling = series("arsenic", [
+      { year: 2024, level: 9 },
+      { year: 2025, level: 7.8 },
+    ]);
+    const [out] = applyTrendEscalation(
+      [summarized("Arsenic", "context", 7.8, 10)],
+      [falling],
+    );
+    expect(out.tier).toBe("context");
+  });
+
+  it("does not escalate when there is no comparable limit", () => {
+    const [out] = applyTrendEscalation(
+      [summarized("Mystery", "context", 7.8, null)],
+      [],
+    );
+    expect(out.tier).toBe("context");
+  });
+
+  it("never re-tiers a row that is already above context", () => {
+    const [out] = applyTrendEscalation(
+      [summarized("Arsenic", "caution", 7.8, 10)],
+      [risingArsenic],
+    );
+    expect(out.tier).toBe("caution"); // unchanged, not bumped to concern
+  });
+
+  it("escalates exactly at the approaching floor (ratio = 0.5)", () => {
+    const s = series("x", [
+      { year: 2024, level: 4 },
+      { year: 2025, level: 5 },
+    ]);
+    const [out] = applyTrendEscalation(
+      [summarized("X", "context", 5, 10)], // ratio 0.5
+      [s],
+    );
+    expect(out.tier).toBe("caution");
+  });
+
+  it("leaves context rows with no history untouched", () => {
+    const [out] = applyTrendEscalation(
+      [summarized("Arsenic", "context", 7.8, 10)],
+      null,
+    );
+    expect(out.tier).toBe("context");
   });
 });
 

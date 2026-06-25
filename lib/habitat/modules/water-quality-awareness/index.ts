@@ -74,6 +74,7 @@ import { buildCcrFindings } from "./ccr";
 import {
   buildContaminantHistory,
   buildCcrReportIndex,
+  applyTrendEscalation,
 } from "@/lib/habitat/water-quality/contaminants/trends";
 import {
   COMPLIANCE_RECENT_YEARS,
@@ -636,6 +637,18 @@ const WaterQualityAwarenessModule: HabitatModule = {
           extracted_data: r.extracted_data,
         })),
       );
+      // Issue #291 — a contaminant below its limit but rising toward it
+      // would otherwise tier as `context` and hide in the modal's
+      // low-levels collapse. Escalate it to `caution` now (we have the
+      // history), before payload assembly derives severity — so the
+      // escalation cascades through the collapse, the badge, and the
+      // dashboard severity from this one re-tiering.
+      if (ccrEnrichment.findings.contaminants) {
+        ccrEnrichment.findings.contaminants = applyTrendEscalation(
+          ccrEnrichment.findings.contaminants,
+          history,
+        );
+      }
 
       const years = historyRows.map((r) => r.report_year);
       const historyStep = ccrHistoryComputeNarration({
