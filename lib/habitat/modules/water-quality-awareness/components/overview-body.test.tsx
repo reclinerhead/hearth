@@ -876,7 +876,7 @@ describe("WqaOverviewBody — year-over-year trends (issue #289)", () => {
     ];
     render(findings);
     const trigger = Array.from(container.querySelectorAll("button")).find((b) =>
-      (b.textContent ?? "").includes("Rising"),
+      (b.getAttribute("aria-label") ?? "").includes("trend chart"),
     );
     expect(trigger).toBeDefined();
     act(() => trigger!.click());

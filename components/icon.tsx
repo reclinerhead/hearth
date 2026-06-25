@@ -69,6 +69,7 @@ export type IconName =
   | "star"
   | "phone"
   | "square-check"
+  | "chart-line"
   | "help-circle";
 
 const base: SVGProps<SVGSVGElement> = {
@@ -476,6 +477,13 @@ const paths: Record<IconName, React.ReactNode> = {
       <circle cx="12" cy="12" r="9" />
       <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .8-1 1.7" />
       <path d="M12 17h0" />
+    </>
+  ),
+  "chart-line": (
+    // L-shaped axis + a rising trend line — the "open the trend chart" glyph.
+    <>
+      <path d="M5 4v15a1 1 0 0 0 1 1h15" />
+      <path d="m8 14 3-3 3 2 4-6" />
     </>
   ),
 };

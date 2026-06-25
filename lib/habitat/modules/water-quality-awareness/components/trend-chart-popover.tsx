@@ -1,26 +1,30 @@
 "use client";
 
 /**
- * Hover/tap trend-chart popover (issue #293). Wraps a contaminant's inline
- * trend indicator; on hover (desktop) or tap (touch) it expands into a
- * larger year-by-year line chart built from the persisted history series.
+ * Trend-chart popover (issue #293). A small "chart" icon button sits to the
+ * right of a contaminant's inline trend indicator; clicking (or tapping) it
+ * opens a larger year-by-year line chart built from the persisted history.
  *
- * Why a portal: the finding modal's body scrolls (overflow), which would
- * clip an absolutely-positioned child. We render the popover into
- * document.body with fixed positioning computed from the trigger rect, so
- * it floats above the modal and never clips. A short close-delay bridges
- * the gap between the trigger and the popover so moving the mouse across it
- * doesn't dismiss.
+ * Trigger is an explicit icon button rather than hover (issue #293 follow-up):
+ * a hover popover blocked the user from moving to the next contaminant, and a
+ * tap target works on touch too.
  *
- * Honesty: the EPA-limit line + each point's tooltip use the **per-year**
- * limit the report stated (`point.limit`), so a historical MCL change reads
- * as a step rather than today's value painted backward. The utility name +
- * PWSID sit in the header so a screenshot carries its own attribution. The
- * geometry is the shared pure `trendChartGeometry`; this file only renders.
+ * Why a portal: the finding modal's body scrolls (overflow), which would clip
+ * an absolutely-positioned child. We render the popover into document.body
+ * with fixed positioning computed from the icon's rect, so it floats above the
+ * modal and never clips. It flips above/below by available room and closes on
+ * the icon toggle, the close button, Esc, or an outside click.
+ *
+ * Honesty: the EPA-limit line + each point's tooltip use the **per-year** limit
+ * the report stated (`point.limit`), so a historical MCL change reads as a step
+ * rather than today's value painted backward. The utility name + PWSID sit in
+ * the header so a screenshot carries its own attribution. The geometry is the
+ * shared pure `trendChartGeometry`; this file only renders.
  */
 
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Icon } from "@/components/icon";
 import {
   computeTrend,
   trendChartGeometry,
@@ -70,8 +74,8 @@ export function TrendChartPopover({
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
-  const wrapRef = useRef<HTMLSpanElement | null>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const iconRef = useRef<HTMLButtonElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
   const dialogId = useId();
 
   const trend = computeTrend(series);
@@ -81,7 +85,7 @@ export function TrendChartPopover({
   });
 
   const reposition = useCallback(() => {
-    const el = wrapRef.current;
+    const el = iconRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
     const below = window.innerHeight - r.bottom;
@@ -89,7 +93,8 @@ export function TrendChartPopover({
     const placeBelow = below >= POP_H_ESTIMATE + GAP || below >= above;
     let top = placeBelow ? r.bottom + GAP : r.top - POP_H_ESTIMATE - GAP;
     if (top < GAP) top = GAP;
-    let left = r.left;
+    // Anchor near the icon, then clamp into the viewport.
+    let left = r.right - POP_W;
     if (left + POP_W > window.innerWidth - GAP) {
       left = window.innerWidth - POP_W - GAP;
     }
@@ -98,43 +103,36 @@ export function TrendChartPopover({
   }, []);
 
   const doOpen = useCallback(() => {
-    if (closeTimer.current) {
-      clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
     reposition();
+    setHovered(null);
     setOpen(true);
   }, [reposition]);
-
-  const scheduleClose = useCallback(() => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    closeTimer.current = setTimeout(() => setOpen(false), 140);
-  }, []);
 
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (iconRef.current?.contains(t)) return;
+      if (popoverRef.current?.contains(t)) return;
+      setOpen(false);
+    }
     function onMove() {
       reposition();
     }
     document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
     window.addEventListener("scroll", onMove, true);
     window.addEventListener("resize", onMove);
     return () => {
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
       window.removeEventListener("scroll", onMove, true);
       window.removeEventListener("resize", onMove);
     };
   }, [open, reposition]);
-
-  useEffect(
-    () => () => {
-      if (closeTimer.current) clearTimeout(closeTimer.current);
-    },
-    [],
-  );
 
   // Fewer than two readings → no chart; render the inline indicator plainly.
   if (!geo) return <>{children}</>;
@@ -150,11 +148,10 @@ export function TrendChartPopover({
     open && pos
       ? createPortal(
           <div
+            ref={popoverRef}
             id={dialogId}
             role="dialog"
             aria-label={`${analyteName} — year over year`}
-            onMouseEnter={doOpen}
-            onMouseLeave={scheduleClose}
             style={{
               position: "fixed",
               top: pos.top,
@@ -196,19 +193,38 @@ export function TrendChartPopover({
                   {trendDataSpanLabel(trend)}
                 </div>
               </div>
-              <span
-                className="eyebrow"
-                style={{
-                  fontSize: 10,
-                  color,
-                  backgroundColor: `color-mix(in oklab, ${color} 16%, transparent)`,
-                  borderRadius: 999,
-                  padding: "2px 8px",
-                  whiteSpace: "nowrap",
-                }}
+              <div
+                style={{ display: "flex", alignItems: "center", gap: 8 }}
               >
-                {trendWord(trend.direction)}
-              </span>
+                <span
+                  className="eyebrow"
+                  style={{
+                    fontSize: 10,
+                    color,
+                    backgroundColor: `color-mix(in oklab, ${color} 16%, transparent)`,
+                    borderRadius: 999,
+                    padding: "2px 8px",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {trendWord(trend.direction)}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Close chart"
+                  onClick={() => setOpen(false)}
+                  className="inline-flex items-center justify-center"
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    padding: 2,
+                    cursor: "pointer",
+                    color: "var(--color-text-tertiary)",
+                  }}
+                >
+                  <Icon name="x" size={16} />
+                </button>
+              </div>
             </div>
 
             {utilityName || pwsid ? (
@@ -474,34 +490,33 @@ export function TrendChartPopover({
       : null;
 
   return (
-    <span
-      ref={wrapRef}
-      style={{ position: "relative", display: "block" }}
-      onMouseEnter={doOpen}
-      onMouseLeave={scheduleClose}
-    >
+    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ minWidth: 0 }}>{children}</span>
       <button
+        ref={iconRef}
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? dialogId : undefined}
+        aria-label={`Show the ${analyteName} trend chart`}
         onClick={() => (open ? setOpen(false) : doOpen())}
-        onFocus={doOpen}
-        onBlur={scheduleClose}
+        className="inline-flex items-center justify-center shrink-0"
         style={{
-          background: "transparent",
-          border: "none",
+          width: 24,
+          height: 24,
           padding: 0,
-          margin: 0,
+          borderRadius: "var(--radius-sm)",
+          border: `1px solid color-mix(in oklab, var(--color-accent) ${
+            open ? 55 : 35
+          }%, transparent)`,
+          backgroundColor: `color-mix(in oklab, var(--color-accent) ${
+            open ? 18 : 9
+          }%, transparent)`,
+          color: "var(--color-accent)",
           cursor: "pointer",
-          textAlign: "left",
-          font: "inherit",
-          color: "inherit",
-          display: "block",
-          width: "100%",
         }}
       >
-        {children}
+        <Icon name="chart-line" size={15} />
       </button>
       {popover}
     </span>
