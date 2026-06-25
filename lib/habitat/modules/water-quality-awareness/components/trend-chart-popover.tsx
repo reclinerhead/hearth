@@ -84,29 +84,44 @@ export function TrendChartPopover({
     height: CHART_H,
   });
 
-  const reposition = useCallback(() => {
-    const el = iconRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const below = window.innerHeight - r.bottom;
-    const above = r.top;
-    const placeBelow = below >= POP_H_ESTIMATE + GAP || below >= above;
-    let top = placeBelow ? r.bottom + GAP : r.top - POP_H_ESTIMATE - GAP;
-    if (top < GAP) top = GAP;
-    // Anchor near the icon, then clamp into the viewport.
-    let left = r.right - POP_W;
+  // Position the popover to the upper-right of the anchor (the click point
+  // when we have one, else the icon's rect for keyboard activation), then
+  // clamp into the viewport — dropping below the anchor if there's no room
+  // above.
+  const reposition = useCallback((cursor?: { x: number; y: number }) => {
+    let anchorX: number;
+    let anchorY: number;
+    if (cursor && (cursor.x !== 0 || cursor.y !== 0)) {
+      anchorX = cursor.x;
+      anchorY = cursor.y;
+    } else {
+      const el = iconRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      anchorX = r.right;
+      anchorY = r.top;
+    }
+    let left = anchorX + GAP;
     if (left + POP_W > window.innerWidth - GAP) {
       left = window.innerWidth - POP_W - GAP;
     }
     if (left < GAP) left = GAP;
+    let top = anchorY - POP_H_ESTIMATE - GAP;
+    if (top < GAP) {
+      top = Math.min(anchorY + GAP, window.innerHeight - POP_H_ESTIMATE - GAP);
+    }
+    if (top < GAP) top = GAP;
     setPos({ top, left });
   }, []);
 
-  const doOpen = useCallback(() => {
-    reposition();
-    setHovered(null);
-    setOpen(true);
-  }, [reposition]);
+  const doOpen = useCallback(
+    (cursor?: { x: number; y: number }) => {
+      reposition(cursor);
+      setHovered(null);
+      setOpen(true);
+    },
+    [reposition],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -119,8 +134,10 @@ export function TrendChartPopover({
       if (popoverRef.current?.contains(t)) return;
       setOpen(false);
     }
+    // The popover is anchored to the click point, so scrolling/resizing has
+    // no element to re-track — close it rather than let it drift.
     function onMove() {
-      reposition();
+      setOpen(false);
     }
     document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onDown);
@@ -132,7 +149,7 @@ export function TrendChartPopover({
       window.removeEventListener("scroll", onMove, true);
       window.removeEventListener("resize", onMove);
     };
-  }, [open, reposition]);
+  }, [open]);
 
   // Fewer than two readings → no chart; render the inline indicator plainly.
   if (!geo) return <>{children}</>;
@@ -499,24 +516,21 @@ export function TrendChartPopover({
         aria-expanded={open}
         aria-controls={open ? dialogId : undefined}
         aria-label={`Show the ${analyteName} trend chart`}
-        onClick={() => (open ? setOpen(false) : doOpen())}
+        onClick={(e) =>
+          open ? setOpen(false) : doOpen({ x: e.clientX, y: e.clientY })
+        }
         className="inline-flex items-center justify-center shrink-0"
         style={{
-          width: 24,
-          height: 24,
-          padding: 0,
-          borderRadius: "var(--radius-sm)",
-          border: `1px solid color-mix(in oklab, var(--color-accent) ${
-            open ? 55 : 35
-          }%, transparent)`,
-          backgroundColor: `color-mix(in oklab, var(--color-accent) ${
-            open ? 18 : 9
-          }%, transparent)`,
-          color: "var(--color-accent)",
+          background: "transparent",
+          border: "none",
+          padding: 2,
+          margin: 0,
           cursor: "pointer",
+          color: "var(--color-accent)",
+          lineHeight: 0,
         }}
       >
-        <Icon name="chart-line" size={15} />
+        <Icon name="chart-line" size={16} />
       </button>
       {popover}
     </span>
