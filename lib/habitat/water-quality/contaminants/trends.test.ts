@@ -10,6 +10,7 @@ import {
   computeTrend,
   findSeriesByName,
   sparklineGeometry,
+  trendChartGeometry,
   trendDataSpanLabel,
   trendPreviousLabel,
   trendTone,
@@ -69,7 +70,12 @@ function year(
 
 function series(
   key: string,
-  points: Array<{ year: number; level: number; unit?: string | null }>,
+  points: Array<{
+    year: number;
+    level: number;
+    unit?: string | null;
+    limit?: number | null;
+  }>,
 ): ContaminantSeries {
   return {
     key,
@@ -79,6 +85,7 @@ function series(
       year: p.year,
       level: p.level,
       unit: p.unit ?? null,
+      limit: p.limit ?? null,
     })),
   };
 }
@@ -434,6 +441,141 @@ describe("buildCcrReportIndex", () => {
 
   it("returns an empty index for no years", () => {
     expect(buildCcrReportIndex([])).toEqual([]);
+  });
+});
+
+/* ---------- per-year limit in history ---------------------------------- */
+
+describe("buildContaminantHistory — per-year limit (issue #293)", () => {
+  it("carries each year's stated MCL onto its point", () => {
+    const history = buildContaminantHistory([
+      year(2024, [
+        detected({ contaminant_name: "Arsenic", detected_level: 5, unit: "ppb", mcl: 10 }),
+      ]),
+      year(2025, [
+        detected({ contaminant_name: "Arsenic", detected_level: 7.8, unit: "ppb", mcl: 10 }),
+      ]),
+    ]);
+    const s = findSeriesByName(history, "Arsenic");
+    expect(s!.points.map((p) => p.limit)).toEqual([10, 10]);
+  });
+
+  it("reflects a historical limit change per-year (not today's value backward)", () => {
+    const history = buildContaminantHistory([
+      year(2021, [
+        detected({ contaminant_name: "X", detected_level: 3, unit: "ppb", mcl: 10 }),
+      ]),
+      year(2024, [
+        detected({ contaminant_name: "X", detected_level: 3, unit: "ppb", mcl: 4 }),
+      ]),
+    ]);
+    const s = findSeriesByName(history, "X");
+    expect(s!.points.map((p) => p.limit)).toEqual([10, 4]);
+  });
+
+  it("falls back to the LCR action level when there's no MCL (lead)", () => {
+    const history = buildContaminantHistory([
+      year(2023, null, {
+        lead_copper_distribution: {
+          lead: {
+            percentile_90: 6,
+            unit: "ppb",
+            action_level: 15,
+            samples_collected: null,
+            samples_exceeding_action_level: null,
+            monitoring_period: "2023",
+          },
+          copper: null,
+          lead_service_line_count: null,
+        },
+      }),
+      year(2024, null, {
+        lead_copper_distribution: {
+          lead: {
+            percentile_90: 9,
+            unit: "ppb",
+            action_level: 15,
+            samples_collected: null,
+            samples_exceeding_action_level: null,
+            monitoring_period: "2024",
+          },
+          copper: null,
+          lead_service_line_count: null,
+        },
+      }),
+    ]);
+    const s = findSeriesByName(history, "Lead");
+    expect(s!.points.map((p) => p.limit)).toEqual([15, 15]);
+  });
+});
+
+/* ---------- trendChartGeometry ----------------------------------------- */
+
+describe("trendChartGeometry", () => {
+  it("returns null for fewer than two readings", () => {
+    expect(
+      trendChartGeometry([{ year: 2025, level: 1, unit: "ppb", limit: 10 }], {
+        width: 440,
+        height: 240,
+      }),
+    ).toBeNull();
+  });
+
+  it("spreads years across the plot, inverts y, and starts at zero", () => {
+    const geo = trendChartGeometry(
+      [
+        { year: 2023, level: 2, unit: "ppb", limit: 10 },
+        { year: 2024, level: 5, unit: "ppb", limit: 10 },
+        { year: 2025, level: 8, unit: "ppb", limit: 10 },
+      ],
+      { width: 440, height: 240 },
+    )!;
+    expect(geo.points).toHaveLength(3);
+    expect(geo.points[0].x).toBe(geo.plot.left);
+    expect(geo.points[2].x).toBe(geo.plot.right);
+    // higher level → smaller y (closer to the top)
+    expect(geo.points[0].y).toBeGreaterThan(geo.points[2].y);
+    // a zero value lands on the baseline
+    const zeroTick = geo.yTicks.find((t) => t.value === 0)!;
+    expect(zeroTick.y).toBe(geo.plot.bottom);
+  });
+
+  it("keeps the y-axis above both the peak reading and the limit", () => {
+    const geo = trendChartGeometry(
+      [
+        { year: 2024, level: 3, unit: "ppb", limit: 10 },
+        { year: 2025, level: 7.8, unit: "ppb", limit: 10 },
+      ],
+      { width: 440, height: 240 },
+    )!;
+    expect(geo.yMax).toBeGreaterThan(10);
+  });
+
+  it("builds a per-year limit line, stepping when the limit changes", () => {
+    const geo = trendChartGeometry(
+      [
+        { year: 2021, level: 3, unit: "ppb", limit: 10 },
+        { year: 2024, level: 3, unit: "ppb", limit: 4 },
+      ],
+      { width: 440, height: 240 },
+    )!;
+    expect(geo.limitPolyline).not.toBeNull();
+    // the two limit points sit at different heights (10 vs 4) → a step
+    expect(geo.points[0].limitY).not.toBe(geo.points[1].limitY);
+    expect(geo.points[0].limit).toBe(10);
+    expect(geo.points[1].limit).toBe(4);
+  });
+
+  it("omits the limit line when no year stated a limit", () => {
+    const geo = trendChartGeometry(
+      [
+        { year: 2024, level: 3, unit: "ppb", limit: null },
+        { year: 2025, level: 4, unit: "ppb", limit: null },
+      ],
+      { width: 440, height: 240 },
+    )!;
+    expect(geo.limitPolyline).toBeNull();
+    expect(geo.points.every((p) => p.limitY === null)).toBe(true);
   });
 });
 

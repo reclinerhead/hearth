@@ -57,6 +57,16 @@ export type ContaminantYearPoint = {
   year: number;
   level: number;
   unit: string | null;
+  /**
+   * The EPA limit (MCL, or the LCR action level) **as that year's report
+   * stated it** (issue #293). Carried per-year so a historical limit
+   * change shows honestly in the chart and its per-point tooltip — rather
+   * than painting today's limit backward across every year. Null when the
+   * report didn't print a comparable limit. Optional for backward
+   * compatibility: series persisted before #293 lack it and backfill on
+   * the next recheck.
+   */
+  limit?: number | null;
 };
 
 /** The full per-analyte reading history, oldest reading first. */
@@ -168,6 +178,9 @@ export function buildContaminantHistory(
         year: year.report_year,
         level: c.detected_level,
         unit: c.unit,
+        // The limit this year's report stated — MCL, or the LCR action
+        // level for lead/copper (the same fields mclRatio reads).
+        limit: c.mcl ?? c.mcl_action_level ?? null,
       };
       if (entry) {
         // Guard against two rows for the same analyte in one year
@@ -492,4 +505,133 @@ export function sparklineGeometry(
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/** One plotted reading in the expanded trend chart, with its source values
+ *  carried through for the per-point tooltip (issue #293). */
+export type TrendChartPoint = {
+  x: number;
+  y: number;
+  year: number;
+  level: number;
+  unit: string | null;
+  /** The EPA limit that year's report stated; null when none. */
+  limit: number | null;
+  /** Y of the limit at this year (for the limit line); null when no limit. */
+  limitY: number | null;
+};
+
+export type TrendChartGeometry = {
+  width: number;
+  height: number;
+  plot: { left: number; right: number; top: number; bottom: number };
+  points: TrendChartPoint[];
+  /** "x,y x,y …" for the data line. */
+  dataPolyline: string;
+  /** "x,y x,y …" through the years that stated a limit; null if <2 of them. */
+  limitPolyline: string | null;
+  /** Y-axis gridline ticks, top value first by `value` descending. */
+  yTicks: Array<{ value: number; y: number; label: string }>;
+  /** One x label per reading-year. */
+  xLabels: Array<{ year: number; x: number }>;
+  yMax: number;
+  unit: string | null;
+};
+
+/** Round a positive number up to the nearest 1/2/5 × 10ⁿ — for tidy axis steps. */
+function niceNum(x: number): number {
+  if (x <= 0) return 1;
+  const exp = Math.floor(Math.log10(x));
+  const base = Math.pow(10, exp);
+  const f = x / base;
+  const nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+  return nf * base;
+}
+
+function formatTick(value: number): string {
+  if (Number.isInteger(value)) return String(value);
+  return value < 1 ? value.toFixed(2) : value.toFixed(1);
+}
+
+/**
+ * Geometry for the expanded hover/tap trend chart (issue #293). Pure — the
+ * popover (and, later, a static PDF version) render SVG from this. Y starts
+ * at 0 (concentrations are honest from zero) and the top is a "nice" value
+ * above the higher of the max reading and the max stated limit, so both the
+ * data line and the EPA-limit line always fit with headroom.
+ *
+ * The limit is **per-year** (`point.limit`): the line tracks each report's
+ * stated limit, so a historical MCL change renders as a step rather than a
+ * single constant. Returns null with fewer than two readings.
+ */
+export function trendChartGeometry(
+  points: ContaminantYearPoint[],
+  opts: {
+    width: number;
+    height: number;
+    padding?: { left?: number; right?: number; top?: number; bottom?: number };
+  },
+): TrendChartGeometry | null {
+  if (points.length < 2) return null;
+
+  const left = opts.padding?.left ?? 40;
+  const right = opts.width - (opts.padding?.right ?? 14);
+  const top = opts.padding?.top ?? 14;
+  const bottom = opts.height - (opts.padding?.bottom ?? 26);
+  const plotW = right - left;
+  const plotH = bottom - top;
+
+  const levels = points.map((p) => p.level);
+  const limits = points
+    .map((p) => p.limit ?? null)
+    .filter((l): l is number => l !== null && Number.isFinite(l) && l > 0);
+  const rawMax = Math.max(...levels, ...(limits.length ? limits : [0]));
+
+  const step = niceNum(rawMax / 4 || 1);
+  let yMax = step * Math.ceil(rawMax / step);
+  if (yMax <= rawMax) yMax += step; // guarantee headroom above the peak
+  if (yMax <= 0) yMax = step;
+
+  const yOf = (v: number) => round(bottom - (v / yMax) * plotH);
+  const xOf = (i: number) => round(left + (plotW * i) / (points.length - 1));
+
+  const chartPoints: TrendChartPoint[] = points.map((p, i) => {
+    const limit = p.limit ?? null;
+    return {
+      x: xOf(i),
+      y: yOf(p.level),
+      year: p.year,
+      level: p.level,
+      unit: p.unit,
+      limit,
+      limitY: limit !== null && limit > 0 ? yOf(limit) : null,
+    };
+  });
+
+  const dataPolyline = chartPoints.map((p) => `${p.x},${p.y}`).join(" ");
+  const limitPts = chartPoints.filter((p) => p.limitY !== null);
+  const limitPolyline =
+    limitPts.length >= 2
+      ? limitPts.map((p) => `${p.x},${p.limitY}`).join(" ")
+      : null;
+
+  const yTicks: TrendChartGeometry["yTicks"] = [];
+  for (let v = 0; v <= yMax + 1e-9; v += step) {
+    yTicks.push({ value: v, y: yOf(v), label: formatTick(round(v)) });
+  }
+
+  const xLabels = chartPoints.map((p) => ({ year: p.year, x: p.x }));
+
+  return {
+    width: opts.width,
+    height: opts.height,
+    plot: { left, right, top, bottom },
+    points: chartPoints,
+    dataPolyline,
+    limitPolyline,
+    yTicks,
+    xLabels,
+    yMax,
+    unit: points[points.length - 1].unit,
+  };
 }

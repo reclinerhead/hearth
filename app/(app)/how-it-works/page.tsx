@@ -1569,6 +1569,14 @@ export default function HowItWorksPage() {
                 it&rsquo;s under the limit; we flag the direction of travel
                 without overstating where it is today.
               </p>
+              <p style={{ margin: 0 }}>
+                Hovering (or tapping) a contaminant&rsquo;s trend opens a full
+                chart of every reading we hold for it, year by year, against
+                the EPA limit. The limit shown is the one your utility&rsquo;s
+                report stated <em>that</em> year — so if the EPA tightened a
+                limit at some point, you&rsquo;ll see exactly when, rather than
+                today&rsquo;s number drawn back across history.
+              </p>
             </div>
           </ModuleSection>
         </section>
