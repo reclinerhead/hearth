@@ -23,9 +23,10 @@ import type {
   InventorySubtype,
 } from "@/types/document";
 
-// Top-N entries the panel renders. Four fills the right column as a clean
-// 2×2 grid (two per row) to rough parity with the house-photo column.
-export const ACTIVITY_LIMIT = 4;
+// Top-N entries the panel renders. Six fills the right column as a clean
+// 3×2 grid (two per row, three rows) to rough parity with the house-photo
+// column.
+export const ACTIVITY_LIMIT = 6;
 
 // Below this many merged entries the panel shows the awareness nudge
 // instead of a (lonely-or-blank) tile list. With 1–2 entries we render
@@ -221,6 +222,69 @@ export function shapeTaskCompleted(input: TaskCompletedInput): ActivityEntry {
     thumbnailBucket: "hearth-documents",
     fallbackIcon: TASK_KIND_ICON[input.kind],
   };
+}
+
+// ---- "When" line -------------------------------------------------------
+
+// Display verb for each kind's "when" line, matching the tile badge
+// semantics: a completed task was *done*, a document *uploaded*, an item
+// *added*. Kept here (not in the tile) so the verb and the relative-time
+// formatting stay pure and unit-tested together.
+const ACTIVITY_WHEN_VERB: Record<ActivityKind, string> = {
+  task_completed: "Done",
+  document_attached: "Uploaded",
+  inventory_added: "Added",
+};
+
+const DAY_MS = 86_400_000;
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/**
+ * The small "when" line shown beneath a tile's title — a kind-appropriate
+ * verb ("Done" / "Uploaded" / "Added") plus a relative or absolute time.
+ * Recent events read relatively ("Done 1 week ago"); past ~a month it
+ * falls back to an absolute date ("Uploaded Jun 24"), with the year only
+ * when it differs from the reference year. Formatted in UTC so the server
+ * render (Vercel runs UTC) and the unit tests agree regardless of locale.
+ * An unparseable timestamp degrades to the bare verb.
+ */
+export function formatActivityWhen(
+  kind: ActivityKind,
+  occurredAt: string,
+  referenceDate: Date,
+): string {
+  const verb = ACTIVITY_WHEN_VERB[kind];
+  const occurredMs = Date.parse(occurredAt);
+  if (Number.isNaN(occurredMs)) return verb;
+
+  const days = Math.floor((referenceDate.getTime() - occurredMs) / DAY_MS);
+
+  let when: string;
+  if (days <= 0) when = "today";
+  else if (days === 1) when = "yesterday";
+  else if (days < 7) when = `${days} days ago`;
+  else if (days < 14) when = "1 week ago";
+  else if (days < 30) when = `${Math.floor(days / 7)} weeks ago`;
+  else {
+    const d = new Date(occurredMs);
+    const sameYear = d.getUTCFullYear() === referenceDate.getUTCFullYear();
+    const base = `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+    when = sameYear ? base : `${base}, ${d.getUTCFullYear()}`;
+  }
+  return `${verb} ${when}`;
 }
 
 // ---- Merge + sort + cap -----------------------------------------------

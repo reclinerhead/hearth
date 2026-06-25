@@ -22,9 +22,27 @@ import {
  * with those rows and overlays realtime events as they arrive.
  */
 
-// Concerns first, positives last. Same severity ordering used everywhere
-// the dashboard surfaces findings — applied in the client because the
-// rows change over the page's lifetime.
+// Fixed display order for the dashboard's habitat list — a curated
+// sequence that leads with our strongest module (water quality), then
+// Superfund, radon, and flood zones. This is deliberately a *module*
+// order, not the severity order below: the dashboard list is a showcase
+// of what Hearth knows about the home, so its sequence is editorial and
+// stable rather than reshuffling as findings change. (Distinct from the
+// registry's array order, which paces the onboarding reveal fastest →
+// slowest, and from the severity weight, which now only tie-breaks any
+// future module not named here.)
+const MODULE_ORDER: Record<string, number> = {
+  water_quality_awareness: 0,
+  epa_superfund_proximity: 1,
+  epa_radon_zone: 2,
+  fema_flood_zones: 3,
+};
+const moduleOrder = (key: string): number =>
+  MODULE_ORDER[key] ?? Number.MAX_SAFE_INTEGER;
+
+// Concerns first, positives last. Retained as the tie-break for any module
+// absent from MODULE_ORDER (e.g. a newly-added one) so its tile still lands
+// deterministically rather than at a random spot.
 const SEVERITY_WEIGHT: Record<HabitatSeverity, number> = {
   critical: 0,
   concern: 1,
@@ -63,7 +81,11 @@ export function HabitatPreviewPanel({
         row.summary !== null &&
         row.severity in SEVERITY_WEIGHT,
     )
-    .sort((a, b) => SEVERITY_WEIGHT[a.severity] - SEVERITY_WEIGHT[b.severity]);
+    .sort((a, b) => {
+      const byModule = moduleOrder(a.module_key) - moduleOrder(b.module_key);
+      if (byModule !== 0) return byModule;
+      return SEVERITY_WEIGHT[a.severity] - SEVERITY_WEIGHT[b.severity];
+    });
 
   if (visible.length === 0) {
     // First-run state: orchestrator hasn't produced a usable row yet.
