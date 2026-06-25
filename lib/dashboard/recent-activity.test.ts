@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ACTIVITY_LIMIT,
   buildRecentActivity,
+  formatActivityWhen,
   shapeDocumentAttached,
   shapeInventoryAdded,
   shapeTaskCompleted,
@@ -226,5 +227,46 @@ describe("buildRecentActivity", () => {
     );
     expect(result.entries.map((e) => e.id)).toEqual(["past"]);
     expect(result.totalCount).toBe(1);
+  });
+});
+
+describe("formatActivityWhen", () => {
+  // Mid-day reference so same-day events stay at 0 elapsed days regardless
+  // of the fixture's time-of-day.
+  const REF = new Date("2026-06-25T12:00:00.000Z");
+
+  it("uses the kind-appropriate verb", () => {
+    expect(
+      formatActivityWhen("task_completed", "2026-06-25T09:00:00Z", REF),
+    ).toBe("Done today");
+    expect(
+      formatActivityWhen("document_attached", "2026-06-25T09:00:00Z", REF),
+    ).toBe("Uploaded today");
+    expect(
+      formatActivityWhen("inventory_added", "2026-06-25T09:00:00Z", REF),
+    ).toBe("Added today");
+  });
+
+  it("renders the relative-time buckets", () => {
+    const done = (iso: string) => formatActivityWhen("task_completed", iso, REF);
+    expect(done("2026-06-24T12:00:00Z")).toBe("Done yesterday");
+    expect(done("2026-06-22T12:00:00Z")).toBe("Done 3 days ago");
+    expect(done("2026-06-18T12:00:00Z")).toBe("Done 1 week ago");
+    expect(done("2026-06-08T12:00:00Z")).toBe("Done 2 weeks ago");
+  });
+
+  it("falls back to an absolute date past ~a month, year only when it differs", () => {
+    expect(
+      formatActivityWhen("inventory_added", "2026-05-10T12:00:00Z", REF),
+    ).toBe("Added May 10");
+    expect(
+      formatActivityWhen("task_completed", "2024-11-03T12:00:00Z", REF),
+    ).toBe("Done Nov 3, 2024");
+  });
+
+  it("degrades to the bare verb on an unparseable timestamp", () => {
+    expect(formatActivityWhen("document_attached", "not-a-date", REF)).toBe(
+      "Uploaded",
+    );
   });
 });

@@ -22,6 +22,7 @@ import { SectionHeader } from "@/components/ui";
 import {
   ACTIVITY_LIMIT,
   buildRecentActivity,
+  formatActivityWhen,
   MIN_ACTIVITY,
   shapeDocumentAttached,
   shapeInventoryAdded,
@@ -194,9 +195,12 @@ export async function LatelyPanel({ houseId }: { houseId: string }) {
       }),
     );
 
+  // One clock for both the merge's future-date guard and the per-tile
+  // "when" labels, so the displayed relative time matches the ranking.
+  const now = new Date();
   const { entries, totalCount } = buildRecentActivity(
     { inventoryAdded, documentsAttached, tasksCompleted },
-    new Date(),
+    now,
   );
 
   if (totalCount < MIN_ACTIVITY) {
@@ -217,7 +221,11 @@ export async function LatelyPanel({ houseId }: { houseId: string }) {
       */}
       <div className="grid flex-1 auto-rows-fr grid-cols-1 gap-2 md:grid-cols-2">
         {entries.map((entry) => (
-          <LatelyTile key={entry.id} entry={entry} />
+          <LatelyTile
+            key={entry.id}
+            entry={entry}
+            whenLabel={formatActivityWhen(entry.kind, entry.occurredAt, now)}
+          />
         ))}
       </div>
     </PanelShell>

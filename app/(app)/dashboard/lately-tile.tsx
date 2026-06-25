@@ -3,12 +3,44 @@
 import Link from "next/link";
 import { Icon, type IconName } from "@/components/icon";
 import { useCachedSignedUrl } from "@/lib/house-image/use-cached-signed-url";
-import type { ActivityEntry } from "@/lib/dashboard/recent-activity";
+import type {
+  ActivityEntry,
+  ActivityKind,
+} from "@/lib/dashboard/recent-activity";
 
 // Floor so a 1- or 2-entry panel doesn't produce a stunted tile; tiles
 // otherwise `flex-1` to fill the column to rough parity with the photo.
 // The square thumbnail tracks this height, so it doubles as the thumb size.
 const TILE_MIN_HEIGHT = 84;
+
+// Per-kind corner badge on the thumbnail — the at-a-glance "what is this
+// tile?" cue. Each kind gets its own icon + color so a completed task, an
+// uploaded document, and a newly-added item read distinctly (and none is
+// confused with the upcoming/overdue maintenance in the panel below). The
+// `label` is the hover tooltip and the badge's accessible name.
+const KIND_BADGE: Record<
+  ActivityKind,
+  { icon: IconName; color: string; strokeWidth: number; label: string }
+> = {
+  task_completed: {
+    icon: "check",
+    color: "var(--color-success)",
+    strokeWidth: 3,
+    label: "Completed maintenance",
+  },
+  document_attached: {
+    icon: "file-text",
+    color: "var(--color-info)",
+    strokeWidth: 2,
+    label: "Document uploaded",
+  },
+  inventory_added: {
+    icon: "plus",
+    color: "var(--color-accent)",
+    strokeWidth: 3,
+    label: "Item added",
+  },
+};
 
 /**
  * Dashboard "Lately" activity tile (issue #279). A square thumbnail of the
@@ -24,12 +56,21 @@ const TILE_MIN_HEIGHT = 84;
  * string caches in `sessionStorage` so the browser HTTP-cache hits the
  * immutable `hearth-documents` bytes across navigations.
  */
-export function LatelyTile({ entry }: { entry: ActivityEntry }) {
+export function LatelyTile({
+  entry,
+  whenLabel,
+}: {
+  entry: ActivityEntry;
+  /** "Done 1 week ago" / "Uploaded Jun 24" — computed server-side in the
+   *  panel so the relative time doesn't drift on the client. */
+  whenLabel: string;
+}) {
   const url = useCachedSignedUrl(
     entry.thumbnailBucket,
     entry.thumbnailPath,
     null,
   );
+  const badge = KIND_BADGE[entry.kind];
 
   return (
     <Link
@@ -67,25 +108,23 @@ export function LatelyTile({ entry }: { entry: ActivityEntry }) {
         )}
 
         {/*
-          Completed-maintenance badge. Only task_completed entries get the
-          green check — it reads at a glance as "done," distinguishing these
-          from the upcoming/overdue maintenance in the panel below. The
+          Kind badge in the thumbnail corner (see KIND_BADGE). The
           surface-colored ring lifts it off busy photos.
         */}
-        {entry.kind === "task_completed" && (
-          <span
-            aria-hidden
-            className="absolute bottom-1 right-1 flex items-center justify-center rounded-full text-white"
-            style={{
-              width: 18,
-              height: 18,
-              backgroundColor: "var(--color-success)",
-              boxShadow: "0 0 0 1.5px var(--color-bg-surface-raised)",
-            }}
-          >
-            <Icon name="check" size={11} strokeWidth={3} />
-          </span>
-        )}
+        <span
+          title={badge.label}
+          aria-label={badge.label}
+          role="img"
+          className="absolute bottom-1 right-1 flex items-center justify-center rounded-full text-white"
+          style={{
+            width: 18,
+            height: 18,
+            backgroundColor: badge.color,
+            boxShadow: "0 0 0 1.5px var(--color-bg-surface-raised)",
+          }}
+        >
+          <Icon name={badge.icon} size={11} strokeWidth={badge.strokeWidth} />
+        </span>
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 px-3.5 py-2">
@@ -113,6 +152,21 @@ export function LatelyTile({ entry }: { entry: ActivityEntry }) {
           }}
         >
           {entry.title}
+        </div>
+        {/*
+          When line — a dimmer, kind-appropriate "Done / Uploaded / Added
+          <time>" beneath the title. Reinforces what happened and fills the
+          tile out. Computed server-side (panel) and passed as a prop.
+        */}
+        <div
+          className="truncate"
+          style={{
+            color: "var(--color-text-tertiary)",
+            fontSize: 11,
+            fontWeight: 400,
+          }}
+        >
+          {whenLabel}
         </div>
       </div>
     </Link>
