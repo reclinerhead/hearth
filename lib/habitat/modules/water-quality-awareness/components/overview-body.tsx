@@ -34,7 +34,7 @@ import { CcrUploadModal } from "@/components/ccr-upload/CcrUploadModal";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
 import { RemediationMatrixView } from "./remediation-matrix-view";
-import { TrendChartPopover } from "./trend-chart-popover";
+import { TrendChartButton } from "./trend-chart-popover";
 
 /** Utility name + PWSID threaded to each trend popover so a screenshot of
  *  the chart carries its own attribution (issue #293). */
@@ -1716,15 +1716,16 @@ function CcrContaminantRow({
         <span style={CCR_NAME_STYLE}>{c.contaminant_name}</span>
         <CcrTierBadge tier={c.tier} />
       </div>
-      <CcrMeasureLine c={c} />
-      <TrendChartPopover
-        series={series}
-        analyteName={c.contaminant_name}
-        utilityName={provenance.utilityName}
-        pwsid={provenance.pwsid}
-      >
-        <TrendIndicator trend={trend} />
-      </TrendChartPopover>
+      <div className="flex items-center gap-1.5">
+        <CcrMeasureLine c={c} />
+        <TrendChartButton
+          series={series}
+          analyteName={c.contaminant_name}
+          utilityName={provenance.utilityName}
+          pwsid={provenance.pwsid}
+        />
+      </div>
+      <TrendIndicator trend={trend} />
       {ref?.description ? (
         <p
           className="text-small"
@@ -1806,37 +1807,38 @@ function CcrPfasFamilyCard({
                   : undefined
               }
             >
-              <div className="flex items-baseline justify-between gap-3">
+              <div className="flex items-center justify-between gap-3">
                 <span
                   className="text-small"
                   style={{ color: "var(--color-text-primary)" }}
                 >
                   {a.contaminant_name}
                 </span>
-                <span
-                  className="mono text-small"
-                  style={{
-                    color: "var(--color-text-secondary)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {formatDetectedAgainstLimit(a)}
-                  {a.monitoring_period ? (
-                    <span style={{ color: "var(--color-text-tertiary)" }}>
-                      {" "}
-                      · {a.monitoring_period}
-                    </span>
-                  ) : null}
+                <span className="flex items-center gap-1.5 shrink-0">
+                  <span
+                    className="mono text-small"
+                    style={{
+                      color: "var(--color-text-secondary)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {formatDetectedAgainstLimit(a)}
+                    {a.monitoring_period ? (
+                      <span style={{ color: "var(--color-text-tertiary)" }}>
+                        {" "}
+                        · {a.monitoring_period}
+                      </span>
+                    ) : null}
+                  </span>
+                  <TrendChartButton
+                    series={series}
+                    analyteName={a.contaminant_name}
+                    utilityName={provenance.utilityName}
+                    pwsid={provenance.pwsid}
+                  />
                 </span>
               </div>
-              <TrendChartPopover
-                series={series}
-                analyteName={a.contaminant_name}
-                utilityName={provenance.utilityName}
-                pwsid={provenance.pwsid}
-              >
-                <TrendIndicator trend={trend} />
-              </TrendChartPopover>
+              <TrendIndicator trend={trend} />
             </li>
           );
         })}

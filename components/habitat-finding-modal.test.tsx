@@ -356,7 +356,10 @@ describe("HabitatFindingModal", () => {
     expect(closes).toBe(1);
   });
 
-  it("backdrop click closes the modal", () => {
+  it("does NOT close on a backdrop click (close is via X or Esc only)", () => {
+    // The finding modal hosts interactive surfaces (trend popover, copy
+    // button, upload flow); a stray outside click closing it back to the
+    // dashboard was jarring, so backdrop-to-close is intentionally disabled.
     let closes = 0;
     render(
       <HabitatFindingModal
@@ -372,7 +375,7 @@ describe("HabitatFindingModal", () => {
     const backdrop = document.querySelector<HTMLElement>(".fixed.inset-0");
     expect(backdrop).toBeTruthy();
     act(() => backdrop!.click());
-    expect(closes).toBe(1);
+    expect(closes).toBe(0);
   });
 
   it("focus returns to the trigger button after close", () => {

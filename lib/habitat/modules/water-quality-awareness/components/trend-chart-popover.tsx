@@ -60,14 +60,12 @@ function fmt(value: number, unit: string | null): string {
   return unit ? `${v} ${unit}` : v;
 }
 
-export function TrendChartPopover({
-  children,
+export function TrendChartButton({
   series,
   analyteName,
   utilityName,
   pwsid,
 }: {
-  children: React.ReactNode;
   series: ContaminantSeries | null;
   analyteName: string;
   utilityName: string | null;
@@ -181,8 +179,8 @@ export function TrendChartPopover({
     };
   }, [open]);
 
-  // Fewer than two readings → no chart; render the inline indicator plainly.
-  if (!geo) return <>{children}</>;
+  // Fewer than two readings → nothing to chart, so no trigger at all.
+  if (!geo) return null;
 
   const color = toneColor(trend.direction);
   const limitPoints = geo.points.filter((p) => p.limitY !== null);
@@ -550,12 +548,12 @@ export function TrendChartPopover({
                   className="inline-flex items-center gap-1.5 shrink-0"
                   style={{
                     background: "transparent",
-                    border: `1px solid color-mix(in oklab, var(--color-accent) ${
-                      copied ? 45 : 30
-                    }%, transparent)`,
+                    border: "1px solid var(--color-border-subtle)",
                     borderRadius: "var(--radius-sm)",
                     padding: "3px 9px",
-                    color: "var(--color-accent)",
+                    color: copied
+                      ? "var(--color-text-primary)"
+                      : "var(--color-text-secondary)",
                     cursor: "pointer",
                     fontSize: 11,
                     whiteSpace: "nowrap",
@@ -576,8 +574,7 @@ export function TrendChartPopover({
       : null;
 
   return (
-    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <span style={{ minWidth: 0 }}>{children}</span>
+    <>
       <Tooltip
         content={`See every year of data we have for ${analyteName}`}
       >
@@ -598,7 +595,7 @@ export function TrendChartPopover({
             padding: 2,
             margin: 0,
             cursor: "pointer",
-            color: "var(--color-accent)",
+            color: "var(--color-text-primary)",
             lineHeight: 0,
           }}
         >
@@ -606,6 +603,6 @@ export function TrendChartPopover({
         </button>
       </Tooltip>
       {popover}
-    </span>
+    </>
   );
 }
