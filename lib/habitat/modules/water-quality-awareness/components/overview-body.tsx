@@ -1784,13 +1784,28 @@ function CcrPfasFamilyCard({
       ) : null}
       <ul
         className="flex flex-col gap-1.5 mt-2 pt-2"
-        style={{ borderTop: "1px solid var(--color-border-subtle)" }}
+        style={{
+          borderTop:
+            "1px solid color-mix(in oklab, var(--color-text-tertiary) 28%, transparent)",
+        }}
       >
         {analytes.map((a, i) => {
           const series = findSeriesByName(history, a.contaminant_name);
           const trend = computeTrend(series);
           return (
-            <li key={`${a.contaminant_name}-${i}`} className="flex flex-col gap-0.5">
+            <li
+              key={`${a.contaminant_name}-${i}`}
+              className="flex flex-col gap-0.5"
+              style={
+                i > 0
+                  ? {
+                      borderTop:
+                        "1px solid color-mix(in oklab, var(--color-text-tertiary) 28%, transparent)",
+                      paddingTop: 8,
+                    }
+                  : undefined
+              }
+            >
               <div className="flex items-baseline justify-between gap-3">
                 <span
                   className="text-small"

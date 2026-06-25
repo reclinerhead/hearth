@@ -7,6 +7,7 @@ import {
   applyTrendEscalation,
   buildCcrReportIndex,
   buildContaminantHistory,
+  buildTrendClipboardTsv,
   computeTrend,
   findSeriesByName,
   sparklineGeometry,
@@ -506,6 +507,55 @@ describe("buildContaminantHistory — per-year limit (issue #293)", () => {
     ]);
     const s = findSeriesByName(history, "Lead");
     expect(s!.points.map((p) => p.limit)).toEqual([15, 15]);
+  });
+});
+
+/* ---------- buildTrendClipboardTsv ------------------------------------- */
+
+describe("buildTrendClipboardTsv", () => {
+  const points = [
+    { year: 2024, level: 6.2, unit: "ppb", limit: 10 },
+    { year: 2025, level: 7.8, unit: "ppb", limit: 10 },
+  ];
+
+  it("leads with provenance, then a tab-separated table", () => {
+    const tsv = buildTrendClipboardTsv({
+      analyteName: "Arsenic",
+      utilityName: "Kalamazoo Public Water Supply",
+      pwsid: "MI0003520",
+      points,
+    });
+    const lines = tsv.split("\n");
+    expect(lines[0]).toBe("Arsenic");
+    expect(lines[1]).toBe("Kalamazoo Public Water Supply · PWSID MI0003520");
+    expect(lines[2]).toBe(
+      "Source: your 2024–2025 Water Quality Reports (via Hearth)",
+    );
+    expect(lines[3]).toBe("");
+    expect(lines[4]).toBe("Year\tLevel\tUnit\tEPA limit");
+    expect(lines[5]).toBe("2024\t6.2\tppb\t10");
+    expect(lines[6]).toBe("2025\t7.8\tppb\t10");
+  });
+
+  it("sorts oldest-first and leaves an empty cell when a year stated no limit", () => {
+    const tsv = buildTrendClipboardTsv({
+      analyteName: "X",
+      utilityName: null,
+      pwsid: null,
+      points: [
+        { year: 2025, level: 2, unit: "ppb", limit: null },
+        { year: 2023, level: 1, unit: "ppb", limit: 4 },
+      ],
+    });
+    const lines = tsv.split("\n");
+    // No utility/pwsid line — provenance is just the name + source span.
+    expect(lines[0]).toBe("X");
+    expect(lines[1]).toBe(
+      "Source: your 2023–2025 Water Quality Reports (via Hearth)",
+    );
+    const rows = lines.slice(lines.indexOf("Year\tLevel\tUnit\tEPA limit") + 1);
+    expect(rows[0]).toBe("2023\t1\tppb\t4");
+    expect(rows[1]).toBe("2025\t2\tppb\t"); // limit cell empty
   });
 });
 

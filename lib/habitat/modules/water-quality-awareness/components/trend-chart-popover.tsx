@@ -25,7 +25,9 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
+import { Tooltip } from "@/components/tooltip";
 import {
+  buildTrendClipboardTsv,
   computeTrend,
   trendChartGeometry,
   trendDataSpanLabel,
@@ -74,9 +76,37 @@ export function TrendChartPopover({
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
   const iconRef = useRef<HTMLButtonElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogId = useId();
+
+  const copyData = useCallback(() => {
+    const tsv = buildTrendClipboardTsv({
+      analyteName,
+      utilityName,
+      pwsid,
+      points: series?.points ?? [],
+    });
+    navigator.clipboard
+      ?.writeText(tsv)
+      .then(() => {
+        setCopied(true);
+        if (copyTimer.current) clearTimeout(copyTimer.current);
+        copyTimer.current = setTimeout(() => setCopied(false), 1600);
+      })
+      .catch(() => {
+        /* clipboard blocked — leave the button as-is */
+      });
+  }, [analyteName, utilityName, pwsid, series]);
+
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    [],
+  );
 
   const trend = computeTrend(series);
   const geo = trendChartGeometry(series?.points ?? [], {
@@ -494,12 +524,51 @@ export function TrendChartPopover({
                 borderTop: "1px solid var(--color-border-subtle)",
                 marginTop: 10,
                 paddingTop: 8,
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                lineHeight: 1.5,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
               }}
             >
-              Each point is one of your utility&rsquo;s annual reports.
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary)",
+                  lineHeight: 1.5,
+                }}
+              >
+                Each point is one of your utility&rsquo;s annual reports.
+              </span>
+              <Tooltip
+                content="Copy this data (tab-separated) to paste into a spreadsheet"
+                side="bottom"
+              >
+                <button
+                  type="button"
+                  onClick={copyData}
+                  aria-label={`Copy ${analyteName}'s yearly data to the clipboard`}
+                  className="inline-flex items-center gap-1.5 shrink-0"
+                  style={{
+                    background: "transparent",
+                    border: `1px solid color-mix(in oklab, var(--color-accent) ${
+                      copied ? 45 : 30
+                    }%, transparent)`,
+                    borderRadius: "var(--radius-sm)",
+                    padding: "3px 9px",
+                    color: "var(--color-accent)",
+                    cursor: "pointer",
+                    fontSize: 11,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <Icon
+                    name={copied ? "circle-check" : "copy"}
+                    size={13}
+                    aria-hidden
+                  />
+                  {copied ? "Copied" : "Copy data"}
+                </button>
+              </Tooltip>
             </div>
           </div>,
           document.body,
@@ -509,29 +578,33 @@ export function TrendChartPopover({
   return (
     <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <span style={{ minWidth: 0 }}>{children}</span>
-      <button
-        ref={iconRef}
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={open ? dialogId : undefined}
-        aria-label={`Show the ${analyteName} trend chart`}
-        onClick={(e) =>
-          open ? setOpen(false) : doOpen({ x: e.clientX, y: e.clientY })
-        }
-        className="inline-flex items-center justify-center shrink-0"
-        style={{
-          background: "transparent",
-          border: "none",
-          padding: 2,
-          margin: 0,
-          cursor: "pointer",
-          color: "var(--color-accent)",
-          lineHeight: 0,
-        }}
+      <Tooltip
+        content={`See every year of data we have for ${analyteName}`}
       >
-        <Icon name="chart-line" size={16} />
-      </button>
+        <button
+          ref={iconRef}
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-controls={open ? dialogId : undefined}
+          aria-label={`Show the ${analyteName} trend chart for every year of data we have`}
+          onClick={(e) =>
+            open ? setOpen(false) : doOpen({ x: e.clientX, y: e.clientY })
+          }
+          className="inline-flex items-center justify-center shrink-0"
+          style={{
+            background: "transparent",
+            border: "none",
+            padding: 2,
+            margin: 0,
+            cursor: "pointer",
+            color: "var(--color-accent)",
+            lineHeight: 0,
+          }}
+        >
+          <Icon name="chart-line" size={16} />
+        </button>
+      </Tooltip>
       {popover}
     </span>
   );

@@ -70,6 +70,7 @@ export type IconName =
   | "phone"
   | "square-check"
   | "chart-line"
+  | "copy"
   | "help-circle";
 
 const base: SVGProps<SVGSVGElement> = {
@@ -484,6 +485,13 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <path d="M5 4v15a1 1 0 0 0 1 1h15" />
       <path d="m8 14 3-3 3 2 4-6" />
+    </>
+  ),
+  copy: (
+    // Two offset sheets — the standard copy-to-clipboard glyph.
+    <>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V5a2 2 0 0 1 2-2h8" />
     </>
   ),
 };

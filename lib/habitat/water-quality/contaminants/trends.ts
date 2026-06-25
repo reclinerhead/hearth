@@ -538,6 +538,57 @@ export type TrendChartGeometry = {
   unit: string | null;
 };
 
+/**
+ * Build a tab-separated export of an analyte's full reading history for the
+ * clipboard (issue #293). TSV — not CSV — because comma-separated text pastes
+ * into a *single* spreadsheet cell in most apps, whereas tabs split cleanly
+ * into columns. Pure.
+ *
+ * Leads with provenance lines (contaminant, utility + PWSID, source span) so
+ * the pasted block is self-describing and never travels detached from where
+ * the data came from — the same attribution discipline the chart screenshot
+ * carries. A blank line separates the provenance from the `Year / Level /
+ * Unit / EPA limit` table. A year with no stated limit leaves that cell empty.
+ */
+export function buildTrendClipboardTsv(input: {
+  analyteName: string;
+  utilityName: string | null;
+  pwsid: string | null;
+  points: ContaminantYearPoint[];
+}): string {
+  const points = input.points.slice().sort((a, b) => a.year - b.year);
+  const lines: string[] = [input.analyteName];
+
+  const source = [
+    input.utilityName,
+    input.pwsid ? `PWSID ${input.pwsid}` : null,
+  ]
+    .filter((s): s is string => !!s)
+    .join(" · ");
+  if (source) lines.push(source);
+
+  if (points.length > 0) {
+    const first = points[0].year;
+    const last = points[points.length - 1].year;
+    const span = first === last ? `${last}` : `${first}–${last}`;
+    lines.push(`Source: your ${span} Water Quality Reports (via Hearth)`);
+  }
+
+  lines.push("");
+  lines.push(["Year", "Level", "Unit", "EPA limit"].join("\t"));
+  for (const p of points) {
+    lines.push(
+      [
+        String(p.year),
+        String(p.level),
+        p.unit ?? "",
+        p.limit !== null && p.limit !== undefined ? String(p.limit) : "",
+      ].join("\t"),
+    );
+  }
+  return lines.join("\n");
+}
+
 /** Round a positive number up to the nearest 1/2/5 × 10ⁿ — for tidy axis steps. */
 function niceNum(x: number): number {
   if (x <= 0) return 1;
