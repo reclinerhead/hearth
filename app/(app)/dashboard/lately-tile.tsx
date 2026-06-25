@@ -65,6 +65,27 @@ export function LatelyTile({ entry }: { entry: ActivityEntry }) {
         ) : (
           <TileFallbackArtwork icon={entry.fallbackIcon} />
         )}
+
+        {/*
+          Completed-maintenance badge. Only task_completed entries get the
+          green check — it reads at a glance as "done," distinguishing these
+          from the upcoming/overdue maintenance in the panel below. The
+          surface-colored ring lifts it off busy photos.
+        */}
+        {entry.kind === "task_completed" && (
+          <span
+            aria-hidden
+            className="absolute bottom-1 right-1 flex items-center justify-center rounded-full text-white"
+            style={{
+              width: 18,
+              height: 18,
+              backgroundColor: "var(--color-success)",
+              boxShadow: "0 0 0 1.5px var(--color-bg-surface-raised)",
+            }}
+          >
+            <Icon name="check" size={11} strokeWidth={3} />
+          </span>
+        )}
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 px-3.5 py-2">

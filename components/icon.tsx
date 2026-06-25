@@ -10,6 +10,7 @@ export type IconName =
   | "plus"
   | "menu"
   | "x"
+  | "check"
   | "chevron-left"
   | "chevron-right"
   | "chevron-down"
@@ -494,6 +495,7 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M5 15V5a2 2 0 0 1 2-2h8" />
     </>
   ),
+  check: <path d="m5 12 5 5L20 7" />,
 };
 
 type IconProps = {
