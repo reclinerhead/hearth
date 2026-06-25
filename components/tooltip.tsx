@@ -125,7 +125,7 @@ export function Tooltip({
               ref={tooltipRef}
               id={id}
               role="tooltip"
-              className="pointer-events-none fixed z-50 w-max max-w-[16rem]"
+              className="pointer-events-none fixed z-[100] w-max max-w-[16rem]"
               style={{
                 top: pos?.top ?? 0,
                 left: pos?.left ?? 0,

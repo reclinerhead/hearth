@@ -859,6 +859,35 @@ describe("WqaOverviewBody — year-over-year trends (issue #289)", () => {
     expect(text()).not.toContain("readings ·");
   });
 
+  it("opens a trend chart popover carrying the utility + PWSID for screenshots (issue #293)", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Nitrate", level: 3.1, mcl: 10, tier: "caution" },
+    ]);
+    findings.ccr_findings!.contaminant_history = [
+      {
+        key: "nitrate",
+        display_name: "Nitrate",
+        unit: "ppb",
+        points: [
+          { year: 2024, level: 2.4, unit: "ppb", limit: 10 },
+          { year: 2025, level: 3.1, unit: "ppb", limit: 10 },
+        ],
+      },
+    ];
+    render(findings);
+    const trigger = Array.from(container.querySelectorAll("button")).find((b) =>
+      (b.getAttribute("aria-label") ?? "").includes("trend chart"),
+    );
+    expect(trigger).toBeDefined();
+    act(() => trigger!.click());
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    const dialogText = dialog?.textContent ?? "";
+    expect(dialogText).toContain("PWSID MI0000001");
+    expect(dialogText).toContain("Test Utility");
+    expect(dialog?.querySelector("svg")).not.toBeNull();
+  });
+
   it("renders a per-analyte trend inside the PFAS family card", () => {
     const findings = cwsWithCcrFindings([
       { name: "Perfluorooctanoic acid (PFOA)", level: 4.0, mcl: 4, tier: "caution" },

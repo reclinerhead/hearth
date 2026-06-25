@@ -7,9 +7,11 @@ import {
   applyTrendEscalation,
   buildCcrReportIndex,
   buildContaminantHistory,
+  buildTrendClipboardTsv,
   computeTrend,
   findSeriesByName,
   sparklineGeometry,
+  trendChartGeometry,
   trendDataSpanLabel,
   trendPreviousLabel,
   trendTone,
@@ -69,7 +71,12 @@ function year(
 
 function series(
   key: string,
-  points: Array<{ year: number; level: number; unit?: string | null }>,
+  points: Array<{
+    year: number;
+    level: number;
+    unit?: string | null;
+    limit?: number | null;
+  }>,
 ): ContaminantSeries {
   return {
     key,
@@ -79,6 +86,7 @@ function series(
       year: p.year,
       level: p.level,
       unit: p.unit ?? null,
+      limit: p.limit ?? null,
     })),
   };
 }
@@ -434,6 +442,190 @@ describe("buildCcrReportIndex", () => {
 
   it("returns an empty index for no years", () => {
     expect(buildCcrReportIndex([])).toEqual([]);
+  });
+});
+
+/* ---------- per-year limit in history ---------------------------------- */
+
+describe("buildContaminantHistory — per-year limit (issue #293)", () => {
+  it("carries each year's stated MCL onto its point", () => {
+    const history = buildContaminantHistory([
+      year(2024, [
+        detected({ contaminant_name: "Arsenic", detected_level: 5, unit: "ppb", mcl: 10 }),
+      ]),
+      year(2025, [
+        detected({ contaminant_name: "Arsenic", detected_level: 7.8, unit: "ppb", mcl: 10 }),
+      ]),
+    ]);
+    const s = findSeriesByName(history, "Arsenic");
+    expect(s!.points.map((p) => p.limit)).toEqual([10, 10]);
+  });
+
+  it("reflects a historical limit change per-year (not today's value backward)", () => {
+    const history = buildContaminantHistory([
+      year(2021, [
+        detected({ contaminant_name: "X", detected_level: 3, unit: "ppb", mcl: 10 }),
+      ]),
+      year(2024, [
+        detected({ contaminant_name: "X", detected_level: 3, unit: "ppb", mcl: 4 }),
+      ]),
+    ]);
+    const s = findSeriesByName(history, "X");
+    expect(s!.points.map((p) => p.limit)).toEqual([10, 4]);
+  });
+
+  it("falls back to the LCR action level when there's no MCL (lead)", () => {
+    const history = buildContaminantHistory([
+      year(2023, null, {
+        lead_copper_distribution: {
+          lead: {
+            percentile_90: 6,
+            unit: "ppb",
+            action_level: 15,
+            samples_collected: null,
+            samples_exceeding_action_level: null,
+            monitoring_period: "2023",
+          },
+          copper: null,
+          lead_service_line_count: null,
+        },
+      }),
+      year(2024, null, {
+        lead_copper_distribution: {
+          lead: {
+            percentile_90: 9,
+            unit: "ppb",
+            action_level: 15,
+            samples_collected: null,
+            samples_exceeding_action_level: null,
+            monitoring_period: "2024",
+          },
+          copper: null,
+          lead_service_line_count: null,
+        },
+      }),
+    ]);
+    const s = findSeriesByName(history, "Lead");
+    expect(s!.points.map((p) => p.limit)).toEqual([15, 15]);
+  });
+});
+
+/* ---------- buildTrendClipboardTsv ------------------------------------- */
+
+describe("buildTrendClipboardTsv", () => {
+  const points = [
+    { year: 2024, level: 6.2, unit: "ppb", limit: 10 },
+    { year: 2025, level: 7.8, unit: "ppb", limit: 10 },
+  ];
+
+  it("leads with provenance, then a tab-separated table", () => {
+    const tsv = buildTrendClipboardTsv({
+      analyteName: "Arsenic",
+      utilityName: "Kalamazoo Public Water Supply",
+      pwsid: "MI0003520",
+      points,
+    });
+    const lines = tsv.split("\n");
+    expect(lines[0]).toBe("Arsenic");
+    expect(lines[1]).toBe("Kalamazoo Public Water Supply · PWSID MI0003520");
+    expect(lines[2]).toBe(
+      "Source: your 2024–2025 Water Quality Reports (via Hearth)",
+    );
+    expect(lines[3]).toBe("");
+    expect(lines[4]).toBe("Year\tLevel\tUnit\tEPA limit");
+    expect(lines[5]).toBe("2024\t6.2\tppb\t10");
+    expect(lines[6]).toBe("2025\t7.8\tppb\t10");
+  });
+
+  it("sorts oldest-first and leaves an empty cell when a year stated no limit", () => {
+    const tsv = buildTrendClipboardTsv({
+      analyteName: "X",
+      utilityName: null,
+      pwsid: null,
+      points: [
+        { year: 2025, level: 2, unit: "ppb", limit: null },
+        { year: 2023, level: 1, unit: "ppb", limit: 4 },
+      ],
+    });
+    const lines = tsv.split("\n");
+    // No utility/pwsid line — provenance is just the name + source span.
+    expect(lines[0]).toBe("X");
+    expect(lines[1]).toBe(
+      "Source: your 2023–2025 Water Quality Reports (via Hearth)",
+    );
+    const rows = lines.slice(lines.indexOf("Year\tLevel\tUnit\tEPA limit") + 1);
+    expect(rows[0]).toBe("2023\t1\tppb\t4");
+    expect(rows[1]).toBe("2025\t2\tppb\t"); // limit cell empty
+  });
+});
+
+/* ---------- trendChartGeometry ----------------------------------------- */
+
+describe("trendChartGeometry", () => {
+  it("returns null for fewer than two readings", () => {
+    expect(
+      trendChartGeometry([{ year: 2025, level: 1, unit: "ppb", limit: 10 }], {
+        width: 440,
+        height: 240,
+      }),
+    ).toBeNull();
+  });
+
+  it("spreads years across the plot, inverts y, and starts at zero", () => {
+    const geo = trendChartGeometry(
+      [
+        { year: 2023, level: 2, unit: "ppb", limit: 10 },
+        { year: 2024, level: 5, unit: "ppb", limit: 10 },
+        { year: 2025, level: 8, unit: "ppb", limit: 10 },
+      ],
+      { width: 440, height: 240 },
+    )!;
+    expect(geo.points).toHaveLength(3);
+    expect(geo.points[0].x).toBe(geo.plot.left);
+    expect(geo.points[2].x).toBe(geo.plot.right);
+    // higher level → smaller y (closer to the top)
+    expect(geo.points[0].y).toBeGreaterThan(geo.points[2].y);
+    // a zero value lands on the baseline
+    const zeroTick = geo.yTicks.find((t) => t.value === 0)!;
+    expect(zeroTick.y).toBe(geo.plot.bottom);
+  });
+
+  it("keeps the y-axis above both the peak reading and the limit", () => {
+    const geo = trendChartGeometry(
+      [
+        { year: 2024, level: 3, unit: "ppb", limit: 10 },
+        { year: 2025, level: 7.8, unit: "ppb", limit: 10 },
+      ],
+      { width: 440, height: 240 },
+    )!;
+    expect(geo.yMax).toBeGreaterThan(10);
+  });
+
+  it("builds a per-year limit line, stepping when the limit changes", () => {
+    const geo = trendChartGeometry(
+      [
+        { year: 2021, level: 3, unit: "ppb", limit: 10 },
+        { year: 2024, level: 3, unit: "ppb", limit: 4 },
+      ],
+      { width: 440, height: 240 },
+    )!;
+    expect(geo.limitPolyline).not.toBeNull();
+    // the two limit points sit at different heights (10 vs 4) → a step
+    expect(geo.points[0].limitY).not.toBe(geo.points[1].limitY);
+    expect(geo.points[0].limit).toBe(10);
+    expect(geo.points[1].limit).toBe(4);
+  });
+
+  it("omits the limit line when no year stated a limit", () => {
+    const geo = trendChartGeometry(
+      [
+        { year: 2024, level: 3, unit: "ppb", limit: null },
+        { year: 2025, level: 4, unit: "ppb", limit: null },
+      ],
+      { width: 440, height: 240 },
+    )!;
+    expect(geo.limitPolyline).toBeNull();
+    expect(geo.points.every((p) => p.limitY === null)).toBe(true);
   });
 });
 

@@ -34,6 +34,11 @@ import { CcrUploadModal } from "@/components/ccr-upload/CcrUploadModal";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
 import { RemediationMatrixView } from "./remediation-matrix-view";
+import { TrendChartButton } from "./trend-chart-popover";
+
+/** Utility name + PWSID threaded to each trend popover so a screenshot of
+ *  the chart carries its own attribution (issue #293). */
+type TrendProvenance = { utilityName: string | null; pwsid: string | null };
 import { findWqaContaminantByAlias } from "@/lib/habitat/water-quality/contaminants/lookup";
 import {
   groupPfasFamily,
@@ -1440,7 +1445,14 @@ function DetectedInWater({ findings }: { findings: WqaFindings }) {
         Detected in your water
       </div>
       {renderCcr ? (
-        <CcrContaminantList ccr={ccr!} lcr={lcr ?? null} />
+        <CcrContaminantList
+          ccr={ccr!}
+          lcr={lcr ?? null}
+          provenance={{
+            utilityName: findings.system_card?.pws_name ?? null,
+            pwsid: findings.system_card?.pwsid ?? null,
+          }}
+        />
       ) : !lcr || lcr.status === "unavailable" ? (
         <EmptyDetected
           body="We couldn't read your utility's lead-and-copper samples on this run. We'll try again on the next refresh."
@@ -1483,9 +1495,11 @@ function DetectedInWater({ findings }: { findings: WqaFindings }) {
 function CcrContaminantList({
   ccr,
   lcr,
+  provenance,
 }: {
   ccr: CcrFindings;
   lcr: LeadCopperSummary | null;
+  provenance: TrendProvenance;
 }) {
   // Issue #224: the displayed list is the regulated-contaminant table
   // PLUS lead/copper (from the CCR distribution, falling back to EPA's
@@ -1532,7 +1546,12 @@ function CcrContaminantList({
       {inlineItems.length > 0 ? (
         <ul className="flex flex-col gap-2">
           {inlineItems.map((item, i) => (
-            <CcrAwarenessItem key={`inline-${i}`} item={item} history={history} />
+            <CcrAwarenessItem
+              key={`inline-${i}`}
+              item={item}
+              history={history}
+              provenance={provenance}
+            />
           ))}
         </ul>
       ) : null}
@@ -1546,7 +1565,12 @@ function CcrContaminantList({
           </summary>
           <ul className="flex flex-col gap-2 mt-2">
             {contextItems.map((item, i) => (
-              <CcrAwarenessItem key={`context-${i}`} item={item} history={history} />
+              <CcrAwarenessItem
+                key={`context-${i}`}
+                item={item}
+                history={history}
+                provenance={provenance}
+              />
             ))}
           </ul>
         </details>
@@ -1558,14 +1582,24 @@ function CcrContaminantList({
 function CcrAwarenessItem({
   item,
   history,
+  provenance,
 }: {
   item: AwarenessItem;
   history: ContaminantHistory | null;
+  provenance: TrendProvenance;
 }) {
   return item.kind === "pfasFamily" ? (
-    <CcrPfasFamilyCard analytes={item.analytes} history={history} />
+    <CcrPfasFamilyCard
+      analytes={item.analytes}
+      history={history}
+      provenance={provenance}
+    />
   ) : (
-    <CcrContaminantRow c={item.contaminant} history={history} />
+    <CcrContaminantRow
+      c={item.contaminant}
+      history={history}
+      provenance={provenance}
+    />
   );
 }
 
@@ -1661,12 +1695,15 @@ function CcrEpaReferenceLink({ url }: { url: string }) {
 function CcrContaminantRow({
   c,
   history,
+  provenance,
 }: {
   c: CcrSummarizedContaminant;
   history: ContaminantHistory | null;
+  provenance: TrendProvenance;
 }) {
   const ref = findWqaContaminantByAlias(c.contaminant_name);
-  const trend = computeTrend(findSeriesByName(history, c.contaminant_name));
+  const series = findSeriesByName(history, c.contaminant_name);
+  const trend = computeTrend(series);
   return (
     <li
       className="rounded-md p-3"
@@ -1679,7 +1716,15 @@ function CcrContaminantRow({
         <span style={CCR_NAME_STYLE}>{c.contaminant_name}</span>
         <CcrTierBadge tier={c.tier} />
       </div>
-      <CcrMeasureLine c={c} />
+      <div className="flex items-center gap-1.5">
+        <CcrMeasureLine c={c} />
+        <TrendChartButton
+          series={series}
+          analyteName={c.contaminant_name}
+          utilityName={provenance.utilityName}
+          pwsid={provenance.pwsid}
+        />
+      </div>
       <TrendIndicator trend={trend} />
       {ref?.description ? (
         <p
@@ -1707,9 +1752,11 @@ function CcrContaminantRow({
 function CcrPfasFamilyCard({
   analytes,
   history,
+  provenance,
 }: {
   analytes: CcrSummarizedContaminant[];
   history: ContaminantHistory | null;
+  provenance: TrendProvenance;
 }) {
   const ref = findWqaContaminantByAlias("PFAS");
   return (
@@ -1738,33 +1785,57 @@ function CcrPfasFamilyCard({
       ) : null}
       <ul
         className="flex flex-col gap-1.5 mt-2 pt-2"
-        style={{ borderTop: "1px solid var(--color-border-subtle)" }}
+        style={{
+          borderTop:
+            "1px solid color-mix(in oklab, var(--color-text-tertiary) 28%, transparent)",
+        }}
       >
         {analytes.map((a, i) => {
-          const trend = computeTrend(findSeriesByName(history, a.contaminant_name));
+          const series = findSeriesByName(history, a.contaminant_name);
+          const trend = computeTrend(series);
           return (
-            <li key={`${a.contaminant_name}-${i}`} className="flex flex-col gap-0.5">
-              <div className="flex items-baseline justify-between gap-3">
+            <li
+              key={`${a.contaminant_name}-${i}`}
+              className="flex flex-col gap-0.5"
+              style={
+                i > 0
+                  ? {
+                      borderTop:
+                        "1px solid color-mix(in oklab, var(--color-text-tertiary) 28%, transparent)",
+                      paddingTop: 8,
+                    }
+                  : undefined
+              }
+            >
+              <div className="flex items-center justify-between gap-3">
                 <span
                   className="text-small"
                   style={{ color: "var(--color-text-primary)" }}
                 >
                   {a.contaminant_name}
                 </span>
-                <span
-                  className="mono text-small"
-                  style={{
-                    color: "var(--color-text-secondary)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {formatDetectedAgainstLimit(a)}
-                  {a.monitoring_period ? (
-                    <span style={{ color: "var(--color-text-tertiary)" }}>
-                      {" "}
-                      · {a.monitoring_period}
-                    </span>
-                  ) : null}
+                <span className="flex items-center gap-1.5 shrink-0">
+                  <span
+                    className="mono text-small"
+                    style={{
+                      color: "var(--color-text-secondary)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {formatDetectedAgainstLimit(a)}
+                    {a.monitoring_period ? (
+                      <span style={{ color: "var(--color-text-tertiary)" }}>
+                        {" "}
+                        · {a.monitoring_period}
+                      </span>
+                    ) : null}
+                  </span>
+                  <TrendChartButton
+                    series={series}
+                    analyteName={a.contaminant_name}
+                    utilityName={provenance.utilityName}
+                    pwsid={provenance.pwsid}
+                  />
                 </span>
               </div>
               <TrendIndicator trend={trend} />

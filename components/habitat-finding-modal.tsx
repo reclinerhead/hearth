@@ -408,9 +408,10 @@ export function HabitatFindingModal({
           "color-mix(in oklab, var(--color-bg-base) 80%, transparent)",
         backdropFilter: "blur(6px)",
       }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) handleClose();
-      }}
+      // Intentionally no backdrop-click-to-close: the finding modal now hosts
+      // rich interactive surfaces (the trend popover, copy button, the upload
+      // flow), and a stray click outside dumping the user back to the
+      // dashboard was jarring. Close is via the X button or Esc only.
     >
       <div
         ref={dialogRef}
