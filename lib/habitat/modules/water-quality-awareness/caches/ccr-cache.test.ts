@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  resolveCcrHistory,
   resolveLatestCcr,
   type CcrCacheLookupResult,
   type CcrCacheRow,
@@ -64,6 +65,18 @@ class InMemoryStore implements CcrCacheStore {
       r.report_year > acc.report_year ? r : acc,
     );
     return { kind: "hit", row: latest };
+  }
+
+  async lookupHistory(pwsid: string): Promise<CcrCacheRow[]> {
+    const normalized = pwsid.trim().toUpperCase();
+    if (this.lookupErrorForPwsid === normalized) {
+      // Soft-fail contract: errors resolve to an empty history.
+      return [];
+    }
+    const all = this.rows.get(normalized) ?? [];
+    return all
+      .filter((r) => r.edition === "primary")
+      .sort((a, b) => b.report_year - a.report_year);
   }
 }
 
@@ -131,5 +144,40 @@ describe("resolveLatestCcr", () => {
 
     expect(out.row).toBeNull();
     expect(out.cache.kind).toBe("miss");
+  });
+});
+
+describe("resolveCcrHistory", () => {
+  it("returns every primary edition newest-first", async () => {
+    const store = new InMemoryStore();
+    store.insert(row({ id: "y2022", report_year: 2022 }));
+    store.insert(row({ id: "y2025", report_year: 2025 }));
+    store.insert(row({ id: "y2024", report_year: 2024 }));
+
+    const { rows } = await resolveCcrHistory("MI0003520", store);
+    expect(rows.map((r) => r.report_year)).toEqual([2025, 2024, 2022]);
+  });
+
+  it("excludes supplement / correction editions from the history", async () => {
+    const store = new InMemoryStore();
+    store.insert(row({ id: "y2024", report_year: 2024, edition: "primary" }));
+    store.insert(row({ id: "y2024s", report_year: 2024, edition: "supplement" }));
+
+    const { rows } = await resolveCcrHistory("MI0003520", store);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].edition).toBe("primary");
+  });
+
+  it("soft-fails to an empty history on a lookup error", async () => {
+    const store = new InMemoryStore();
+    store.lookupErrorForPwsid = "MI0003520";
+    const { rows } = await resolveCcrHistory("MI0003520", store);
+    expect(rows).toEqual([]);
+  });
+
+  it("returns an empty history when no rows exist", async () => {
+    const store = new InMemoryStore();
+    const { rows } = await resolveCcrHistory("MI0003520", store);
+    expect(rows).toEqual([]);
   });
 });

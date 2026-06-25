@@ -38,6 +38,18 @@ import {
   PFAS_FAMILY_HEADING,
   type AwarenessItem,
 } from "@/lib/habitat/water-quality/contaminants/pfas-grouping";
+import {
+  computeTrend,
+  findSeriesByName,
+  sparklineGeometry,
+  trendArrowPath,
+  trendDataSpanLabel,
+  trendPreviousLabel,
+  trendTone,
+  trendWord,
+  type ContaminantHistory,
+  type ContaminantTrend,
+} from "@/lib/habitat/water-quality/contaminants/trends";
 import { buildReportDocument, escapeHtml, REPORT_COLORS } from "../theme";
 import { computeReportSignature } from "../signature";
 
@@ -48,7 +60,7 @@ export const WATER_QUALITY_REPORT_TYPE = "water_quality";
  * Template version — bump on any layout / copy / composition change so a
  * cached PDF rendered by an older template regenerates on the next request.
  */
-export const WATER_QUALITY_TEMPLATE_VERSION = "v4";
+export const WATER_QUALITY_TEMPLATE_VERSION = "v5";
 
 /**
  * Static reference-data version — bump when the contaminant reference
@@ -76,6 +88,13 @@ export type WaterQualityReportInput = {
   reportYear: number | null;
   /** Detected contaminants in the summarizer's existing order (concern → caution → context). */
   contaminants: CcrSummarizedContaminant[];
+  /**
+   * Year-over-year reading history per analyte (issue #289), persisted on
+   * the finding and passed through verbatim by the route. Drives the same
+   * trend indicator + sparkline the finding modal shows. Null when no
+   * history is on file (a single uploaded year, or a pre-#289 finding).
+   */
+  contaminantHistory: ContaminantHistory | null;
   /** Normalized detections feeding the remediation matrix personalization. */
   detected: DetectedContaminantInput[];
   freeTestingOffer: CcrFreeTestingOffer | null;
@@ -199,10 +218,68 @@ function effForColumn(
 
 // --- PFAS family grouping (issue #234; shared logic in contaminants/pfas-grouping) ---
 
-function renderAwarenessItem(item: AwarenessItem): string {
+function renderAwarenessItem(
+  item: AwarenessItem,
+  history: ContaminantHistory | null,
+): string {
   return item.kind === "pfasFamily"
-    ? pfasFamilyCard(item.analytes)
-    : contaminantRow(item.contaminant);
+    ? pfasFamilyCard(item.analytes, history)
+    : contaminantRow(item.contaminant, history);
+}
+
+// --- year-over-year trend indicator (issue #289; shared logic in trends) ---
+
+/** Map the shared semantic tone to the report's palette. */
+function trendColorFor(trend: ContaminantTrend): string {
+  const tone = trendTone(trend.direction);
+  if (tone === "attention") return REPORT_COLORS.amber;
+  if (tone === "positive") return REPORT_COLORS.success;
+  return REPORT_COLORS.textTertiary;
+}
+
+/** The direction glyph, inline SVG (not a Unicode arrow — see effShapeSvg). */
+function trendArrowSvg(trend: ContaminantTrend, color: string): string {
+  return `<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true" style="display:inline-block;vertical-align:middle"><path d="${trendArrowPath(
+    trend.direction,
+  )}" fill="none" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+/** The sparkline, inline SVG. Empty string below 3 readings. */
+function trendSparklineSvg(trend: ContaminantTrend, color: string): string {
+  if (trend.points.length < 3) return "";
+  const geo = sparklineGeometry(trend.points, { width: 54, height: 14, padding: 2 });
+  if (!geo) return "";
+  const last = geo.dots[geo.dots.length - 1];
+  return `<svg viewBox="0 0 ${geo.width} ${geo.height}" width="${geo.width}" height="${geo.height}" aria-hidden="true" style="display:inline-block;vertical-align:middle"><polyline points="${geo.polyline}" fill="none" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${last.x}" cy="${last.y}" r="1.6" fill="${color}"/></svg>`;
+}
+
+/**
+ * The trend row under a contaminant's level/limit line. Empty when there
+ * are fewer than two readings (nothing to compare). Same honesty contract
+ * as the modal — direction word, prior value, and exact data span, all
+ * from the shared trend module.
+ */
+function trendRowHtml(trend: ContaminantTrend): string {
+  if (trend.yearsOfData < 2) return "";
+  const color = trendColorFor(trend);
+  const prev = trendPreviousLabel(trend);
+  const span = trendDataSpanLabel(trend);
+  const meta = `${prev ? `${escapeHtml(prev)} · ` : ""}${escapeHtml(span)}`;
+  return `<div class="trend">
+    <span class="trend-dir" style="color:${color}">${trendArrowSvg(
+      trend,
+      color,
+    )}<span class="trend-word">${escapeHtml(trendWord(trend.direction))}</span></span>
+    ${trendSparklineSvg(trend, color)}
+    <span class="trend-meta">${meta}</span>
+  </div>`;
+}
+
+function trendForName(
+  history: ContaminantHistory | null,
+  name: string,
+): ContaminantTrend {
+  return computeTrend(findSeriesByName(history, name));
 }
 
 /**
@@ -211,7 +288,10 @@ function renderAwarenessItem(item: AwarenessItem): string {
  * (as printed on the CCR — its name is already the human-readable spelled-out
  * form). Mirrors the single-row level/limit treatment.
  */
-function pfasFamilyCard(analytes: CcrSummarizedContaminant[]): string {
+function pfasFamilyCard(
+  analytes: CcrSummarizedContaminant[],
+  history: ContaminantHistory | null,
+): string {
   const cue = tierCue("caution"); // PFAS is floored at the caution tier
   const ref = findWqaContaminantByAlias("PFAS"); // family reference entry
   const body = ref?.description
@@ -229,9 +309,10 @@ function pfasFamilyCard(analytes: CcrSummarizedContaminant[]): string {
             mcl ? ` <span class="faint">/ ${escapeHtml(mcl)} limit</span>` : ""
           }</span>`
         : "";
-      return `<div class="pfas-analyte"><span class="an-name">${escapeHtml(
+      const trend = trendRowHtml(trendForName(history, c.contaminant_name));
+      return `<div class="pfas-analyte"><div class="pfas-analyte-head"><span class="an-name">${escapeHtml(
         c.contaminant_name,
-      )}</span>${measure}</div>`;
+      )}</span>${measure}</div>${trend}</div>`;
     })
     .join("");
 
@@ -252,7 +333,9 @@ function pfasFamilyCard(analytes: CcrSummarizedContaminant[]): string {
 function awarenessSection(input: WaterQualityReportInput): string {
   const orienting = buildOrientingSentence(input);
   const items = groupPfasFamily(input.contaminants);
-  const rows = items.map(renderAwarenessItem).join("");
+  const rows = items
+    .map((item) => renderAwarenessItem(item, input.contaminantHistory))
+    .join("");
   const detectedCount = input.contaminants.length;
 
   const list =
@@ -294,7 +377,10 @@ function buildOrientingSentence(input: WaterQualityReportInput): string {
   return `${utility}${source} provides your home's drinking water. This report turns its most recent testing into plain language — what was found, what it means, and what you can do about it.`;
 }
 
-function contaminantRow(c: CcrSummarizedContaminant): string {
+function contaminantRow(
+  c: CcrSummarizedContaminant,
+  history: ContaminantHistory | null,
+): string {
   const cue = tierCue(c.tier);
   const ref = findWqaContaminantByAlias(c.contaminant_name);
   const level = formatLevel(c.detected_level, c.unit);
@@ -313,6 +399,8 @@ function contaminantRow(c: CcrSummarizedContaminant): string {
       }</span>`
     : "";
 
+  const trend = trendRowHtml(trendForName(history, c.contaminant_name));
+
   return `
 <div class="contaminant keep-together">
   <div class="contaminant-head">
@@ -320,6 +408,7 @@ function contaminantRow(c: CcrSummarizedContaminant): string {
     <span class="cue" style="color:${cue.color};border-color:${cue.color}">${cue.label}</span>
   </div>
   ${measure ? `<div class="measure-row">${measure}</div>` : ""}
+  ${trend}
   ${why}
   ${link}
 </div>`;
@@ -528,10 +617,17 @@ function templateCss(): string {
 .why { margin-top: 6px; font-size: 9.5pt; line-height: 1.5; }
 .epa-link { display: inline-block; margin-top: 7px; font-size: 7.5pt; letter-spacing: 0.04em; color: ${c.accent}; border-bottom: 1px solid color-mix(in oklab, ${c.accent} 40%, transparent); }
 
-.pfas-analytes { margin-top: 9px; padding-top: 8px; border-top: 1px solid ${c.borderSubtle}; display: flex; flex-direction: column; gap: 5px; }
-.pfas-analyte { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.pfas-analytes { margin-top: 9px; padding-top: 8px; border-top: 1px solid ${c.borderSubtle}; display: flex; flex-direction: column; gap: 7px; }
+.pfas-analyte { display: flex; flex-direction: column; gap: 2px; }
+.pfas-analyte-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .pfas-analyte .an-name { font-size: 9.5pt; color: ${c.textPrimary}; }
 .pfas-analyte .an-measure { font-size: 8.5pt; color: ${c.textPrimary}; white-space: nowrap; }
+
+/* year-over-year trend row (issue #289) */
+.trend { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 4px; }
+.trend-dir { display: inline-flex; align-items: center; gap: 3px; }
+.trend-word { font-size: 7.5pt; font-weight: 500; letter-spacing: 0.02em; }
+.trend-meta { font-family: 'JetBrains Mono', monospace; font-size: 7pt; color: ${c.textTertiary}; }
 
 .combo { display: flex; gap: 12px; margin-top: 12px; }
 .combo-primary, .combo-add { flex: 1; padding: 13px; }

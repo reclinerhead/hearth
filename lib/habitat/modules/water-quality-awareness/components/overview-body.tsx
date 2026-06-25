@@ -40,6 +40,18 @@ import {
   PFAS_FAMILY_HEADING,
   type AwarenessItem,
 } from "@/lib/habitat/water-quality/contaminants/pfas-grouping";
+import {
+  computeTrend,
+  findSeriesByName,
+  sparklineGeometry,
+  trendArrowPath,
+  trendDataSpanLabel,
+  trendPreviousLabel,
+  trendTone,
+  trendWord,
+  type ContaminantHistory,
+  type ContaminantTrend,
+} from "@/lib/habitat/water-quality/contaminants/trends";
 import type { HabitatRecheckSource } from "@/lib/habitat/types";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
 import {
@@ -1408,12 +1420,16 @@ function CcrContaminantList({
   const inlineItems = groupPfasFamily(collapseContext ? headlineRows : contaminants);
   const contextItems = collapseContext ? groupPfasFamily(contextRows) : [];
 
+  // Issue #289: the year-over-year reading history persisted on the
+  // finding, threaded down to each row so it can render its trend.
+  const history = ccr.contaminant_history ?? null;
+
   return (
     <div className="flex flex-col gap-2">
       {inlineItems.length > 0 ? (
         <ul className="flex flex-col gap-2">
           {inlineItems.map((item, i) => (
-            <CcrAwarenessItem key={`inline-${i}`} item={item} />
+            <CcrAwarenessItem key={`inline-${i}`} item={item} history={history} />
           ))}
         </ul>
       ) : null}
@@ -1427,7 +1443,7 @@ function CcrContaminantList({
           </summary>
           <ul className="flex flex-col gap-2 mt-2">
             {contextItems.map((item, i) => (
-              <CcrAwarenessItem key={`context-${i}`} item={item} />
+              <CcrAwarenessItem key={`context-${i}`} item={item} history={history} />
             ))}
           </ul>
         </details>
@@ -1436,11 +1452,17 @@ function CcrContaminantList({
   );
 }
 
-function CcrAwarenessItem({ item }: { item: AwarenessItem }) {
+function CcrAwarenessItem({
+  item,
+  history,
+}: {
+  item: AwarenessItem;
+  history: ContaminantHistory | null;
+}) {
   return item.kind === "pfasFamily" ? (
-    <CcrPfasFamilyCard analytes={item.analytes} />
+    <CcrPfasFamilyCard analytes={item.analytes} history={history} />
   ) : (
-    <CcrContaminantRow c={item.contaminant} />
+    <CcrContaminantRow c={item.contaminant} history={history} />
   );
 }
 
@@ -1533,8 +1555,15 @@ function CcrEpaReferenceLink({ url }: { url: string }) {
  * — issue #239), and an EPA reference link. The description + link resolve
  * from the shared contaminant reference via `findWqaContaminantByAlias`.
  */
-function CcrContaminantRow({ c }: { c: CcrSummarizedContaminant }) {
+function CcrContaminantRow({
+  c,
+  history,
+}: {
+  c: CcrSummarizedContaminant;
+  history: ContaminantHistory | null;
+}) {
   const ref = findWqaContaminantByAlias(c.contaminant_name);
+  const trend = computeTrend(findSeriesByName(history, c.contaminant_name));
   return (
     <li
       className="rounded-md p-3"
@@ -1548,6 +1577,7 @@ function CcrContaminantRow({ c }: { c: CcrSummarizedContaminant }) {
         <CcrTierBadge tier={c.tier} />
       </div>
       <CcrMeasureLine c={c} />
+      <TrendIndicator trend={trend} />
       {ref?.description ? (
         <p
           className="text-small"
@@ -1573,8 +1603,10 @@ function CcrContaminantRow({ c }: { c: CcrSummarizedContaminant }) {
  */
 function CcrPfasFamilyCard({
   analytes,
+  history,
 }: {
   analytes: CcrSummarizedContaminant[];
+  history: ContaminantHistory | null;
 }) {
   const ref = findWqaContaminantByAlias("PFAS");
   return (
@@ -1605,34 +1637,137 @@ function CcrPfasFamilyCard({
         className="flex flex-col gap-1.5 mt-2 pt-2"
         style={{ borderTop: "1px solid var(--color-border-subtle)" }}
       >
-        {analytes.map((a, i) => (
-          <li
-            key={`${a.contaminant_name}-${i}`}
-            className="flex items-baseline justify-between gap-3"
-          >
-            <span
-              className="text-small"
-              style={{ color: "var(--color-text-primary)" }}
-            >
-              {a.contaminant_name}
-            </span>
-            <span
-              className="mono text-small"
-              style={{ color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}
-            >
-              {formatDetectedAgainstLimit(a)}
-              {a.monitoring_period ? (
-                <span style={{ color: "var(--color-text-tertiary)" }}>
-                  {" "}
-                  · {a.monitoring_period}
+        {analytes.map((a, i) => {
+          const trend = computeTrend(findSeriesByName(history, a.contaminant_name));
+          return (
+            <li key={`${a.contaminant_name}-${i}`} className="flex flex-col gap-0.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <span
+                  className="text-small"
+                  style={{ color: "var(--color-text-primary)" }}
+                >
+                  {a.contaminant_name}
                 </span>
-              ) : null}
-            </span>
-          </li>
-        ))}
+                <span
+                  className="mono text-small"
+                  style={{
+                    color: "var(--color-text-secondary)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {formatDetectedAgainstLimit(a)}
+                  {a.monitoring_period ? (
+                    <span style={{ color: "var(--color-text-tertiary)" }}>
+                      {" "}
+                      · {a.monitoring_period}
+                    </span>
+                  ) : null}
+                </span>
+              </div>
+              <TrendIndicator trend={trend} />
+            </li>
+          );
+        })}
       </ul>
       {ref?.learn_more_url ? <CcrEpaReferenceLink url={ref.learn_more_url} /> : null}
     </li>
+  );
+}
+
+/* ---------- year-over-year trend indicator (issue #289) --------------- */
+
+/** Map the shared semantic tone to the modal's CSS-variable colors. */
+function trendColor(trend: ContaminantTrend): string {
+  const tone = trendTone(trend.direction);
+  if (tone === "attention") return "var(--color-accent)";
+  if (tone === "positive") return "var(--color-success)";
+  return "var(--color-text-tertiary)";
+}
+
+/**
+ * The trend row beneath a contaminant's measure line. Suppressed when we
+ * have fewer than two readings — there's nothing to compare, and the
+ * measure line already shows the single year. Honest by construction: the
+ * direction word, the prior-year value, and the exact data span all come
+ * from the shared trend module, so the modal never implies more history
+ * than the reports hold. The sparkline appears once there are 3+ readings.
+ */
+function TrendIndicator({ trend }: { trend: ContaminantTrend }) {
+  if (trend.yearsOfData < 2) return null;
+  const color = trendColor(trend);
+  const prev = trendPreviousLabel(trend);
+  const span = trendDataSpanLabel(trend);
+  return (
+    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+      <span className="inline-flex items-center gap-1" style={{ color }}>
+        <TrendArrow direction={trend.direction} />
+        <span className="text-small" style={{ fontWeight: 500 }}>
+          {trendWord(trend.direction)}
+        </span>
+      </span>
+      {trend.points.length >= 3 ? (
+        <TrendSparkline trend={trend} color={color} />
+      ) : null}
+      <span
+        className="text-small"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        {prev ? `${prev} · ` : ""}
+        {span}
+      </span>
+    </div>
+  );
+}
+
+function TrendArrow({ direction }: { direction: ContaminantTrend["direction"] }) {
+  return (
+    <svg
+      viewBox="0 0 12 12"
+      width={12}
+      height={12}
+      aria-hidden
+      style={{ display: "inline-block", verticalAlign: "middle" }}
+    >
+      <path
+        d={trendArrowPath(direction)}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function TrendSparkline({
+  trend,
+  color,
+}: {
+  trend: ContaminantTrend;
+  color: string;
+}) {
+  const geo = sparklineGeometry(trend.points, { width: 56, height: 16, padding: 2 });
+  if (!geo) return null;
+  const last = geo.dots[geo.dots.length - 1];
+  return (
+    <svg
+      viewBox={`0 0 ${geo.width} ${geo.height}`}
+      width={geo.width}
+      height={geo.height}
+      aria-hidden
+      style={{ display: "inline-block", verticalAlign: "middle" }}
+    >
+      <polyline
+        points={geo.polyline}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx={last.x} cy={last.y} r={1.8} fill={color} />
+    </svg>
   );
 }
 

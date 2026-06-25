@@ -67,9 +67,11 @@ import {
 import {
   createSupabaseCcrCacheStore,
   resolveLatestCcr,
+  resolveCcrHistory,
   type CcrCacheRow,
 } from "./caches/ccr-cache";
 import { buildCcrFindings } from "./ccr";
+import { buildContaminantHistory } from "@/lib/habitat/water-quality/contaminants/trends";
 import {
   COMPLIANCE_RECENT_YEARS,
   countUnmappedContaminants,
@@ -89,6 +91,7 @@ import { summarizeWqaRecheckChanges } from "./recheck-summary";
 import {
   branchDecideNarration,
   ccrCacheFetchNarration,
+  ccrHistoryComputeNarration,
   complianceComputeNarration,
   EPA_CWS_SERVICE_AREAS_SOURCE,
   EPA_ENVIROFACTS_SOURCE,
@@ -597,6 +600,44 @@ const WaterQualityAwarenessModule: HabitatModule = {
             }),
           }
         : null;
+
+    // WQA trends (#289): on the CCR branch, pull every uploaded report
+    // year for this utility and build the per-analyte reading history
+    // once, here — the only place with multi-year access. It's persisted
+    // on the CCR findings so the modal and the PDF report both render the
+    // same year-over-year trend without re-querying. Soft-fails to an
+    // empty history (resolveCcrHistory never throws), in which case the
+    // surfaces just render this year's numbers with no trend.
+    if (ccrEnrichment && resolution.confidence !== "unmapped") {
+      const ccrHistoryStore = createSupabaseCcrCacheStore();
+      const { rows: historyRows } = await resolveCcrHistory(
+        resolution.pwsid,
+        ccrHistoryStore,
+      );
+      const history = buildContaminantHistory(
+        historyRows.map((r) => ({
+          report_year: r.report_year,
+          published_date: r.published_date,
+          extracted_data: r.extracted_data,
+        })),
+      );
+      ccrEnrichment.findings.contaminant_history = history;
+
+      const years = historyRows.map((r) => r.report_year);
+      const historyStep = ccrHistoryComputeNarration({
+        yearCount: years.length,
+        firstYear: years.length > 0 ? Math.min(...years) : null,
+        lastYear: years.length > 0 ? Math.max(...years) : null,
+        analyteCount: history.length,
+      });
+      log.step({
+        kind: "compute",
+        narration: historyStep.narration,
+        detail: historyStep.detail,
+        result_summary: historyStep.result_summary,
+        source: HEARTH_CCR_CACHE_SOURCE,
+      });
+    }
 
     // WQA-6: water-touching properties (hardness, iron, manganese) read
     // from the CCR. Computed once here — both the maintenance-bridge

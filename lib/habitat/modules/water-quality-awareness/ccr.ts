@@ -40,6 +40,9 @@ import {
   LEAD_ACTION_LEVEL_MG_L,
   type LeadCopperSummary,
 } from "./lcr";
+// Type-only import — erased at compile time, so this does NOT create a
+// runtime cycle with trends.ts (which imports values from this file).
+import type { ContaminantHistory } from "@/lib/habitat/water-quality/contaminants/trends";
 
 /**
  * Tier classification for one CCR-detected contaminant. Mirrors the
@@ -129,6 +132,22 @@ export type CcrFindings = {
    * affordance instead of the standard layout.
    */
   ai_confidence: number;
+  /**
+   * Year-over-year reading history per detected analyte, built from
+   * every uploaded CCR year for this utility (issue #289). Drives the
+   * trend indicator + sparkline in both the finding modal and the PDF
+   * report. Computed once in `check()` (the only place with multi-year
+   * access) and persisted here so both render surfaces read the same
+   * data and can't drift.
+   *
+   * Optional / nullable: findings persisted before #289 don't carry it
+   * and render exactly as before; the field backfills on the next
+   * recheck or yearly cadence run. The type is imported lazily as a
+   * structural shape to keep `ccr.ts` from importing the trend module
+   * (which imports back from here — the one-directional dependency
+   * avoids a cycle).
+   */
+  contaminant_history?: ContaminantHistory | null;
 };
 
 /**
