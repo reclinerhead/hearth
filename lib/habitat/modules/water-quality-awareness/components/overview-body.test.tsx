@@ -771,6 +771,27 @@ describe("WqaOverviewBody — CCR lead & PFAS surface in the panel (issue #224)"
   });
 });
 
+describe("WqaOverviewBody — upload another year (issue #289)", () => {
+  it("shows the 'upload another year' affordance once a CCR is on file", () => {
+    render(cwsWithCcrFindings([{ name: "Nitrate", level: 3.1, mcl: 10, tier: "caution" }]));
+    const uploadButton = Array.from(container.querySelectorAll("button")).find(
+      (b) => (b.textContent ?? "").includes("Upload another year"),
+    );
+    expect(uploadButton).toBeDefined();
+    // The three pills stay uniform — the first-upload CTA copy is gone
+    // because a report exists now.
+    expect(text()).toContain("2024 report on file");
+    expect(text()).not.toContain("Upload yours");
+  });
+
+  it("does NOT show 'upload another year' on cws_no_ccr (the pill is the CTA there)", () => {
+    render(cwsNoCcrFindings());
+    expect(text()).not.toContain("Upload another year");
+    // The first-upload affordance still lives on the pill.
+    expect(text()).toContain("Upload yours");
+  });
+});
+
 describe("WqaOverviewBody — year-over-year trends (issue #289)", () => {
   it("renders a trend direction + prior value + data span on a contaminant with history", () => {
     const findings = cwsWithCcrFindings([

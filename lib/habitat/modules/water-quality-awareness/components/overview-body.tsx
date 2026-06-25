@@ -184,13 +184,13 @@ export function WqaOverviewBody({
           findings={f}
           houseId={houseId}
           onCorrectionSubmitted={handleCorrectionSubmitted}
-          onUploadCcrRequest={
-            card &&
-            card.latest_ccr_status === "not_uploaded" &&
-            f.branch === "cws_no_ccr"
-              ? () => setCcrModalOpen(true)
-              : null
-          }
+          // A CCR can be uploaded whenever we have a PWSID to attach it
+          // to — both when none is on file yet (the pill becomes the
+          // CTA) and when one already is (a subtle "upload another year"
+          // affordance, so newer reports and backfilled prior years can
+          // be added — issue #289). The modal itself dedups by
+          // (PWSID, year, edition), so a re-upload is harmless.
+          onUploadCcr={card?.pwsid ? () => setCcrModalOpen(true) : null}
         />
       )}
       <RecommendedActionsSection
@@ -789,7 +789,7 @@ function SystemCard({
   findings,
   houseId,
   onCorrectionSubmitted,
-  onUploadCcrRequest,
+  onUploadCcr,
 }: {
   findings: WqaFindings;
   houseId: string;
@@ -800,12 +800,13 @@ function SystemCard({
    */
   onCorrectionSubmitted: () => void;
   /**
-   * When set, the Latest CCR tile renders as an interactive button
-   * inviting the user to upload their utility's annual report. Null
-   * on every state where upload isn't the right next step (CCR
-   * already on file, non-CWS branches, cws_unmapped without a PWSID).
+   * Opens the CCR upload modal. Non-null whenever we have a PWSID to
+   * attach a report to. Drives two presentations: the Latest CCR pill
+   * becomes the upload CTA when no report is on file yet, and a subtle
+   * "upload another year" link appears beneath the grid once one is
+   * (issue #289). Null on branches without a PWSID.
    */
-  onUploadCcrRequest: (() => void) | null;
+  onUploadCcr: (() => void) | null;
 }) {
   const card = findings.system_card;
   // Issue #193 — local toggle for the inline PWSID edit affordance.
@@ -813,6 +814,18 @@ function SystemCard({
   // visually replaces the PWSID line; the rest of the card stays put.
   const [editingPwsid, setEditingPwsid] = useState(false);
   if (!card) return null;
+
+  // The Latest CCR pill becomes the upload CTA only on the first-upload
+  // state (no report on file yet, on the cws_no_ccr branch). Once a
+  // report exists, the pill goes back to showing status and the
+  // "upload another year" link below the grid carries the affordance —
+  // so the three pills stay uniform (issue #289).
+  const showFirstUploadCta =
+    onUploadCcr !== null &&
+    card.latest_ccr_status === "not_uploaded" &&
+    findings.branch === "cws_no_ccr";
+  const showUploadAnotherYear =
+    onUploadCcr !== null && card.latest_ccr_status !== "not_uploaded";
 
   const sourceLabel = (() => {
     switch (card.source_type) {
@@ -954,16 +967,16 @@ function SystemCard({
         />
         <StatTile
           label="Latest CCR"
-          value={onUploadCcrRequest ? "Upload yours" : ccr.label}
-          tone={onUploadCcrRequest ? "info" : ccr.tone}
-          icon={onUploadCcrRequest ? "upload" : ccr.icon}
+          value={showFirstUploadCta ? "Upload yours" : ccr.label}
+          tone={showFirstUploadCta ? "info" : ccr.tone}
+          icon={showFirstUploadCta ? "upload" : ccr.icon}
           tooltip={
             card.latest_ccr_status === "not_uploaded"
               ? "A Consumer Confidence Report (CCR), also called an Annual Water Quality Report, is the federally-required annual disclosure of every regulated contaminant your utility tested for and detected last year. Utilities mail or email it by July 1 each year — upload yours to populate the rest of this finding."
               : `Your utility's ${card.latest_ccr_status.year} Consumer Confidence Report is on file. The contaminants listed below — along with any free-testing offer and the recommended actions — were extracted directly from that report.`
           }
-          onClick={onUploadCcrRequest ?? undefined}
-          actionable={onUploadCcrRequest !== null}
+          onClick={showFirstUploadCta ? (onUploadCcr ?? undefined) : undefined}
+          actionable={showFirstUploadCta}
         />
         <StatTile
           label="Source"
@@ -973,6 +986,29 @@ function SystemCard({
           tooltip="Where your tap water originates, per EPA's Envirofacts WATER_SYSTEM record. Groundwater systems pump from wells or aquifers; surface-water systems draw from rivers, lakes, or reservoirs; mixed systems use groundwater under the influence of surface water."
         />
       </div>
+
+      {showUploadAnotherYear ? (
+        // Issue #289 — once a report is on file, the pill shows status,
+        // so the upload affordance lives here as a quiet accent link that
+        // leaves the three pills uniform. Covers both a newer year and
+        // backfilling prior years (the more history, the richer the
+        // year-over-year trends below).
+        <button
+          type="button"
+          onClick={() => onUploadCcr?.()}
+          className="inline-flex items-center gap-1.5 text-small"
+          style={{
+            color: "var(--color-accent)",
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            marginBottom: 12,
+          }}
+        >
+          <Icon name="upload" size={14} aria-hidden />
+          <span>Upload another year&rsquo;s report</span>
+        </button>
+      ) : null}
 
       <p
         className="text-small"
