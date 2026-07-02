@@ -41,6 +41,13 @@ import { TrendChartButton } from "./trend-chart-popover";
 type TrendProvenance = { utilityName: string | null; pwsid: string | null };
 import { findWqaContaminantByAlias } from "@/lib/habitat/water-quality/contaminants/lookup";
 import {
+  buildWqaNextSteps,
+  buildWqaDataSources,
+  WQA_HOW_THIS_WAS_MADE_BODY,
+  WQA_AWARENESS_DISCLAIMER,
+  type WqaDataSource,
+} from "@/lib/habitat/water-quality/closing-copy";
+import {
   groupPfasFamily,
   PFAS_FAMILY_HEADING,
   type AwarenessItem,
@@ -205,6 +212,7 @@ export function WqaOverviewBody({
       />
       <DetectedInWater findings={f} />
       <SourcesBlock findings={f} />
+      <WhereToGoFromHere findings={f} />
 
       {card?.pwsid ? (
         <CcrUploadModal
@@ -2262,6 +2270,224 @@ function SourcePill({
         <span style={{ color: "var(--color-text-tertiary)" }}>· {note}</span>
       ) : null}
     </span>
+  );
+}
+
+/* ---------- 6. Where to go from here (issue #299) --------------------- */
+
+/**
+ * The modal's closing section — parity with the PDF report's last page.
+ * Three parts, in the report's order: the Learn → Test → Get involved
+ * ladder, a consolidated utility-contact block, and a plain-language "How
+ * this was made" note that spells out what a CCR and SDWIS are. All copy
+ * comes from the shared `closing-copy` module so this and the PDF never
+ * drift. Gated to the same branches as the sources block — a CWS with a
+ * system card; private well / stale / unmapped have no contact or
+ * data-source story to tell here.
+ */
+function WhereToGoFromHere({ findings }: { findings: WqaFindings }) {
+  if (
+    findings.branch === "private_well" ||
+    findings.branch === "stale" ||
+    findings.branch === "cws_unmapped"
+  ) {
+    return null;
+  }
+
+  const card = findings.system_card;
+  const ccr = findings.ccr_findings ?? null;
+
+  const steps = buildWqaNextSteps({
+    freeTestingOffer: ccr?.free_testing_offer ?? null,
+  });
+
+  // Provenance for the CCR data-source line: coverage year + the latest
+  // report's added-on month from the finding's report index (best-effort,
+  // never a name — the modal doesn't pair a household name with the report).
+  const latestReport = ccr?.report_index?.[0] ?? null;
+  const ccrProvenance =
+    ccr && ccr.report_year !== null
+      ? {
+          year: ccr.report_year,
+          uploadedByName: null,
+          uploadedOnLabel: latestReport?.extracted_at
+            ? formatAddedMonth(latestReport.extracted_at) || null
+            : null,
+        }
+      : null;
+
+  const sources = buildWqaDataSources({
+    ccrProvenance,
+    usedSdwis: Boolean(card),
+  });
+
+  return (
+    <section
+      aria-labelledby="wqa-next-steps-heading"
+      className="flex flex-col gap-4"
+    >
+      <div>
+        <div className="eyebrow mb-1">Where to go from here</div>
+        <h3
+          id="wqa-next-steps-heading"
+          className="h3"
+          style={{ marginBottom: 8 }}
+        >
+          Next steps
+        </h3>
+        <ol
+          className="flex flex-col gap-2.5"
+          style={{ paddingLeft: 20, margin: 0, listStyle: "decimal" }}
+        >
+          {steps.map((s) => (
+            <li
+              key={s.key}
+              className="text-small"
+              style={{ color: "var(--color-text-secondary)", lineHeight: 1.55 }}
+            >
+              <span
+                style={{ fontWeight: 500, color: "var(--color-text-primary)" }}
+              >
+                {s.title}
+              </span>{" "}
+              {s.body}
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      {card ? <UtilityContactBlock findings={findings} /> : null}
+
+      <HowThisWasMade sources={sources} />
+    </section>
+  );
+}
+
+/**
+ * "Your water utility" — the homeowner's direct line, mirroring the PDF's
+ * contact panel. Utility name + PWSID repeat what the system card shows
+ * (intentional: this reads as the actionable contact, and the report is
+ * meant to stand on its own), with the administrator name · phone · email
+ * from EPA's Envirofacts record. The free-testing phone in the ladder above
+ * is a different, CCR-printed line — this is the general utility contact.
+ */
+function UtilityContactBlock({ findings }: { findings: WqaFindings }) {
+  const card = findings.system_card;
+  if (!card) return null;
+  const admin = findings.branch_metadata.admin_contact;
+  const detail = [admin?.name, admin?.phone, admin?.email].filter(
+    Boolean,
+  ) as string[];
+
+  return (
+    <section
+      className="rounded-md"
+      style={{
+        border: "1px solid var(--color-border-subtle)",
+        backgroundColor: "var(--color-bg-surface-raised)",
+        padding: "var(--space-4)",
+      }}
+      aria-labelledby="wqa-contact-heading"
+    >
+      <div id="wqa-contact-heading" className="eyebrow mb-1">
+        Your water utility
+      </div>
+      <div
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontSize: 16,
+          color: "var(--color-text-primary)",
+        }}
+      >
+        {card.pws_name}
+      </div>
+      {card.pwsid ? (
+        <div style={{ marginTop: 8 }}>
+          <span
+            className="eyebrow"
+            style={{ display: "block", color: "var(--color-text-tertiary)" }}
+          >
+            Public Water Supply ID (PWSID)
+          </span>
+          <span
+            className="mono"
+            style={{
+              display: "block",
+              color: "var(--color-text-primary)",
+              marginTop: 1,
+              letterSpacing: "0.04em",
+            }}
+          >
+            {card.pwsid}
+          </span>
+        </div>
+      ) : null}
+      {detail.length > 0 ? (
+        <div
+          className="mono text-small"
+          style={{ color: "var(--color-text-tertiary)", marginTop: 8 }}
+        >
+          {detail.join("  ·  ")}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * The "How this was made" fine print. Always renders the provenance
+ * paragraph + awareness disclaimer; the "Where this data comes from" list
+ * (CCR / SDWIS, acronyms spelled out) appears when there are sources to
+ * name. Rendered inline (not collapsed) — surfacing what a CCR and SDWIS
+ * are is the point of this section, not something to hide behind a tap.
+ */
+function HowThisWasMade({ sources }: { sources: WqaDataSource[] }) {
+  return (
+    <div
+      className="text-small"
+      style={{ color: "var(--color-text-tertiary)", lineHeight: 1.55 }}
+    >
+      <p style={{ margin: 0 }}>
+        <span
+          style={{ fontWeight: 500, color: "var(--color-text-secondary)" }}
+        >
+          How this was made.
+        </span>{" "}
+        {WQA_HOW_THIS_WAS_MADE_BODY}
+      </p>
+      {sources.length > 0 ? (
+        <div style={{ marginTop: 10 }}>
+          <div
+            style={{
+              fontWeight: 500,
+              color: "var(--color-text-secondary)",
+              marginBottom: 4,
+            }}
+          >
+            Where this data comes from
+          </div>
+          <ul
+            className="flex flex-col gap-1.5"
+            style={{ margin: 0, paddingLeft: 16, listStyle: "disc" }}
+          >
+            {sources.map((s) => (
+              <li key={s.key} style={{ lineHeight: 1.55 }}>
+                <span
+                  style={{
+                    fontWeight: 500,
+                    color: "var(--color-text-secondary)",
+                  }}
+                >
+                  {s.title}
+                </span>{" "}
+                {s.body}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <p style={{ marginTop: 10 }}>{WQA_AWARENESS_DISCLAIMER}</p>
+    </div>
   );
 }
 
