@@ -17,14 +17,16 @@
  *                      remediation matrix will replace this with a
  *                      contaminant-specific recommendation.
  *
- *   free_testing     — fires when the admin contact on the WATER_SYSTEM
- *                      record has a phone_number populated, suggesting
- *                      the user can call the utility directly to ask
- *                      about free residential water testing programs.
- *                      v1 uses contact presence as a heuristic; WQA-3's
- *                      CCR extraction will replace this with extracted
- *                      facts ("Kalamazoo offers free testing through X
- *                      program" — language pulled from the CCR).
+ *   free_testing     — the "free residential testing" card. Prefers the
+ *                      utility's own free-testing contact as printed in its
+ *                      CCR (`freeTestingOffer.contact_value`) — the same
+ *                      number the report's "Test your own tap" step shows —
+ *                      and reframes as a stated offer. Falls back to the
+ *                      EPA administrator-of-record phone (the WATER_SYSTEM
+ *                      record) when no CCR offer is on file, framed as a
+ *                      "call to ask". Emitted when either source yields a
+ *                      number. Keeping this in step with the report's
+ *                      closing "Test your own tap" number is issue #299.
  *
  *   maintenance_bridge — the AUTOMATIC card (WQA-6). Fires when the CCR
  *                        reported a cadence-relevant water property
@@ -41,6 +43,7 @@
  * actions fire.
  */
 
+import type { CcrFreeTestingOffer } from "@/lib/documents/ai/ccr-schema";
 import type { ComplianceSummary } from "./compliance";
 import { computeLcrSeverityInputs, type LeadCopperSummary } from "./lcr";
 import {
@@ -77,6 +80,14 @@ export type RecommendedActionsInputs = {
     phone: string | null;
   } | null;
   systemName: string;
+  /**
+   * The CCR's free-testing offer (cws_with_ccr). When it plainly states an
+   * offer with a printed contact line, the free_testing card surfaces that
+   * CCR number — the same one the report's "Test your own tap" step uses
+   * (issue #299) — instead of EPA's admin phone. Absent / null on branches
+   * with no CCR, or when the CCR names no free-testing offer.
+   */
+  freeTestingOffer?: CcrFreeTestingOffer | null;
   /**
    * Contaminants detected for this house, normalized by the orchestrator
    * from the CCR contaminant table (cws_with_ccr) or the SDWIS lead/
@@ -188,18 +199,33 @@ export function shouldEmitPitcherFilter(
 }
 
 /**
- * Whether to emit the free_testing card. True when the admin contact
- * has a phone_number populated. Heuristic — the real signal in
- * WQA-3+ will come from CCR extraction. False when admin contact is
- * null (rare; small rural utilities sometimes lack contact records)
- * or the phone field is absent.
+ * Whether to emit the free_testing card. True when we have a number to
+ * offer from either source: the utility's CCR-printed free-testing contact
+ * (a stated offer with a contact value), or — failing that — the EPA
+ * administrator-of-record phone. False when neither is available (rare;
+ * some small rural utilities lack a contact record and have no CCR).
  *
  * Exported for the test suite.
  */
 export function shouldEmitFreeTesting(
   input: RecommendedActionsInputs,
 ): boolean {
+  if (ccrFreeTestingContact(input.freeTestingOffer)) return true;
   return Boolean(input.adminContact?.phone);
+}
+
+/**
+ * The utility's own free-testing phone as printed in its CCR, or null when
+ * the CCR names no offer or prints no contact value. The single predicate
+ * both `shouldEmitFreeTesting` and `buildFreeTestingAction` read, so the
+ * "does the CCR give us a number?" decision lives in one place.
+ */
+function ccrFreeTestingContact(
+  offer: CcrFreeTestingOffer | null | undefined,
+): string | null {
+  return offer && offer.offered && offer.contact_value
+    ? offer.contact_value
+    : null;
 }
 
 function buildPitcherFilterAction(
@@ -347,19 +373,39 @@ function allOrBothNoun(n: number): string {
 function buildFreeTestingAction(
   input: RecommendedActionsInputs,
 ): WqaRecommendedAction {
-  const phone = input.adminContact!.phone!; // shouldEmit guards this
-  const adminName = input.adminContact?.name?.trim();
   const utility = input.systemName || "your water utility";
+
+  // Prefer the CCR-printed free-testing line so this card and the report's
+  // "Test your own tap" step show the SAME number (issue #299). The CCR
+  // plainly states the offer, so we frame it as a fact rather than a
+  // "call to ask", and attribute the number to the report.
+  const ccrContact = ccrFreeTestingContact(input.freeTestingOffer);
+  if (ccrContact) {
+    return {
+      id: "free_testing",
+      icon: "phone",
+      headline: "Your utility offers free residential testing",
+      supporting_line:
+        `${utility} offers free in-home water testing — reach them at ${ccrContact}. ` +
+        `Testing the water at your own tap is the only way to know what's actually coming out ` +
+        `of your pipes, since lead and copper enter downstream of the utility.`,
+      provenance: `The offer and this phone number are printed in ${utility}'s Consumer Confidence Report.`,
+    };
+  }
+
+  // Fallback: no CCR offer on file. Point the homeowner at the utility's
+  // EPA administrator-of-record line to ask whether free testing exists.
+  // Telling a user to call a specific person and phone number without
+  // explaining where we got those reads as "Hearth knows a guy" — the
+  // provenance line makes it clear we pulled the contact from EPA's public
+  // administrator-on-file record, which is the same source every other
+  // utility customer could look up themselves.
+  const phone = input.adminContact!.phone!; // shouldEmit guards this path
+  const adminName = input.adminContact?.name?.trim();
   const contactClause = adminName
     ? `Call ${adminName} at ${phone}`
     : `Call ${phone}`;
 
-  // Provenance attribution. Telling a user to call a specific person
-  // and phone number without explaining where we got those reads as
-  // "Hearth knows a guy" — the provenance line makes it clear we
-  // pulled the contact from EPA's public administrator-on-file
-  // record, which is the same source every other utility customer
-  // could look up themselves.
   const provenance = adminName
     ? `${adminName} is listed as ${utility}'s administrator of record on EPA's Envirofacts WATER_SYSTEM file. The phone number is the one EPA has on file for the utility.`
     : `The phone number is the one EPA has on file for ${utility} in its Envirofacts WATER_SYSTEM record.`;

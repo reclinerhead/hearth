@@ -339,6 +339,48 @@ describe("buildRecommendedActions", () => {
   });
 });
 
+describe("free_testing — CCR-printed contact preferred (issue #299)", () => {
+  const ccrOffer = {
+    offered: true,
+    contact_method: "phone" as const,
+    contact_value: "(269) 337-8550",
+  };
+
+  it("emits even without an admin phone when the CCR states an offer", () => {
+    expect(
+      shouldEmitFreeTesting(
+        inputs({ adminContact: null, freeTestingOffer: ccrOffer }),
+      ),
+    ).toBe(true);
+  });
+
+  it("uses the CCR number (not EPA's admin phone) and attributes it to the report", () => {
+    const ft = buildRecommendedActions(
+      inputs({ freeTestingOffer: ccrOffer }),
+    ).find((a) => a.id === "free_testing")!;
+    expect(ft.supporting_line).toContain("(269) 337-8550");
+    // The EPA admin phone must NOT appear — that was the divergence.
+    expect(ft.supporting_line).not.toContain("269-337-8768");
+    expect(ft.headline).toBe("Your utility offers free residential testing");
+    expect(ft.provenance).toContain("Consumer Confidence Report");
+    expect(ft.provenance).not.toContain("Envirofacts");
+  });
+
+  it("falls back to the EPA admin phone when the CCR names no usable offer", () => {
+    // offered but no contact value, and offered:false — both fall back.
+    for (const offer of [
+      { offered: true, contact_method: null, contact_value: null },
+      { offered: false, contact_method: "phone" as const, contact_value: "(269) 337-8550" },
+    ]) {
+      const ft = buildRecommendedActions(
+        inputs({ freeTestingOffer: offer }),
+      ).find((a) => a.id === "free_testing")!;
+      expect(ft.supporting_line).toContain("269-337-8768");
+      expect(ft.headline).toBe("Ask your utility about free residential testing");
+    }
+  });
+});
+
 describe("buildRecommendedActions — contaminant-specific filter (WQA-5)", () => {
   const KALAMAZOO_DETECTED = [
     { name: "Lead", level_label: "9 ppb" },

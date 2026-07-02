@@ -1020,3 +1020,61 @@ describe("WqaOverviewBody — stale", () => {
     expect(text()).toContain("pws_activity_code='I'");
   });
 });
+
+describe("WqaOverviewBody — Where to go from here (issue #299)", () => {
+  it("renders the Next steps ladder, contact block, and How-this-was-made on cws_no_ccr", () => {
+    render(cwsNoCcrFindings());
+    // Next steps ladder.
+    expect(text()).toContain("Where to go from here");
+    expect(text()).toContain("Next steps");
+    expect(text()).toContain("Learn.");
+    expect(text()).toContain("Test your own tap.");
+    expect(text()).toContain("Get involved.");
+    // No CCR offer on this branch → generic tap-test guidance.
+    expect(text()).toContain("county health department");
+    // Consolidated utility-contact block with the EPA admin contact.
+    expect(text()).toContain("Your water utility");
+    expect(text()).toContain("James Baker");
+    expect(text()).toContain("bakerj@kalamazoocity.org");
+    // How this was made — SDWIS spelled out (no CCR on file here).
+    expect(text()).toContain("How this was made");
+    expect(text()).toContain("Where this data comes from");
+    expect(text()).toContain("Safe Drinking Water Information System (SDWIS)");
+    expect(text()).not.toContain("Consumer Confidence Report (CCR)");
+  });
+
+  it("uses the CCR-printed free-testing number and lists the CCR source when a CCR is on file", () => {
+    const findings = cwsWithCcrFindings([
+      { name: "Cau-A", level: 2.5, mcl: 3, tier: "caution" },
+    ]);
+    findings.ccr_findings!.free_testing_offer = {
+      offered: true,
+      contact_method: "phone",
+      contact_value: "(269) 337-8550",
+    };
+    render(findings);
+    expect(text()).toContain("Test your own tap.");
+    expect(text()).toContain("offers free residential water testing");
+    expect(text()).toContain("reach them at (269) 337-8550");
+    // Both sources named, acronyms spelled out.
+    expect(text()).toContain("2024 Consumer Confidence Report (CCR)");
+    expect(text()).toContain("Safe Drinking Water Information System (SDWIS)");
+  });
+
+  it("is suppressed on private_well / stale / cws_unmapped", () => {
+    for (const branch of ["private_well", "stale", "cws_unmapped"] as const) {
+      const findings: WqaFindings = {
+        branch,
+        branch_metadata: {
+          branch,
+          is_active: false,
+          system_type: null,
+          admin_contact: null,
+        },
+      };
+      render(findings);
+      expect(text()).not.toContain("Where to go from here");
+      expect(text()).not.toContain("Next steps");
+    }
+  });
+});

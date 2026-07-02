@@ -52,6 +52,12 @@ import {
 } from "@/lib/habitat/water-quality/contaminants/trends";
 import { buildReportDocument, escapeHtml, REPORT_COLORS } from "../theme";
 import { computeReportSignature } from "../signature";
+import {
+  buildWqaNextSteps,
+  buildWqaDataSources,
+  WQA_HOW_THIS_WAS_MADE_BODY,
+  WQA_AWARENESS_DISCLAIMER,
+} from "@/lib/habitat/water-quality/closing-copy";
 
 /** report_type discriminator for the cache pointer + storage path. */
 export const WATER_QUALITY_REPORT_TYPE = "water_quality";
@@ -60,7 +66,7 @@ export const WATER_QUALITY_REPORT_TYPE = "water_quality";
  * Template version — bump on any layout / copy / composition change so a
  * cached PDF rendered by an older template regenerates on the next request.
  */
-export const WATER_QUALITY_TEMPLATE_VERSION = "v5";
+export const WATER_QUALITY_TEMPLATE_VERSION = "v6";
 
 /**
  * Static reference-data version — bump when the contaminant reference
@@ -504,13 +510,11 @@ function agencySection(input: WaterQualityReportInput): string {
 }
 
 function involvementSection(input: WaterQualityReportInput): string {
-  const offer = input.freeTestingOffer;
-  const freeTesting =
-    offer && offer.offered
-      ? `<li><b>Test your own tap.</b> Your utility offers free residential water testing${
-          offer.contact_value ? ` — reach them at ${escapeHtml(offer.contact_value)}` : ""
-        }. A test of the water at your own faucet is the only way to know what's actually coming out of your pipes, since lead and copper enter downstream of the utility.</li>`
-      : `<li><b>Test your own tap.</b> The water leaving the treatment plant isn't always the water at your faucet — lead and copper enter from your home's own plumbing. A certified tap test, or a kit from your county health department, closes that gap.</li>`;
+  // Ladder copy + the free-testing variant live in the shared closing-copy
+  // module (issue #299) so this page and the web finding modal never drift.
+  const ladder = buildWqaNextSteps({ freeTestingOffer: input.freeTestingOffer })
+    .map((s) => `<li><b>${escapeHtml(s.title)}</b> ${escapeHtml(s.body)}</li>`)
+    .join("");
 
   const contact = buildContactBlock(input);
 
@@ -519,18 +523,14 @@ function involvementSection(input: WaterQualityReportInput): string {
   <div class="eyebrow">Where to go from here</div>
   <h2>Next steps</h2>
 
-  <ol class="ladder">
-    <li><b>Learn.</b> Read the EPA reference linked beside each contaminant above — they explain the health context in plain terms, written for homeowners, not regulators.</li>
-    ${freeTesting}
-    <li><b>Get involved.</b> Your water utility holds public meetings and publishes its annual report. The contact below is your direct line to ask questions about anything in this document.</li>
-  </ol>
+  <ol class="ladder">${ladder}</ol>
 
   ${contact}
 
   <div class="disclosure faint small">
-    <p><b>How this was made.</b> Every number, tier, and treatment rating in this report is drawn directly from your utility's published Consumer Confidence Report and EPA's public drinking-water data — nothing here is generated or estimated. Treatment effectiveness follows EPA and NSF public guidance and assumes a properly certified unit.</p>
+    <p><b>How this was made.</b> ${escapeHtml(WQA_HOW_THIS_WAS_MADE_BODY)}</p>
     ${buildDataSources(input)}
-    <p style="margin-top:10px">This report is for awareness, not a substitute for testing the water at your own tap. Treatment recommendations are at the technology level; Hearth doesn't sell or endorse specific products.</p>
+    <p style="margin-top:10px">${escapeHtml(WQA_AWARENESS_DISCLAIMER)}</p>
   </div>
 </section>`;
 }
@@ -541,32 +541,18 @@ function involvementSection(input: WaterQualityReportInput): string {
  * Emits nothing if neither source applies.
  */
 function buildDataSources(input: WaterQualityReportInput): string {
-  const items: string[] = [];
+  // Source copy (with the acronyms spelled out) is shared with the web modal
+  // via the closing-copy module (issue #299).
+  const sources = buildWqaDataSources({
+    ccrProvenance: input.ccrProvenance,
+    usedSdwis: input.usedSdwis,
+  });
+  if (sources.length === 0) return "";
 
-  const prov = input.ccrProvenance;
-  if (prov) {
-    const yearPart = prov.year ? `${prov.year} ` : "";
-    const name = prov.uploadedByName ? escapeHtml(prov.uploadedByName) : null;
-    const date = prov.uploadedOnLabel ? escapeHtml(prov.uploadedOnLabel) : null;
-    let creditText = "";
-    if (name && date) creditText = ` (uploaded by ${name} on ${date})`;
-    else if (date) creditText = ` (uploaded ${date})`;
-    else if (name) creditText = ` (uploaded by ${name})`;
-    items.push(
-      `<li><b>Your utility's ${yearPart}Consumer Confidence Report (CCR)</b> — the annual water-quality report every community water system is required to publish for its customers${creditText}. It's the source of the detected-contaminant levels in this report.</li>`,
-    );
-  }
-
-  if (input.usedSdwis) {
-    items.push(
-      `<li><b>EPA's Safe Drinking Water Information System (SDWIS)</b> — the U.S. Environmental Protection Agency's national database of public water systems. Your utility's identity, its compliance history, and its lead &amp; copper monitoring records are drawn from it.</li>`,
-    );
-  }
-
-  if (items.length === 0) return "";
-  return `<div class="sources"><div class="sources-head">Where this data comes from</div><ul class="sources-list">${items.join(
-    "",
-  )}</ul></div>`;
+  const items = sources
+    .map((s) => `<li><b>${escapeHtml(s.title)}</b> ${escapeHtml(s.body)}</li>`)
+    .join("");
+  return `<div class="sources"><div class="sources-head">Where this data comes from</div><ul class="sources-list">${items}</ul></div>`;
 }
 
 function buildContactBlock(input: WaterQualityReportInput): string {
