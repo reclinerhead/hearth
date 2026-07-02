@@ -702,6 +702,9 @@ const WaterQualityAwarenessModule: HabitatModule = {
         systemName: displaySystemName(record),
         detectedContaminants,
         waterProperties,
+        // Issue #299: prefer the CCR-printed free-testing line for the
+        // free_testing card, matching the report's "Test your own tap".
+        freeTestingOffer: ccrEnrichment?.findings?.free_testing_offer ?? null,
       };
       recommendedActions = buildRecommendedActions(inputs);
       const actionsStep = recommendedActionsComputeNarration({
