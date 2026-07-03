@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Fraunces, Inter, JetBrains_Mono } from "next/font/google";
+import { siteUrl } from "@/lib/public-pages/site-url";
 import "./globals.css";
 
 const fraunces = Fraunces({
@@ -24,6 +25,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  // Base for canonical / OG URLs on the public pages (epic #298).
+  // siteUrl() resolves to the production host even on previews.
+  metadataBase: new URL(siteUrl()),
   title: "Hearth — Your home, documented.",
   description:
     "A warm, calm home for everything you know about your house: appliances, documents, maintenance, and habitat.",

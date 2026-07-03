@@ -46,11 +46,24 @@ export async function updateSession(request: NextRequest) {
   // and the handler would never run. The handlers themselves gate on the
   // `Authorization: Bearer ${CRON_SECRET}` header Vercel sends, so they're
   // not actually open (see app/api/cron/storage-sweep/route.ts).
+  //
+  // The app/(public)/ route group (epic #298) adds the place-keyed
+  // public pages: /water/* and the /how-it-works methodology page.
+  // Segment-exact matching on purpose — a bare startsWith("/water")
+  // would also exempt any future /water-adjacent authenticated route.
+  // /sitemap.xml and /robots.txt are crawler entry points that must
+  // never bounce to /login — they pass through the proxy because the
+  // root matcher only excludes _next internals and image files.
   const isPublicRoute =
     pathname === "/" ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/auth") ||
-    pathname.startsWith("/api/cron");
+    pathname.startsWith("/api/cron") ||
+    pathname === "/how-it-works" ||
+    pathname === "/water" ||
+    pathname.startsWith("/water/") ||
+    pathname === "/sitemap.xml" ||
+    pathname === "/robots.txt";
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
