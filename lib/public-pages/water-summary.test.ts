@@ -111,7 +111,10 @@ describe("identity", () => {
     expect(s.identity.sourceProtectionSinceYear).toBe(2004);
   });
 
-  it("never carries admin contact fields anywhere in the view model", () => {
+  it("carries the utility contact name + phone but never the email or PWSID", () => {
+    // Hard rule 7 (amended): a callable org-level contact is allowed for
+    // the civic next-steps block; the harvestable admin email and the
+    // machine identifier (rule 3) are not.
     const s = buildPublicWaterSummary({
       record,
       violations: [],
@@ -119,13 +122,21 @@ describe("identity", () => {
       ccrYears: [],
       now: NOW,
     });
+    expect(s.utilityContact).toEqual({ name: "James Baker", phone: "555-0100" });
     const serialized = JSON.stringify(s);
-    expect(serialized).not.toContain("BAKER");
-    expect(serialized).not.toContain("James");
-    expect(serialized).not.toContain("example.gov");
-    expect(serialized).not.toContain("555-0100");
-    // Machine identifiers stay internal too (hard rule 3).
-    expect(serialized).not.toContain("MI0003520");
+    expect(serialized).not.toContain("example.gov"); // email never published
+    expect(serialized).not.toContain("MI0003520"); // PWSID stays internal
+  });
+
+  it("has no utility contact when EPA lists no phone number", () => {
+    const s = buildPublicWaterSummary({
+      record: { ...record, phone_number: null },
+      violations: [],
+      lcrSamples: [],
+      ccrYears: [],
+      now: NOW,
+    });
+    expect(s.utilityContact).toBeNull();
   });
 });
 
@@ -579,5 +590,87 @@ describe("PFAS block (issue #303 — real list with trends)", () => {
       now: NOW,
     });
     expect(s.pfas).toEqual({ kind: "none_reported" });
+  });
+});
+
+describe("remediation block (issue #303 follow-up)", () => {
+  it("is none when no CCR is on file", () => {
+    const s = buildPublicWaterSummary({
+      record,
+      violations: [],
+      lcrSamples: [],
+      ccrYears: [],
+      now: NOW,
+    });
+    expect(s.remediation).toEqual({ kind: "none" });
+  });
+
+  it("is none when nothing detected maps onto a matrix row (copper only)", () => {
+    const s = buildPublicWaterSummary({
+      record,
+      violations: [],
+      lcrSamples: [],
+      ccrYears: [
+        ccrYear(
+          2024,
+          extraction({
+            detected_contaminants: [
+              contaminant({ contaminant_name: "Copper", detected_level: 0.8, unit: "ppm", mcl: null, mcl_action_level: 1.3 }),
+            ],
+          }),
+        ),
+      ],
+      now: NOW,
+    });
+    // Copper resolves to a public row but the matrix deliberately has no
+    // copper row, so there's nothing to remediate against.
+    expect(s.remediation).toEqual({ kind: "none" });
+  });
+
+  it("personalizes the matrix and recommends a combination from detected rows", () => {
+    const s = buildPublicWaterSummary({
+      record,
+      violations: [],
+      lcrSamples: [],
+      ccrYears: [
+        ccrYear(
+          2025,
+          extraction({
+            detected_contaminants: [
+              contaminant({ contaminant_name: "Lead", detected_level: 3, unit: "ppb", mcl: null, mcl_action_level: 0.015 }),
+              contaminant({ contaminant_name: "Total Trihalomethanes", detected_level: 33, unit: "ppb", mcl: 80 }),
+              contaminant({ contaminant_name: "Fluoride", detected_level: 0.7, unit: "ppm", mcl: 4 }),
+            ],
+            ucmr_results: [
+              { contaminant_name: "Perfluorooctanoic acid (PFOA)", detected_level: 2.1, unit: "ppt", monitoring_period: "2025" },
+              { contaminant_name: "Perfluorooctane sulfonic acid (PFOS)", detected_level: 3.7, unit: "ppt", monitoring_period: "2025" },
+            ],
+          }),
+        ),
+      ],
+      now: NOW,
+    });
+    expect(s.remediation.kind).toBe("available");
+    if (s.remediation.kind !== "available") return;
+    expect(s.remediation.reportYear).toBe(2025);
+
+    // Detected rows sort to the top.
+    const detectedKeys = s.remediation.personalized
+      .filter((p) => p.detected)
+      .map((p) => p.row.key);
+    expect(detectedKeys).toEqual(expect.arrayContaining(["lead", "tthm", "fluoride", "pfas"]));
+    const firstN = s.remediation.personalized
+      .slice(0, detectedKeys.length)
+      .every((p) => p.detected);
+    expect(firstN).toBe(true);
+
+    // PFAS drives the P473 cert; fluoride drives the RO add-on.
+    expect(s.remediation.combination.primary.nsf_standards).toContain("NSF P473");
+    expect(s.remediation.combination.ro_addon).not.toBeNull();
+
+    // Every rendered string is a static matrix label — never upload text.
+    const serialized = JSON.stringify(s.remediation);
+    expect(serialized).not.toContain("Perfluorooctanoic acid (PFOA)");
+    expect(serialized).not.toContain("Perfluorooctane sulfonic acid");
   });
 });

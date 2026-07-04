@@ -22,6 +22,14 @@ import {
   sparklineGeometry,
   trendArrowPath,
 } from "@/lib/habitat/water-quality/contaminants/trends";
+import { buildWqaNextSteps } from "@/lib/habitat/water-quality/closing-copy";
+import {
+  NSF_CERTIFIED_PRODUCTS_URL,
+  betterEffectiveness,
+  type InstallLocation,
+  type RemediationEffectiveness,
+} from "@/lib/habitat/water-quality/remediation/matrix";
+import type { PersonalizedRemediationRow } from "@/lib/habitat/water-quality/remediation/recommend";
 
 /**
  * Public, place-keyed water quality page (epic #298, Phase 1).
@@ -110,9 +118,9 @@ export default async function PublicWaterSystemPage({
       <ComplianceSection summary={summary} entry={entry} />
       <PfasSection summary={summary} />
       <DetectedSection summary={summary} />
+      <RemediationSection summary={summary} />
       <CcrSection summary={summary} entry={entry} />
-      <FloodTeaser />
-      <SignupBand entry={entry} />
+      <NextStepsSection summary={summary} entry={entry} />
       <SourcesSection summary={summary} />
     </article>
   );
@@ -867,57 +875,453 @@ function CcrSection({
   );
 }
 
-function FloodTeaser() {
+/* ---------------------------------------------------------------
+ * Remediation matrix (issue #303 follow-up — public, not paywalled)
+ *
+ * Server-rendered so the page stays fully static. Reuses the same
+ * WQA-5 personalization the in-app modal runs; every string here is a
+ * static matrix label or a sanitized level from the view model.
+ * ------------------------------------------------------------- */
+
+const MATRIX_AMBER = "#d97706";
+
+const MATRIX_COLUMNS: Array<{ key: string; label: string }> = [
+  { key: "carbon_block", label: "Carbon block" },
+  { key: "pitcher", label: "Pitcher" },
+  { key: "reverse_osmosis", label: "RO" },
+  { key: "ion_exchange", label: "Softener" },
+  { key: "distill_uv", label: "Distill / UV" },
+];
+
+function joinNames(names: string[]): string {
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+function RemediationSection({ summary }: { summary: PublicWaterSummary }) {
+  const { remediation } = summary;
+  if (remediation.kind !== "available") return null;
+  const { combination: combo, personalized, reportYear } = remediation;
+
+  const separately = combo.handled_separately;
+  const comboSentence =
+    combo.primary.covered_count > 0
+      ? `A carbon block${combo.ro_addon ? " + reverse osmosis" : ""} together cover what's detected in ${reportYear}${
+          separately.length > 0
+            ? ` except ${joinNames(separately)}, which ${
+                separately.length === 1 ? "is" : "are"
+              } handled separately.`
+            : "."
+        }`
+      : "";
+
   return (
     <section>
-      <SectionHeader eyebrow="Beyond water" title="Flood risk is address-specific" />
-      <div
-        className="surface flex flex-col"
-        style={{ padding: "var(--space-5)", gap: "var(--space-3)" }}
+      <SectionHeader
+        eyebrow="What actually helps"
+        title="Which filters address what's in Kalamazoo's water"
+      />
+      <p
+        className="text-small"
+        style={{
+          margin: "0 0 var(--space-4)",
+          color: "var(--color-text-secondary)",
+          maxWidth: "62ch",
+          lineHeight: 1.55,
+        }}
       >
-        <p style={{ margin: 0, color: "var(--color-text-secondary)" }}>
-          Water systems serve whole communities, but FEMA flood zones change
-          parcel by parcel — a place-level page can&apos;t tell you where your
-          house stands. Hearth checks your exact address against FEMA&apos;s
-          flood maps, alongside radon, Superfund proximity, and the water
-          profile you&apos;re reading now.
-        </p>
-        <div>
-          <Link href="/login" className="btn btn-ghost">
-            Check your exact address
-            <Icon name="arrow-right" size={16} />
-          </Link>
+        {`Personalized to the ${reportYear} report's detected contaminants (highlighted below). Cell shading shows how effective each technology is — the point is which single setup gives the most coverage per dollar, not the longest shopping list.${
+          comboSentence ? ` ${comboSentence}` : ""
+        }`}
+      </p>
+
+      {combo.primary.detected_count > 0 ? (
+        <div
+          className="grid gap-3"
+          style={{
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            marginBottom: "var(--space-4)",
+          }}
+        >
+          <CombinationCard
+            accent="var(--color-accent)"
+            title={combo.primary.label}
+            certLine={`${combo.primary.nsf_standards.join(" + ")} certified`}
+            body={
+              combo.primary.covered_count > 0
+                ? `Covers ${combo.primary.covered_count} of ${combo.primary.detected_count} detected: ${joinNames(
+                    combo.primary.covered,
+                  )}.`
+                : "A starting point — see the matrix for what fits the detections."
+            }
+            cost={`${combo.primary.cost_install} · ${combo.primary.cost_ongoing}`}
+          />
+          {combo.ro_addon ? (
+            <CombinationCard
+              accent="var(--color-info)"
+              title={combo.ro_addon.label}
+              certLine="NSF/ANSI 58 certified"
+              body={
+                combo.ro_addon.values_based
+                  ? "Values-based add-on. Also handles arsenic and nitrate if those ever appear."
+                  : `Adds coverage for ${joinNames(combo.ro_addon.reason_contaminants)}.`
+              }
+              cost={`${combo.ro_addon.cost_install} · ${combo.ro_addon.cost_ongoing}`}
+            />
+          ) : null}
         </div>
-      </div>
+      ) : null}
+
+      <MatrixTable rows={personalized} />
+      <MatrixLegend />
+
+      <p
+        className="text-small"
+        style={{
+          margin: "var(--space-4) 0 0",
+          color: "var(--color-text-tertiary)",
+          lineHeight: 1.55,
+        }}
+      >
+        Certifications matter more than brand: a $20 pitcher and a $400
+        under-sink unit can both say &ldquo;carbon filter.&rdquo; The NSF/ANSI
+        standards — 53 for lead and VOCs, 58 for reverse osmosis, P473 for
+        PFAS — mean the unit was actually tested against those contaminants.
+        Look products up in{" "}
+        <a
+          href={NSF_CERTIFIED_PRODUCTS_URL}
+          rel="noopener noreferrer"
+          style={{ color: "var(--color-accent)", textDecoration: "underline" }}
+        >
+          NSF&apos;s official certified-product database
+        </a>{" "}
+        — Hearth doesn&apos;t sell filters or earn commissions on them.
+      </p>
     </section>
   );
 }
 
-function SignupBand({ entry }: { entry: PublicWaterSystemEntry }) {
+function CombinationCard({
+  accent,
+  title,
+  certLine,
+  body,
+  cost,
+}: {
+  accent: string;
+  title: string;
+  certLine: string;
+  body: string;
+  cost: string;
+}) {
   return (
-    <section
-      className="surface flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between"
+    <div
+      className="rounded-md flex flex-col gap-2"
       style={{
-        padding: "var(--space-5)",
-        borderColor:
-          "color-mix(in oklab, var(--color-accent) 30%, var(--color-border-subtle))",
+        border: "1px solid var(--color-border-subtle)",
+        borderLeft: `3px solid ${accent}`,
+        backgroundColor: "var(--color-bg-surface-raised)",
+        padding: "var(--space-4)",
       }}
     >
-      <div>
-        <div className="h3" style={{ marginBottom: 4 }}>
-          See this for your own house
-        </div>
-        <p
-          className="text-small"
-          style={{ margin: 0, color: "var(--color-text-secondary)" }}
+      <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>
+        {title}
+      </span>
+      <span className="eyebrow" style={{ color: accent }}>
+        {certLine}
+      </span>
+      <p
+        className="text-small"
+        style={{ color: "var(--color-text-secondary)", lineHeight: 1.55, margin: 0 }}
+      >
+        {body}
+      </p>
+      <span className="mono text-small" style={{ color: "var(--color-text-tertiary)" }}>
+        {cost}
+      </span>
+    </div>
+  );
+}
+
+function MatrixTable({ rows }: { rows: PersonalizedRemediationRow[] }) {
+  return (
+    <div
+      className="rounded-md"
+      style={{ border: "1px solid var(--color-border-subtle)", overflowX: "auto" }}
+    >
+      <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 520 }}>
+        <thead>
+          <tr>
+            <th style={matrixTh("left")}>Contaminant</th>
+            {MATRIX_COLUMNS.map((c) => (
+              <th key={c.key} style={matrixTh("center")}>
+                {c.label}
+              </th>
+            ))}
+            <th style={matrixTh("center")}>Install</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ row, detected, context_label }) => {
+            const distillUv = betterEffectiveness(
+              row.effectiveness.distillation,
+              row.effectiveness.uv,
+            );
+            return (
+              <tr
+                key={row.key}
+                style={{
+                  backgroundColor: detected
+                    ? `color-mix(in oklab, ${MATRIX_AMBER} 8%, transparent)`
+                    : "transparent",
+                  borderTop: "1px solid var(--color-border-subtle)",
+                }}
+              >
+                <td style={matrixTd("left")}>
+                  <div
+                    className="flex items-center gap-1.5"
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: detected ? MATRIX_AMBER : "var(--color-text-primary)",
+                    }}
+                  >
+                    {detected ? (
+                      <span
+                        aria-hidden
+                        className="inline-block rounded-full shrink-0"
+                        style={{ width: 6, height: 6, backgroundColor: MATRIX_AMBER }}
+                      />
+                    ) : null}
+                    {row.label}
+                  </div>
+                  <div
+                    className="text-small"
+                    style={{ color: "var(--color-text-tertiary)", fontSize: 11, marginTop: 2 }}
+                  >
+                    {context_label}
+                  </div>
+                </td>
+                <MatrixCell value={row.effectiveness.carbon_block} />
+                <MatrixCell value={row.effectiveness.pitcher} />
+                <MatrixCell value={row.effectiveness.reverse_osmosis} />
+                <MatrixCell value={row.effectiveness.ion_exchange} />
+                <MatrixCell value={distillUv} />
+                <td style={matrixTd("center")}>
+                  <span
+                    className="text-small"
+                    style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}
+                  >
+                    {installLabel(row.install)}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const EFFECTIVENESS_STYLE: Record<
+  RemediationEffectiveness,
+  { label: string; bg: string; color: string } | null
+> = {
+  full: {
+    label: "full",
+    bg: "color-mix(in oklab, var(--color-success) 16%, transparent)",
+    color: "var(--color-success)",
+  },
+  partial: {
+    label: "partial",
+    bg: `color-mix(in oklab, ${MATRIX_AMBER} 18%, transparent)`,
+    color: MATRIX_AMBER,
+  },
+  unreliable: {
+    label: "unreliable",
+    bg: "color-mix(in oklab, var(--color-danger) 16%, transparent)",
+    color: "var(--color-danger)",
+  },
+  none: null,
+};
+
+function MatrixCell({ value }: { value: RemediationEffectiveness }) {
+  const s = EFFECTIVENESS_STYLE[value];
+  return (
+    <td style={matrixTd("center")}>
+      {s ? (
+        <span
+          className="rounded-full px-2 py-0.5"
+          style={{
+            backgroundColor: s.bg,
+            color: s.color,
+            fontSize: 10,
+            fontWeight: 500,
+            whiteSpace: "nowrap",
+          }}
         >
-          {`Hearth reads the ${entry.shortPlace} data against your exact address — flood zone, radon, Superfund proximity — and adapts your home's maintenance to the water coming out of your tap.`}
-        </p>
+          {s.label}
+        </span>
+      ) : (
+        <span aria-label="not effective" style={{ color: "var(--color-text-tertiary)" }}>
+          &mdash;
+        </span>
+      )}
+    </td>
+  );
+}
+
+function MatrixLegend() {
+  const items: Array<{ swatch: string; label: string }> = [
+    { swatch: "var(--color-success)", label: "Full removal (NSF certified)" },
+    { swatch: MATRIX_AMBER, label: "Partial / variable" },
+    { swatch: "var(--color-danger)", label: "Unreliable" },
+  ];
+  return (
+    <ul
+      className="flex flex-wrap items-center gap-x-4 gap-y-2"
+      style={{ listStyle: "none", margin: "var(--space-3) 0 0", padding: 0 }}
+    >
+      {items.map((it) => (
+        <li key={it.label} className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="inline-block rounded-sm"
+            style={{
+              width: 10,
+              height: 10,
+              backgroundColor: `color-mix(in oklab, ${it.swatch} 30%, transparent)`,
+              border: `1px solid ${it.swatch}`,
+            }}
+          />
+          <span className="text-small" style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}>
+            {it.label}
+          </span>
+        </li>
+      ))}
+      <li className="inline-flex items-center gap-1.5">
+        <span
+          aria-hidden
+          className="inline-block rounded-full"
+          style={{ width: 8, height: 8, backgroundColor: MATRIX_AMBER }}
+        />
+        <span className="text-small" style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}>
+          Detected in Kalamazoo&apos;s water
+        </span>
+      </li>
+    </ul>
+  );
+}
+
+function installLabel(loc: InstallLocation): string {
+  switch (loc) {
+    case "tap":
+      return "tap only";
+    case "either":
+      return "either";
+    case "whole_house":
+      return "whole house";
+  }
+}
+
+function matrixTh(align: "left" | "center"): React.CSSProperties {
+  return {
+    textAlign: align,
+    padding: "8px 10px",
+    fontSize: 10,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+    color: "var(--color-text-tertiary)",
+    backgroundColor: "var(--color-bg-base)",
+    fontWeight: 500,
+    whiteSpace: "nowrap",
+  };
+}
+
+function matrixTd(align: "left" | "center"): React.CSSProperties {
+  return { textAlign: align, padding: "8px 10px", verticalAlign: "top" };
+}
+
+/* ---------------------------------------------------------------
+ * What you can do next (mirrors the PDF report's closing page)
+ * ------------------------------------------------------------- */
+
+function NextStepsSection({
+  summary,
+  entry,
+}: {
+  summary: PublicWaterSummary;
+  entry: PublicWaterSystemEntry;
+}) {
+  // Generic free-testing variant (no CCR phone — that's extraction text);
+  // the utility contact block below carries EPA's admin line instead.
+  const steps = buildWqaNextSteps({ freeTestingOffer: null });
+  const contact = summary.utilityContact;
+
+  return (
+    <section>
+      <SectionHeader eyebrow="Where to go from here" title="What you can do next" />
+      <div
+        className="surface flex flex-col"
+        style={{ padding: "var(--space-5)", gap: "var(--space-4)" }}
+      >
+        <ol
+          className="flex flex-col"
+          style={{ margin: 0, paddingLeft: 20, gap: "var(--space-3)", listStyle: "decimal" }}
+        >
+          {steps.map((s) => (
+            <li
+              key={s.key}
+              style={{ color: "var(--color-text-secondary)", lineHeight: 1.55 }}
+            >
+              <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>
+                {s.title}
+              </span>{" "}
+              {s.body}
+            </li>
+          ))}
+        </ol>
+
+        {contact ? (
+          <div
+            className="rounded-md"
+            style={{
+              border: "1px solid var(--color-border-subtle)",
+              backgroundColor: "var(--color-bg-surface-raised)",
+              padding: "var(--space-4)",
+            }}
+          >
+            <div className="eyebrow" style={{ marginBottom: 4 }}>
+              Your water utility
+            </div>
+            <div
+              style={{
+                fontFamily: "var(--font-serif)",
+                fontSize: 16,
+                color: "var(--color-text-primary)",
+              }}
+            >
+              {summary.identity.name}
+            </div>
+            <div
+              className="mono text-small"
+              style={{ color: "var(--color-text-tertiary)", marginTop: 6 }}
+            >
+              {[contact.name, contact.phone].filter(Boolean).join("  ·  ")}
+            </div>
+            <p
+              className="text-small"
+              style={{ margin: "var(--space-2) 0 0", color: "var(--color-text-tertiary)" }}
+            >
+              The administrator EPA lists for this system — your direct line to
+              ask about {entry.shortPlace}&apos;s water or its testing program.
+            </p>
+          </div>
+        ) : null}
       </div>
-      <Link href="/login" className="btn btn-primary" style={{ flexShrink: 0 }}>
-        Get started
-        <Icon name="arrow-right" size={16} />
-      </Link>
     </section>
   );
 }

@@ -53,8 +53,16 @@ import {
 import {
   buildDescription,
   displaySystemName,
+  formatAdminName,
   mapSourceType,
 } from "@/lib/habitat/modules/water-quality-awareness/payload";
+import {
+  personalizeRemediationMatrix,
+  recommendRemediationCombination,
+  type DetectedContaminantInput,
+  type PersonalizedRemediationRow,
+  type RemediationCombination,
+} from "@/lib/habitat/water-quality/remediation/recommend";
 import { PFAS_FAMILY_HEADING } from "@/lib/habitat/water-quality/contaminants/pfas-grouping";
 import { findWqaContaminantByAlias } from "@/lib/habitat/water-quality/contaminants/lookup";
 import {
@@ -220,6 +228,33 @@ export type PublicWaterSummary = {
         detectedContaminantCount: number;
         status: "none_detected" | "all_below_limits" | "at_or_above_limit";
       };
+  /**
+   * The utility's EPA-listed contact for the civic "what you can do next"
+   * block. Name + phone only — the admin email is deliberately NOT carried
+   * (epic #298 hard rule 7, as amended for #303 follow-up: an org-level
+   * phone for a resident to call is legitimate; a harvestable email is
+   * not). PWSID is never included here (hard rule 3). Null when EPA has no
+   * phone on file.
+   */
+  utilityContact: { name: string | null; phone: string | null } | null;
+  /**
+   * The public remediation matrix (issue #303 follow-up) — the same "which
+   * filter addresses what's in your water, and the best-bang-for-buck
+   * combination" analysis the in-app modal shows, personalized to the
+   * latest report's detected contaminants. Every rendered string is a
+   * static matrix label or a sanitized level; the detected inputs are the
+   * canonical-resolved public rows, so no extraction free-text feeds it.
+   * `none` when there's no CCR, or nothing detected maps onto a matrix row.
+   */
+  remediation:
+    | { kind: "none" }
+    | {
+        kind: "available";
+        reportYear: number;
+        /** Detected-first, then reference order — matches the in-app view. */
+        personalized: PersonalizedRemediationRow[];
+        combination: RemediationCombination;
+      };
 };
 
 const SOURCE_LABELS: Record<
@@ -368,6 +403,18 @@ export function buildPublicWaterSummary(
   });
 
   const pfas = buildPfasBlock(detected, displayed);
+  const remediation = buildRemediationBlock(detected);
+
+  // Utility contact for the civic next-steps block: name + phone only,
+  // never the email (hard rule 7 as amended). Gated on a phone being on
+  // file — a contact block with no callable number isn't worth showing.
+  const utilityContact: PublicWaterSummary["utilityContact"] =
+    typeof record.phone_number === "string" && record.phone_number.trim()
+      ? {
+          name: formatAdminName(record.admin_name ?? record.org_name),
+          phone: record.phone_number,
+        }
+      : null;
 
   return {
     identity,
@@ -376,6 +423,57 @@ export function buildPublicWaterSummary(
     pfas,
     detected,
     ccr: ccrBlock,
+    utilityContact,
+    remediation,
+  };
+}
+
+/**
+ * Personalize the remediation matrix to the detected contaminants and
+ * pick the best-value treatment combination — reusing the same pure
+ * WQA-5 helpers the in-app modal uses. The inputs are built from the
+ * already-sanitized public rows (canonical name + level/allowlisted
+ * unit), so nothing the matcher sees or the recommender renders is
+ * extraction free-text. `none` when nothing detected maps onto a row.
+ */
+function buildRemediationBlock(
+  detected: PublicWaterSummary["detected"],
+): PublicWaterSummary["remediation"] {
+  if (detected.kind !== "available") return { kind: "none" };
+
+  const inputs: DetectedContaminantInput[] = [];
+  for (const item of detected.items) {
+    if (item.kind === "single") inputs.push(toMatrixInput(item.row));
+    else for (const a of item.analytes) inputs.push(toMatrixInput(a));
+  }
+
+  const combination = recommendRemediationCombination(inputs);
+  // Nothing detected mapped onto a matrix row (e.g. copper-only) — the
+  // matrix would render all-blank, so suppress the section.
+  if (combination.primary.detected_count === 0) return { kind: "none" };
+
+  const personalized = [...personalizeRemediationMatrix(inputs)].sort(
+    (a, b) => Number(b.detected) - Number(a.detected),
+  );
+  return {
+    kind: "available",
+    reportYear: detected.reportYear,
+    personalized,
+    combination,
+  };
+}
+
+/** Sanitized matrix input: canonical name (for matching) + a level label
+ *  built only from a validated number and an allowlisted unit. */
+function toMatrixInput(row: PublicDetectedRow): DetectedContaminantInput {
+  return {
+    name: row.name,
+    level_label:
+      row.level !== null
+        ? row.unit
+          ? `${row.level} ${row.unit}`
+          : `${row.level}`
+        : null,
   };
 }
 
