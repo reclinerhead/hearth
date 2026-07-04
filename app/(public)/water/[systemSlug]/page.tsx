@@ -1306,49 +1306,66 @@ function UtilityContactCard({
   utilityName: string;
   placeName: string;
 }) {
-  const line =
-    contact.source === "ccr_free_testing"
-      ? contact.value
-      : [contact.name, contact.phone].filter(Boolean).join("  ·  ");
-  const caption =
-    contact.source === "ccr_free_testing"
-      ? `The ${
-          contact.method === "email" ? "address" : "number"
-        } ${placeName}'s utility lists for free residential water testing — the fastest way to get your own tap checked.`
-      : `The administrator EPA lists for this system — your direct line to ask about ${placeName}'s water or its testing program.`;
+  const { admin, freeTesting } = contact;
+  const adminLine = admin
+    ? [admin.name, admin.phone, admin.email].filter(Boolean).join("  ·  ")
+    : "";
   return (
     <div
-      className="rounded-md"
+      className="rounded-md flex flex-col"
       style={{
         border: "1px solid var(--color-border-subtle)",
         backgroundColor: "var(--color-bg-surface-raised)",
         padding: "var(--space-4)",
+        gap: "var(--space-3)",
       }}
     >
-      <div className="eyebrow" style={{ marginBottom: 4 }}>
-        Your water utility
+      <div>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>
+          Your water utility
+        </div>
+        <div
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 16,
+            color: "var(--color-text-primary)",
+          }}
+        >
+          {utilityName}
+        </div>
       </div>
-      <div
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: 16,
-          color: "var(--color-text-primary)",
-        }}
+
+      {admin && adminLine ? (
+        <ContactLine label="Point of contact" value={adminLine} />
+      ) : null}
+      {freeTesting ? (
+        <ContactLine label="Free residential testing" value={freeTesting.value} />
+      ) : null}
+
+      <p
+        className="text-small"
+        style={{ margin: 0, color: "var(--color-text-tertiary)" }}
       >
-        {utilityName}
+        {`Published by EPA${
+          freeTesting ? " and in the utility's annual report" : ""
+        } as the way to reach ${placeName}'s water system — ask about your water or its testing program.`}
+      </p>
+    </div>
+  );
+}
+
+function ContactLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="eyebrow" style={{ color: "var(--color-text-tertiary)" }}>
+        {label}
       </div>
       <div
         className="mono text-small"
-        style={{ color: "var(--color-text-tertiary)", marginTop: 6 }}
+        style={{ color: "var(--color-text-secondary)", marginTop: 2 }}
       >
-        {line}
+        {value}
       </div>
-      <p
-        className="text-small"
-        style={{ margin: "var(--space-2) 0 0", color: "var(--color-text-tertiary)" }}
-      >
-        {caption}
-      </p>
     </div>
   );
 }

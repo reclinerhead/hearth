@@ -111,10 +111,7 @@ describe("identity", () => {
     expect(s.identity.sourceProtectionSinceYear).toBe(2004);
   });
 
-  it("falls back to the EPA admin name + phone when no CCR contact is present", () => {
-    // Hard rule 7 (amended): a callable admin contact is allowed for the
-    // civic next-steps block; the harvestable admin email and the machine
-    // identifier (rule 3) are not.
+  it("carries the EPA-published POC name, phone, AND email (public government record)", () => {
     const s = buildPublicWaterSummary({
       record,
       violations: [],
@@ -123,18 +120,20 @@ describe("identity", () => {
       now: NOW,
     });
     expect(s.utilityContact).toEqual({
-      source: "epa_admin",
-      name: "James Baker",
-      phone: "555-0100",
+      admin: {
+        name: "James Baker",
+        phone: "555-0100",
+        email: "someone@example.gov",
+      },
+      freeTesting: null,
     });
-    const serialized = JSON.stringify(s);
-    expect(serialized).not.toContain("example.gov"); // email never published
-    expect(serialized).not.toContain("MI0003520"); // PWSID stays internal
+    // Machine identifiers still stay internal (hard rule 3).
+    expect(JSON.stringify(s)).not.toContain("MI0003520");
   });
 
-  it("has no utility contact when neither a CCR contact nor an admin phone exists", () => {
+  it("has no utility contact when EPA lists neither a phone nor an email and there's no CCR contact", () => {
     const s = buildPublicWaterSummary({
-      record: { ...record, phone_number: null },
+      record: { ...record, phone_number: null, email_addr: null },
       violations: [],
       lcrSamples: [],
       ccrYears: [],
@@ -143,7 +142,7 @@ describe("identity", () => {
     expect(s.utilityContact).toBeNull();
   });
 
-  it("prefers the CCR free-testing phone over the EPA admin line when present", () => {
+  it("shows the CCR free-testing line ALONGSIDE the EPA POC when present", () => {
     const s = buildPublicWaterSummary({
       record,
       violations: [],
@@ -164,12 +163,13 @@ describe("identity", () => {
       now: NOW,
     });
     expect(s.utilityContact).toEqual({
-      source: "ccr_free_testing",
-      value: "(269) 337-8550",
-      method: "phone",
+      admin: {
+        name: "James Baker",
+        phone: "555-0100",
+        email: "someone@example.gov",
+      },
+      freeTesting: { value: "(269) 337-8550", method: "phone" },
     });
-    // The admin line is not used when the CCR contact wins.
-    expect(JSON.stringify(s.utilityContact)).not.toContain("555-0100");
   });
 
   it("accepts a CCR free-testing email", () => {
@@ -192,14 +192,13 @@ describe("identity", () => {
       ],
       now: NOW,
     });
-    expect(s.utilityContact).toEqual({
-      source: "ccr_free_testing",
+    expect(s.utilityContact?.freeTesting).toEqual({
       value: "water@kalamazoocity.org",
       method: "email",
     });
   });
 
-  it("rejects a non-phone/non-email CCR contact (URL or free text) and falls back to admin", () => {
+  it("rejects a non-phone/non-email CCR contact (URL or free text); the POC still shows", () => {
     for (const contact_value of [
       "https://scam-site.example/pills",
       "call us! visit water.gov or 555",
@@ -224,8 +223,9 @@ describe("identity", () => {
         ],
         now: NOW,
       });
-      // Falls back to the admin contact; the injected string never appears.
-      expect(s.utilityContact).toMatchObject({ source: "epa_admin" });
+      // The injected string never appears; the POC is still present.
+      expect(s.utilityContact?.freeTesting).toBeNull();
+      expect(s.utilityContact?.admin).not.toBeNull();
       expect(JSON.stringify(s)).not.toContain("scam-site");
       expect(JSON.stringify(s)).not.toContain("win");
     }
@@ -251,7 +251,7 @@ describe("identity", () => {
       ],
       now: NOW,
     });
-    expect(s.utilityContact).toMatchObject({ source: "epa_admin" });
+    expect(s.utilityContact?.freeTesting).toBeNull();
   });
 });
 

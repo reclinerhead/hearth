@@ -229,23 +229,27 @@ export type PublicWaterSummary = {
         status: "none_detected" | "all_below_limits" | "at_or_above_limit";
       };
   /**
-   * The utility contact for the civic "what you can do next" block.
-   * Preference order (issue #303 follow-up):
-   *   1. `ccr_free_testing` — the utility's OWN free-testing contact as
-   *      printed in its CCR, but only when it validates as a clean phone
-   *      or email (the single rule-4 validated-passthrough carve-out; URLs
-   *      and free text are rejected so a crafted upload can't inject a link
-   *      or string onto the indexed page).
-   *   2. `epa_admin` — the EPA-listed administrator name + phone. The admin
-   *      email is deliberately NOT carried (hard rule 7 as amended: a
-   *      callable number is fine, a harvestable email is not).
-   * PWSID is never included (hard rule 3). Null when neither source yields
-   * a usable contact.
+   * The utility contact for the civic "what you can do next" block. Two
+   * complementary sources, both shown when present (issue #303 follow-up):
+   *   - `admin` — the EPA-published point of contact for the water system
+   *     (name / phone / email). These are public government records EPA
+   *     publishes as the system's POC, so all three are surfaced. Gated on
+   *     a phone or email being on file (a name alone isn't a contact).
+   *   - `freeTesting` — the utility's OWN free-testing contact as printed
+   *     in its CCR, but only when it validates as a clean phone or email
+   *     (the rule-4 validated-passthrough carve-out; URLs and free text are
+   *     rejected so a crafted upload can't inject a link onto the page).
+   * PWSID is never included (hard rule 3). Null when neither source has a
+   * usable contact.
    */
-  utilityContact:
-    | { source: "ccr_free_testing"; value: string; method: "phone" | "email" }
-    | { source: "epa_admin"; name: string | null; phone: string }
-    | null;
+  utilityContact: {
+    admin: {
+      name: string | null;
+      phone: string | null;
+      email: string | null;
+    } | null;
+    freeTesting: { value: string; method: "phone" | "email" } | null;
+  } | null;
   /**
    * The public remediation matrix (issue #303 follow-up) — the same "which
    * filter addresses what's in your water, and the best-bang-for-buck
@@ -414,22 +418,31 @@ export function buildPublicWaterSummary(
   const pfas = buildPfasBlock(detected, displayed);
   const remediation = buildRemediationBlock(detected);
 
-  // Utility contact for the civic next-steps block. Prefer the utility's
-  // own free-testing contact from its CCR (validated to a clean phone/
-  // email — the rule-4 carve-out), else the EPA admin name + phone. Never
-  // the admin email (rule 7).
-  const ccrContact = latest
-    ? sanitizeCcrContact(latest.extractedData.free_testing_offer)
-    : null;
-  const utilityContact: PublicWaterSummary["utilityContact"] = ccrContact
-    ? { source: "ccr_free_testing", value: ccrContact.value, method: ccrContact.method }
-    : typeof record.phone_number === "string" && record.phone_number.trim()
+  // Utility contact for the civic next-steps block. The EPA-published POC
+  // (name / phone / email — public government records) plus the utility's
+  // CCR-printed free-testing contact (validated to a clean phone/email —
+  // the rule-4 carve-out). Both shown when present.
+  const adminPhone =
+    typeof record.phone_number === "string" && record.phone_number.trim()
+      ? record.phone_number
+      : null;
+  const adminEmail =
+    typeof record.email_addr === "string" && record.email_addr.trim()
+      ? record.email_addr
+      : null;
+  const admin =
+    adminPhone || adminEmail
       ? {
-          source: "epa_admin",
           name: formatAdminName(record.admin_name ?? record.org_name),
-          phone: record.phone_number,
+          phone: adminPhone,
+          email: adminEmail,
         }
       : null;
+  const freeTesting = latest
+    ? sanitizeCcrContact(latest.extractedData.free_testing_offer)
+    : null;
+  const utilityContact: PublicWaterSummary["utilityContact"] =
+    admin || freeTesting ? { admin, freeTesting } : null;
 
   return {
     identity,
