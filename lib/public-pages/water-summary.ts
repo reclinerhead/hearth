@@ -229,14 +229,23 @@ export type PublicWaterSummary = {
         status: "none_detected" | "all_below_limits" | "at_or_above_limit";
       };
   /**
-   * The utility's EPA-listed contact for the civic "what you can do next"
-   * block. Name + phone only — the admin email is deliberately NOT carried
-   * (epic #298 hard rule 7, as amended for #303 follow-up: an org-level
-   * phone for a resident to call is legitimate; a harvestable email is
-   * not). PWSID is never included here (hard rule 3). Null when EPA has no
-   * phone on file.
+   * The utility contact for the civic "what you can do next" block.
+   * Preference order (issue #303 follow-up):
+   *   1. `ccr_free_testing` — the utility's OWN free-testing contact as
+   *      printed in its CCR, but only when it validates as a clean phone
+   *      or email (the single rule-4 validated-passthrough carve-out; URLs
+   *      and free text are rejected so a crafted upload can't inject a link
+   *      or string onto the indexed page).
+   *   2. `epa_admin` — the EPA-listed administrator name + phone. The admin
+   *      email is deliberately NOT carried (hard rule 7 as amended: a
+   *      callable number is fine, a harvestable email is not).
+   * PWSID is never included (hard rule 3). Null when neither source yields
+   * a usable contact.
    */
-  utilityContact: { name: string | null; phone: string | null } | null;
+  utilityContact:
+    | { source: "ccr_free_testing"; value: string; method: "phone" | "email" }
+    | { source: "epa_admin"; name: string | null; phone: string }
+    | null;
   /**
    * The public remediation matrix (issue #303 follow-up) — the same "which
    * filter addresses what's in your water, and the best-bang-for-buck
@@ -405,12 +414,18 @@ export function buildPublicWaterSummary(
   const pfas = buildPfasBlock(detected, displayed);
   const remediation = buildRemediationBlock(detected);
 
-  // Utility contact for the civic next-steps block: name + phone only,
-  // never the email (hard rule 7 as amended). Gated on a phone being on
-  // file — a contact block with no callable number isn't worth showing.
-  const utilityContact: PublicWaterSummary["utilityContact"] =
-    typeof record.phone_number === "string" && record.phone_number.trim()
+  // Utility contact for the civic next-steps block. Prefer the utility's
+  // own free-testing contact from its CCR (validated to a clean phone/
+  // email — the rule-4 carve-out), else the EPA admin name + phone. Never
+  // the admin email (rule 7).
+  const ccrContact = latest
+    ? sanitizeCcrContact(latest.extractedData.free_testing_offer)
+    : null;
+  const utilityContact: PublicWaterSummary["utilityContact"] = ccrContact
+    ? { source: "ccr_free_testing", value: ccrContact.value, method: ccrContact.method }
+    : typeof record.phone_number === "string" && record.phone_number.trim()
       ? {
+          source: "epa_admin",
           name: formatAdminName(record.admin_name ?? record.org_name),
           phone: record.phone_number,
         }
@@ -461,6 +476,39 @@ function buildRemediationBlock(
     personalized,
     combination,
   };
+}
+
+/**
+ * The utility's CCR-printed free-testing contact — but ONLY when it's a
+ * well-formed phone number or email. This is the single validated-
+ * passthrough exception to "no extraction free-text on public pages"
+ * (issue #303 follow-up): a phone/email can't carry markup or a scam link,
+ * so a crafted upload's worst case is a wrong-but-format-valid number,
+ * never arbitrary text or a clickable URL. URLs (`contact_method: "web"`),
+ * multi-value strings, and anything else are rejected — the caller then
+ * falls back to EPA's admin contact.
+ */
+function sanitizeCcrContact(
+  offer: CcrExtractionResult["free_testing_offer"],
+): { value: string; method: "phone" | "email" } | null {
+  if (!offer || !offer.offered || typeof offer.contact_value !== "string") {
+    return null;
+  }
+  const raw = offer.contact_value.trim();
+  if (raw.length === 0 || raw.length > 40) return null;
+
+  // Phone: only phone-shaped characters, with 7–15 digits (E.164 tops out
+  // at 15). Rejects letters, so no URL or word can slip through.
+  const digits = (raw.match(/\d/g) ?? []).length;
+  if (/^[\d\s().+/-]+$/.test(raw) && digits >= 7 && digits <= 15) {
+    return { value: raw, method: "phone" };
+  }
+  // Email: a single simple address — no whitespace, exactly one @, a
+  // dotted domain. Rejects "http://…", spaces, and multi-address strings.
+  if (/^[^\s@]{1,64}@[^\s@.]+(?:\.[^\s@.]+)+$/.test(raw)) {
+    return { value: raw, method: "email" };
+  }
+  return null;
 }
 
 /** Sanitized matrix input: canonical name (for matching) + a level label

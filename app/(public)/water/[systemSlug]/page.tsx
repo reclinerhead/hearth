@@ -1286,43 +1286,70 @@ function NextStepsSection({
         </ol>
 
         {contact ? (
-          <div
-            className="rounded-md"
-            style={{
-              border: "1px solid var(--color-border-subtle)",
-              backgroundColor: "var(--color-bg-surface-raised)",
-              padding: "var(--space-4)",
-            }}
-          >
-            <div className="eyebrow" style={{ marginBottom: 4 }}>
-              Your water utility
-            </div>
-            <div
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 16,
-                color: "var(--color-text-primary)",
-              }}
-            >
-              {summary.identity.name}
-            </div>
-            <div
-              className="mono text-small"
-              style={{ color: "var(--color-text-tertiary)", marginTop: 6 }}
-            >
-              {[contact.name, contact.phone].filter(Boolean).join("  ·  ")}
-            </div>
-            <p
-              className="text-small"
-              style={{ margin: "var(--space-2) 0 0", color: "var(--color-text-tertiary)" }}
-            >
-              The administrator EPA lists for this system — your direct line to
-              ask about {entry.shortPlace}&apos;s water or its testing program.
-            </p>
-          </div>
+          <UtilityContactCard
+            contact={contact}
+            utilityName={summary.identity.name}
+            placeName={entry.shortPlace}
+          />
         ) : null}
       </div>
     </section>
+  );
+}
+
+function UtilityContactCard({
+  contact,
+  utilityName,
+  placeName,
+}: {
+  contact: NonNullable<PublicWaterSummary["utilityContact"]>;
+  utilityName: string;
+  placeName: string;
+}) {
+  const line =
+    contact.source === "ccr_free_testing"
+      ? contact.value
+      : [contact.name, contact.phone].filter(Boolean).join("  ·  ");
+  const caption =
+    contact.source === "ccr_free_testing"
+      ? `The ${
+          contact.method === "email" ? "address" : "number"
+        } ${placeName}'s utility lists for free residential water testing — the fastest way to get your own tap checked.`
+      : `The administrator EPA lists for this system — your direct line to ask about ${placeName}'s water or its testing program.`;
+  return (
+    <div
+      className="rounded-md"
+      style={{
+        border: "1px solid var(--color-border-subtle)",
+        backgroundColor: "var(--color-bg-surface-raised)",
+        padding: "var(--space-4)",
+      }}
+    >
+      <div className="eyebrow" style={{ marginBottom: 4 }}>
+        Your water utility
+      </div>
+      <div
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontSize: 16,
+          color: "var(--color-text-primary)",
+        }}
+      >
+        {utilityName}
+      </div>
+      <div
+        className="mono text-small"
+        style={{ color: "var(--color-text-tertiary)", marginTop: 6 }}
+      >
+        {line}
+      </div>
+      <p
+        className="text-small"
+        style={{ margin: "var(--space-2) 0 0", color: "var(--color-text-tertiary)" }}
+      >
+        {caption}
+      </p>
+    </div>
   );
 }
 

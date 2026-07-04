@@ -111,10 +111,10 @@ describe("identity", () => {
     expect(s.identity.sourceProtectionSinceYear).toBe(2004);
   });
 
-  it("carries the utility contact name + phone but never the email or PWSID", () => {
-    // Hard rule 7 (amended): a callable org-level contact is allowed for
-    // the civic next-steps block; the harvestable admin email and the
-    // machine identifier (rule 3) are not.
+  it("falls back to the EPA admin name + phone when no CCR contact is present", () => {
+    // Hard rule 7 (amended): a callable admin contact is allowed for the
+    // civic next-steps block; the harvestable admin email and the machine
+    // identifier (rule 3) are not.
     const s = buildPublicWaterSummary({
       record,
       violations: [],
@@ -122,13 +122,17 @@ describe("identity", () => {
       ccrYears: [],
       now: NOW,
     });
-    expect(s.utilityContact).toEqual({ name: "James Baker", phone: "555-0100" });
+    expect(s.utilityContact).toEqual({
+      source: "epa_admin",
+      name: "James Baker",
+      phone: "555-0100",
+    });
     const serialized = JSON.stringify(s);
     expect(serialized).not.toContain("example.gov"); // email never published
     expect(serialized).not.toContain("MI0003520"); // PWSID stays internal
   });
 
-  it("has no utility contact when EPA lists no phone number", () => {
+  it("has no utility contact when neither a CCR contact nor an admin phone exists", () => {
     const s = buildPublicWaterSummary({
       record: { ...record, phone_number: null },
       violations: [],
@@ -137,6 +141,117 @@ describe("identity", () => {
       now: NOW,
     });
     expect(s.utilityContact).toBeNull();
+  });
+
+  it("prefers the CCR free-testing phone over the EPA admin line when present", () => {
+    const s = buildPublicWaterSummary({
+      record,
+      violations: [],
+      lcrSamples: [],
+      ccrYears: [
+        ccrYear(
+          2025,
+          extraction({
+            detected_contaminants: [contaminant()],
+            free_testing_offer: {
+              offered: true,
+              contact_method: "phone",
+              contact_value: "(269) 337-8550",
+            },
+          }),
+        ),
+      ],
+      now: NOW,
+    });
+    expect(s.utilityContact).toEqual({
+      source: "ccr_free_testing",
+      value: "(269) 337-8550",
+      method: "phone",
+    });
+    // The admin line is not used when the CCR contact wins.
+    expect(JSON.stringify(s.utilityContact)).not.toContain("555-0100");
+  });
+
+  it("accepts a CCR free-testing email", () => {
+    const s = buildPublicWaterSummary({
+      record,
+      violations: [],
+      lcrSamples: [],
+      ccrYears: [
+        ccrYear(
+          2025,
+          extraction({
+            detected_contaminants: [contaminant()],
+            free_testing_offer: {
+              offered: true,
+              contact_method: "email",
+              contact_value: "water@kalamazoocity.org",
+            },
+          }),
+        ),
+      ],
+      now: NOW,
+    });
+    expect(s.utilityContact).toEqual({
+      source: "ccr_free_testing",
+      value: "water@kalamazoocity.org",
+      method: "email",
+    });
+  });
+
+  it("rejects a non-phone/non-email CCR contact (URL or free text) and falls back to admin", () => {
+    for (const contact_value of [
+      "https://scam-site.example/pills",
+      "call us! visit water.gov or 555",
+      "text FREE to win",
+    ]) {
+      const s = buildPublicWaterSummary({
+        record,
+        violations: [],
+        lcrSamples: [],
+        ccrYears: [
+          ccrYear(
+            2025,
+            extraction({
+              detected_contaminants: [contaminant()],
+              free_testing_offer: {
+                offered: true,
+                contact_method: "web",
+                contact_value,
+              },
+            }),
+          ),
+        ],
+        now: NOW,
+      });
+      // Falls back to the admin contact; the injected string never appears.
+      expect(s.utilityContact).toMatchObject({ source: "epa_admin" });
+      expect(JSON.stringify(s)).not.toContain("scam-site");
+      expect(JSON.stringify(s)).not.toContain("win");
+    }
+  });
+
+  it("ignores a CCR free-testing offer that isn't actually offered", () => {
+    const s = buildPublicWaterSummary({
+      record,
+      violations: [],
+      lcrSamples: [],
+      ccrYears: [
+        ccrYear(
+          2025,
+          extraction({
+            detected_contaminants: [contaminant()],
+            free_testing_offer: {
+              offered: false,
+              contact_method: "phone",
+              contact_value: "(269) 337-8550",
+            },
+          }),
+        ),
+      ],
+      now: NOW,
+    });
+    expect(s.utilityContact).toMatchObject({ source: "epa_admin" });
   });
 });
 
