@@ -12,9 +12,16 @@ import {
 import { loadPublicWaterSystem } from "@/lib/public-pages/water-data";
 import {
   buildPublicWaterSummary,
+  type PublicDetectedItem,
+  type PublicDetectedRow,
   type PublicMetalReading,
+  type PublicTrend,
   type PublicWaterSummary,
 } from "@/lib/public-pages/water-summary";
+import {
+  sparklineGeometry,
+  trendArrowPath,
+} from "@/lib/habitat/water-quality/contaminants/trends";
 
 /**
  * Public, place-keyed water quality page (epic #298, Phase 1).
@@ -102,6 +109,7 @@ export default async function PublicWaterSystemPage({
       <IdentitySection summary={summary} />
       <ComplianceSection summary={summary} entry={entry} />
       <PfasSection summary={summary} />
+      <DetectedSection summary={summary} />
       <CcrSection summary={summary} entry={entry} />
       <FloodTeaser />
       <SignupBand entry={entry} />
@@ -371,7 +379,7 @@ function LeadCopperBlock({
 }
 
 function PfasSection({ summary }: { summary: PublicWaterSummary }) {
-  const { pfas } = summary;
+  const { pfas, detected } = summary;
   const statusCopy = (() => {
     if (pfas.kind === "no_data") {
       return (
@@ -389,9 +397,31 @@ function PfasSection({ summary }: { summary: PublicWaterSummary }) {
       } in the most recent report's monitoring data — ` +
       (pfas.anyAtOrAboveLimit
         ? `including at least one at or above a federal limit.`
-        : `all below current federal limits. Detections at any level are worth knowing about, which is why they're listed rather than rounded away.`)
+        : `all below current federal limits. Detections at any level are worth knowing about, which is why every one is listed below rather than rounded away.`)
     );
   })();
+
+  // The year-over-year fragment, derived — never hand-written (issue #303).
+  // Only rendered when there's more than one report to compare across.
+  const trendCopy = (() => {
+    if (pfas.kind !== "detected") return null;
+    if (detected.kind !== "available" || detected.reportsOnFile.count < 2) {
+      return null;
+    }
+    const parts: string[] = [];
+    if (pfas.falling > 0) parts.push(`${pfas.falling} trending down`);
+    if (pfas.rising > 0) parts.push(`${pfas.rising} trending up`);
+    if (pfas.stable > 0) parts.push(`${pfas.stable} holding stable`);
+    if (pfas.inconclusive > 0) {
+      parts.push(
+        `${pfas.inconclusive} without enough readings to compare`,
+      );
+    }
+    if (parts.length === 0) return null;
+    const span = `${detected.reportsOnFile.firstYear}–${detected.reportsOnFile.lastYear}`;
+    return `Across the ${detected.reportsOnFile.count} annual reports on file (${span}): ${parts.join(" · ")}. The per-compound readings are in the detected list below.`;
+  })();
+
   return (
     <section>
       <SectionHeader eyebrow="In the news" title="PFAS monitoring" />
@@ -407,8 +437,355 @@ function PfasSection({ summary }: { summary: PublicWaterSummary }) {
           report results in their annual water quality reports.
         </p>
         <p style={{ margin: 0 }}>{statusCopy}</p>
+        {trendCopy ? (
+          <p style={{ margin: 0, color: "var(--color-text-secondary)" }}>
+            {trendCopy}
+          </p>
+        ) : null}
       </div>
     </section>
+  );
+}
+
+/* ---------------------------------------------------------------
+ * Detected in the water (issue #303 — full per-contaminant detail)
+ *
+ * Mirrors the in-app finding modal's register: serif contaminant
+ * name, tier badge, mono level-vs-limit line, year-over-year trend
+ * with a static SVG sparkline, editorial description, EPA link.
+ * Everything rendered here comes from the PublicWaterSummary view
+ * model, which only carries canonical-reference text and validated
+ * numbers — no extraction free-text (epic #298 hard rule 4, as
+ * amended by #303).
+ * ------------------------------------------------------------- */
+
+function DetectedSection({ summary }: { summary: PublicWaterSummary }) {
+  const { detected } = summary;
+  if (detected.kind !== "available") return null;
+  if (detected.items.length === 0 && detected.omittedCount === 0) return null;
+
+  const span =
+    detected.reportsOnFile.count > 1
+      ? `${detected.reportsOnFile.firstYear}–${detected.reportsOnFile.lastYear}`
+      : `${detected.reportYear}`;
+
+  return (
+    <section>
+      <SectionHeader
+        eyebrow="From the annual reports"
+        title="Detected in the water"
+      />
+      <p
+        className="text-small"
+        style={{
+          margin: "0 0 var(--space-4)",
+          color: "var(--color-text-secondary)",
+          maxWidth: "62ch",
+        }}
+      >
+        Everything the utility&apos;s {detected.reportYear} Water Quality
+        Report lists as detected, each level shown against the limit the
+        report measures it by
+        {detected.reportsOnFile.count > 1 ? (
+          <>
+            {" "}
+            — with the year-over-year trend across the{" "}
+            {detected.reportsOnFile.count} reports on file ({span})
+          </>
+        ) : null}
+        . Detected doesn&apos;t mean dangerous: most readings sit well below
+        their limits, and the tier on each row says how Hearth reads it.
+      </p>
+      <ul
+        className="flex flex-col"
+        style={{
+          listStyle: "none",
+          margin: 0,
+          padding: 0,
+          gap: "var(--space-3)",
+        }}
+      >
+        {detected.items.map((item, i) => (
+          <DetectedItem key={i} item={item} />
+        ))}
+      </ul>
+      {detected.omittedCount > 0 ? (
+        <p
+          className="text-small"
+          style={{
+            margin: "var(--space-3) 0 0",
+            color: "var(--color-text-tertiary)",
+          }}
+        >
+          {detected.omittedCount} more measured parameter
+          {detected.omittedCount === 1 ? "" : "s"} appear
+          {detected.omittedCount === 1 ? "s" : ""} in the report
+          {detected.omittedAnyConcern
+            ? " — including at least one at or above a federal limit"
+            : ""}
+          . Hearth lists a contaminant by name only once it&apos;s in our
+          reviewed reference, so nothing here depends on how an uploaded
+          document happens to be worded.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function DetectedItem({ item }: { item: PublicDetectedItem }) {
+  if (item.kind === "single") {
+    return (
+      <li className="surface" style={{ padding: "var(--space-4)" }}>
+        <DetectedRowHeader name={item.row.name} tier={item.row.tier} />
+        <MeasureLine row={item.row} />
+        <TrendLine trend={item.row.trend} unit={item.row.unit} />
+        <p
+          className="text-small"
+          style={{
+            margin: "var(--space-2) 0 0",
+            color: "var(--color-text-secondary)",
+            lineHeight: 1.55,
+          }}
+        >
+          {item.row.description}
+        </p>
+        <EpaReferenceLink url={item.row.learnMoreUrl} />
+      </li>
+    );
+  }
+  return (
+    <li className="surface" style={{ padding: "var(--space-4)" }}>
+      <DetectedRowHeader name={item.heading} tier="caution" />
+      <p
+        className="text-small"
+        style={{
+          margin: "var(--space-2) 0 0",
+          color: "var(--color-text-secondary)",
+          lineHeight: 1.55,
+        }}
+      >
+        {item.description}
+      </p>
+      <ul
+        className="flex flex-col"
+        style={{
+          listStyle: "none",
+          margin: "var(--space-3) 0 0",
+          padding: "var(--space-3) 0 0",
+          gap: "var(--space-2)",
+          borderTop:
+            "1px solid color-mix(in oklab, var(--color-text-tertiary) 28%, transparent)",
+        }}
+      >
+        {item.analytes.map((a) => (
+          <li key={a.name}>
+            <div
+              className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between"
+              style={{ gap: "var(--space-1)" }}
+            >
+              <span style={{ fontWeight: 500 }}>{a.name}</span>
+              <MeasureLine row={a} inline />
+            </div>
+            <TrendLine trend={a.trend} unit={a.unit} />
+          </li>
+        ))}
+      </ul>
+      <EpaReferenceLink url={item.learnMoreUrl} />
+    </li>
+  );
+}
+
+function DetectedRowHeader({
+  name,
+  tier,
+}: {
+  name: string;
+  tier: PublicDetectedRow["tier"];
+}) {
+  return (
+    <div className="flex items-start justify-between gap-2">
+      <span
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontSize: 17,
+          lineHeight: 1.25,
+          color: "var(--color-text-primary)",
+        }}
+      >
+        {name}
+      </span>
+      <TierBadge tier={tier} />
+    </div>
+  );
+}
+
+/**
+ * Same verbal tiers and amber/gray treatment as the in-app modal's
+ * CcrTierBadge — the public page must not invent a new severity
+ * language (epic hard rule 5).
+ */
+function TierBadge({ tier }: { tier: PublicDetectedRow["tier"] }) {
+  const label =
+    tier === "concern"
+      ? "Worth acting on"
+      : tier === "caution"
+        ? "Worth knowing"
+        : "Context";
+  const tone =
+    tier === "context"
+      ? { bg: "var(--color-bg-base)", color: "var(--color-text-tertiary)" }
+      : {
+          bg: "color-mix(in oklab, #d97706 18%, transparent)",
+          color: "#d97706",
+        };
+  return (
+    <span
+      className="rounded-full px-2 py-0.5 eyebrow shrink-0"
+      style={{ backgroundColor: tone.bg, color: tone.color, fontSize: 10 }}
+    >
+      {label}
+    </span>
+  );
+}
+
+/** "3.7 ppt / 8 ppt limit" — the modal's level-vs-limit treatment. */
+function MeasureLine({
+  row,
+  inline = false,
+}: {
+  row: PublicDetectedRow;
+  inline?: boolean;
+}) {
+  const level =
+    row.level === null
+      ? "Detection level not reported"
+      : row.unit
+        ? `${row.level} ${row.unit}`
+        : `${row.level}`;
+  const limit =
+    row.level !== null && row.limit !== null
+      ? row.unit
+        ? ` / ${row.limit} ${row.unit} limit`
+        : ` / ${row.limit} limit`
+      : "";
+  return (
+    <div
+      className="mono text-small"
+      style={{
+        color: "var(--color-text-secondary)",
+        marginTop: inline ? 0 : 2,
+        whiteSpace: inline ? "nowrap" : undefined,
+      }}
+    >
+      {level}
+      {limit ? (
+        <span style={{ color: "var(--color-text-tertiary)" }}>{limit}</span>
+      ) : null}
+    </div>
+  );
+}
+
+/** Trend tone → page color, matching the modal's mapping. */
+function trendColor(tone: PublicTrend["tone"]): string {
+  if (tone === "attention") return "var(--color-accent)";
+  if (tone === "positive") return "var(--color-success)";
+  return "var(--color-text-tertiary)";
+}
+
+/**
+ * The trend row beneath a measure line: direction arrow + word, a
+ * static SVG sparkline once there are 3+ readings, the prior reading,
+ * and the honest data-span caption. Server-rendered — the pure
+ * geometry helpers do the math, so no client JS ships for this.
+ */
+function TrendLine({
+  trend,
+  unit,
+}: {
+  trend: PublicTrend | null;
+  unit: string | null;
+}) {
+  if (!trend) return null;
+  const color = trendColor(trend.tone);
+  const geo =
+    trend.points.length >= 3
+      ? sparklineGeometry(
+          trend.points.map((p) => ({ year: p.year, level: p.level, unit: null })),
+          { width: 56, height: 16, padding: 2 },
+        )
+      : null;
+  const prev = trend.previous
+    ? `was ${trend.previous.level}${unit ? ` ${unit}` : ""} in ${trend.previous.year}`
+    : null;
+  return (
+    <div
+      className="flex items-center gap-2 flex-wrap"
+      style={{ marginTop: 6 }}
+    >
+      <span className="inline-flex items-center gap-1" style={{ color }}>
+        <svg viewBox="0 0 12 12" width={12} height={12} aria-hidden>
+          <path
+            d={trendArrowPath(trend.direction)}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.4}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span className="text-small" style={{ fontWeight: 500 }}>
+          {trend.word}
+        </span>
+      </span>
+      {geo ? (
+        <svg
+          viewBox={`0 0 ${geo.width} ${geo.height}`}
+          width={geo.width}
+          height={geo.height}
+          aria-hidden
+        >
+          <polyline
+            points={geo.polyline}
+            fill="none"
+            stroke={color}
+            strokeWidth={1.4}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <circle
+            cx={geo.dots[geo.dots.length - 1].x}
+            cy={geo.dots[geo.dots.length - 1].y}
+            r={1.8}
+            fill={color}
+          />
+        </svg>
+      ) : null}
+      <span
+        className="text-small"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        {prev ? `${prev} · ` : ""}
+        {trend.spanLabel}
+      </span>
+    </div>
+  );
+}
+
+function EpaReferenceLink({ url }: { url: string }) {
+  return (
+    <a
+      href={url}
+      rel="noopener noreferrer"
+      className="mono inline-block"
+      style={{
+        marginTop: 8,
+        fontSize: 11,
+        letterSpacing: "0.02em",
+        color: "var(--color-accent)",
+      }}
+    >
+      EPA reference &rarr;
+    </a>
   );
 }
 
@@ -438,6 +815,10 @@ function CcrSection({
               </span>
               <span style={{ fontWeight: 500 }}>
                 {ccr.year} Water Quality Report on file
+                {summary.detected.kind === "available" &&
+                summary.detected.reportsOnFile.count > 1
+                  ? ` — one of ${summary.detected.reportsOnFile.count} years (${summary.detected.reportsOnFile.firstYear}–${summary.detected.reportsOnFile.lastYear})`
+                  : ""}
               </span>
             </div>
             <p style={{ margin: 0, color: "var(--color-text-secondary)" }}>
@@ -449,16 +830,17 @@ function CcrSection({
                     ccr.status === "at_or_above_limit"
                       ? "at least one detection at or above a federal limit"
                       : "all detections below federal limits"
-                  }.`}
+                  } — the full list is above.`}
             </p>
             <p
               className="text-small"
               style={{ margin: 0, color: "var(--color-text-tertiary)" }}
             >
-              Per-contaminant readings and year-over-year trends are part of
-              the signed-in Hearth experience —{" "}
+              Every report shared through Hearth deepens the trend history on
+              this page for everyone on the system. Have a year that&apos;s
+              missing?{" "}
               <Link href="/login" style={{ color: "var(--color-accent)" }}>
-                see this for your own house
+                Add it
               </Link>
               .
             </p>
@@ -529,8 +911,7 @@ function SignupBand({ entry }: { entry: PublicWaterSystemEntry }) {
           className="text-small"
           style={{ margin: 0, color: "var(--color-text-secondary)" }}
         >
-          Trends, your report, your tap — Hearth reads the {entry.shortPlace}{" "}
-          data against your address and keeps watch.
+          {`Hearth reads the ${entry.shortPlace} data against your exact address — flood zone, radon, Superfund proximity — and adapts your home's maintenance to the water coming out of your tap.`}
         </p>
       </div>
       <Link href="/login" className="btn btn-primary" style={{ flexShrink: 0 }}>

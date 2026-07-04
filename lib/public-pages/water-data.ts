@@ -36,7 +36,7 @@ import {
 } from "@/lib/habitat/modules/water-quality-awareness/caches/lcr-cache";
 import {
   createSupabaseCcrCacheStore,
-  resolveLatestCcr,
+  resolveCcrHistory,
 } from "@/lib/habitat/modules/water-quality-awareness/caches/ccr-cache";
 import type { PublicWaterSummaryInput } from "./water-summary";
 
@@ -64,7 +64,9 @@ export async function loadPublicWaterSystem(
   const [violationsResult, lcrResult, ccrResult] = await Promise.allSettled([
     resolveViolations(pwsid, createSupabaseViolationsCacheStore()),
     resolveLcrSamples(pwsid, createSupabaseLcrCacheStore()),
-    resolveLatestCcr(pwsid, createSupabaseCcrCacheStore()),
+    // Every uploaded year, not just the latest — the public page renders
+    // the same year-over-year trends the in-app finding shows (issue #303).
+    resolveCcrHistory(pwsid, createSupabaseCcrCacheStore()),
   ]);
 
   const violations =
@@ -73,19 +75,17 @@ export async function loadPublicWaterSystem(
       : null;
   const lcrSamples =
     lcrResult.status === "fulfilled" ? lcrResult.value.records : null;
-  const ccrRow =
-    ccrResult.status === "fulfilled" ? ccrResult.value.row : null;
+  const ccrRows =
+    ccrResult.status === "fulfilled" ? ccrResult.value.rows : [];
 
   return {
     record,
     violations,
     lcrSamples,
-    ccr: ccrRow
-      ? {
-          reportYear: ccrRow.report_year,
-          publishedDate: ccrRow.published_date,
-          extractedData: ccrRow.extracted_data,
-        }
-      : null,
+    ccrYears: ccrRows.map((row) => ({
+      reportYear: row.report_year,
+      publishedDate: row.published_date,
+      extractedData: row.extracted_data,
+    })),
   };
 }

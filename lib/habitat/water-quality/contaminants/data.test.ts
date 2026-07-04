@@ -44,10 +44,32 @@ describe("WQA_CONTAMINANTS coverage", () => {
   it("has unique canonical names and at least one alias each", () => {
     const names = WQA_CONTAMINANTS.map((c) => c.canonical_name);
     expect(new Set(names).size).toBe(names.length);
+    // Contaminants with genuinely no federal limit (regulated via the
+    // PFAS Hazard Index, or simply unregulated) carry an empty
+    // federal_limits list rather than an invented number (issue #303).
+    const NO_FEDERAL_LIMIT = new Set(["PFBS", "PFHxA", "Sodium", "2-Butanone"]);
     for (const c of WQA_CONTAMINANTS) {
       expect(c.aliases.length).toBeGreaterThan(0);
-      expect(c.federal_limits.length).toBeGreaterThan(0);
+      if (NO_FEDERAL_LIMIT.has(c.canonical_name)) {
+        expect(c.federal_limits).toEqual([]);
+      } else {
+        expect(c.federal_limits.length).toBeGreaterThan(0);
+      }
     }
+  });
+
+  it("covers the Kalamazoo CCR tail added for the public page (issue #303)", () => {
+    const names = WQA_CONTAMINANTS.map((c) => c.canonical_name);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "PFHxS",
+        "PFBS",
+        "PFHxA",
+        "Dibromochloromethane",
+        "Sodium",
+        "2-Butanone",
+      ]),
+    );
   });
 });
 
@@ -153,6 +175,47 @@ describe("findWqaContaminantByAlias", () => {
 
   it("trims whitespace before lookup", () => {
     expect(findWqaContaminantByAlias("  Lead  ")?.canonical_name).toBe("Lead");
+  });
+
+  it("survives real-world CCR name variance (issue #303 normalization)", () => {
+    // Stray internal space around a hyphen — as printed in Kalamazoo's CCR.
+    expect(
+      findWqaContaminantByAlias("Cis-1,2- Dichloroethylene")?.canonical_name,
+    ).toBe("cis-1,2-Dichloroethylene");
+    // Collapsed whitespace runs.
+    expect(
+      findWqaContaminantByAlias("Total   Trihalomethanes")?.canonical_name,
+    ).toBe("Total Trihalomethanes");
+  });
+
+  it("resolves combined 'Full name (ABBR)' forms by decomposition (issue #303)", () => {
+    expect(
+      findWqaContaminantByAlias("Perfluorooctanoic acid (PFOA)")?.canonical_name,
+    ).toBe("PFOA");
+    expect(
+      findWqaContaminantByAlias("Perfluorooctane sulfonic acid (PFOS)")
+        ?.canonical_name,
+    ).toBe("PFOS");
+    expect(
+      findWqaContaminantByAlias("Perfluorohexane sulfonic acid (PFHxS)")
+        ?.canonical_name,
+    ).toBe("PFHxS");
+    expect(
+      findWqaContaminantByAlias("Perfluorobutane sulfonic acid (PFBS)")
+        ?.canonical_name,
+    ).toBe("PFBS");
+    expect(
+      findWqaContaminantByAlias("Perfluorohexanoic acid (PFHxA)")
+        ?.canonical_name,
+    ).toBe("PFHxA");
+    // An alias that itself contains a parenthetical still resolves via
+    // the exact path first — decomposition never shadows it.
+    expect(findWqaContaminantByAlias("Nitrate (as N)")?.canonical_name).toBe(
+      "Nitrate",
+    );
+    expect(
+      findWqaContaminantByAlias("Chromium (total)")?.canonical_name,
+    ).toBe("Chromium");
   });
 
   it("returns null for unknown contaminants and falsy input", () => {
