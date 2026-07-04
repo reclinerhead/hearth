@@ -235,6 +235,7 @@ function ComplianceSection({
         className="surface flex flex-col"
         style={{ padding: "var(--space-5)", gap: "var(--space-4)" }}
       >
+        <ComplianceStatusRow status={complianceStatus(compliance)} />
         <p style={{ margin: 0, color: "var(--color-text-secondary)" }}>
           {complianceCopy(compliance, entry)}
         </p>
@@ -279,13 +280,76 @@ function complianceCopy(
     );
   }
   if (compliance.recentTotal === 0) {
-    return `EPA shows no violations of any kind for this system in the last five years.`;
+    return `EPA's Safe Drinking Water records are clean for this system — nothing at all on file for the last five years.`;
   }
   return (
-    `EPA shows no active health-based violations for this system. ` +
     `${compliance.recentTotal} item${compliance.recentTotal === 1 ? "" : "s"} ` +
-    `appear${compliance.recentTotal === 1 ? "s" : ""} in EPA's records for ` +
-    `the last five years, all resolved or administrative.`
+    `appear${compliance.recentTotal === 1 ? "s" : ""} in EPA's records for this ` +
+    `system over the last five years, all resolved or administrative.`
+  );
+}
+
+/**
+ * The glanceable compliance verdict — a colored icon + short label above
+ * the explanatory copy, so a favorable regulatory standing reads as
+ * positive before the paragraph is read. Reuses the app's severity colors
+ * (green success / red danger / muted neutral) and icon set. Reinforces
+ * EPA's verdict on regulatory *standing*; the detected-contaminant list
+ * and lead/copper block below carry the underlying data.
+ */
+function complianceStatus(compliance: PublicWaterSummary["compliance"]): {
+  color: string;
+  icon: "circle-check" | "alert-triangle" | "info";
+  label: string;
+} {
+  if (compliance.kind === "unknown") {
+    return {
+      color: SEVERITY_COLOR.neutral,
+      icon: "info",
+      label: "Compliance status unavailable",
+    };
+  }
+  if (compliance.status === "active_violations") {
+    return {
+      color: SEVERITY_COLOR.concern,
+      icon: "alert-triangle",
+      label: "Active health-based violation on file",
+    };
+  }
+  return {
+    color: SEVERITY_COLOR.favorable,
+    icon: "circle-check",
+    label:
+      compliance.recentTotal === 0
+        ? "No violations in the last five years"
+        : "No active health-based violations",
+  };
+}
+
+function ComplianceStatusRow({
+  status,
+}: {
+  status: ReturnType<typeof complianceStatus>;
+}) {
+  return (
+    <div className="flex items-center" style={{ gap: 10 }}>
+      <span
+        aria-hidden
+        className="inline-flex items-center justify-center shrink-0"
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: "999px",
+          backgroundColor: `color-mix(in oklab, ${status.color} 15%, transparent)`,
+          color: status.color,
+        }}
+      >
+        <Icon name={status.icon} size={19} />
+      </span>
+      <span style={{ fontWeight: 500, fontSize: 15, color: status.color }}>
+        {status.label}
+      </span>
+    </div>
   );
 }
 
