@@ -229,6 +229,28 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
       "Haloacetic acids are the second regulated family of disinfection byproducts, formed the same way as trihalomethanes — chlorine reacting with organic matter. Like TTHMs they're a byproduct of the disinfection that makes tap water safe, removed effectively by carbon filtration and concentrated rather than removed by boiling.",
     learn_more_url: "https://www.epa.gov/dwreginfo/stage-1-and-stage-2-disinfectants-and-disinfection-byproducts-rules",
   },
+  // Individual THM species. Some CCRs print one or more of the four THM
+  // species on their own line alongside (or instead of) the TTHM total —
+  // Kalamazoo prints dibromochloromethane (issue #303). Regulated
+  // collectively under the 80 ppb TTHM MCL; the species itself carries
+  // only an MCLG, which is what the entry models.
+  {
+    canonical_name: "Dibromochloromethane",
+    common_name: "Dibromochloromethane",
+    aliases: [
+      "Dibromochloromethane",
+      "Chlorodibromomethane",
+      "DBCM",
+      "2944",
+    ],
+    category: "disinfection_byproducts",
+    federal_limits: [
+      { kind: "mclg", value_mg_l: 0.06, label: "0.06 mg/L (60 ppb) MCLG" },
+    ],
+    description:
+      "Dibromochloromethane is one of the four trihalomethane species — disinfection byproducts formed when chlorine reacts with organic matter in the source water. It isn't regulated on its own; it counts toward the combined 80 ppb Total Trihalomethanes limit. Like the rest of the family, a carbon filter removes it readily, and boiling concentrates it rather than removing it.",
+    learn_more_url: "https://www.epa.gov/dwreginfo/stage-1-and-stage-2-disinfectants-and-disinfection-byproducts-rules",
+  },
   // The disinfectant residual itself (not a byproduct). CCRs report a chlorine
   // or chloramine residual at the tap; without this entry it rendered bare in
   // the report (issue #237). MRDL (maximum residual disinfectant level) is
@@ -295,6 +317,57 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     ],
     description:
       "PFOS is the other most-studied 'forever chemical', regulated alongside PFOA under EPA's 2024 PFAS rule at 4 parts per trillion with a 2029 compliance deadline. The same persistence and accumulation concerns apply, and the same treatments address it — a carbon-block filter certified to NSF P473, or reverse osmosis. Ordinary carafe pitchers are unreliable for PFAS.",
+    learn_more_url: "https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas",
+  },
+  {
+    canonical_name: "PFHxS",
+    common_name: "PFHxS",
+    aliases: [
+      "PFHxS",
+      "Perfluorohexane sulfonic acid",
+      "Perfluorohexanesulfonic acid",
+      "2812",
+    ],
+    category: "pfas",
+    federal_limits: [
+      { kind: "mcl", value_mg_l: 0.00001, label: "10 ng/L (ppt) MCL — effective 2029" },
+    ],
+    description:
+      "PFHxS is a 'forever chemical' historically used in firefighting foam and stain-resistant treatments. EPA's 2024 PFAS rule set its enforceable limit at 10 parts per trillion, with utilities required to comply by 2029. Like the rest of the family it persists and accumulates, so any detected level is worth knowing about. A carbon-block filter certified to NSF P473, or reverse osmosis, removes it.",
+    learn_more_url: "https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas",
+  },
+  {
+    canonical_name: "PFBS",
+    common_name: "PFBS",
+    aliases: [
+      "PFBS",
+      "Perfluorobutane sulfonic acid",
+      "Perfluorobutanesulfonic acid",
+      "2814",
+    ],
+    category: "pfas",
+    // No individual MCL — PFBS is regulated through the 2024 rule's
+    // combined Hazard Index alongside PFHxS, PFNA, and GenX. The empty
+    // list is honest: renderers fall back to the description's framing.
+    federal_limits: [],
+    description:
+      "PFBS is a shorter-chain 'forever chemical' that industry adopted as a PFOS replacement. It has no individual federal limit; EPA's 2024 PFAS rule regulates it through a combined Hazard Index with three related compounds, because mixtures of them add up. It clears the body faster than PFOA or PFOS but still persists in the environment. A carbon-block filter certified to NSF P473, or reverse osmosis, addresses it.",
+    learn_more_url: "https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas",
+  },
+  {
+    canonical_name: "PFHxA",
+    common_name: "PFHxA",
+    aliases: [
+      "PFHxA",
+      "Perfluorohexanoic acid",
+      "2704",
+    ],
+    category: "pfas",
+    // Monitored under UCMR 5 but not yet federally limited — the 2024
+    // rule doesn't cover it individually or in the Hazard Index.
+    federal_limits: [],
+    description:
+      "PFHxA is a shorter-chain 'forever chemical' that shows up where longer-chain PFAS were phased out, and as a breakdown product of other fluorinated compounds. Utilities report it under EPA's expanded monitoring, but it isn't yet federally limited — a detection is a data point to watch, not a violation. The same treatments that address the regulated PFAS — a carbon-block filter certified to NSF P473, or reverse osmosis — address it too.",
     learn_more_url: "https://www.epa.gov/sdwa/and-polyfluoroalkyl-substances-pfas",
   },
   // Family-level reference. A CCR can detect several PFAS compounds at once,
@@ -420,6 +493,19 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
       "Uranium occurs naturally in granitic and sedimentary rock and dissolves into groundwater — a concern chiefly for groundwater systems and private wells. The health concern is kidney toxicity from the metal itself more than radioactivity at typical levels. Reverse osmosis, ion exchange, and distillation remove it.",
     learn_more_url: "https://www.epa.gov/radiation/radionuclides-drinking-water",
   },
+  // No federal MCL — sodium has only advisory guidance. Modeled with an
+  // empty federal_limits list (renderers fall back to the description's
+  // framing) rather than inventing a limit that doesn't exist.
+  {
+    canonical_name: "Sodium",
+    common_name: "Sodium",
+    aliases: ["Sodium", "1052"],
+    category: "inorganic",
+    federal_limits: [],
+    description:
+      "Sodium reaches drinking water from natural mineral deposits, road-salt runoff, and water-softening. There is no federal limit — EPA offers only advisory guidance, suggesting people on physician-directed very-low-sodium diets know their water's level (tap water is a minor sodium source next to food for everyone else). Reverse osmosis or distillation reduces it; a standard carbon filter does not.",
+    learn_more_url: "https://www.epa.gov/sdwa/drinking-water-regulations-and-contaminants",
+  },
 
   // -- Volatile organic compounds (the chlorinated-solvent set the matrix
   //    groups as "VOCs"; co-occur with nearby Superfund plumes, WQA-7) -----
@@ -463,6 +549,23 @@ export const WQA_CONTAMINANTS: WqaContaminant[] = [
     description:
       "Trichloroethylene (TCE) is a widely used industrial degreasing solvent and a common groundwater contaminant near manufacturing and dry-cleaning sites. Long-term exposure carries cancer and developmental concerns. As a volatile organic compound it's removed well by carbon filtration or air stripping.",
     learn_more_url: "https://www.epa.gov/ground-water-and-drinking-water/national-primary-drinking-water-regulations",
+  },
+  // Unregulated VOC — no federal drinking-water standard. Kalamazoo's CCR
+  // prints it among routine monitoring results (issue #303).
+  {
+    canonical_name: "2-Butanone",
+    common_name: "MEK",
+    aliases: [
+      "2-Butanone",
+      "Methyl ethyl ketone",
+      "Methyl Ethyl Ketone (MEK)",
+      "MEK",
+    ],
+    category: "organic",
+    federal_limits: [],
+    description:
+      "2-Butanone — methyl ethyl ketone, or MEK — is a common industrial solvent found in paints, adhesives, and coatings. It has no federal drinking-water standard; when a utility prints it, that's routine monitoring transparency rather than a compliance finding. It's volatile and breaks down relatively quickly in water, and carbon filtration addresses it.",
+    learn_more_url: "https://www.epa.gov/sdwa/drinking-water-regulations-and-contaminants",
   },
 
   // -- Synthetic organic compounds (common agricultural detection) ---------
