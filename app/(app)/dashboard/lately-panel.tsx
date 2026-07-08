@@ -66,6 +66,9 @@ export async function LatelyPanel({ houseId }: { houseId: string }) {
       .from("inventory")
       .select("id, name, type, subtype, hero_document_id, created_at")
       .eq("house_id", houseId)
+      // The built-in House item (issue #306) isn't user-added activity —
+      // it's created with the house — so keep it out of "Lately".
+      .eq("is_house", false)
       .order("created_at", { ascending: false })
       .limit(PER_SOURCE_LIMIT),
     supabase
