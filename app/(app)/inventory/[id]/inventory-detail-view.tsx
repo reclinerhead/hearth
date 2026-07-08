@@ -174,6 +174,11 @@ export function InventoryDetailView({
    */
   maintenancePanelSlot: ReactNode;
 }) {
+  // The built-in "House" item (issue #306) — the property itself, home to
+  // house-level documents. It reuses this whole page but suppresses the
+  // item-shaped surfaces (Research, maintenance, stat tiles, VIN) and
+  // renders a friendlier "Your home" identity in place of a room/type.
+  const isHouse = item.is_house;
   const isProperty = item.type === "property";
   const isVehicle = isProperty && item.subtype === "vehicle";
   const isPet = isProperty && item.subtype === "pet";
@@ -184,17 +189,23 @@ export function InventoryDetailView({
   // line — the manufacturer is already implied by the name and the
   // model_number for a vehicle is usually the trim or "Land Cruiser",
   // which would duplicate the name verbatim.
-  const title = isVehicle
-    ? item.name
-    : item.manufacturer && displayModel
-      ? `${item.manufacturer} ${displayModel}`
-      : item.name;
+  const title = isHouse
+    ? "Your home"
+    : isVehicle
+      ? item.name
+      : item.manufacturer && displayModel
+        ? `${item.manufacturer} ${displayModel}`
+        : item.name;
 
   const subtypeWord = isVehicle ? "Vehicle" : isPet ? "Pet" : null;
   const eyebrowLeft = subtypeWord
     ? subtypeWord.toUpperCase()
     : TYPE_EYEBROW_LABEL[item.type].toUpperCase();
-  const eyebrow = `${eyebrowLeft} · ${item.roomName.toUpperCase()}`;
+  // The house item isn't "in" a room — its eyebrow is just its identity,
+  // no room segment (the address lives in item.name / the top nav).
+  const eyebrow = isHouse
+    ? "YOUR HOME"
+    : `${eyebrowLeft} · ${item.roomName.toUpperCase()}`;
 
   // Research lookup is owned at this level (not inside ResearchPanel) so
   // the edit-modal can trigger a re-run after the user saves changes to
@@ -600,6 +611,7 @@ export function InventoryDetailView({
   const showCoachmark =
     isFirstUnresearchedItem &&
     !isProperty &&
+    !isHouse &&
     canResearch &&
     !coachmarkDismissed &&
     !researchPending &&
@@ -797,11 +809,18 @@ export function InventoryDetailView({
   return (
     <div className="flex flex-col gap-6">
       <Breadcrumb
-        items={[
-          { label: TYPE_BREADCRUMB_LABEL[item.type], href: "/inventory" },
-          { label: item.roomName },
-          { label: item.name },
-        ]}
+        items={
+          isHouse
+            ? [
+                { label: "Inventory", href: "/inventory" },
+                { label: "Your home" },
+              ]
+            : [
+                { label: TYPE_BREADCRUMB_LABEL[item.type], href: "/inventory" },
+                { label: item.roomName },
+                { label: item.name },
+              ]
+        }
       />
 
       <section className="grid gap-5 md:grid-cols-[260px_1fr]">
@@ -910,9 +929,13 @@ export function InventoryDetailView({
             </p>
           ) : null}
 
-          <StatTiles item={item} />
+          {/* The house item has no install/service dates or nameplate
+              identifiers, so the stat tiles and pill cluster don't apply
+              (issue #306). Both render nothing for it anyway; gating keeps
+              the intent explicit and avoids an empty tile grid. */}
+          {isHouse ? null : <StatTiles item={item} />}
 
-          <PillCluster item={item} />
+          {isHouse ? null : <PillCluster item={item} />}
 
           {vinDecodeError ? (
             <p
@@ -1007,7 +1030,7 @@ export function InventoryDetailView({
             Add document
           </button>
         </div>
-        {isProperty ? null : (
+        {isProperty || isHouse ? null : (
           <div className="flex-1 basis-52 min-w-0 flex [&>*]:w-full [&>*]:min-w-0">
             <ResearchButton
               disabled={!canResearch}
@@ -1021,7 +1044,7 @@ export function InventoryDetailView({
             />
           </div>
         )}
-        {isProperty ? null : (
+        {isProperty || isHouse ? null : (
           // Build is always present for appliances/systems/exteriors (issue
           // #262). When no maintenance insight exists yet it renders disabled
           // — resting "Build maint" label, no spinner — with a tooltip naming
@@ -1077,7 +1100,7 @@ export function InventoryDetailView({
         </div>
       </div>
 
-      {isProperty ? null : (
+      {isProperty || isHouse ? null : (
         // Property doesn't use the "Research this model" panel — it's
         // tuned for appliances and systems (service life, maintenance,
         // manufacturer-published spec sheets) and those questions don't
@@ -1112,6 +1135,7 @@ export function InventoryDetailView({
           rooms={rooms}
           photos={photoChoices}
           linkedDocumentCount={linkedDocumentCount}
+          isHouse={isHouse}
           onClose={() => setEditOpen(false)}
           onSaved={({ researchInvalidated }) => {
             if (researchInvalidated) {
@@ -1191,10 +1215,15 @@ export function InventoryDetailView({
         feedback). It blocks interaction with the soon-to-be-stale rows
         and clears itself the moment the run completes.
       */}
-      <section className="relative">
-        {maintenancePanelSlot}
-        {synthesisInFlight ? <MaintenanceRefreshOverlay /> : null}
-      </section>
+      {/* No maintenance plan for the house item (issue #306) — page.tsx
+          passes a null slot, so skip the wrapper entirely rather than
+          rendering an empty section. */}
+      {isHouse ? null : (
+        <section className="relative">
+          {maintenancePanelSlot}
+          {synthesisInFlight ? <MaintenanceRefreshOverlay /> : null}
+        </section>
+      )}
 
       <section className="grid gap-4 md:grid-cols-2">
         <DocumentsPanel

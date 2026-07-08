@@ -142,6 +142,13 @@ export type InventoryDetailItem = {
   // most-recently-attached photo" — the legacy rule, still applied by
   // the photo ordering above.
   hero_document_id: string | null;
+  // Built-in "House" item discriminator (issue #306). True for the one
+  // auto-created row per house that represents the property itself — the
+  // home for house-level documents (tax, insurance). The row carries an
+  // inert `type` ('exterior'); `is_house` is the load-bearing signal that
+  // drives the special title, suppressed Research/maintenance, and the
+  // non-deletable/non-re-typeable guards. False for every real item.
+  is_house: boolean;
   // Most recent maintenance-synthesis run trace (issue #126). NULL when
   // the item has never had a plan built. Drives the inventory detail
   // page's "Build" vs "Rebuild" button copy and gives the future task
@@ -186,6 +193,7 @@ export default async function InventoryDetailPage({
       manufacture_date_confidence,
       hero_document_id,
       last_synthesis_run,
+      is_house,
       room:rooms!inner(name)
       `,
     )
@@ -220,6 +228,7 @@ export default async function InventoryDetailPage({
     manufacture_date_confidence: ManufactureDateConfidence | null;
     hero_document_id: string | null;
     last_synthesis_run: SynthesisRunLog | null;
+    is_house: boolean;
     room: { name: string } | { name: string }[] | null;
   };
 
@@ -518,6 +527,7 @@ export default async function InventoryDetailPage({
     manufacture_date_confidence: row.manufacture_date_confidence,
     hero_document_id: row.hero_document_id,
     last_synthesis_run: row.last_synthesis_run,
+    is_house: row.is_house,
   };
 
   return (
@@ -530,12 +540,16 @@ export default async function InventoryDetailPage({
       historyEvents={historyEvents}
       isFirstUnresearchedItem={isFirstUnresearchedItem}
       maintenancePanelSlot={
-        <MaintenancePanelItem
-          inventoryId={detail.id}
-          hasActionableInsights={hasActionableInsights}
-          itemType={detail.type}
-          itemSubtype={detail.subtype}
-        />
+        // The house item has no maintenance synthesis (issue #306) — it's
+        // a document home, not a serviceable thing — so it gets no panel.
+        row.is_house ? null : (
+          <MaintenancePanelItem
+            inventoryId={detail.id}
+            hasActionableInsights={hasActionableInsights}
+            itemType={detail.type}
+            itemSubtype={detail.subtype}
+          />
+        )
       }
     />
   );

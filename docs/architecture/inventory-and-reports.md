@@ -267,6 +267,39 @@ These are deliberately out of scope for the initial property landing; the schema
 
 ---
 
+## Built-in "House" item (issue #306)
+
+Documents *about the whole property* — property-tax statements, homeowner's insurance policies, deeds, mortgage paperwork — have no natural inventory item to attach to (they aren't an appliance, a system, an exterior element, or owner's property). Rather than leave them homeless (a user filed a tax bill onto their car for lack of anywhere better), every house gets one **built-in "House" item**: a `hearth.inventory` row representing the property itself, reusing the whole inventory detail page as its document home.
+
+### Discriminator: `is_house`, not a fifth `type`
+
+The house row is marked by a dedicated `is_house boolean not null default false` column (migration `20260708120000_add_house_inventory_item.sql`), **not** a fifth `type` value. This is a deliberate consequence of the **remote-only shared DB** (dev, preview, prod all read the same database — see the hub's "Environments and deployment"): the instant the migration + backfill runs, the currently-deployed app reads the new rows. A `type='house'` value would crash `/inventory` immediately — `groupByType` in [`inventory/page.tsx`](../../app/(app)/inventory/page.tsx) does `groups[item.type].push(...)` against a 4-key object, so an unhandled key throws before the handling code ships. The boolean lets the house row keep a **valid, inert `type` (`'exterior'`)** so old code degrades gracefully (it merely shows the item under its bucket) while new code keys off `is_house`. The flag is also the queryable guard the feature needs: a partial unique index `inventory_one_house_item_per_house on (house_id) where is_house` enforces exactly one per house.
+
+The inert `'exterior'` is a "don't care" the `is_house` checks override everywhere it matters — it's the least-wrong bucket (the house is the ultimate structure) and never surfaced to the user.
+
+### Creation: trigger + backfill
+
+Auto-created by an `after insert on hearth.houses` trigger (`houses_seed_house_item`) that mirrors `seed_default_rooms`. Trigger name ordering matters — Postgres fires same-event triggers alphabetically, and `houses_seed_house_item` sorts after `houses_seed_default_rooms`, so the seeded rooms exist before the house item is placed. `room_id` is `NOT NULL`, so the item is parked in the seeded **Exterior** room via the `hearth.pick_house_item_room(house_id)` helper (prefers 'Exterior', falls back to any room, returns null → skip if a house somehow has zero rooms). It's never shown "in a room" — `is_house` rendering suppresses the room line. `name` is the street `address_line1` (fallback `'Your home'`) so the row is self-identifying if it ever appears in a plain list. The migration also backfills existing houses idempotently (skips any that already have one, guarded by the unique index).
+
+### Rendering and guards
+
+`is_house` flows from [`inventory/[id]/page.tsx`](../../app/(app)/inventory/[id]/page.tsx) onto `InventoryDetailItem` into [`inventory-detail-view.tsx`](../../app/(app)/inventory/[id]/inventory-detail-view.tsx), where it drives the special presentation (parallel to how `isProperty` gates the property surfaces):
+
+- **Identity** — title "Your home", eyebrow "YOUR HOME" (no room segment), breadcrumb "Inventory → Your home". No stat tiles, no pill cluster.
+- **Suppressed surfaces** — no Research button/panel and no maintenance synthesis (Build button + "On your plate" slot), same as property; `page.tsx` passes a `null` maintenance slot. No first-research coachmark, no VIN. The action row is just **Add photo · Add document · Edit details**.
+- **The Documents panel + Add document are the whole point** — kept and central. Filing a property-tax statement or insurance policy runs the standard target-mode Smart Uploader against the house item (attaches directly, no picker); the house item is also selectable in the receipt attach picker.
+- **Non-deletable / non-re-typeable** — the Edit modal takes an `isHouse` prop that hides the classification (type/room), the nameplate identity + service-date fields, and the danger zone, leaving only Name, Notes, and Hero photo.
+
+### List surfacing
+
+[`inventory/page.tsx`](../../app/(app)/inventory/page.tsx) pulls the house item out of the type grouping (`items.filter(i => !i.isHouse)`) so it never lands in a type section, and surfaces it as a dedicated full-width **`HouseItemCard`** ("Your home" — House-level documents) above the Appliances/Systems/Exterior/Property sections. It's excluded from the dashboard "Lately" added-items feed (it's created with the house, not user activity).
+
+### Deferred
+
+Dashboard document surfacing beyond the inventory list, and reading `expiration_date` off house-level renewal documents (property tax due, insurance renewal) into dashboard reminders, are follow-ups — the direct-event renewal pipeline already seeds house-scoped tasks when such a document is attached, but a house-tailored surface for them isn't built.
+
+---
+
 ## Custom date and month pickers
 
 `<DatePicker>` and `<MonthPicker>` (issue #107) are the only date input primitives in the app — native `<input type="date">` and `<input type="month">` are no longer used. The native widgets came with a system-blue, square-cornered popup chrome that couldn't be CSS-styled into the Hearth palette no matter how much `accent-color` or `::-webkit-calendar-picker-indicator` filtering we threw at it; the custom pickers replace that popup wholesale while preserving the underlying wire format (`YYYY-MM-DD` for date, `YYYY-MM` for month) so server actions and stored values didn't change.

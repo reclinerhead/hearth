@@ -140,6 +140,7 @@ export function EditInventoryItemModal({
   rooms,
   photos,
   linkedDocumentCount,
+  isHouse = false,
   onClose,
   onSaved,
   onDeleted,
@@ -148,6 +149,13 @@ export function EditInventoryItemModal({
   open: boolean;
   item: EditableInventoryRow;
   rooms: EditInventoryItemRoomOption[];
+  /**
+   * True for the built-in "House" item (issue #306). Hides the
+   * classification (type/room) and service-date fields — none apply to
+   * the property itself — and hides the danger zone so the house item
+   * can't be re-typed or deleted. Only Name, Notes, and Hero photo remain.
+   */
+  isHouse?: boolean;
   /**
    * Every attached photo for this item, ordered by analyzed_at desc /
    * created_at desc. Empty when the item has no photos yet — the Hero
@@ -514,59 +522,67 @@ export function EditInventoryItemModal({
                 onChange={setName}
                 placeholder="e.g. Carrier furnace"
               />
-              <div className="grid sm:grid-cols-2 gap-4">
-                <FieldText
-                  label="Manufacturer"
-                  value={manufacturer}
-                  onChange={setManufacturer}
-                  placeholder="e.g. Whirlpool"
-                />
-                <FieldText
-                  label="Model number"
-                  value={modelNumber}
-                  onChange={setModelNumber}
-                  placeholder="e.g. WFG361LFQ"
-                />
-                <FieldText
-                  label="Serial number"
-                  value={serialNumber}
-                  onChange={setSerialNumber}
-                  placeholder="e.g. 1234567890"
-                />
-              </div>
+              {/* Nameplate identity + classification don't apply to the
+                  house item (issue #306) — it's the property itself, not a
+                  make/model/room-scoped thing. Hidden so its edit surface
+                  is just Name, Notes, and Hero photo. */}
+              {isHouse ? null : (
+                <>
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <FieldText
+                      label="Manufacturer"
+                      value={manufacturer}
+                      onChange={setManufacturer}
+                      placeholder="e.g. Whirlpool"
+                    />
+                    <FieldText
+                      label="Model number"
+                      value={modelNumber}
+                      onChange={setModelNumber}
+                      placeholder="e.g. WFG361LFQ"
+                    />
+                    <FieldText
+                      label="Serial number"
+                      value={serialNumber}
+                      onChange={setSerialNumber}
+                      placeholder="e.g. 1234567890"
+                    />
+                  </div>
 
-              <SectionHeading
-                title="Classification"
-                hint="Re-categorize if the upload-time guess was wrong."
-              />
-              <div className="grid sm:grid-cols-2 gap-4">
-                <FieldSelect
-                  label="Type"
-                  value={type}
-                  onChange={(v) => {
-                    const next = v as EquipmentType;
-                    setType(next);
-                    // Drop the subtype when leaving property so the
-                    // form state stays semantically honest. Toggling
-                    // back to property leaves the user re-picking a
-                    // subtype, which matches the "no implicit default"
-                    // rule for discriminators.
-                    if (next !== "property") setSubtype(null);
-                  }}
-                  options={[
-                    { value: "appliance", label: "Appliance" },
-                    { value: "system", label: "System" },
-                    { value: "exterior", label: "Exterior" },
-                    { value: "property", label: "Property" },
-                  ]}
-                />
-                <FieldSelect
-                  label="Room"
-                  value={roomId}
-                  onChange={setRoomId}
-                  options={rooms.map((r) => ({ value: r.id, label: r.name }))}
-                />
-              </div>
+                  <SectionHeading
+                    title="Classification"
+                    hint="Re-categorize if the upload-time guess was wrong."
+                  />
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <FieldSelect
+                      label="Type"
+                      value={type}
+                      onChange={(v) => {
+                        const next = v as EquipmentType;
+                        setType(next);
+                        // Drop the subtype when leaving property so the
+                        // form state stays semantically honest. Toggling
+                        // back to property leaves the user re-picking a
+                        // subtype, which matches the "no implicit default"
+                        // rule for discriminators.
+                        if (next !== "property") setSubtype(null);
+                      }}
+                      options={[
+                        { value: "appliance", label: "Appliance" },
+                        { value: "system", label: "System" },
+                        { value: "exterior", label: "Exterior" },
+                        { value: "property", label: "Property" },
+                      ]}
+                    />
+                    <FieldSelect
+                      label="Room"
+                      value={roomId}
+                      onChange={setRoomId}
+                      options={rooms.map((r) => ({ value: r.id, label: r.name }))}
+                    />
+                  </div>
+                </>
+              )}
 
               {type === "property" ? (
                 <div className="grid sm:grid-cols-2 gap-4">
@@ -610,7 +626,7 @@ export function EditInventoryItemModal({
                     placeholder="Pick a month"
                   />
                 </div>
-              ) : (
+              ) : isHouse ? null : (
                 <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <MonthPicker
                     label="Manufactured"
@@ -726,11 +742,15 @@ export function EditInventoryItemModal({
                 />
               ) : null}
 
-              <DangerZone
-                triggerRef={deleteTriggerRef}
-                disabled={saving}
-                onDelete={() => setDeleteOpen(true)}
-              />
+              {/* The house item is built-in and permanent — no delete
+                  path (issue #306). */}
+              {isHouse ? null : (
+                <DangerZone
+                  triggerRef={deleteTriggerRef}
+                  disabled={saving}
+                  onDelete={() => setDeleteOpen(true)}
+                />
+              )}
 
               {error ? (
                 <p

@@ -35,6 +35,7 @@ type InventoryItem = {
   name: string;
   type: InventoryType;
   subtype: InventorySubtype | null;
+  isHouse: boolean;
   roomName: string;
   manufacturer: string | null;
   modelNumber: string | null;
@@ -109,7 +110,12 @@ export default async function InventoryPage() {
   }
 
   const items = await loadInventory(activeHouseId);
-  const byType = groupByType(items);
+  // The built-in "House" item (issue #306) is not one of the four type
+  // sections — it's the property itself, home to house-level documents.
+  // Pull it out before grouping so it never lands in a type bucket (its
+  // inert `type` is 'exterior') and surface it as its own entry up top.
+  const houseItem = items.find((i) => i.isHouse) ?? null;
+  const byType = groupByType(items.filter((i) => !i.isHouse));
 
   return (
     <div className="flex flex-col gap-8">
@@ -117,6 +123,8 @@ export default async function InventoryPage() {
         <div className="eyebrow mb-1">Everything you own that matters</div>
         <h1 className="h1">Home inventory</h1>
       </header>
+
+      {houseItem ? <HouseItemCard item={houseItem} /> : null}
 
       {SECTIONS.map((section) => {
         const sectionItems = byType[section.type];
@@ -167,6 +175,53 @@ export default async function InventoryPage() {
         );
       })}
     </div>
+  );
+}
+
+// The built-in "House" item's entry on the inventory list (issue #306).
+// Deliberately not a type-section tile — it's the property itself, so it
+// leads the page as a single full-width card that reads as "your home"
+// rather than one appliance among many. Links to the same detail page
+// every item uses, where its house-level documents live.
+function HouseItemCard({ item }: { item: InventoryItem }) {
+  return (
+    <Link
+      href={`/inventory/${item.id}`}
+      aria-label="Your home"
+      className="surface group flex items-center gap-4 p-4 sm:p-5 transition-shadow duration-150 hover:shadow-[0_0_0_1px_var(--color-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+    >
+      <span
+        aria-hidden
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg"
+        style={{
+          color: "var(--color-accent)",
+          backgroundColor:
+            "color-mix(in oklab, var(--color-accent) 12%, transparent)",
+        }}
+      >
+        <Icon name="home" size={24} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="eyebrow block">The property itself</span>
+        <span
+          className="block truncate"
+          style={{ fontSize: 18, fontWeight: 500 }}
+        >
+          Your home
+        </span>
+        <span
+          className="block truncate text-small"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          House-level documents — property tax, insurance, and paperwork.
+        </span>
+      </span>
+      <Icon
+        name="chevron-right"
+        size={18}
+        style={{ color: "var(--color-text-tertiary)" }}
+      />
+    </Link>
   );
 }
 
@@ -368,6 +423,7 @@ async function loadInventory(houseId: string): Promise<InventoryItem[]> {
       name,
       type,
       subtype,
+      is_house,
       manufacturer,
       model_number,
       installed_on,
@@ -387,6 +443,7 @@ async function loadInventory(houseId: string): Promise<InventoryItem[]> {
     name: string;
     type: InventoryType;
     subtype: InventorySubtype | null;
+    is_house: boolean;
     manufacturer: string | null;
     model_number: string | null;
     installed_on: string | null;
@@ -448,6 +505,7 @@ async function loadInventory(houseId: string): Promise<InventoryItem[]> {
       name: r.name,
       type: r.type,
       subtype: r.subtype,
+      isHouse: r.is_house,
       roomName,
       manufacturer: r.manufacturer,
       modelNumber: r.model_number,
