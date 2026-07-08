@@ -12,7 +12,9 @@ export type CleanupDocumentInput = {
 
 /**
  * Deletes a document row and its storage objects. Used by the Smart
- * Uploader for the retake / cancel paths.
+ * Uploader for the retake / cancel paths, and by the inventory detail
+ * page's Documents panel to delete an attached document the user filed
+ * on the wrong item (issue #305) — same full-delete either way.
  *
  * Storage removal is best-effort — if it fails (transient storage
  * error, partial state from a half-completed upload, etc.), the row

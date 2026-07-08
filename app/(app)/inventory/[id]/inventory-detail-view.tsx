@@ -20,11 +20,13 @@ import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { cleanupDocumentAction } from "@/app/actions/documents/cleanup-document";
 import { buildMaintenancePlanAction } from "@/app/actions/maintenance/build-plan";
 import {
   EditInventoryItemModal,
@@ -687,6 +689,49 @@ export function InventoryDetailView({
   // in the page-flip modal. Null when no receipt is selected.
   const [openReceiptId, setOpenReceiptId] = useState<string | null>(null);
 
+  // Delete-a-document flow (issue #305). A user who filed a document
+  // onto the wrong item needs an escape hatch. The ✕ on each Documents-
+  // panel row stages a pending delete (id + a human label for the
+  // confirm copy); confirming runs cleanupDocumentAction — the same
+  // full-delete the Smart Uploader's retake path uses (storage sweep +
+  // row + document_pages cascade, RLS-scoped) — then refreshes so the
+  // row drops out. A failed delete surfaces inline and destroys nothing.
+  const [pendingDeleteDoc, setPendingDeleteDoc] = useState<{
+    id: string;
+    label: string;
+  } | null>(null);
+  const [deletingDoc, setDeletingDoc] = useState(false);
+  const [deleteDocError, setDeleteDocError] = useState<string | null>(null);
+
+  const requestDeleteDocument = useCallback(
+    (documentId: string, label: string) => {
+      setDeleteDocError(null);
+      setPendingDeleteDoc({ id: documentId, label });
+    },
+    [],
+  );
+  const cancelDeleteDocument = useCallback(() => {
+    if (deletingDoc) return;
+    setPendingDeleteDoc(null);
+    setDeleteDocError(null);
+  }, [deletingDoc]);
+  const confirmDeleteDocument = useCallback(async () => {
+    if (!pendingDeleteDoc) return;
+    setDeletingDoc(true);
+    setDeleteDocError(null);
+    const result = await cleanupDocumentAction({
+      documentId: pendingDeleteDoc.id,
+    });
+    setDeletingDoc(false);
+    if (result.error) {
+      setDeleteDocError(result.error);
+      return;
+    }
+    setPendingDeleteDoc(null);
+    // Server data drives the panel; pull the row out by refetching.
+    router.refresh();
+  }, [pendingDeleteDoc, router]);
+
   // The hero slot is 260px wide; the 600px thumbnail is plenty (2x+
   // DPR) and is the same asset already cached by dashboard tiles, so
   // navigating from dashboard to detail typically resolves from
@@ -1158,6 +1203,7 @@ export function InventoryDetailView({
           itemName={item.name}
           onOpenReceipt={setOpenReceiptId}
           onOpenScan={openScanForDocument}
+          onRequestDelete={requestDeleteDocument}
         />
         <PlaceholderPanel
           title="Notes & photos"
@@ -1178,6 +1224,15 @@ export function InventoryDetailView({
         documentId={openReceiptId}
         altPrefix={`${item.name} receipt`}
         onClose={() => setOpenReceiptId(null)}
+      />
+
+      <DeleteDocumentConfirmModal
+        open={pendingDeleteDoc !== null}
+        label={pendingDeleteDoc?.label ?? "this document"}
+        pending={deletingDoc}
+        error={deleteDocError}
+        onCancel={cancelDeleteDocument}
+        onConfirm={confirmDeleteDocument}
       />
 
       <section>
@@ -2529,12 +2584,14 @@ function DocumentsPanel({
   itemName,
   onOpenReceipt,
   onOpenScan,
+  onRequestDelete,
 }: {
   receipts: InventoryReceipt[];
   renewalDocuments: InventoryRenewalDocument[];
   itemName: string;
   onOpenReceipt: (documentId: string) => void;
   onOpenScan: (documentId: string) => void;
+  onRequestDelete: (documentId: string, label: string) => void;
 }) {
   // Device-appropriate peek entry gesture (issue #259). On hover-capable
   // pointers (desktop / laptop) the peek opens on tile hover; on touch it
@@ -2582,6 +2639,7 @@ function DocumentsPanel({
                 document={d}
                 itemName={itemName}
                 onOpen={() => onOpenScan(d.id)}
+                onRequestDelete={onRequestDelete}
               />
             </li>
           ))}
@@ -2592,6 +2650,7 @@ function DocumentsPanel({
                 itemName={itemName}
                 hoverCapable={hoverCapable}
                 onOpen={() => onOpenReceipt(r.id)}
+                onRequestDelete={onRequestDelete}
               />
             </li>
           ))}
@@ -2612,10 +2671,12 @@ function RenewalDocumentRow({
   document,
   itemName,
   onOpen,
+  onRequestDelete,
 }: {
   document: InventoryRenewalDocument;
   itemName: string;
   onOpen: () => void;
+  onRequestDelete: (documentId: string, label: string) => void;
 }) {
   const thumbUrl = useCachedSignedUrl(
     "hearth-documents",
@@ -2627,7 +2688,7 @@ function RenewalDocumentRow({
 
   return (
     <div
-      className="overflow-hidden"
+      className="flex items-stretch overflow-hidden"
       style={{
         border: "1px solid var(--color-border-subtle)",
         borderRadius: "var(--radius-md)",
@@ -2637,7 +2698,7 @@ function RenewalDocumentRow({
         type="button"
         onClick={onOpen}
         aria-label={`View the ${title} scan for ${itemName}`}
-        className="flex w-full items-center gap-3 p-2 text-left transition-colors"
+        className="flex min-w-0 flex-1 items-center gap-3 p-2 text-left transition-colors"
         style={{ backgroundColor: "transparent" }}
       >
         <span
@@ -2682,6 +2743,10 @@ function RenewalDocumentRow({
           style={{ color: "var(--color-text-tertiary)" }}
         />
       </button>
+      <DocumentDeleteButton
+        label={title}
+        onClick={() => onRequestDelete(document.id, title)}
+      />
     </div>
   );
 }
@@ -2698,11 +2763,13 @@ function ReceiptListRow({
   itemName,
   hoverCapable,
   onOpen,
+  onRequestDelete,
 }: {
   receipt: InventoryReceipt;
   itemName: string;
   hoverCapable: boolean;
   onOpen: () => void;
+  onRequestDelete: (documentId: string, label: string) => void;
 }) {
   // 96-thumb is plenty at the list row size; same sessionStorage-cached
   // signed URL helper everything else uses.
@@ -2810,6 +2877,7 @@ function ReceiptListRow({
       onMouseEnter={hoverCapable ? handleTileEnter : undefined}
       onMouseLeave={hoverCapable ? handleTileLeave : undefined}
     >
+      <div className="flex items-stretch">
       <button
         type="button"
         onClick={() => {
@@ -2817,7 +2885,7 @@ function ReceiptListRow({
           onOpen();
         }}
         aria-label={`Open ${title} receipt for ${itemName}`}
-        className="flex w-full items-center gap-3 p-2 text-left transition-colors"
+        className="flex min-w-0 flex-1 items-center gap-3 p-2 text-left transition-colors"
         style={{ backgroundColor: "transparent" }}
       >
         <span
@@ -2870,6 +2938,11 @@ function ReceiptListRow({
           </span>
         ) : null}
       </button>
+        <DocumentDeleteButton
+          label={title}
+          onClick={() => onRequestDelete(receipt.id, title)}
+        />
+      </div>
 
       {/* Touch devices have no hover, and the tile-tap is taken by the
           page-flip modal — so they get an explicit, labeled path into the
@@ -2937,6 +3010,186 @@ function formatReceiptTotal(
   } catch {
     return `$${(cents / 100).toFixed(2)}`;
   }
+}
+
+// The ✕ affordance on each Documents-panel row (issue #305). Rendered as
+// a sibling cell to the row's open button — never nested inside it, so
+// there's no button-in-button and clicking delete can't also open the
+// document. Muted until hover (the `.doc-delete-btn` rule in globals.css
+// tints it danger-red) so it reads as clearly secondary to opening the
+// document. All it does is stage the delete; the confirm modal is where
+// the destructive action actually fires.
+function DocumentDeleteButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Delete ${label}`}
+      title={`Delete ${label}`}
+      className="doc-delete-btn flex shrink-0 items-center justify-center px-3 transition-colors"
+      style={{
+        borderLeft: "1px solid var(--color-border-subtle)",
+        color: "var(--color-text-tertiary)",
+        backgroundColor: "transparent",
+      }}
+    >
+      <Icon name="x" size={16} />
+    </button>
+  );
+}
+
+// Top-level confirmation for deleting a document off an inventory item
+// (issue #305). Unlike DeleteInventoryItemConfirmModal (which is nested
+// inside the edit modal and lets its parent own scroll-lock), this one
+// is launched directly from the page, so it owns its own scroll-lock,
+// ESC handling, and initial focus. Parent drives visibility with `open`;
+// the copy reassures the user the item itself is untouched — the whole
+// point is filing a document in the wrong place, not losing the item.
+function DeleteDocumentConfirmModal({
+  open,
+  label,
+  pending,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  label: string;
+  pending: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const titleId = useId();
+  const descriptionId = useId();
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const html = document.documentElement;
+    const body = document.body;
+    html.classList.add("scroll-locked");
+    body.classList.add("scroll-locked");
+    requestAnimationFrame(() => cancelButtonRef.current?.focus());
+
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !pending) {
+        e.preventDefault();
+        onCancel();
+      }
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      html.classList.remove("scroll-locked");
+      body.classList.remove("scroll-locked");
+    };
+  }, [open, onCancel, pending]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      aria-hidden={false}
+      className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-6"
+      style={{
+        backgroundColor:
+          "color-mix(in oklab, var(--color-bg-base) 80%, transparent)",
+        backdropFilter: "blur(6px)",
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !pending) onCancel();
+      }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        className="surface relative w-full max-w-md overflow-hidden"
+        style={{ backgroundColor: "var(--color-bg-surface)" }}
+      >
+        <header
+          className="flex items-start gap-3 p-4 sm:p-5"
+          style={{ borderBottom: "1px solid var(--color-border-subtle)" }}
+        >
+          <span
+            aria-hidden
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+            style={{
+              color: "var(--color-danger)",
+              backgroundColor:
+                "color-mix(in oklab, var(--color-danger) 12%, transparent)",
+            }}
+          >
+            <Icon name="alert-triangle" size={18} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 id={titleId} className="h3">
+              Delete {label}?
+            </h2>
+            <p
+              id={descriptionId}
+              className="text-small mt-1"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              This removes the document and everything we read from it. The
+              item itself stays. This can&apos;t be undone.
+            </p>
+          </div>
+        </header>
+
+        {error ? (
+          <div className="p-4 sm:p-5">
+            <p
+              className="text-small"
+              role="alert"
+              style={{ color: "var(--color-danger)" }}
+            >
+              {error}
+            </p>
+          </div>
+        ) : null}
+
+        <footer
+          className="flex items-center justify-end gap-2 p-3 sm:p-4"
+          style={{
+            borderTop: "1px solid var(--color-border-subtle)",
+            backgroundColor: "var(--color-bg-surface)",
+          }}
+        >
+          <button
+            ref={cancelButtonRef}
+            type="button"
+            onClick={onCancel}
+            disabled={pending}
+            className="btn btn-ghost"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={pending}
+            className="btn"
+            style={{
+              backgroundColor: "var(--color-danger)",
+              color: "var(--color-bg-base)",
+              borderColor: "var(--color-danger)",
+            }}
+          >
+            {pending ? "Deleting…" : "Delete forever"}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
 }
 
 function PanelRowStyles(): ReactNode {

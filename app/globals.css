@@ -757,3 +757,13 @@ html.scroll-locked,
 body.scroll-locked {
   overflow: hidden;
 }
+
+/* Delete (✕) affordance on Documents-panel rows (issue #305). Muted by
+   default so it reads as secondary to opening the document; tints danger
+   on hover / keyboard focus to signal the destructive intent. */
+
+.doc-delete-btn:hover,
+.doc-delete-btn:focus-visible {
+  color: var(--color-danger);
+  background-color: color-mix(in oklab, var(--color-danger) 10%, transparent);
+}
