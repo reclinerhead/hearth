@@ -985,6 +985,38 @@ export function InventoryDetailView({
         />
       ) : null}
 
+      {/* What-is-this explainer for the built-in House item (issue #309).
+          Fixed on-page copy, not an editable note — the detail page doesn't
+          surface the notes field, and this shouldn't be user-clearable. Only
+          the house item renders it. */}
+      {isHouse ? (
+        <div
+          className="surface flex items-start gap-3 p-4"
+          style={{ borderRadius: "var(--radius-lg)" }}
+        >
+          <span
+            aria-hidden
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+            style={{
+              color: "var(--color-accent)",
+              backgroundColor:
+                "color-mix(in oklab, var(--color-accent) 12%, transparent)",
+            }}
+          >
+            <Icon name="home" size={18} />
+          </span>
+          <p
+            className="text-small"
+            style={{ color: "var(--color-text-secondary)", lineHeight: 1.5 }}
+          >
+            This represents your home itself. Attach documents that belong to
+            the whole property here &mdash; property-tax statements,
+            homeowner&rsquo;s insurance, deeds, and anything else that
+            doesn&rsquo;t fit a specific appliance or item.
+          </p>
+        </div>
+      ) : null}
+
       {/*
         Unified action row (issue #254, Build rules revised by #262). All
         applicable actions live in a single full-width, equal-width row beneath
