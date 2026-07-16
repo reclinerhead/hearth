@@ -233,6 +233,14 @@ The receipt path lives parallel to the photo path. Pages 1-5 of a real-world pri
 
 **The review stage** ([`components/smart-uploader/stages/ReviewReceiptStage.tsx`](../../components/smart-uploader/stages/ReviewReceiptStage.tsx)) shows: a read-only thumbnail strip of every page; a "what we read" chip cluster of vendor / date / type / total / subtotal / tax / payment method; a read-only line-items list (editing line items is deferred per the issue's "out of scope" call); a chip cluster of identifiers the model found (serials and model numbers); a match banner (strong match → one-tap select, suggestions → buttons, none → manual searchable inventory picker); an editable notes field defaulting to the extracted notes; and a Save button. In target mode the picker collapses to a read-only "Attaching to <item>" banner.
 
+The manual picker carries three mobile constraints (issue #311), all of which follow from it being a scrollable list nested inside the page-sheet's own scroller:
+
+- **Its inputs must not hardcode a font-size.** The search box and the notes textarea inherit, so the global touch floor documented in the hub's design system applies. They previously pinned `fontSize: 14` inline, which outranks the floor and auto-zoomed iOS on focus — with the page-sheet locked at `95dvh`, the zoom left the sheet wider than the visual viewport and effectively unscrollable.
+- **`overscroll-behavior: contain` on the list is load-bearing**, not decoration. Without it, a swipe that reaches the end of the picker chains into the page-sheet behind it and the two scrollers fight over the same gesture. Any future nested scroller inside the sheet needs the same treatment.
+- **The `PICKER_VISIBLE_LIMIT` cap is announced, not silent.** The list renders at most 25 rows — the search box is the intended path through a large inventory — but anything beyond the cap surfaces a "Showing 25 of N" line beneath the list. A cap that hides rows silently reads as "that's everything" when it isn't.
+
+Rows carry a 44px `minHeight` so a single-line entry clears the touch-target floor.
+
 **Confidence threshold for the low-confidence branch** is `RECEIPT_CONFIDENCE_THRESHOLD = 0.5` in the review stage — lower than the nameplate `0.6` because receipts vary more in quality (faded thermal paper, handwriting, glare). Documented contract; if we tighten it server-side we update the constant in lockstep.
 
 **The matcher** in [`lib/documents/receipt-inventory-match.ts`](../../lib/documents/receipt-inventory-match.ts) is pure — the server action is a thin Supabase wrapper. Two passes: case-folded exact match on `inventory.serial_number`, then punctuation-normalized match for rows that didn't hit. Model-number matches surface as suggestions only. The `"unknown"` model_number sentinel is filtered out. A single serial hit becomes the strong match; multiple hits demote to suggestions so the user disambiguates.

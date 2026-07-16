@@ -15,6 +15,13 @@ import type { ReceiptPage } from "../hooks/use-receipt-upload";
 // nameplates. Documented in the technical guide as a contract.
 const RECEIPT_CONFIDENCE_THRESHOLD = 0.5;
 
+// How many inventory rows the manual picker renders at once. The list is
+// a fallback for when matching didn't surface the item, so the search
+// box is the intended path through a large inventory — but a cap that
+// hides rows silently reads as "that's everything" when it isn't, so
+// anything beyond this count is announced under the list (issue #311).
+const PICKER_VISIBLE_LIMIT = 25;
+
 type HouseInventoryRow = {
   id: string;
   name: string;
@@ -364,7 +371,6 @@ export function ReviewReceiptStage({
               backgroundColor: "var(--color-bg-surface-raised)",
               border: "1px solid var(--color-border-subtle)",
               color: "var(--color-text-primary)",
-              fontSize: 14,
             }}
           />
 
@@ -383,51 +389,72 @@ export function ReviewReceiptStage({
               No inventory matches that search.
             </span>
           ) : (
-            <ul
-              className="flex flex-col gap-1 overflow-auto"
-              style={{ maxHeight: 200 }}
-            >
-              {filteredRows.slice(0, 25).map((row) => (
-                <li key={row.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedInventoryId(row.id)}
-                    className="flex w-full items-center justify-between gap-2 rounded-[var(--radius-md)] px-3 py-2 text-left transition-colors"
-                    style={{
-                      backgroundColor:
-                        selectedInventoryId === row.id
-                          ? "color-mix(in oklab, var(--color-accent) 14%, transparent)"
-                          : "var(--color-bg-surface)",
-                      border: "1px solid var(--color-border-subtle)",
-                      color: "var(--color-text-primary)",
-                    }}
-                  >
-                    <div className="min-w-0">
-                      <div
-                        style={{ fontSize: 14, fontWeight: 500 }}
-                        className="truncate"
-                      >
-                        {row.name}
-                      </div>
-                      {row.manufacturer ? (
-                        <div
-                          className="text-small truncate"
-                          style={{ color: "var(--color-text-tertiary)" }}
-                        >
-                          {row.manufacturer}
-                        </div>
-                      ) : null}
-                    </div>
-                    <span
-                      className="text-small shrink-0"
-                      style={{ color: "var(--color-text-tertiary)" }}
+            <>
+              <ul
+                className="flex flex-col gap-1 overflow-auto"
+                style={{
+                  maxHeight: 240,
+                  // The picker sits inside the page-sheet's own scroller.
+                  // Without containment, reaching the end of this list
+                  // chains the gesture into the sheet behind it and the
+                  // two fight over the same swipe (issue #311).
+                  overscrollBehavior: "contain",
+                }}
+              >
+                {filteredRows.slice(0, PICKER_VISIBLE_LIMIT).map((row) => (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedInventoryId(row.id)}
+                      className="flex w-full items-center justify-between gap-2 rounded-[var(--radius-md)] px-3 py-2 text-left transition-colors"
+                      style={{
+                        backgroundColor:
+                          selectedInventoryId === row.id
+                            ? "color-mix(in oklab, var(--color-accent) 14%, transparent)"
+                            : "var(--color-bg-surface)",
+                        border: "1px solid var(--color-border-subtle)",
+                        color: "var(--color-text-primary)",
+                        // A single-line row lands at ~36px, under the 44px
+                        // touch-target floor these rows are tapped at.
+                        minHeight: 44,
+                      }}
                     >
-                      {capitalize(row.type)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+                      <div className="min-w-0">
+                        <div
+                          style={{ fontSize: 14, fontWeight: 500 }}
+                          className="truncate"
+                        >
+                          {row.name}
+                        </div>
+                        {row.manufacturer ? (
+                          <div
+                            className="text-small truncate"
+                            style={{ color: "var(--color-text-tertiary)" }}
+                          >
+                            {row.manufacturer}
+                          </div>
+                        ) : null}
+                      </div>
+                      <span
+                        className="text-small shrink-0"
+                        style={{ color: "var(--color-text-tertiary)" }}
+                      >
+                        {capitalize(row.type)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {filteredRows.length > PICKER_VISIBLE_LIMIT ? (
+                <span
+                  className="text-small"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  Showing {PICKER_VISIBLE_LIMIT} of {filteredRows.length} —
+                  search to narrow the list.
+                </span>
+              ) : null}
+            </>
           )}
         </div>
       )}
@@ -452,7 +479,6 @@ export function ReviewReceiptStage({
             backgroundColor: "var(--color-bg-surface-raised)",
             border: "1px solid var(--color-border-subtle)",
             color: "var(--color-text-primary)",
-            fontSize: 14,
             resize: "vertical",
           }}
         />
