@@ -349,6 +349,43 @@ h1.h1 {
 }
 
 /*
+  16px floor on form controls for touch devices (issue #311).
+
+  iOS Safari zooms the viewport whenever a focused form control computes
+  to a font-size below 16px, and --text-body's clamp floors at 14px on a
+  phone-width viewport. Inside the Smart Uploader's fixed-height
+  page-sheet the resulting zoom left the sheet wider than the visual
+  viewport and effectively unscrollable.
+
+  The condition is a union of two things on purpose. `pointer: coarse`
+  is the honest trigger — the zoom is a property of the device, not the
+  layout, and an iPad in portrait is 768px wide (past the `sm`
+  breakpoint) yet still resolves --text-body to 14px and still zooms.
+  But `pointer: coarse` can't be exercised in a desktop browser, which
+  would make this rule unverifiable outside a physical phone, so the
+  width clause carries the same floor into a narrow window where it can
+  actually be tested. A 16px input in a narrow desktop window is a
+  harmless side effect — it matches .input's desktop size anyway.
+
+  Setting maximum-scale=1 on the viewport meta would also stop the zoom,
+  but at the cost of pinch-zoom for low-vision users. The floor is the
+  fix; the zoom lock is not.
+
+  `.input` is listed explicitly: its own `font: inherit` is specificity
+  0-1-0 and would outrank a bare element selector here. Inline
+  `style={{ fontSize }}` still outranks all of this — form controls must
+  not hardcode a font-size below 16px.
+*/
+@media (pointer: coarse), (max-width: 639.98px) {
+  input,
+  select,
+  textarea,
+  .input {
+    font-size: 16px;
+  }
+}
+
+/*
   Date and month picker triggers (components/date-picker.tsx and
   components/month-picker.tsx, issue #107). The button is .input shaped
   so it sits flush in form rows next to text / select inputs. A small
