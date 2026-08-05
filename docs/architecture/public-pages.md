@@ -1,6 +1,6 @@
 # Public pages
 
-The public, unauthenticated, place-keyed pages under `app/(public)/` — the SEO-indexable surface that exposes Hearth's habitat intelligence for a *place* rather than a *house* (epic #298). Phase 1 ships the water system page (`/water/kalamazoo-mi`) plus the foundations: the public route group and layout, the slug allowlist, the proxy exemptions, and the SEO plumbing (sitemap, robots, canonical URLs).
+The public, unauthenticated, place-keyed pages under `app/(public)/` — the SEO-indexable surface that exposes Hearth's habitat intelligence for a *place* rather than a *house* (epic #298). Phase 1 shipped the water system page template plus the foundations: the public route group and layout, the slug allowlist, the proxy exemptions, and the SEO plumbing (sitemap, robots, canonical URLs). The registry currently serves two systems: `/water/kalamazoo-mi` and `/water/portage-mi`.
 
 Read this spoke when working on anything under `app/(public)/`, the slug registry, the public data read paths, or the sitemap/robots files.
 
@@ -30,7 +30,7 @@ The privacy-sensitive subset is pinned by tests: `lib/public-pages/water-summary
 
 ## Slug allowlist
 
-[lib/public-pages/slugs.ts](../../lib/public-pages/slugs.ts) is the single mapping between human slugs and internal keys (PWSID today; county keys seeded for Phase 2). It is deliberately a hardcoded allowlist: `generateStaticParams` reads it and the route sets `dynamicParams = false`, so an unknown slug 404s at the router **before any data access runs** — no user input ever reaches a database or EPA query on a public route, and there's no ISR-cache amplification for garbage slugs. Phase 3's Michigan scale-out grows this registry (generated from the EPA CWS dataset) rather than adding a second resolution mechanism.
+[lib/public-pages/slugs.ts](../../lib/public-pages/slugs.ts) is the single mapping between human slugs and internal keys (PWSID today; county keys seeded for Phase 2). It is deliberately a hardcoded allowlist: `generateStaticParams` reads it and the route sets `dynamicParams = false`, so an unknown slug 404s at the router **before any data access runs** — no user input ever reaches a database or EPA query on a public route, and there's no ISR-cache amplification for garbage slugs. The water-system list holds two hand-seeded entries — Kalamazoo (`kalamazoo-mi` → MI0003520) and Portage (`portage-mi` → MI0005520, verified against EPA Envirofacts as the active CWS serving the city). Phase 3's Michigan scale-out grows this registry (generated from the EPA CWS dataset) rather than adding a second resolution mechanism. Page copy that names the place resolves through the entry's `shortPlace` / `placeName` — nothing in the page template hardcodes a city name.
 
 ## Data access posture
 

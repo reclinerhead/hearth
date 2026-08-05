@@ -35,6 +35,13 @@ export const PUBLIC_WATER_SYSTEMS: readonly PublicWaterSystemEntry[] = [
     shortPlace: "Kalamazoo",
     stateCode: "MI",
   },
+  {
+    slug: "portage-mi",
+    pwsid: "MI0005520",
+    placeName: "Portage, Michigan",
+    shortPlace: "Portage",
+    stateCode: "MI",
+  },
 ];
 
 /**

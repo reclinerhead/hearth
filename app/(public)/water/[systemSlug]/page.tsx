@@ -118,7 +118,7 @@ export default async function PublicWaterSystemPage({
       <ComplianceSection summary={summary} entry={entry} />
       <PfasSection summary={summary} />
       <DetectedSection summary={summary} />
-      <RemediationSection summary={summary} />
+      <RemediationSection summary={summary} entry={entry} />
       <CcrSection summary={summary} entry={entry} />
       <NextStepsSection summary={summary} entry={entry} />
       <SourcesSection summary={summary} />
@@ -964,7 +964,13 @@ function joinNames(names: string[]): string {
   return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
-function RemediationSection({ summary }: { summary: PublicWaterSummary }) {
+function RemediationSection({
+  summary,
+  entry,
+}: {
+  summary: PublicWaterSummary;
+  entry: PublicWaterSystemEntry;
+}) {
   const { remediation } = summary;
   if (remediation.kind !== "available") return null;
   const { combination: combo, personalized, reportYear } = remediation;
@@ -985,7 +991,7 @@ function RemediationSection({ summary }: { summary: PublicWaterSummary }) {
     <section>
       <SectionHeader
         eyebrow="What actually helps"
-        title="Which filters address what's in Kalamazoo's water"
+        title={`Which filters address what's in ${entry.shortPlace}'s water`}
       />
       <p
         className="text-small"
@@ -1039,7 +1045,7 @@ function RemediationSection({ summary }: { summary: PublicWaterSummary }) {
       ) : null}
 
       <MatrixTable rows={personalized} />
-      <MatrixLegend />
+      <MatrixLegend shortPlace={entry.shortPlace} />
 
       <p
         className="text-small"
@@ -1238,7 +1244,7 @@ function MatrixCell({ value }: { value: RemediationEffectiveness }) {
   );
 }
 
-function MatrixLegend() {
+function MatrixLegend({ shortPlace }: { shortPlace: string }) {
   const items: Array<{ swatch: string; label: string }> = [
     { swatch: "var(--color-success)", label: "Full removal (NSF certified)" },
     { swatch: MATRIX_AMBER, label: "Partial / variable" },
@@ -1273,7 +1279,7 @@ function MatrixLegend() {
           style={{ width: 8, height: 8, backgroundColor: MATRIX_AMBER }}
         />
         <span className="text-small" style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}>
-          Detected in Kalamazoo&apos;s water
+          Detected in {shortPlace}&apos;s water
         </span>
       </li>
     </ul>
