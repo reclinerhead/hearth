@@ -32,6 +32,8 @@ The privacy-sensitive subset is pinned by tests: `lib/public-pages/water-summary
 
 [lib/public-pages/slugs.ts](../../lib/public-pages/slugs.ts) is the single mapping between human slugs and internal keys (PWSID today; county keys seeded for Phase 2). It is deliberately a hardcoded allowlist: `generateStaticParams` reads it and the route sets `dynamicParams = false`, so an unknown slug 404s at the router **before any data access runs** — no user input ever reaches a database or EPA query on a public route, and there's no ISR-cache amplification for garbage slugs. Phase 3's Michigan scale-out grows this registry (generated from the EPA CWS dataset) rather than adding a second resolution mechanism.
 
+The registry also serves the reverse direction: `resolveWaterSystemEntryByPwsid` maps a PWSID back to its entry, powering the in-app entry point to these pages — the WQA finding modal's header copy-link affordance (issue #317, `getShareLink` on `HabitatModule`, see [habitat.md](habitat.md)). The affordance renders only for systems present in the registry, so growing the registry automatically lights it up for more households.
+
 ## Data access posture
 
 The shared-cache RLS policies are `to authenticated` SELECT-only and **stay that way** — do not add `anon` policies (they would open the PostgREST endpoint to bulk scraping with the public anon key, and `water_system_reports.uploaded_by` is an `auth.users` UUID that must never be anon-readable).

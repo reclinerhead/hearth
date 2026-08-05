@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { triggerHabitatModuleRecheck } from "@/app/(app)/dashboard/actions";
 import { Icon } from "./icon";
+import { Tooltip } from "./tooltip";
 import { HabitatActionChip } from "./habitat-action-chip";
 import {
   SEVERITY_COLOR,
@@ -399,6 +400,15 @@ export function HabitatFindingModal({
 
   const footerSourceUrl = activeCard?.sourceUrl ?? row.source_url ?? null;
 
+  // Issue #317: optional module slot — a copy-to-clipboard affordance
+  // for the public page mirroring this finding. Renders in the header
+  // next to the close button only when the module resolves a public
+  // path for this row (WQA: the finding's PWSID is in the public slug
+  // registry). The absolute URL is built at copy time from
+  // window.location.origin, so production copies the production URL
+  // and localhost copies localhost.
+  const shareLink = habitatModule.getShareLink?.(row) ?? null;
+
   return (
     <div
       aria-hidden={false}
@@ -483,15 +493,20 @@ export function HabitatFindingModal({
               {summary}
             </p>
           </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            onClick={handleClose}
-            className="btn btn-ghost btn-icon"
-            aria-label="Close finding detail"
-          >
-            <Icon name="x" size={18} />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {shareLink ? (
+              <ShareLinkButton path={shareLink.path} label={shareLink.label} />
+            ) : null}
+            <button
+              ref={closeButtonRef}
+              type="button"
+              onClick={handleClose}
+              className="btn btn-ghost btn-icon"
+              aria-label="Close finding detail"
+            >
+              <Icon name="x" size={18} />
+            </button>
+          </div>
         </header>
 
         {showDetailPane ? (
@@ -1042,6 +1057,62 @@ function RecommendedActionCard({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * Issue #317 — header copy-link affordance for findings that have a
+ * public mirror page. Icon-only to keep the pinned header lean (it's
+ * space-constrained on mobile, issue #228); the Tooltip carries the
+ * full explanation, matching the trend popover's copy-button pattern.
+ * On copy the icon swaps to a success check for 1.6s and a polite
+ * status region announces the result for screen readers.
+ *
+ * Clipboard failures (blocked permission, non-secure context) leave
+ * the button as-is — same silent-degrade the trend popover uses.
+ */
+function ShareLinkButton({ path, label }: { path: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const copyUrl = useCallback(() => {
+    const url = new URL(path, window.location.origin).toString();
+    navigator.clipboard
+      ?.writeText(url)
+      .then(() => {
+        setCopied(true);
+        if (copyTimer.current) clearTimeout(copyTimer.current);
+        copyTimer.current = setTimeout(() => setCopied(false), 1600);
+      })
+      .catch(() => {
+        /* clipboard blocked — leave the button as-is */
+      });
+  }, [path]);
+
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    [],
+  );
+
+  return (
+    <>
+      <Tooltip content={copied ? "Link copied" : label} side="bottom">
+        <button
+          type="button"
+          onClick={copyUrl}
+          className="btn btn-ghost btn-icon"
+          aria-label={label}
+          style={copied ? { color: "var(--color-success)" } : undefined}
+        >
+          <Icon name={copied ? "circle-check" : "copy"} size={18} />
+        </button>
+      </Tooltip>
+      <span role="status" className="sr-only">
+        {copied ? "Public page link copied to clipboard" : ""}
+      </span>
+    </>
   );
 }
 
