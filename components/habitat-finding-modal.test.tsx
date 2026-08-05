@@ -702,4 +702,98 @@ describe("HabitatFindingModal", () => {
       expect(header?.textContent).toContain("Concern");
     });
   });
+
+  describe("getShareLink header affordance (issue #317)", () => {
+    const SHARE_LABEL = "Copy the public link to Testville's water quality page";
+
+    function moduleWithShareLink(
+      ret: { path: string; label: string } | null,
+    ): HabitatModule {
+      return {
+        ...RADON_MODULE,
+        getShareLink: () => ret,
+      };
+    }
+
+    function findShareButton(): HTMLButtonElement | null {
+      return container.querySelector<HTMLButtonElement>(
+        `header button[aria-label="${SHARE_LABEL}"]`,
+      );
+    }
+
+    it("renders the copy-link button in the header when the slot returns a link", () => {
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={moduleWithShareLink({
+            path: "/water/testville-mi",
+            label: SHARE_LABEL,
+          })}
+          houseId="test-house-id"
+        />,
+      );
+      expect(findShareButton()).not.toBeNull();
+    });
+
+    it("renders no share control when the slot returns null or is not implemented", () => {
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={moduleWithShareLink(null)}
+          houseId="test-house-id"
+        />,
+      );
+      expect(findShareButton()).toBeNull();
+
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={RADON_MODULE}
+          houseId="test-house-id"
+        />,
+      );
+      expect(findShareButton()).toBeNull();
+    });
+
+    it("copies the absolute public URL built from the page origin on click", async () => {
+      const written: string[] = [];
+      // jsdom has no clipboard; install a minimal one for the assertion.
+      Object.defineProperty(navigator, "clipboard", {
+        value: {
+          writeText: (text: string) => {
+            written.push(text);
+            return Promise.resolve();
+          },
+        },
+        configurable: true,
+      });
+
+      render(
+        <HabitatFindingModal
+          open
+          onClose={() => {}}
+          row={makeRow()}
+          habitatModule={moduleWithShareLink({
+            path: "/water/testville-mi",
+            label: SHARE_LABEL,
+          })}
+          houseId="test-house-id"
+        />,
+      );
+      const button = findShareButton();
+      expect(button).not.toBeNull();
+      await act(async () => {
+        button!.click();
+      });
+      expect(written).toEqual([
+        `${window.location.origin}/water/testville-mi`,
+      ]);
+    });
+  });
 });

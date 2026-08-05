@@ -562,6 +562,26 @@ export interface HabitatModule {
     after: HabitatFindingRow,
     source: HabitatRecheckSource,
   ) => HabitatRecheckSummary | null;
+
+  /**
+   * Optional. Returns the site-relative path of a public page that
+   * mirrors this finding, plus the accessible label for the modal's
+   * copy-link affordance — or null when no public page exists for the
+   * data behind this row. The modal header renders a copy-to-clipboard
+   * button next to the close control only when this returns non-null
+   * (issue #317); the modal owns the rendering and builds the absolute
+   * URL from `window.location.origin` at copy time.
+   *
+   * Pure read off the persisted finding, no fetches — same discipline
+   * as getFindingLabel. WQA is the first consumer: it maps the row's
+   * resolved PWSID through the public slug registry
+   * (lib/public-pages/slugs.ts), so the affordance appears exactly for
+   * systems with a registered public page. The label must follow the
+   * no-machine-identifiers rule — place names, never PWSIDs.
+   */
+  getShareLink?: (
+    row: HabitatFindingRow,
+  ) => { path: string; label: string } | null;
 }
 
 /**

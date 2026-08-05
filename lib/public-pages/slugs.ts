@@ -80,6 +80,19 @@ export function resolveWaterSystemSlug(
   return PUBLIC_WATER_SYSTEMS.find((e) => e.slug === normalized) ?? null;
 }
 
+/**
+ * Reverse lookup: PWSID → registry entry. Powers in-app affordances
+ * that need to know whether a public page exists for a resolved water
+ * system (the finding modal's share link, issue #317). Returns null
+ * for any PWSID outside the registry — callers render nothing in that
+ * case rather than a dead link.
+ */
+export function resolveWaterSystemEntryByPwsid(
+  pwsid: string,
+): PublicWaterSystemEntry | null {
+  return PUBLIC_WATER_SYSTEMS.find((e) => e.pwsid === pwsid) ?? null;
+}
+
 export function resolveCountySlug(slug: string): PublicCountyEntry | null {
   const normalized = normalizeSlug(slug);
   return PUBLIC_COUNTIES.find((e) => e.slug === normalized) ?? null;

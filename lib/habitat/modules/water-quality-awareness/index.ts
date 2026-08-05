@@ -84,6 +84,7 @@ import {
 } from "./compliance";
 import { classifyLcrAxis, summarizeLcr, type LeadCopperSummary } from "./lcr";
 import { buildCwsOnboardingMessage } from "./onboarding-message";
+import { resolveWaterSystemEntryByPwsid } from "@/lib/public-pages/slugs";
 import {
   buildCwsUnmappedPayload,
   buildPrivateWellPayload,
@@ -851,6 +852,28 @@ const WaterQualityAwarenessModule: HabitatModule = {
    * `recheck-summary.ts`; this is the slot binding.
    */
   summarizeRecheckChanges: summarizeWqaRecheckChanges,
+
+  /**
+   * Issue #317 — the modal header's copy-link affordance. Present
+   * exactly when the finding's resolved PWSID has a registered public
+   * page (lib/public-pages/slugs.ts), so branches without a system
+   * card (private_well, cws_unmapped, stale) and systems outside the
+   * registry render no control at all. The label names the place, not
+   * the PWSID, per the no-machine-identifiers rule.
+   */
+  getShareLink(row) {
+    const f = row.findings as {
+      system_card?: { pwsid?: string };
+    } | null;
+    const pwsid = f?.system_card?.pwsid;
+    if (!pwsid) return null;
+    const entry = resolveWaterSystemEntryByPwsid(pwsid);
+    if (!entry) return null;
+    return {
+      path: `/water/${entry.slug}`,
+      label: `Copy the public link to ${entry.shortPlace}'s water quality page`,
+    };
+  },
 };
 
 export default WaterQualityAwarenessModule;
