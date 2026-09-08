@@ -36,7 +36,7 @@ The registry also serves the reverse direction: `resolveWaterSystemEntryByPwsid`
 
 ## Data access posture
 
-The shared-cache RLS policies are `to authenticated` SELECT-only and **stay that way** — do not add `anon` policies (they would open the PostgREST endpoint to bulk scraping with the public anon key, and `water_system_reports.uploaded_by` is an `auth.users` UUID that must never be anon-readable).
+The shared-cache RLS policies are `to authenticated` SELECT-only and **stay that way** — do not add `anon` policies (they would open the PostgREST endpoint to bulk scraping with the public anon key, and `water_system_reports.uploaded_by` is an `auth.users` UUID that must never be anon-readable — since issue #325 it is not even `authenticated`-readable; see the column-level privilege note in [habitat.md](habitat.md)).
 
 Public pages instead read **server-side via the service-role client at static-generation / ISR-revalidate time**, through the WQA module's existing cache wrappers ([lib/public-pages/water-data.ts](../../lib/public-pages/water-data.ts) → `resolveWaterSystem` / `resolveViolations` / `resolveLcrSamples` / `resolveCcrHistory`). This is safe by construction: the PWSID comes from the slug allowlist, the route is fully static (the service client never runs per-request), and the CCR history read selects only extraction columns (no `uploaded_by`, no `content_hash`). `resolveCcrHistory` (every uploaded year, not just the latest) is what powers the public year-over-year trends (issue #303). The EPA-backed wrappers fetch-from-EPA-on-miss, which makes an unpopulated system's page self-seeding at ISR time — the mechanism Phase 3 depends on.
 
