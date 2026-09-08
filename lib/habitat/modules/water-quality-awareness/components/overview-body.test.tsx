@@ -216,7 +216,7 @@ describe("WqaOverviewBody — cws_no_ccr verified (Kalamazoo happy path)", () =>
   });
 });
 
-describe("WqaOverviewBody — cws_no_ccr inferred (the 604 Norton case)", () => {
+describe("WqaOverviewBody — cws_no_ccr inferred (the coverage-gap fixture case)", () => {
   it("renders the inferred header strip with enabled confirm/correct buttons", () => {
     const findings = cwsNoCcrFindings();
     findings.system_card!.pwsid_confidence = "inferred";

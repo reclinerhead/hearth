@@ -48,6 +48,9 @@ next-env.d.ts
 # claude code agent worktrees (created when an agent runs with worktree isolation)
 .claude/worktrees/
 
+# personal Claude Code permission allowlist (carries local machine paths)
+.claude/settings.json
+
 .env*.local
 
 # local debug logs (e.g. AI insights prompt log) — never commit

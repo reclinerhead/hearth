@@ -202,8 +202,8 @@ export async function resolvePwsidAtPoint(
 
 /**
  * Radius for the nearest-polygon fallback search, in meters. Tuned
- * for the canonical regression case (604 Norton Dr Kalamazoo, where
- * the closest in-polygon point is ~250m east): 500m gives margin
+ * for the canonical regression case (an in-city Kalamazoo residential
+ * address where the closest in-polygon point is ~250m east): 500m gives margin
  * without expanding into adjacent utilities' territory for typical
  * residential parcels. Exported so the activity log can cite the
  * value and tests can verify the URL builder.

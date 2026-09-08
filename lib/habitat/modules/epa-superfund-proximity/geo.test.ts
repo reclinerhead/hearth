@@ -17,7 +17,7 @@ describe("haversineMiles", () => {
   });
 
   it("computes a known short distance within ~5% (Kalamazoo → Allied Paper)", () => {
-    // 604 Norton Dr → Allied Paper / Portage Creek (rough EPA point).
+    // Kalamazoo fixture point → Allied Paper / Portage Creek (rough EPA point).
     // Expected: ~1.0 mile (per issue #37's test address acceptance case).
     const home = { latitude: 42.265, longitude: -85.589 };
     const site = { latitude: 42.2795, longitude: -85.589 };

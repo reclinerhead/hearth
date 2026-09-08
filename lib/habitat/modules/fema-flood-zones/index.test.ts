@@ -118,13 +118,13 @@ class InMemoryCacheStore implements FloodZonesCacheStore {
 }
 
 /**
- * Minimal HouseContext for tests — 604 Norton Dr, Kalamazoo MI per the
- * issue's verification address.
+ * Minimal HouseContext for tests — a synthetic fixture address in
+ * Kalamazoo, MI with approximate in-city coordinates.
  */
 function makeHouse(overrides: Partial<HouseContext> = {}): HouseContext {
   return {
     houseId: "test-house",
-    addressLine1: "604 Norton Dr",
+    addressLine1: "100 Fixture Ave",
     city: "Kalamazoo",
     state: "MI",
     county: "Kalamazoo",
@@ -775,7 +775,7 @@ describe("buildBfeSentence", () => {
 describe("buildMscAddressQuery", () => {
   it("formats the address as line1, city, state postal", () => {
     expect(buildMscAddressQuery(makeHouse())).toBe(
-      "604 Norton Dr, Kalamazoo, MI 49006",
+      "100 Fixture Ave, Kalamazoo, MI 49006",
     );
   });
 });
@@ -785,7 +785,7 @@ describe("buildActions", () => {
     const actions = buildActions(makeHouse(), true);
     const msc = actions[0];
     expect(msc.url).toContain("AddressQuery=");
-    expect(msc.url).toContain("604%20Norton%20Dr");
+    expect(msc.url).toContain("100%20Fixture%20Ave");
   });
 });
 

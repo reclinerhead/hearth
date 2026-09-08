@@ -10,13 +10,13 @@ import type {
 } from "./types";
 
 /**
- * Minimal HouseContext for tests. 604 Norton Dr, Kalamazoo MI per the
- * issue's test address. Coordinates are the ones the issue cites.
+ * Minimal HouseContext for tests: a synthetic fixture address in
+ * Kalamazoo, MI with approximate in-city coordinates.
  */
 function makeHouse(overrides: Partial<HouseContext> = {}): HouseContext {
   return {
     houseId: "test-house",
-    addressLine1: "604 Norton Dr",
+    addressLine1: "100 Fixture Ave",
     city: "Kalamazoo",
     state: "MI",
     county: "Kalamazoo",
@@ -1416,7 +1416,7 @@ describe("EpaSuperfundProximityModule.check — issue #154 suppress empty-contam
     expect(suppressionStep).toBeUndefined();
   });
 
-  it("Norton Dr canonical case: 4 sites kept, Georgia-Pacific suppressed, summary tells the consistent story", async () => {
+  it("fixture-address canonical case: 4 sites kept, Georgia-Pacific suppressed, summary tells the consistent story", async () => {
     // Five tier-qualifying sites, one (Georgia-Pacific) with empty
     // contaminants. After #154 the finding's sites list is the
     // remaining 4 and the headline / summary reflect that count.

@@ -62,7 +62,7 @@ describe("extractAddress", () => {
     geometry: { type: "Point", coordinates: [-85.5872, 42.2917] },
     properties: {
       mapbox_id: "dXJuOm1ieGFkcjphYmM",
-      address_line1: "604 Norton Drive",
+      address_line1: "100 Fixture Ave",
       address_level1: "Michigan",
       address_level2: "Kalamazoo",
       postcode: "49006",
@@ -74,7 +74,7 @@ describe("extractAddress", () => {
 
   it("maps a complete feature to our canonical address shape", () => {
     expect(extractAddress(baseFeature)).toEqual({
-      address_line1: "604 Norton Drive",
+      address_line1: "100 Fixture Ave",
       address_line2: null,
       city: "Kalamazoo",
       state: "Michigan",

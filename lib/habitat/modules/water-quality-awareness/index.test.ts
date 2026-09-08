@@ -21,13 +21,13 @@ import type { WqaFindings } from "./types";
 
 const KALAMAZOO_HOUSE: HouseContext = {
   houseId: "test-house-id",
-  addressLine1: "604 Norton Drive",
+  addressLine1: "100 Fixture Ave",
   city: "Kalamazoo",
   state: "MI",
   county: "Kalamazoo",
   postalCode: "49001",
-  latitude: 42.26496,
-  longitude: -85.57231,
+  latitude: 42.2917,
+  longitude: -85.5872,
   parcelId: null,
   waterSource: "municipal",
   basementPresent: null,
@@ -200,7 +200,7 @@ describe("WQA module check() — direct miss + single-nearby fallback", () => {
             ],
           });
         }
-        // Direct query — no match (the canonical 604 Norton case).
+        // Direct query — no match (the canonical coverage-gap case).
         return fakeResponse({ features: [] });
       },
       "efservice/WATER_SYSTEM": () =>
