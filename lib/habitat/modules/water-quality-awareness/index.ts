@@ -303,8 +303,9 @@ const WaterQualityAwarenessModule: HabitatModule = {
       // Step 1b — when the direct lookup missed, run the nearest-polygon
       // fallback (~500m buffer). EPA's national polygon coverage has
       // documented gaps (rural fringes, recent annexations, and pockets
-      // inside major cities — 604 Norton Dr in Kalamazoo is the
-      // canonical regression case). The fallback recovers the correct
+      // inside major cities — an established residential address inside
+      // Kalamazoo city limits is the canonical regression case). The
+      // fallback recovers the correct
       // PWSID when every nearby polygon belongs to the same utility.
       if (directMatch.match) {
         resolution = {

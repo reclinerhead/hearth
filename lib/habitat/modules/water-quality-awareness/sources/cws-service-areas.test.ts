@@ -135,14 +135,14 @@ describe("resolvePwsidAtPoint", () => {
 
 describe("buildNearestPwsidQueryUrl", () => {
   it("hits the same FeatureServer/0 endpoint as the direct query", () => {
-    const url = buildNearestPwsidQueryUrl(42.26496, -85.57231);
+    const url = buildNearestPwsidQueryUrl(42.2917, -85.5872);
     expect(url).toContain(
       "https://services.arcgis.com/cJ9YHowT8TU7DUyn/arcgis/rest/services/Water_System_Boundaries/FeatureServer/0/query",
     );
   });
 
   it("includes the distance + units parameters with the default radius", () => {
-    const url = buildNearestPwsidQueryUrl(42.26496, -85.57231);
+    const url = buildNearestPwsidQueryUrl(42.2917, -85.5872);
     expect(url).toContain(`distance=${NEAREST_POLYGON_FALLBACK_RADIUS_M}`);
     expect(url).toContain("units=esriSRUnit_Meter");
   });
@@ -152,13 +152,13 @@ describe("buildNearestPwsidQueryUrl", () => {
   });
 
   it("honors an explicit override radius", () => {
-    const url = buildNearestPwsidQueryUrl(42.26496, -85.57231, 1000);
+    const url = buildNearestPwsidQueryUrl(42.2917, -85.5872, 1000);
     expect(url).toContain("distance=1000");
   });
 
   it("encodes geometry as longitude,latitude in WGS84", () => {
-    const url = buildNearestPwsidQueryUrl(42.26496, -85.57231);
-    expect(url).toMatch(/geometry=-85\.57231(%2C|,)42\.26496/);
+    const url = buildNearestPwsidQueryUrl(42.2917, -85.5872);
+    expect(url).toMatch(/geometry=-85\.5872(%2C|,)42\.2917/);
     expect(url).toContain("inSR=4326");
     expect(url).toContain("spatialRel=esriSpatialRelIntersects");
     expect(url).toContain("returnGeometry=false");
@@ -178,7 +178,7 @@ describe("resolveNearestPwsid", () => {
       }),
     ) as unknown as typeof fetch;
 
-    const r = await resolveNearestPwsid(42.26496, -85.57231, { fetchImpl });
+    const r = await resolveNearestPwsid(42.2917, -85.5872, { fetchImpl });
     expect(r.kind).toBe("single-nearby");
     if (r.kind === "single-nearby") {
       expect(r.pwsid).toBe("MI0003520");
@@ -195,7 +195,7 @@ describe("resolveNearestPwsid", () => {
         ],
       }),
     ) as unknown as typeof fetch;
-    const r = await resolveNearestPwsid(42.26496, -85.57231, { fetchImpl });
+    const r = await resolveNearestPwsid(42.2917, -85.5872, { fetchImpl });
     if (r.kind === "single-nearby") {
       expect(r.pwsName).toBe("KALAMAZOO");
     }
@@ -214,7 +214,7 @@ describe("resolveNearestPwsid", () => {
       }),
     ) as unknown as typeof fetch;
 
-    const r = await resolveNearestPwsid(42.26496, -85.57231, { fetchImpl });
+    const r = await resolveNearestPwsid(42.2917, -85.5872, { fetchImpl });
     expect(r.kind).toBe("multiple-competing");
     if (r.kind === "multiple-competing") {
       expect(r.candidates).toHaveLength(2);
@@ -244,7 +244,7 @@ describe("resolveNearestPwsid", () => {
         ],
       }),
     ) as unknown as typeof fetch;
-    const r = await resolveNearestPwsid(42.26496, -85.57231, { fetchImpl });
+    const r = await resolveNearestPwsid(42.2917, -85.5872, { fetchImpl });
     expect(r.kind).toBe("no-match");
   });
 
@@ -257,7 +257,7 @@ describe("resolveNearestPwsid", () => {
         ],
       }),
     ) as unknown as typeof fetch;
-    const r = await resolveNearestPwsid(42.26496, -85.57231, { fetchImpl });
+    const r = await resolveNearestPwsid(42.2917, -85.5872, { fetchImpl });
     expect(r.kind).toBe("single-nearby");
     if (r.kind === "single-nearby") {
       expect(r.candidateCount).toBe(1);
@@ -269,7 +269,7 @@ describe("resolveNearestPwsid", () => {
       fakeResponse({}, { ok: false, status: 503 }),
     ) as unknown as typeof fetch;
     await expect(
-      resolveNearestPwsid(42.26496, -85.57231, { fetchImpl }),
+      resolveNearestPwsid(42.2917, -85.5872, { fetchImpl }),
     ).rejects.toThrow(/nearest-polygon request failed with HTTP 503/);
   });
 
@@ -278,7 +278,7 @@ describe("resolveNearestPwsid", () => {
       fakeResponse({ unrelated: true }),
     ) as unknown as typeof fetch;
     await expect(
-      resolveNearestPwsid(42.26496, -85.57231, { fetchImpl }),
+      resolveNearestPwsid(42.2917, -85.5872, { fetchImpl }),
     ).rejects.toThrow(/unexpected response shape/);
   });
 
@@ -289,7 +289,7 @@ describe("resolveNearestPwsid", () => {
       throw err;
     }) as unknown as typeof fetch;
     await expect(
-      resolveNearestPwsid(42.26496, -85.57231, { fetchImpl, timeoutMs: 100 }),
+      resolveNearestPwsid(42.2917, -85.5872, { fetchImpl, timeoutMs: 100 }),
     ).rejects.toThrow(/nearest-polygon request timed out after 100ms/);
   });
 
@@ -299,7 +299,7 @@ describe("resolveNearestPwsid", () => {
       expect(String(url)).toContain("distance=1500");
       return fakeResponse({ features: [] });
     }) as unknown as typeof fetch;
-    await resolveNearestPwsid(42.26496, -85.57231, {
+    await resolveNearestPwsid(42.2917, -85.5872, {
       fetchImpl,
       radiusMeters: 1500,
     });

@@ -19,7 +19,7 @@ import EpaRadonZoneModule, {
 function makeHouse(overrides: Partial<HouseContext> = {}): HouseContext {
   return {
     houseId: "test-house",
-    addressLine1: "604 Norton Dr",
+    addressLine1: "100 Fixture Ave",
     city: "Kalamazoo",
     state: "MI",
     county: "Kalamazoo",
