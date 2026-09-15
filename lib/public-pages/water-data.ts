@@ -85,6 +85,7 @@ export async function loadPublicWaterSystem(
     ccrYears: ccrRows.map((row) => ({
       reportYear: row.report_year,
       publishedDate: row.published_date,
+      extractedAt: row.extracted_at,
       extractedData: row.extracted_data,
     })),
   };

@@ -88,11 +88,22 @@ function extraction(
   };
 }
 
+/** Deterministic upload timestamp per year: a 2024 report "landed" in May 2025. */
+function extractedAtFor(reportYear: number): string {
+  return `${reportYear + 1}-05-20T10:00:00.000Z`;
+}
+
 function ccrYear(
   reportYear: number,
   extractedData: CcrExtractionResult,
-): { reportYear: number; publishedDate: string | null; extractedData: CcrExtractionResult } {
-  return { reportYear, publishedDate: null, extractedData };
+  extractedAt: string = extractedAtFor(reportYear),
+): {
+  reportYear: number;
+  publishedDate: string | null;
+  extractedAt: string;
+  extractedData: CcrExtractionResult;
+} {
+  return { reportYear, publishedDate: null, extractedAt, extractedData };
 }
 
 describe("identity", () => {
@@ -390,10 +401,41 @@ describe("CCR block", () => {
     expect(s.ccr).toEqual({
       kind: "on_file",
       year: 2024,
+      uploadedAt: "2025-05-20T10:00:00.000Z",
       detectedContaminantCount: 2,
       status: "all_below_limits",
     });
     expect(s.pfas).toEqual({ kind: "none_reported" });
+  });
+
+  it("carries the LATEST year's upload timestamp, not an older year's (issue #327)", () => {
+    const s = buildPublicWaterSummary({
+      record,
+      violations: [],
+      lcrSamples: [],
+      ccrYears: [
+        // Deliberately out of order, and the older year uploaded MORE
+        // recently — the date must follow the latest report year.
+        ccrYear(2024, extraction({ detected_contaminants: [contaminant()] }), "2025-06-01T12:00:00.000Z"),
+        ccrYear(2023, extraction({ detected_contaminants: [contaminant()] }), "2026-01-15T09:30:00.000Z"),
+      ],
+      now: NOW,
+    });
+    expect(s.ccr).toMatchObject({ year: 2024, uploadedAt: "2025-06-01T12:00:00.000Z" });
+  });
+
+  it("never carries uploader identity anywhere in the view model (hard rule 2)", () => {
+    const s = buildPublicWaterSummary({
+      record,
+      violations: [],
+      lcrSamples: [],
+      ccrYears: [ccrYear(2024, extraction({ detected_contaminants: [contaminant()] }))],
+      now: NOW,
+    });
+    const serialized = JSON.stringify(s);
+    expect(serialized).not.toMatch(/uploaded_?by/i);
+    expect(serialized).not.toMatch(/contributor/i);
+    expect(serialized).not.toMatch(/content_?hash/i);
   });
 
   it("dedupes multi-observation analytes so one contaminant counts once", () => {
@@ -470,6 +512,7 @@ describe("CCR block", () => {
     expect(s.ccr).toEqual({
       kind: "on_file",
       year: 2024,
+      uploadedAt: "2025-05-20T10:00:00.000Z",
       detectedContaminantCount: 0,
       status: "none_detected",
     });

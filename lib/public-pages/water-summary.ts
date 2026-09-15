@@ -95,6 +95,12 @@ export type PublicWaterSummaryInput = {
   ccrYears: Array<{
     reportYear: number;
     publishedDate: string | null;
+    /**
+     * When the report landed in Hearth (`water_system_reports.extracted_at`,
+     * ISO timestamp). Surfaced as the "uploaded on" date under the sources
+     * block — a date is timeliness, not identity (hard rule 2).
+     */
+    extractedAt: string;
     extractedData: CcrExtractionResult;
   }>;
   /** Reference time, injected so tests can pin "now". */
@@ -225,6 +231,11 @@ export type PublicWaterSummary = {
     | {
         kind: "on_file";
         year: number;
+        /**
+         * ISO timestamp of when the latest report was uploaded to Hearth
+         * (issue #327). The page formats it; the uploader is never carried.
+         */
+        uploadedAt: string;
         detectedContaminantCount: number;
         status: "none_detected" | "all_below_limits" | "at_or_above_limit";
       };
@@ -399,6 +410,7 @@ export function buildPublicWaterSummary(
       : {
           kind: "on_file",
           year: latest.reportYear,
+          uploadedAt: latest.extractedAt,
           detectedContaminantCount: displayed.length,
           status:
             displayed.length === 0
