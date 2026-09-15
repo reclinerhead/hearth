@@ -1440,29 +1440,56 @@ function ContactLine({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** "May 20, 2026" from an ISO timestamp; null when unparseable. */
+function formatUploadedDate(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(d);
+}
+
 function SourcesSection({
   summary,
 }: {
   summary: PublicWaterSummary | null;
 }) {
-  const sources: Array<{ label: string; href: string | null }> = [
+  const sources: Array<{
+    label: string;
+    href: string | null;
+    /** Subtle provenance line beneath the bullet (issue #327). */
+    note: string | null;
+  }> = [
     {
       label: "EPA SDWIS / Envirofacts — water system inventory and violations",
       href: "https://www.epa.gov/enviro/sdwis-search",
+      note: null,
     },
     {
       label: "EPA Lead and Copper Rule sampling (90th-percentile results)",
       href: "https://www.epa.gov/dwreginfo/lead-and-copper-rule",
+      note: null,
     },
     {
       label: "EPA Unregulated Contaminant Monitoring Rule (PFAS monitoring)",
       href: "https://www.epa.gov/dwucmr",
+      note: null,
     },
   ];
   if (summary?.ccr.kind === "on_file") {
+    // Timeliness signal only — the date the latest report landed in
+    // Hearth, never who uploaded it (hard rule 2). Formatted with an
+    // explicit UTC zone so the static render is deterministic across
+    // ISR rebuilds; unparseable timestamps drop the line rather than
+    // printing "Invalid Date".
+    const uploaded = formatUploadedDate(summary.ccr.uploadedAt);
     sources.push({
       label: `The utility's ${summary.ccr.year} Consumer Confidence Report (annual water quality report)`,
       href: null,
+      note: uploaded ? `Uploaded to Hearth ${uploaded}` : null,
     });
   }
   return (
@@ -1498,6 +1525,14 @@ function SourcesSection({
               ) : (
                 s.label
               )}
+              {s.note ? (
+                <span
+                  className="text-small block"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  {s.note}
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>
