@@ -4,6 +4,8 @@ The maintenance module is two pipelines that converge on `hearth.maintenance_tas
 
 This spoke documents the maintenance schema, the synthesis workflow, the direct-event pipeline, the `reasoning` / `last_synthesis_run` jsonb shapes, the dashboard / inventory-detail surfaces, and the task detail modal and completion sheets.
 
+The user-facing description of all of this lives in the public methodology page's Maintenance section (`/how-it-works#maintenance`, [`app/(public)/how-it-works/page.tsx`](../../app/(public)/how-it-works/page.tsx)). It is bound by the same governance rule as the habitat sections (see [habitat.md → Methodology page](habitat.md#methodology-page--how-it-works)): a PR that changes what the synthesis prompt includes, excludes, anchors on, or lets habitat findings modulate updates that prose and its "Last updated" date.
+
 ---
 
 ## Maintenance module
