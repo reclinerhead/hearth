@@ -365,8 +365,10 @@ function InventorySection() {
           >
             A record of the major systems, appliances, and notable items in
             your home — the things that have a model, a service history, or
-            a reason to be remembered. Each item lives in a room (rooms are
-            seeded for every house and can be renamed, added, or removed).
+            a reason to be remembered — plus property like vehicles and
+            pets. Each item lives in a room (rooms are seeded for every house
+            and can be renamed, added, or removed), and the full inventory
+            is browsable in one place, grouped by type.
           </p>
         </div>
       </div>
@@ -389,14 +391,38 @@ function InventorySection() {
               color: "var(--color-text-secondary)",
             }}
           >
-            The fastest path is a photo. Hearth's Smart Uploader accepts a
-            photo of a nameplate, label, or appliance and uses AI to figure
-            out what it's looking at, pull structured facts off the label
-            (manufacturer, model, serial, install date when visible, plus
-            other useful facts like capacity or fuel type), and pre-fill an
-            inventory entry that you confirm or edit before saving. Items
-            can also be created manually. Additional photos, manuals,
-            receipts, and other documents attach to an item over time.
+            The fastest path is a photo. Hearth&rsquo;s Smart Uploader takes
+            a picture of a nameplate or label, uses AI to work out what
+            it&rsquo;s looking at, pulls the printed facts off it
+            (manufacturer, model, serial, plus specs like capacity or fuel
+            type), and pre-fills an entry you confirm or edit before saving.
+            If the photo looks like something you already have — a second
+            shot of the same furnace — Hearth offers to add it to the
+            existing item rather than create a duplicate, and an identical
+            re-upload is caught before anything is stored. Items can also be
+            entered by hand. Vehicles work the same way from a registration
+            or insurance card: Hearth reads the VIN, decodes the year, make,
+            and model automatically, and notes the expiration date.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <h3 className="h3" style={{ margin: 0 }}>
+            What attaches to an item
+          </h3>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            More photos, and documents: service receipts and invoices (up to
+            five pages), registration and insurance cards, and similar
+            paperwork. Hearth reads each receipt — vendor, date, line items,
+            total, any serial numbers it mentions — and uses those serials
+            to suggest which item it belongs to. On the item&rsquo;s page,
+            every document shows both the original pages and a
+            &ldquo;what we found&rdquo; summary of what Hearth read off it.
           </p>
         </div>
 
@@ -410,18 +436,22 @@ function InventorySection() {
               color: "var(--color-text-secondary)",
             }}
           >
-            Each item has a detail page that surfaces the captured facts as
-            visual pills, the photos that document it, and an on-demand
-            "Research this model" panel that uses an AI search to look up
-            what's generally known about appliances and systems like yours —
-            typical service life, common maintenance, things to watch for —
-            with source links so you can verify.
+            Each item has a detail page with the captured facts as pills, its
+            photos, and an on-demand &ldquo;Research this model&rdquo; panel
+            that uses an AI web lookup for what&rsquo;s generally known about
+            equipment like yours — typical service life, common maintenance,
+            things to watch for — with source links so you can verify.
+            Alongside research, a separate reasoning model tries to decode
+            the manufacture date from the serial number; Hearth records that
+            date only when the decode is high-confidence, so an uncertain
+            guess never lands on your page. A History section lists
+            completed maintenance alongside install and purchase milestones.
           </p>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <h3 className="h3" style={{ margin: 0 }}>
-            What it's for
+            What it&rsquo;s for
           </h3>
           <p
             style={{
@@ -429,11 +459,11 @@ function InventorySection() {
               color: "var(--color-text-secondary)",
             }}
           >
-            The inventory is the foundation Hearth's other surfaces lean on.
-            Maintenance tasks (coming soon — see below) attach to inventory
-            items. Future surfaces like a pre-listing export, warranty
-            tracking, and service history all expect a real inventory
-            underneath them.
+            The inventory is the foundation the rest of Hearth leans on.
+            Research feeds the maintenance plan (see below), renewal
+            documents create renewal reminders, and reports draw on it — the
+            Water Quality Report is live today; a pre-listing export, a
+            contractor brief, and warranty tracking are planned.
           </p>
         </div>
       </div>
@@ -449,7 +479,7 @@ function InventorySection() {
               href: "https://vercel.com/docs/ai-gateway",
             },
             {
-              label: "xAI Grok — nameplate analysis",
+              label: "xAI Grok — nameplate, receipt, and document reading",
               href: "https://x.ai",
             },
             {
@@ -464,21 +494,24 @@ function InventorySection() {
         className="text-small"
         style={{ color: "var(--color-text-tertiary)" }}
       >
-        Last updated: May 20, 2026
+        Last updated: September 15, 2026
       </div>
     </section>
   );
 }
 
 /**
- * Maintenance "coming soon" teaser. Sits between the active Inventory
- * section and the habitat modules. Deliberately lighter than a full
- * `ModuleSection` — no thumbnail box, no sources, no last-updated — so
- * a reader can tell at a glance that this is a preview, not a
- * documented module. Will be promoted to a real section when the
- * maintenance module ships.
+ * Maintenance section. Same shape as `InventorySection` — heading row
+ * with icon thumbnail + overview, sub-headed prose, sources,
+ * last-updated — and no classification table, because a maintenance
+ * task has no severity to map. Describes the two task pipelines
+ * (AI synthesis from research, deterministic renewals from documents),
+ * how cadence is anchored and modulated by habitat findings, and where
+ * tasks surface. Governance: the same rule that binds the habitat
+ * sections applies here — a PR that changes what the synthesis prompt
+ * includes or excludes updates this prose and its date.
  */
-function MaintenanceTeaser() {
+function MaintenanceSection() {
   return (
     <section
       id="maintenance"
@@ -486,53 +519,32 @@ function MaintenanceTeaser() {
         ...sectionStyle,
         display: "flex",
         flexDirection: "column",
-        gap: "var(--space-3)",
-        padding: "var(--space-4)",
-        borderRadius: "var(--radius-md)",
-        border: "1px dashed var(--color-border-subtle)",
-        backgroundColor:
-          "color-mix(in oklab, var(--color-bg-surface-raised) 30%, transparent)",
+        gap: "var(--space-4)",
       }}
     >
       <div
         style={{
           display: "flex",
-          gap: "var(--space-3)",
+          gap: "var(--space-4)",
           alignItems: "flex-start",
+          flexWrap: "wrap",
         }}
       >
-        <span
-          style={{
-            color: "var(--color-text-tertiary)",
-            marginTop: 4,
-            flexShrink: 0,
-          }}
-          aria-hidden
-        >
-          <Icon name="tool" size={22} />
-        </span>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "var(--space-2)",
-            minWidth: 0,
-            maxWidth: "62ch",
-          }}
-        >
-          <div className="eyebrow">Coming soon</div>
+        <IconThumbnail icon="tool" />
+        <div style={{ flex: "1 1 280px", minWidth: 0 }}>
           <h2
             style={{
               fontFamily: "var(--font-serif)",
-              fontSize: 22,
+              fontSize: 24,
               fontWeight: 500,
               lineHeight: 1.2,
               letterSpacing: "-0.01em",
               color: "var(--color-text-primary)",
               margin: 0,
+              marginBottom: "var(--space-2)",
             }}
           >
-            Maintenance is coming
+            Maintenance
           </h2>
           <p
             style={{
@@ -540,16 +552,179 @@ function MaintenanceTeaser() {
               color: "var(--color-text-secondary)",
             }}
           >
-            Hearth's maintenance system will surface the recurring tasks
-            every home needs — seasonal work, replacement schedules, things
-            that need attention before they fail — tied to the specific
-            items in your inventory rather than a generic checklist. A water
-            heater Hearth knows the age of can tell you when to flush it; a
-            furnace Hearth knows the install date of can tell you when its
-            next service is due. We'll update this page when the module
-            ships.
+            Hearth builds a maintenance plan from the specific items in your
+            inventory rather than a generic checklist, and explains every
+            task it schedules. Tasks arrive two ways: an AI pass that turns
+            what Hearth has researched about an item into a schedule, and
+            renewal reminders created directly from documents that carry an
+            expiration date.
           </p>
         </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--space-4)",
+          maxWidth: "62ch",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <h3 className="h3" style={{ margin: 0 }}>
+            Where tasks come from
+          </h3>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            When you research an item, Hearth hands what it learned — the
+            expected service life, the manufacturer&rsquo;s maintenance
+            guidance — together with the item&rsquo;s install date, any
+            service receipts on file, and the habitat findings for your home
+            to a reasoning model, which returns a structured set of recurring
+            tasks: what to do, how often, and why. Most items land between
+            four and eight tasks. The plan builds automatically after a
+            successful research run and can be rebuilt any time; rebuilding
+            replaces the AI-generated tasks but never touches reminders that
+            came from your documents.
+          </p>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            The second path involves no AI at all. When a document with an
+            expiration date is attached to an item — a vehicle registration,
+            an insurance card — Hearth writes a renewal task due on that
+            date. Upload next year&rsquo;s card and the old task is marked
+            done with a new one chained after it.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <h3 className="h3" style={{ margin: 0 }}>
+            How the schedule is anchored
+          </h3>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            Each task&rsquo;s first due date is grounded in something real
+            when possible: last year&rsquo;s furnace-service receipt anchors
+            next year&rsquo;s, an install date anchors the first filter
+            change, and only when neither exists does the schedule start
+            from today. Tasks tied to using the appliance rather than the
+            calendar — checking rinse aid, clearing the lint screen — are
+            kept as &ldquo;every time you use it&rdquo; practices instead of
+            being forced onto a monthly interval.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <h3 className="h3" style={{ margin: 0 }}>
+            How your home&rsquo;s conditions change the cadence
+          </h3>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            Habitat findings don&rsquo;t create tasks; they adjust ones the
+            item already needs, and the adjustment is recorded on the task.
+            Water is the clearest example. When your utility&rsquo;s annual
+            water quality report lists hardness, iron, or manganese, Hearth
+            classifies the water (soft, moderate, hard, very hard) and the
+            plan shortens the intervals for water-touching equipment — the
+            water heater&rsquo;s anode rod, softener resin, dishwasher rinse
+            aid, faucet aerators. A flood-zone finding makes a sump pump
+            test more pressing. A unit near the end of its expected service
+            life gets tighter intervals too. Every adjustment appears under
+            &ldquo;Why this task&rdquo; with the finding it came from.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <h3 className="h3" style={{ margin: 0 }}>
+            What Hearth leaves out
+          </h3>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            Not everything a manual mentions is a recurring task. Installer
+            setup steps — leveling, anti-tip brackets, initial clearances —
+            are one-time work the installer did and are left out entirely.
+            &ldquo;Call a technician if the igniter is slow&rdquo; has no
+            honest interval, so it becomes something to notice while you use
+            the appliance rather than a date on a calendar. Work you&rsquo;d
+            realistically do in one session is merged into a single task
+            instead of one per sentence of guidance. Gas, propane, and oil
+            appliances always get an annual clearance-and-combustibles check
+            even when their guidance omits it.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <h3 className="h3" style={{ margin: 0 }}>
+            Where tasks show up
+          </h3>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            The dashboard&rsquo;s &ldquo;On your plate&rdquo; panel shows
+            anything overdue plus the next handful of upcoming tasks, each
+            labeled with its appliance; the full list for an item lives on
+            that item&rsquo;s page. Opening a task shows the instruction,
+            the due date, the reasoning — where the task came from, why this
+            cadence, what adjusted it — and its history. Marking a task done
+            or renewed closes it and schedules the next occurrence from the
+            date you completed it; renewal tasks offer the issuer&rsquo;s
+            term lengths (one or two years for a Michigan registration, six
+            or twelve months for insurance) or let you enter the exact new
+            expiration.
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <div className="eyebrow" style={{ marginBottom: 6 }}>
+          Sources
+        </div>
+        <SourcesList
+          items={[
+            {
+              label: "Vercel AI Gateway (model routing)",
+              href: "https://vercel.com/docs/ai-gateway",
+            },
+            {
+              label: "xAI Grok (reasoning) — maintenance synthesis",
+              href: "https://x.ai",
+            },
+            {
+              label: "USGS — water hardness classification",
+              href: "https://www.usgs.gov/special-topics/water-science-school/science/hardness-water",
+            },
+          ]}
+        />
+      </div>
+
+      <div
+        className="text-small"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        Last updated: September 15, 2026
       </div>
     </section>
   );
@@ -559,17 +734,17 @@ const PILLARS: { title: string; body: string }[] = [
   {
     title: "Emergency procedures",
     body:
-      "Where to shut off water, gas, and electrical in an emergency. Hearth keeps this accessible the moment you need it.",
+      "Where to shut off water, gas, and electrical in an emergency — short videos you record once, kept one tap away on your dashboard for the moment you need them.",
   },
   {
     title: "Inventory",
     body:
-      "A record of your home's systems and major items — appliances, fixtures, structural details — with manuals, warranties, and service history.",
+      "A record of your home's systems and major items — appliances, mechanical systems, exterior assets, and property like vehicles — with photos, receipts, registrations, and service history attached.",
   },
   {
     title: "Maintenance",
     body:
-      "Seasonal tasks, replacement schedules, and reminders for the things that need attention before they fail.",
+      "A maintenance plan built from what's actually in your inventory: recurring tasks, renewal reminders, and the reasoning behind each one, adjusted for the conditions around your home.",
   },
   {
     title: "Habitat",
@@ -687,7 +862,7 @@ export default function HowItWorksPage() {
 
         <InventorySection />
 
-        <MaintenanceTeaser />
+        <MaintenanceSection />
 
         <section
           style={{
@@ -831,7 +1006,7 @@ export default function HowItWorksPage() {
                 href: "https://www.epa.gov/superfund/superfund-national-priorities-list-npl",
               },
             ]}
-            lastUpdated="May 24, 2026"
+            lastUpdated="September 15, 2026"
           >
             <div
               style={{
@@ -904,38 +1079,25 @@ export default function HowItWorksPage() {
                 How we label each site for your situation
               </h3>
               <p style={{ margin: 0 }}>
-                On top of the severity classification, Hearth also computes
-                a separate <strong>label</strong> for each qualifying site
-                and for the finding as a whole. Severity grades the
-                proximity-and-status combination on the dashboard; the
-                label grades how relevant the site is to a homeowner
-                thinking about whether to take a concrete next step.
+                Severity grades a site&rsquo;s distance and listing status
+                on the dashboard. Separately, Hearth gives each site — and
+                the finding as a whole — a <strong>label</strong> that says
+                how relevant it is to someone deciding whether to act:
+                {" "}<em>Worth acting on</em>, <em>Worth knowing</em>, or
+                {" "}<em>Informational</em>. When EPA hasn&rsquo;t published
+                enough for a confident read, the label is suppressed rather
+                than shown as false reassurance.
               </p>
               <p style={{ margin: 0 }}>
-                There are three label tiers — <em>Worth acting on</em>,
-                {" "}<em>Worth knowing</em>, and <em>Informational</em> —
-                plus a fourth state, <em>suppressed</em>, when Hearth
-                can&rsquo;t characterize the site confidently from what
-                EPA has published. A suppressed label shows nothing
-                rather than a bare neutral word that could read as
-                Hearth-endorsed reassurance. The label factors in
-                distance, NPL status, the highest concern level among
-                the site&rsquo;s published contaminants, and (when you
-                shared them during onboarding) your home&rsquo;s water
-                source and whether you have a basement.
-              </p>
-              <p style={{ margin: 0 }}>
-                Pathway alignment is what tightens the label: a
-                chlorinated solvent at a Tier 2 active cleanup is
-                <em> Worth knowing</em> for most homeowners, but flips
-                to <em>Worth acting on</em> for a well user because
-                groundwater is the path that contaminant travels by. A
-                basement near a vapor-intrusion contaminant inside the
-                half-mile precautionary radius escalates the same way.
-                When the water source or basement information is unknown
-                Hearth holds the label at its conservative value rather
-                than guess — skipping onboarding never inflates a label
-                upward.
+                The label weighs distance, NPL status, the most serious
+                contaminant EPA lists at the site, and — if you shared them
+                during onboarding — your water source and whether you have a
+                basement. A groundwater contaminant two miles away is
+                {" "}<em>Worth knowing</em> for most homes but <em>Worth
+                acting on</em> for a well user; a vapor-forming contaminant
+                within half a mile escalates the same way for a home with a
+                basement. Unknown answers keep the label at its conservative
+                value — skipping onboarding never inflates it.
               </p>
             </div>
 
@@ -952,25 +1114,14 @@ export default function HowItWorksPage() {
                 Portfolio summary
               </h3>
               <p style={{ margin: 0 }}>
-                When a finding lists one or more nearby sites, Hearth
-                generates a short portfolio summary that sits at the top
-                of the finding panel. It's written by a language model
-                given the structured facts about every qualifying site
-                (names, distances, NPL statuses, contaminant lists,
-                Hearth's labels) and instructed to produce 2–4 sentences
-                of synthesis — what's there, what stands out, and what
-                pattern (if any) recurs across sites. The model is
-                explicitly forbidden from asserting that your specific
-                property is or isn't contaminated; Hearth helps you
-                reason, but EPA, your water utility, and licensed
-                testers determine what's actually at your house.
-              </p>
-              <p style={{ margin: 0 }}>
-                The summary is generated once per check and stored on the
-                finding — not regenerated every time you open the panel.
-                If the language-model call fails or isn't configured,
-                Hearth skips the summary cleanly and the finding still
-                ships with the per-site detail.
+                When nearby sites exist, a language model writes a two-to-four
+                sentence summary from the structured facts (names, distances,
+                statuses, contaminants, labels): what&rsquo;s there, what
+                stands out, any pattern across sites. It is forbidden from
+                claiming your property is or isn&rsquo;t contaminated —
+                that&rsquo;s for EPA, your utility, and licensed testers.
+                The summary is generated once per check and stored; if the
+                model call fails, the finding ships without it.
               </p>
             </div>
 
@@ -988,18 +1139,11 @@ export default function HowItWorksPage() {
               </h3>
               <p style={{ margin: 0 }}>
                 EPA uses 1-mile and 3-mile rings in its community-involvement
-                work near Superfund sites. Hearth's 0.5 / 2 / 5 mile tiers
-                are not EPA's published rings — they're our own synthesis
-                informed by EPA's community-involvement practice, calibrated
-                to surface meaningful proximity at the homeowner level. We
-                use three tiers instead of two because the homeowner
-                experience of being half a mile from an active cleanup is
-                meaningfully different from being two miles away.
-              </p>
-              <p style={{ margin: 0 }}>
-                EPA does not publish a "community-impact rings" standard; if
-                you see a Hearth Superfund finding citing tier
-                classifications, those are Hearth's, not EPA's.
+                work. Hearth&rsquo;s 0.5 / 2 / 5-mile tiers are our own
+                synthesis, informed by that practice, because living half a
+                mile from an active cleanup is a different experience from
+                living two miles away. Tier classifications in a Hearth
+                finding are Hearth&rsquo;s, not EPA&rsquo;s.
               </p>
             </div>
 
@@ -1016,14 +1160,11 @@ export default function HowItWorksPage() {
                 A note on precision
               </h3>
               <p style={{ margin: 0 }}>
-                EPA publishes a single representative point per Superfund
-                site, even for sites that span miles (rivers, multi-location
-                complexes). Some sites are large enough that the "distance
-                to your home" we compute could be off by miles from the
-                actual site footprint. When this is the case, the finding's
-                detail pane shows a precision note. The Allied Paper /
-                Portage Creek / Kalamazoo River site is the canonical
-                example.
+                EPA publishes one representative point per site, even for
+                sites that stretch for miles along a river or across several
+                parcels. For those, the distance Hearth computes can be off
+                by miles, and the finding says so. The Allied Paper / Portage
+                Creek / Kalamazoo River site is the local example.
               </p>
             </div>
 
@@ -1040,28 +1181,12 @@ export default function HowItWorksPage() {
                 Site contact and documents
               </h3>
               <p style={{ margin: 0 }}>
-                For each nearby site we surface a direct deep link to that
-                site&rsquo;s document library on EPA&rsquo;s Cumulis
-                profile (Reports &amp; Documents, Administrative Records),
-                so you can read the actual EPA filings rather than having
-                to navigate there yourself.
-              </p>
-              <p style={{ margin: 0 }}>
-                When EPA has designated a <strong>Community Involvement
-                Coordinator</strong> for the site, we surface their name,
-                email, and phone number too. The CIC is the EPA
-                contact assigned to answer community questions about the
-                site &mdash; distinct from the Remedial Project Manager,
-                who handles the technical cleanup. Some sites have a
-                designated CIC, some don&rsquo;t; we say so honestly
-                either way rather than hiding the section.
-              </p>
-              <p style={{ margin: 0 }}>
-                A small amount of additional site-level detail
-                (Five-Year Review history, more granular NPL cleanup
-                phase, mailing-list signup) lives only as unstructured
-                prose on EPA&rsquo;s site pages today and isn&rsquo;t
-                something Hearth ingests yet.
+                Each nearby site links straight to its document library on
+                EPA&rsquo;s site profile. When EPA has assigned a
+                {" "}<strong>Community Involvement Coordinator</strong>{" "}— the
+                contact for public questions, as opposed to the technical
+                project manager — Hearth shows their name, email, and phone;
+                when there isn&rsquo;t one, it says so.
               </p>
             </div>
 
@@ -1078,29 +1203,14 @@ export default function HowItWorksPage() {
                 Recommended actions for your situation
               </h3>
               <p style={{ margin: 0 }}>
-                Below the portfolio summary, Hearth surfaces a short
-                list of concrete actions tailored to your specific
-                setup &mdash; your water source and whether your home
-                has a basement, combined with the contaminant pathways
-                documented at the nearby sites.
-              </p>
-              <p style={{ margin: 0 }}>
-                If you draw from a private well, you&rsquo;ll see a
-                prompt to test your well for the relevant contaminants;
-                if you&rsquo;re on a municipal water system, you&rsquo;ll
-                see a prompt to read your utility&rsquo;s Consumer
-                Confidence Report instead. If your home has a basement
-                and a Superfund site within half a mile has documented
-                volatile chemicals, you&rsquo;ll see an action about
-                checking for vapor intrusion.
-              </p>
-              <p style={{ margin: 0 }}>
-                When the water source or basement information
-                isn&rsquo;t known, Hearth suppresses the
-                situation-specific actions rather than guessing &mdash;
-                a recommendation that doesn&rsquo;t match the
-                household isn&rsquo;t a useful recommendation. You can
-                fill these in any time from the Home details page.
+                Beneath the summary, Hearth lists concrete next steps matched
+                to your setup. Well users see a prompt to test for the
+                relevant contaminants; city-water customers see a prompt to
+                read their utility&rsquo;s water quality report; a basement
+                near a site with volatile chemicals within half a mile
+                prompts a vapor-intrusion check. When your water source or
+                basement is unknown, Hearth withholds these rather than
+                guess — you can fill them in any time from Home details.
               </p>
             </div>
 
@@ -1117,17 +1227,11 @@ export default function HowItWorksPage() {
                 Contaminant summaries on each site card
               </h3>
               <p style={{ margin: 0 }}>
-                Each nearby site in the finding modal now carries a
-                plain-English summary of what EPA has documented at
-                that location &mdash; for example, &ldquo;Heavy metals&rdquo;
-                or &ldquo;PCBs and dioxins, heavy metals&rdquo; &mdash;
-                between the site name and the address. The summary
-                groups the actual chemicals into a handful of categories
-                we read consistently across the app, so you can triage
-                what&rsquo;s at each site without opening the per-site
-                detail. If EPA hasn&rsquo;t published any contaminants
-                for a particular site, the summary is omitted rather
-                than showing an empty line.
+                Each site card carries a plain-English line —
+                &ldquo;Heavy metals,&rdquo; &ldquo;PCBs and dioxins, heavy
+                metals&rdquo; — grouping EPA&rsquo;s listed chemicals into a
+                few consistent categories so you can triage without opening
+                the site. Sites with no published contaminants show no line.
               </p>
             </div>
 
@@ -1144,17 +1248,10 @@ export default function HowItWorksPage() {
                 Sites we filter out
               </h3>
               <p style={{ margin: 0 }}>
-                Hearth only surfaces Superfund sites where EPA has
-                published a contaminant inventory. Some entries in
-                EPA&rsquo;s database are rollups under a parent NPL
-                listing &mdash; the parent record holds the
-                contamination details, and the child entries have
-                nothing for us to show you (the EPA profile URL
-                frequently 404s for these too). We filter those out
-                rather than surface a card with no actionable
-                information. The activity log on the finding panel
-                names anything we dropped, so if you&rsquo;re curious
-                what was filtered you can see it there.
+                Hearth only shows sites where EPA has published a contaminant
+                inventory. Some database entries are sub-records of a parent
+                listing with no details of their own; those are dropped, and
+                the finding&rsquo;s activity log names what was filtered.
               </p>
             </div>
 
@@ -1171,38 +1268,15 @@ export default function HowItWorksPage() {
                 Inside a single site
               </h3>
               <p style={{ margin: 0 }}>
-                When you open one of the per-site cards, Hearth lays
-                out the site&rsquo;s page in a consistent shape: the
-                site name and metadata at the top; address and EPA
-                Region in a quick-facts card below that; the precision
-                caveat when the site spans multiple locations and
-                EPA&rsquo;s single point is a poor proxy for its
-                actual footprint; a short &ldquo;What&rsquo;s
-                distinct&rdquo; note when this site sets itself apart
-                from the rest of the nearby portfolio (closest,
-                only-active, only-with-PCBs, etc.); a collapsible
-                &ldquo;How contamination from this site typically
-                spreads&rdquo; section that translates the
-                contaminants into the pathways they travel by
-                (groundwater, vapor intrusion, etc.); a &ldquo;What
-                you can do&rdquo; block with the EPA contact and
-                document-library link; the full enriched contaminants
-                list; and a &ldquo;How we got here&rdquo; transparency
-                block at the bottom naming the upstream source and
-                date last checked.
-              </p>
-              <p style={{ margin: 0 }}>
-                The pathway explanations are static text written in
-                Hearth&rsquo;s voice once per pathway, not generated
-                per-site by a language model &mdash; the same wording
-                appears across every site that shares the same
-                pathway, so the framing stays consistent and we
-                don&rsquo;t pay per-site latency. Five-Year Review
-                history and the more granular cleanup milestones (the
-                third candidate for the per-site card) live only as
-                unstructured prose on EPA&rsquo;s pages today and
-                aren&rsquo;t ingested yet; that&rsquo;s a separate
-                follow-up.
+                Opening a site shows its name and address, the precision
+                caveat when relevant, what makes it distinct within your
+                nearby set (closest, only active cleanup, and so on), how its
+                contaminants typically spread (groundwater, vapor, and so
+                on), the EPA contact and documents, the full contaminant
+                list, and a note on where the data came from and when it was
+                last checked. The pathway explanations are fixed text
+                written once per pathway, not generated per site, so the
+                framing stays consistent.
               </p>
             </div>
           </ModuleSection>
@@ -1332,53 +1406,51 @@ export default function HowItWorksPage() {
             thumbnailAlt="Glass of tap water"
             overview={
               <>
-                Hearth turns the federal drinking-water data your utility
-                already reports — service-area boundaries, compliance
-                history, and Lead and Copper Rule sample results — into a
-                personalized awareness layer about what&rsquo;s actually in
-                your tap water. Future phases will add your utility&rsquo;s
-                annual Consumer Confidence Report and a remediation matrix
-                that connects detected contaminants to specific filter
-                recommendations.
+                Hearth turns the drinking-water data your utility already
+                reports — EPA&rsquo;s record of the system serving your
+                address, its compliance history, lead and copper results,
+                and the utility&rsquo;s annual water quality report — into a
+                plain-language picture of what&rsquo;s in your tap water,
+                what it means, and which treatment addresses it.
               </>
             }
             table={
               <ClassificationTable
-                headers={["Branch", "What it means", "Hearth severity"]}
+                headers={["Situation", "What it means", "Hearth severity"]}
                 rows={[
                   [
                     "private_well (you told us)",
-                    "You told us during onboarding that your home is on a private well or shared private system. EPA doesn't monitor these — testing is on you.",
+                    "Your home is on a private well or shared private system. EPA doesn't monitor these — testing is on you.",
                     <Severity kind="neutral" key="s" />,
                   ],
                   [
                     "cws_unmapped",
-                    "You said you're on city water, but EPA's national map doesn't cover your exact address. About 1 in 7 U.S. addresses falls into a coverage gap. Upload your Water Quality Report manually (coming in a future phase) and we'll personalize the findings.",
+                    "You said you're on city water, but EPA's map doesn't pinpoint a utility at your address (about 1 in 7 U.S. addresses). Without knowing the utility, Hearth can't read its compliance data.",
                     <Severity kind="neutral" key="s" />,
                   ],
                   [
-                    "cws_no_ccr (clean compliance, low LCR)",
-                    "Your utility is on EPA's map, has no active health-based violations, and most-recent lead-and-copper samples are below the federal action level.",
+                    "City water — nothing detected",
+                    "No active health-based violations, every lead and copper sample on file is below the detection limit, and — when a report is on file — nothing in it reaches a caution level.",
                     <Severity kind="favorable" key="s" />,
                   ],
                   [
-                    "cws_no_ccr (approaching LCR)",
-                    "Compliance is clean but the most-recent lead or copper measurement is at 80–100% of the federal action level — worth a closer look.",
+                    "City water — something detected",
+                    "Any detected lead or copper, even well below the federal action level; any PFAS detection; or a contaminant at 80% or more of its federal limit.",
                     <Severity kind="caution" key="s" />,
                   ],
                   [
-                    "cws_no_ccr (active non-health violation)",
-                    "Active monitoring or reporting violations on file but no active health-based violations.",
-                    <Severity kind="caution" key="s" />,
-                  ],
-                  [
-                    "cws_no_ccr (active health violation OR over-action LCR)",
-                    "Active health-based violation OR a lead/copper measurement at or above the federal action level.",
+                    "City water — over a limit",
+                    "An active health-based violation, lead or copper at or above the federal action level, or a reported contaminant at or above its federal limit.",
                     <Severity kind="concern" key="s" />,
                   ],
                   [
+                    "City water — can't tell",
+                    "EPA's compliance feed couldn't be read, or no lead and copper samples are on file — no positive signal either way.",
+                    <Severity kind="neutral" key="s" />,
+                  ],
+                  [
                     "non_community",
-                    "Address served by a non-community system (school, campground, small business). No federally-required annual report; we lean on the compliance feed.",
+                    "Served by a non-community system (school, campground, small business). No annual report is required; we lean on the compliance feed.",
                     <Severity kind="neutral" key="s" />,
                   ],
                   [
@@ -1407,7 +1479,7 @@ export default function HowItWorksPage() {
                 href: "https://www.epa.gov/ccr",
               },
             ]}
-            lastUpdated="June 25, 2026"
+            lastUpdated="September 15, 2026"
           >
             <div
               style={{
@@ -1419,20 +1491,19 @@ export default function HowItWorksPage() {
               }}
             >
               <h3 className="h3" style={{ margin: 0 }}>
-                Where we get our data — the four tiers
+                Where the data comes from
               </h3>
               <p style={{ margin: 0 }}>
-                The module is designed to degrade gracefully across four
-                tiers of public data. Tier 1 (system identity) and Tier 2
-                (compliance + LCR samples) are live today. Tier 3 (the
-                UCMR overlay for federally-tracked unregulated contaminants
-                like PFAS) and Tier 4 (your utility&rsquo;s annual
-                Consumer Confidence Report) ship in upcoming phases.
-              </p>
-              <p style={{ margin: 0 }}>
-                When higher tiers aren&rsquo;t available, the lower tiers
-                still produce a useful finding. When higher tiers arrive,
-                the findings get richer without breaking what was there.
+                Four EPA sources plus one from you. EPA&rsquo;s service-area
+                map identifies the utility at your address; EPA&rsquo;s
+                inventory record describes it; the SDWIS compliance feed
+                lists violations; Lead and Copper Rule sampling gives the
+                90th-percentile lead and copper results. The fifth source is
+                your utility&rsquo;s annual Consumer Confidence Report, which
+                a homeowner uploads once and Hearth reads into structured
+                data shared with every household on that utility. If an EPA
+                feed is unavailable, the finding says it couldn&rsquo;t
+                check rather than implying a clean record.
               </p>
             </div>
 
@@ -1449,15 +1520,12 @@ export default function HowItWorksPage() {
                 Why we trust your onboarding answer over EPA&rsquo;s map
               </h3>
               <p style={{ margin: 0 }}>
-                EPA&rsquo;s national public-water-system service-area map
-                has roughly six of every seven U.S. addresses covered.
-                The gap is mostly rural fringes, recent annexations, and
-                edge cases like township parcels served by a city utility
-                but mapped just outside the city polygon. When the
-                onboarding flow captured that you&rsquo;re on city water,
-                we trust that signal even when EPA&rsquo;s polygon comes
-                up empty — calling a verified city-water customer a
-                private well based on a known data gap would be the wrong
+                EPA&rsquo;s map covers about six of every seven addresses;
+                the gaps are mostly rural fringes, recent annexations, and
+                parcels served by a city utility but mapped just outside its
+                boundary. If you told us you&rsquo;re on city water, we
+                believe you even when the map comes up empty — calling a
+                known city-water customer a private well would be the wrong
                 answer.
               </p>
             </div>
@@ -1472,20 +1540,15 @@ export default function HowItWorksPage() {
               }}
             >
               <h3 className="h3" style={{ margin: 0 }}>
-                The nearest-polygon fallback
+                When the map misses
               </h3>
               <p style={{ margin: 0 }}>
-                When the direct point-in-polygon query against EPA&rsquo;s
-                map comes up empty for your address, we run a second
-                query against a 500-meter buffer at the same point. If
-                every nearby utility within that radius belongs to the
-                same PWSID, we treat that as an inferred match — high
-                enough confidence to pull SDWIS compliance and Lead and
-                Copper data against. The system card flags inferred
-                matches as such, and a future UI will let you confirm or
-                correct the inference. If multiple utilities are nearby,
-                we don&rsquo;t pick one; the upload-your-CCR flow is the
-                right next step.
+                If your exact point isn&rsquo;t inside any utility&rsquo;s
+                boundary, Hearth checks a 500-meter circle around it. When
+                every utility nearby is the same one, we use it and mark the
+                match as inferred; you can confirm it or enter your
+                utility&rsquo;s ID to correct it. When several utilities are
+                nearby, we don&rsquo;t pick one.
               </p>
             </div>
 
@@ -1502,15 +1565,47 @@ export default function HowItWorksPage() {
                 How severity is decided
               </h3>
               <p style={{ margin: 0 }}>
-                Severity for Water Quality Awareness combines two axes:
-                the utility&rsquo;s compliance record and its most-recent
-                lead-and-copper sample. We mark a system favorable only
-                when both are clean — no active health-based violations
-                AND a lead or copper measurement below the federal action
-                level. We mark concern as soon as either axis goes red. A
-                clean compliance record with no LCR data on file stays
-                neutral — we don&rsquo;t celebrate before we have the
-                evidence.
+                Two axes from EPA — compliance and lead/copper — plus a
+                third from your utility&rsquo;s report when one is on file.
+                Concern wins immediately: an active health-based violation,
+                lead or copper at or above the action level, or a reported
+                contaminant at or above its limit. Otherwise any detected
+                lead or copper, any PFAS, or a contaminant at 80% or more of
+                its limit is caution — federal limits are regulatory
+                thresholds, not health-safety ones, so a detection is worth
+                knowing about at any level. Favorable requires all three axes
+                clean, and a clean record with no samples on file stays
+                neutral. Monitoring and reporting violations are paperwork
+                between EPA and the utility and don&rsquo;t move the
+                severity.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
+                Your utility&rsquo;s annual report
+              </h3>
+              <p style={{ margin: 0 }}>
+                Upload the Consumer Confidence Report once and Hearth
+                extracts the measured data — every detected contaminant with
+                its level and limit, the lead and copper distribution, PFAS
+                monitoring, and any free-testing offer — and ignores the
+                brochure content. Each contaminant is matched to
+                Hearth&rsquo;s reference for a plain-language description
+                and an EPA link. From the detected list, a remediation
+                matrix shows which filter technologies address which
+                contaminants and recommends the combination with the best
+                coverage. When the report lists hardness, iron, or
+                manganese, that feeds your maintenance plan (see the
+                Maintenance section above).
               </p>
             </div>
 
@@ -1527,55 +1622,25 @@ export default function HowItWorksPage() {
                 Year-over-year trends
               </h3>
               <p style={{ margin: 0 }}>
-                When more than one of your utility&rsquo;s annual Water
-                Quality Reports is on file, we line up each contaminant
-                across the years and show which direction its level is
-                moving — a small arrow next to the number, and a sparkline
-                once there are three or more readings. The same indicator
-                appears in your downloadable Water Quality Report. It&rsquo;s
-                most useful for the PFAS &ldquo;forever chemicals,&rdquo;
-                which utilities only began reporting in the last few years.
+                With more than one year&rsquo;s report on file, Hearth lines
+                each contaminant up across years and shows which way
+                it&rsquo;s moving — an arrow next to the number, a sparkline
+                at three or more readings, and a hover chart of every reading
+                against the limit the report stated <em>that</em>{" "}year. We
+                compare the two most recent years with a measured value; a
+                change within about 10% reads as stable so ordinary
+                measurement noise doesn&rsquo;t look like a trend.
               </p>
               <p style={{ margin: 0 }}>
-                We compare the two most recent years that each have a
-                measured value. A change within about 10% reads as
-                &ldquo;stable&rdquo; — that band keeps ordinary
-                year-to-year measurement noise (and the common case where a
-                utility on a reduced-monitoring schedule simply republishes
-                the prior sample) from looking like a real trend. Larger
-                moves read as rising or falling.
-              </p>
-              <p style={{ margin: 0 }}>
-                We will only ever show you what your reports actually
-                contain. Every trend states exactly how many readings it
-                rests on and which years they span — &ldquo;2 readings ·
-                2024–2025&rdquo; — so a short history never masquerades as a
-                long one. A contaminant a report doesn&rsquo;t list in a
-                given year leaves a gap rather than a guessed value: because
-                a report omitting a contaminant could mean it wasn&rsquo;t
-                detected <em>or</em> simply wasn&rsquo;t printed, we never
-                claim a &ldquo;new&rdquo; or &ldquo;cleared&rdquo; detection
-                we can&rsquo;t actually prove. A single year of data shows
-                this year&rsquo;s number with no arrow.
-              </p>
-              <p style={{ margin: 0 }}>
-                The trend also feeds one classification rule: a contaminant
-                that is still below its federal limit but has measured at
-                half the limit or more <em>and</em> is rising toward it
-                across your recent reports is escalated to &ldquo;worth
-                knowing&rdquo; — so it surfaces in the main list and on your
-                dashboard rather than hiding among the low-level detections.
-                It never escalates past &ldquo;worth knowing&rdquo; while
-                it&rsquo;s under the limit; we flag the direction of travel
-                without overstating where it is today.
-              </p>
-              <p style={{ margin: 0 }}>
-                Hovering (or tapping) a contaminant&rsquo;s trend opens a full
-                chart of every reading we hold for it, year by year, against
-                the EPA limit. The limit shown is the one your utility&rsquo;s
-                report stated <em>that</em> year — so if the EPA tightened a
-                limit at some point, you&rsquo;ll see exactly when, rather than
-                today&rsquo;s number drawn back across history.
+                Every trend states how many readings it rests on and which
+                years. A year that doesn&rsquo;t list a contaminant leaves a
+                gap, never a guessed value — a missing row could mean not
+                detected <em>or</em>{" "}simply not printed, so Hearth never
+                claims a new or cleared detection it can&rsquo;t prove. A
+                contaminant still under its limit but at half the limit and
+                rising is escalated to &ldquo;worth knowing&rdquo; so it
+                surfaces on your dashboard; it never escalates further while
+                it stays under the limit.
               </p>
             </div>
           </ModuleSection>
