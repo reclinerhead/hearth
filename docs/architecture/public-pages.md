@@ -34,6 +34,8 @@ The privacy-sensitive subset is pinned by tests: `lib/public-pages/water-summary
 
 The registry also serves the reverse direction: `resolveWaterSystemEntryByPwsid` maps a PWSID back to its entry, powering the in-app entry point to these pages — the WQA finding modal's header copy-link affordance (issue #317, `getShareLink` on `HabitatModule`, see [habitat.md](habitat.md)). The affordance renders only for systems present in the registry, so growing the registry automatically lights it up for more households.
 
+**Entry points.** Two surfaces link into `/water/<slug>` today, and both read the registry rather than hardcoding a city: the finding modal's share link above, and the **"Public water quality" panel on `/login`** (issue #333), which iterates `PUBLIC_WATER_SYSTEMS` and renders one new-window link per entry (`target="_blank"`, `rel="noopener noreferrer"`, with an `sr-only` "opens in a new window" hint). The login panel is the unauthenticated visitor's first pointer at what Hearth produces — `/login` is where every logged-out session lands — so adding a system to the registry surfaces it there automatically. `/login` sits outside the `(public)` route group (it is a client component that owns the auth handlers), so it consumes the registry as a plain import and never touches the public data loaders.
+
 ## Data access posture
 
 The shared-cache RLS policies are `to authenticated` SELECT-only and **stay that way** — do not add `anon` policies (they would open the PostgREST endpoint to bulk scraping with the public anon key, and `water_system_reports.uploaded_by` is an `auth.users` UUID that must never be anon-readable — since issue #325 it is not even `authenticated`-readable; see the column-level privilege note in [habitat.md](habitat.md)).
