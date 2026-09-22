@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7" lang="en"> <![endif]-->
+<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8" lang="en"> <![endif]-->
+<!--[if IE 8]>         <html class="no-js lt-ie9" lang="en"> <![endif]-->
+<!--[if gt IE 8]><!-->
+<html class="no-js" lang="en-US">
+<!--<![endif]-->
+<head>
+	<!-- Published by OpenCities, 1.37.6.1 -->
+
+    
+        
+    
+    
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="theme-color" content="#FFFFFF"/>
+    <title>Boil Water Advisories City of Kalamazoo</title>
+	<meta name="generator" content="OpenCities - https://granicus.com/product/opencities" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Using mobile-web-app-capable for now to enable full-screen experience on supported platforms -->
+    <!-- Note: This tag works mainly on Android Chrome. It does NOT enable full-screen mode on iOS Safari. -->
+    <!-- For iOS, the correct tag is: <meta name="apple-mobile-web-app-capable" content="yes"> -->
+    <!-- TODO: Monitor for updated meta tag standards from Apple or other browser vendors -->
+    <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="description" content="Find information on active or recently lifted water system advisories" />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories" />
+    <meta property="og:title" content="Boil Water Advisories" />
+    <meta property="og:description" content="Find information on active or recently lifted water system advisories" />
+    <meta property="og:image" content="https://www.kalamazoocity.org/files/ocwebsite/Public/HeroImage/City%20of%20Kalamazoo%20white%20on%20blue%20rectangle.png?w=1200" />
+    <meta property="twitter:card" content="summary" />
+    <meta property="twitter:title" content="Boil Water Advisories" />
+    <meta property="twitter:description" content="Find information on active or recently lifted water system advisories" />
+    <meta property="twitter:image" content="https://www.kalamazoocity.org/files/ocwebsite/Public/HeroImage/City%20of%20Kalamazoo%20white%20on%20blue%20rectangle.png?w=1080" />
+    <link rel="canonical" href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories" />
+
+    
+    <link rel="apple-touch-icon" sizes="180x180" href="/files/ocfavicon/Public/apple-touch-icon.png?V=637751800135347686">
+<link rel="icon" type="image/png" sizes="32x32" href="/files/ocfavicon/Public/favicon-32x32.png?V=637751800135347686">
+<link rel="icon" type="image/png" sizes="16x16" href="/files/ocfavicon/Public/favicon-16x16.png?V=637751800135347686">
+<link rel="manifest" href="/files/ocfavicon/Public/site.webmanifest?V=637751800135347686">
+<link rel="shortcut icon" href="/files/ocfavicon/Public/favicon.ico?V=637751800135347686">
+<meta name="msapplication-TileColor" content="#FFFFFF">
+<meta name="msapplication-config" content="/files/ocfavicon/Public/browserconfig.xml?V=637751800135347686">
+    <script>
+        (function () {
+            if (window.__UNLOAD_LAZY_PATCH__) return;
+            window.__UNLOAD_LAZY_PATCH__ = true;
+
+            var supportsPageHide = ("onpagehide" in window);
+            var mappedType = supportsPageHide ? "pagehide" : "beforeunload";
+            var nativeAdd = window.addEventListener;
+            var nativeRemove = window.removeEventListener;
+            var unloadMap = null;
+            var patched = false;
+
+            function ensurePatched() {
+                if (patched) return;
+                unloadMap = new WeakMap();
+
+                window.addEventListener = function (type, listener, options) {
+                    if (type === "unload") {
+                        var wrapped = function (evt) {
+                            if (supportsPageHide && evt.persisted) return;
+                            listener.call(this, evt);
+                        };
+                        unloadMap.set(listener, wrapped);
+                        return nativeAdd.call(this, mappedType, wrapped, options);
+                    }
+                    return nativeAdd.call(this, type, listener, options);
+                };
+
+                window.removeEventListener = function (type, listener, options) {
+                    if (type === "unload") {
+                        var wrapped = unloadMap.get(listener);
+                        if (wrapped) {
+                            nativeRemove.call(this, mappedType, wrapped, options);
+                            unloadMap.delete(listener);
+                        }
+                        return;
+                    }
+                    return nativeRemove.call(this, type, listener, options);
+                };
+
+                var orig = null;
+                Object.defineProperty(window, "onunload", {
+                    configurable: true, enumerable: true,
+                    get: function () { return orig; },
+                    set: function (h) {
+                        orig = h;
+                        if (typeof h === "function") window.addEventListener("unload", h);
+                    }
+                });
+                patched = true;
+            }
+
+            window.addEventListener = function (type, listener, options) {
+                if (type === "unload") {
+                    ensurePatched();
+                    return window.addEventListener(type, listener, options);
+                }
+                return nativeAdd.call(this, type, listener, options);
+            };
+
+            window.removeEventListener = function (type, listener, options) {
+                if (type === "unload" && !patched) {
+                    return;
+                }
+                return nativeRemove.call(this, type, listener, options);
+            };
+
+            function patchTelerik() {
+                ensurePatched();
+                var ns = window.RadAjaxNamespace;
+                if (!ns || !ns.EventManager || !ns.EventManager.Add || ns.EventManager.__UnloadPatched) return;
+                var origAdd = ns.EventManager.Add;
+                ns.EventManager.Add = function (el, evtName, handler, clientId) {
+                    if (el === window && evtName === "unload") {
+                        return window.addEventListener("unload", handler);
+                    }
+                    return origAdd.call(this, el, evtName, handler, clientId);
+                };
+                ns.EventManager.__UnloadPatched = true;
+            }
+
+            if (window.RadAjaxNamespace)
+                patchTelerik();
+            else (window.requestIdleCallback || function (cb)
+            {
+                setTimeout(cb, 120);
+            })(patchTelerik);
+        })();
+    </script>
+    <!-- Preconnecting to Google Fonts servers -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <!-- Defer Roboto font loading to avoid render-blocking -->
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            const robotoLink = document.createElement('link');
+            robotoLink.rel = 'stylesheet';
+            robotoLink.href = 'https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap';
+            document.head.appendChild(robotoLink);
+        });
+    </script>
+
+    <style>
+        .gm-style, .gm-style * {
+            font-family: 'Roboto', system-ui, -apple-system, "Segoe UI", Arial, sans-serif !important;
+        }
+    </style>
+
+    <script>
+        document.documentElement.className = document.documentElement.className.replace(/\bno-js\b/g, "js");
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;700&family=Poppins:wght@400;700&display=swap" rel="stylesheet">
+    
+        
+            <script type="text/javascript">
+                window.__oc_flags_ImprovedBreakpointEventHandling = true;
+            </script>
+            
+        
+    
+    
+    
+        <script type="text/javascript">
+            var __metaQueryBreakpoints = {
+                'sc-size-4': '(max-width: 480px)',
+                'sc-size-3': '(min-width: 480px) and (max-width: 768px)',
+                'sc-size-2': '(min-width: 768px) and (max-width: 992px)',
+                'sc-size-1': '(min-width: 992px)'
+            }
+
+            var __ocSizePoints = [
+                { min: 0, name: 'sc-size-4' },
+                { min: 480, name: 'sc-size-3' },
+                { min: 768, name: 'sc-size-2' },
+                { min: 992, name: 'sc-size-1' }
+            ];
+
+        </script>
+    
+
+    <!-- Framework Section -->
+    
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+    <script>window.jQuery || document.write('<script src="/files/templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/jquery-1.12.4.min.js?seamlessts=639233016636692105" ><\/script>')</script>
+
+    <!--Google Maps API Loader – Improved Version to avoid Warning
+    This script loads the Google Maps JavaScript API using a dynamic and async method.
+    It replaces the old static <script> tag to avoid performance warnings from Google.
+
+    Dynamically creates the <script> tag with loading = async for better performance
+    Builds the API URL with required libraries(places, geometry, marker, geocoding)
+    Uses a Promise and callback(google.maps.__ib__) to confirm when the script is ready
+
+    It Avoids Google’s warning about direct script loading
+    Improves page load speed by loading the API asynchronously-->
+
+    
+        <script>
+            (function (root) {
+                root.OpenCities = root.OpenCities || {};
+                if (!root.OpenCities.GoogleMapsLoader) {
+                    root.OpenCities.GoogleMapsLoader = {
+                        _cbs: [],
+                        _ready: false,
+                        onReady: function (cb) {
+                            if (this._ready) { try { cb(); } catch (e) { console.error(e); } }
+                            else if (typeof cb === 'function') this._cbs.push(cb);
+                        },
+                        _fire: function () {
+                            if (this._ready) return;
+                            this._ready = true;
+                            var q = this._cbs.splice(0);
+                            for (var i = 0; i < q.length; i++) {
+                                try { q[i](); } catch (e) { console.error(e); }
+                            }
+                        }
+                    };
+                }
+            })(window);
+
+            (g => {
+                var h, a, k, p = "The Google Maps JavaScript API", c = "google", l = "importLibrary", q = "__ib__",
+                    m = document, b = window;
+                b = b[c] || (b[c] = {});
+                var d = b.maps || (b.maps = {}), r = new Set, e = new URLSearchParams,
+                    u = () => h || (h = new Promise(async (resolve, reject) => {
+                        a = m.createElement("script");
+                        e.set("libraries", [...r] + "");
+                        for (k in g) e.set(k.replace(/[A-Z]/g, t => "_" + t[0].toLowerCase()), g[k]);
+                        e.set("callback", c + ".maps." + q);
+                        a.src = "https://maps." + c + "apis.com/maps/api/js?" + e.toString();
+                        a.loading = "async";
+                        a.async = true;
+                        a.defer = true;
+                        d[q] = resolve;
+                        a.onerror = () => reject(Error(p + " could not load."));
+                        a.nonce = m.querySelector("script[nonce]")?.nonce || "";
+                        m.head.append(a);
+                    }));
+                if (d[l]) {
+                    console.warn(p + " only loads once. Ignoring duplicate load.");
+                } else {
+                    d[l] = (f, ...n) => (r.add(f), u().then(() => d[l](f, ...n)));
+                }
+            })({
+                key: "AIzaSyBVAmbQLxYJyRU_i5LbdHHmSvOdxUgbMNQ",
+                v: "3.65"
+            });
+
+            (async () => {
+                try {
+                    if (!google?.maps?.importLibrary) return;
+
+                    if (!window.OpenCities.__mapsLibsPromise) {
+                        window.OpenCities.__mapsLibsPromise = Promise.all([
+                            google.maps.importLibrary('maps'),
+                            google.maps.importLibrary('places'),
+                            google.maps.importLibrary('geocoding'),
+                            google.maps.importLibrary('marker'),
+                            google.maps.importLibrary('geometry')
+                        ]);
+                    }
+                    await window.OpenCities.__mapsLibsPromise;
+
+                    if (window.OpenCities?.GoogleMapsLoader) {
+                        window.OpenCities.GoogleMapsLoader._fire();
+                    }
+                } catch (err) {
+                    console.error('Google Maps failed to initialise', err);
+                }
+            })();
+        </script>
+    
+    <script src="/files/templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/modernizr.custom.710f3bf.js?seamlessts=639233016636692105" defer></script>
+    
+    <!--// End Framework Section -->
+    <!-- OpenCities Section -->
+    <script>
+        var OpenCities = OpenCities || {};
+        OpenCities.Paths = {
+            SiteTemplate: '/files/templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/',
+            ThemePath: '/files/templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/'
+        };
+    </script>
+    <script src='/ocapi/0bb637d8-2f5b-4694-ac68-9c505b0f6c0f/en-US/websitesettings.js'></script>
+    <script src="/files/templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/oc_head.js?applied=20260601085432"></script>
+    <!-- Script Combine. To enter debug mode for this browser session, enter OcScriptCombineDebug=true as a querystring -->
+<link href="/files/oc-templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/oc_grid.css~oc_style.css~oc_wizard_style.css~oc_main.css~oc_forms.css~oc_wizard.css~oc_wizard_menu.css~oc_main_s1.css~oc_wizard_s1.css~oc_wizard_menu_s1.css~oc_grid_s1.css~OcScriptCombine_Minify0?uniqueid=20260601085432" rel="stylesheet" type="text/css">
+    <!-- Script Combine. To enter debug mode for this browser session, enter OcScriptCombineDebug=true as a querystring -->
+<link href="/files/oc-templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/client_style.css~client.css~client_menu.css~client_s1.css~client_menu_s1.css~client_forms.css~OcScriptCombine_Minify0?uniqueid=20260601085432" rel="stylesheet" type="text/css">
+    <script>
+(function (BackgroundSettings, $, undefined) {
+    BackgroundSettings.initialise = function () {
+        this.Application = {"CSSSelector":".background-container","EnableFade":true};
+    };
+} (OpenCities.BackgroundSettings = OpenCities.BackgroundSettings || {}, jQuery));
+OpenCities.BackgroundSettings.initialise();
+</script>
+    
+    <!-- Script Combine. To enter debug mode for this browser session, enter OcScriptCombineDebug=true as a querystring -->
+<link href="/files/oc-templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/oc_print.css~client_print.css~OcScriptCombine_Minify0?uniqueid=20260601085432" rel="stylesheet" type="text/css" media="print">
+    <!-- Script Combine. To enter debug mode for this browser session, enter OcScriptCombineDebug=true as a querystring -->
+<script src="/files/oc-templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/external_plugins.js~oc_form_helper.js~oc_main.js~plugins.js~oc_main_init.js~OcScriptCombine_Minify0?uniqueid=20260601085432" defer="true"></script>
+    <!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-5P6VBML5');</script>
+<!-- End Google Tag Manager -->
+
+<script async src="https://docaccess.com/docbox.js"></script>
+
+
+
+<!-- Meta Pixel Code -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '266782160627356');
+fbq('track', 'PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none"
+src="https://www.facebook.com/tr?id=266782160627356&ev=PageView&noscript=1"
+/></noscript>
+<!-- End Meta Pixel Code -->
+    
+
+                                <script>!function(e){var n="https://s.go-mpulse.net/boomerang/";if("False"=="True")e.BOOMR_config=e.BOOMR_config||{},e.BOOMR_config.PageParams=e.BOOMR_config.PageParams||{},e.BOOMR_config.PageParams.pci=!0,n="https://s2.go-mpulse.net/boomerang/";if(window.BOOMR_API_key="DYTCK-JM9C8-ED4EP-C3GGK-Z575H",function(){function e(){if(!r){var e=document.createElement("script");e.id="boomr-scr-as",e.src=window.BOOMR.url,e.async=!0,o.appendChild(e),r=!0}}function t(e){r=!0;var n,t,a,i,d=document,O=window;if(window.BOOMR.snippetMethod=e?"if":"i",t=function(e,n){var t=d.createElement("script");t.id=n||"boomr-if-as",t.src=window.BOOMR.url,BOOMR_lstart=(new Date).getTime(),e=e||d.body,e.appendChild(t)},!window.addEventListener&&window.attachEvent&&navigator.userAgent.match(/MSIE [67]\./))return window.BOOMR.snippetMethod="s",void t(o,"boomr-async");a=document.createElement("IFRAME"),a.src="about:blank",a.title="",a.role="presentation",a.loading="eager",i=(a.frameElement||a).style,i.width=0,i.height=0,i.border=0,i.display="none",o.appendChild(a);try{O=a.contentWindow,d=O.document.open()}catch(_){n=document.domain,a.src="javascript:var d=document.open();d.domain='"+n+"';void 0;",O=a.contentWindow,d=O.document.open()}if(n)d._boomrl=function(){this.domain=n,t()},d.write("<bo"+"dy onload='document._boomrl();'>");else if(O._boomrl=function(){t()},O.addEventListener)O.addEventListener("load",O._boomrl,!1);else if(O.attachEvent)O.attachEvent("onload",O._boomrl);d.close()}function a(e){window.BOOMR_onload=e&&e.timeStamp||(new Date).getTime()}if(!window.BOOMR||!window.BOOMR.version&&!window.BOOMR.snippetExecuted){window.BOOMR=window.BOOMR||{},window.BOOMR.snippetStart=(new Date).getTime(),window.BOOMR.snippetExecuted=!0,window.BOOMR.snippetVersion=14,window.BOOMR.url=n+"DYTCK-JM9C8-ED4EP-C3GGK-Z575H";var i=document.currentScript||document.getElementsByTagName("script")[0],o=i.parentNode,r=!1,d=document.createElement("link");if(d.relList&&"function"==typeof d.relList.supports&&d.relList.supports("preload")&&"as"in d)window.BOOMR.snippetMethod="p",d.href=window.BOOMR.url,d.rel="preload",d.as="script",d.addEventListener("load",e),d.addEventListener("error",function(){t(!0)}),setTimeout(function(){if(!r)t(!0)},3e3),BOOMR_lstart=(new Date).getTime(),o.appendChild(d);else t(!1);if(window.addEventListener)window.addEventListener("load",a,!1);else if(window.attachEvent)window.attachEvent("onload",a)}}(),"".length>0)if(e&&"performance"in e&&e.performance&&"function"==typeof e.performance.setResourceTimingBufferSize)e.performance.setResourceTimingBufferSize();!function(){if(BOOMR=e.BOOMR||{},BOOMR.plugins=BOOMR.plugins||{},!BOOMR.plugins.AK){var n=""=="true"?1:0,t="",a="noglgnixzvm242vsulca-f-7d05a317b-clientnsv4-s.akamaihd.net",i="false"=="true"?2:1,o={"ak.v":"41","ak.cp":"1699437","ak.ai":parseInt("1075935",10),"ak.ol":"0","ak.cr":10,"ak.ipv":4,"ak.proto":"http/1.1","ak.rid":"faf80f4","ak.r":38938,"ak.a2":n,"ak.m":"dscb","ak.n":"essl","ak.cport":54646,"ak.gh":"23.55.170.174","ak.quicv":"","ak.tlsv":"tls1.3","ak.0rtt":"","ak.0rtt.ed":"","ak.csrc":"-","ak.acc":"bbr","ak.t":"1790091972","ak.ak":"hOBiQwZUYzCg5VSAfCLimQ==Y1cyS4UJHlwZPJFFO1pDq4EygxJTNTBOkUjXojP5AzlYcj6Vs5YCpqfmmMmT7UxyKcaaB/dSgjN0csgWlXDlyJLuDt9cgofmDmx3cchsg8ilz82jBpnKsjhYgd6fDpW6XUlpI01XEc+eb0EhB9A1M0LzSQyGoFKaHQax7BHYU7BQ1H6T3XXqgO7t78IN7frxK0H7MYG2n/CB3IE9HB75dRFO9uGwhmzPE6s/0Ygu2+ffKub70AhNM7gNUncFg9i1rOzsnAz8SqwA9ujeFnEvf6cnKbrtN5Fupby9w2PMAt3aU5TPBnZ4A0jYeifZvUoaD+iA59Uu4LUkIFhGk///Rb50oDPf1v8W63GuBy4e2J+7ETe8XNrIwfTdAFi7YFF3pSEOX8YQ9kKhDI3FDLVK1Tiv6TMYSk7kaTZfD0ocMX8=","ak.pv":"339","ak.dpoabenc":"","ak.tf":i};if(""!==t)o["ak.ruds"]=t;var r={i:!1,av:function(n){var t="http.initiator";if(n&&(!n[t]||"spa_hard"===n[t]))o["ak.feo"]=void 0!==e.aFeoApplied?1:0,BOOMR.addVar(o)},rv:function(){var e=["ak.cport","ak.cr","ak.csrc","ak.gh","ak.ipv","ak.m","ak.n","ak.ol","ak.proto","ak.quicv","ak.tlsv","ak.0rtt","ak.0rtt.ed","ak.r","ak.acc","ak.t","ak.tf"];BOOMR.removeVar(e)}};BOOMR.plugins.AK={akVars:o,akDNSPreFetchDomain:a,init:function(){if(!r.i){var e=BOOMR.subscribe;e("before_beacon",r.av,null,null),e("onbeacon",r.rv,null,null),r.i=!0}return this},is_complete:function(){return!0}}}}()}(window);</script></head>
+<body class="body layout-modern  site-search-always-visble  content-type-oc-landing-page content-template-oc-full-width-with-search group-template-oc-full-width-with-default-header page-name-boil-water-advisories page-sequence-8 page-depth-3 page-section-6 website-type-primary device-desktop " id="body-top">
+    <div id="skip-to-content-container">
+        <a href="#main-content" class="visuallyhidden focusable" id="skip-to-content-link">Skip to main content</a>
+    </div>
+    <script>
+        // OCNOW-11988 (Cursor): Proactively focus skip link when returning from browser chrome.
+        // Must run inline (not deferred oc_main.js) so focus is intercepted before NVDA speaks footer.
+        (function () {
+            var awaitingReentry = false;
+            var inertSupported = 'inert' in HTMLElement.prototype;
+
+            function isExplicitlyOutsideDocument(node) {
+                return node != null && !document.documentElement.contains(node);
+            }
+
+            function getSkipContainer() {
+                return document.getElementById('skip-to-content-container');
+            }
+
+            function getSkipLink() {
+                return document.getElementById('skip-to-content-link');
+            }
+
+            function applyGuard() {
+                awaitingReentry = true;
+                if (!inertSupported) {
+                    return;
+                }
+                var skipContainer = getSkipContainer();
+                var children = document.body.children;
+                for (var i = 0; i < children.length; i++) {
+                    if (children[i] !== skipContainer) {
+                        children[i].setAttribute('inert', '');
+                    }
+                }
+            }
+
+            function clearGuard() {
+                awaitingReentry = false;
+                if (!inertSupported) {
+                    return;
+                }
+                var children = document.body.children;
+                for (var i = 0; i < children.length; i++) {
+                    children[i].removeAttribute('inert');
+                }
+            }
+
+            function isSkipLinkElement(target) {
+                if (!target) {
+                    return false;
+                }
+                var skipContainer = getSkipContainer();
+                return target.id === 'skip-to-content-link' ||
+                    (skipContainer && skipContainer.contains(target));
+            }
+
+            function focusSkipLink() {
+                var skipLink = getSkipLink();
+                if (!skipLink) {
+                    return;
+                }
+                if (window.scrollY > 0) {
+                    window.scrollTo(0, 0);
+                }
+                skipLink.focus({ preventScroll: true });
+            }
+
+            function scheduleGuardIfDocumentLostFocus() {
+                window.setTimeout(function () {
+                    if (!document.hasFocus()) {
+                        applyGuard();
+                    }
+                }, 0);
+            }
+
+            document.addEventListener('focusout', function (e) {
+                if (isExplicitlyOutsideDocument(e.relatedTarget)) {
+                    applyGuard();
+                }
+            }, true);
+
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Tab') {
+                    scheduleGuardIfDocumentLostFocus();
+                } else if (e.key === 'F6' || (e.key === 'l' && e.ctrlKey)) {
+                    scheduleGuardIfDocumentLostFocus();
+                }
+            }, true);
+
+            window.addEventListener('focus', function () {
+                if (!awaitingReentry) {
+                    return;
+                }
+                applyGuard();
+                focusSkipLink();
+            }, true);
+
+            document.addEventListener('focusin', function (e) {
+                var reentryFromChrome = awaitingReentry || isExplicitlyOutsideDocument(e.relatedTarget);
+                if (!reentryFromChrome) {
+                    return;
+                }
+                if (isSkipLinkElement(e.target)) {
+                    clearGuard();
+                    return;
+                }
+                applyGuard();
+                focusSkipLink();
+                clearGuard();
+            }, true);
+        })();
+    </script>
+    <form name="mainForm" method="post" action="/Residents/Water-Sewer-Service/Boil-Water-Advisories" id="mainForm">
+<div>
+<input type="hidden" name="ctl04_seamless_script_manager_TSM" id="ctl04_seamless_script_manager_TSM" value="" />
+<input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="" />
+<input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value="" />
+<input type="hidden" name="__SEAMLESSVIEWSTATE" id="__SEAMLESSVIEWSTATE" value="H4sIAAAAAAAEAAAJQPa//0zutX8SwLaRXZey+lrIT5LmLXSh6zcb5QwVgTZMjvSf+YXlQW/1WOSlxbcXXmVwPACk3wd8yEuij0g/sbCBgrDivB6AQpgSNjxSW3yHSJSOb1ayq4F4bMYmNeiGad21lm0jKYGWjf5IPV2RlafZxv+E5dwx5nK++OG/Zk+2yFy6HzsyarJw262XNiXz2Q5/7S/Y26EoGnCxjwu1Ogj/skJzzwO4UZm43gXFypS22DiIQbAmJym35GE1UtydexOsnR5aun6zo7f2jR/DkqHBSkczEIyAWaX6KC4CK+EBcfbBAYRKe6KG/RPFeEZ2rO3RlFqqKxmaYC9Yi3nYZ3wC7o0EU8dsHHRnFOygyY1WpSr5+D6N+26PZL01Lk430KLzLxUqeFU/j3DJuBTlUJr7Jq/hXBXAUA4tILtPDOE9V8DQZDT+/db+pMy1MTUSXI9f6J7vCcBpwx3AG6gnIynQEBjJLt390Tt9Is+0FEKd+xfF/MI/rUznnGUdMb0QUA3UKggpbLiEGrA6KltX6KXucaR9nUwWf4p4heaqGy8hMvTEu8ehMeIKh67XV4XP8U4r2emfgLeXqoiSzaDPFh9vr3XRtzgT2v4MXoC8syeVrGh/bgxs9veO09R3X2MWSdCVyoJUvPiBAK+Jav18DkmUaJ8wqcK9XP94YOyVsDbVhbhBcKmyo4Ud8J1m5yi0UfILNcpQyyXFpMgJcGLSE5GFjHJ7xfJBsg/j3DWSLEdz+2PUHAB5ubpRe09rtOeQh5X6tpe9x45RRQDHSrqzC1FDAdKA3gOpVmyRG2udhNI3ySp2+8T4t9EUHf+wLgKAx4WnUm90thgaL90VmsNKfeh+QUcBGRNBuTB84A+fgXbajfzrD+4bBcyzTf06/tbNxr0NDmAjeTdOuB4MX8SnoImO5u1+9yyUptWDXcrmM38WECGhFfTrQgfAmURWCHkKTcEOg1NQBfg6bvJTjFCLmrbYOsKS4LNkyU1reYw8+lLDYiIcOqU0mtS4ykvzZiq76YM7LE8AbtwTocn3E4iDRirHyQzzpvmzlTXrzI84EpYdGIqZ2r+9GAKIiU2q3W4DzHhANzfEdvQV2uejlZLmRf+/lMXR8psypVwV178jaSlixcv8Et9AoZlBrA5fxSoN8SjOrHTYjCpj0W+Fxr8gptlFj/sxVUkzUWJuJotVveWz9pg9LC2AF+2k931CZQey0KEd5BHXZZOVha2qpUA3zt0ycrNGdtPBOlti4s+MGeTtGO99yAZCGmva2Axk8/tsAlXCYaTyisPYWcfwG9kQeuf4K4sUNFQO8lnmyzDucXgZZdmRdqXjhESH17FlXZI7DjXttaxahi3INoAizfbvX5Q1jjj64MSuSip6SjKpkwFi9lXhw3T+PZUsldrTpwCRiS/pEbTOqFdwg4NEs/1x2UUIU6rJJ9M9/LX3stGRNdxu7bSx7g7lwJFLMt9izG3Td5IosL+rXk6eljW8nw2FhS+DgjWCMxhH78f7g+nBPX6MmQu5sxqf5fFWegrafpnXkokmFJ3UVx7lbAQW/0qoeG4Z1yW0W6GQ8xbS2cYEsJj2kMgMlmq3c/9oj4KPaKmA6yz1OfJjVQl6AwClpTj5ov3mizxgaNGalXDu3kHYYslmbfzBDv62G3okfCbNFjrdzpaRU6AbbNfpNkuW6nzQnlHW5oWOTJN3q+fdd4RnQytTM7Pk1szcLdh47X9UfaPhY3JUvxV55/k4JEmsWbMWIlLxRY7Zmf8Yob2UxD1h8X7XGjoEQdY2P477HJMmqhCUlA/J/XuruitGhpiwvp1zR4Z3Zq+JKz+t1B8wC7US3y7VVSCgCOjoSMTNB/U3YXOdd4RxJqnsl702RSrYrgIYUxjFCVoiczWqsnv5y+womgKLeUKhwbYp3p/msXe4UorMUxUKJ8u/0yEOVLHKD5OpKR6/X7ZwuOF70DiHAFY6G+XqyGcSKS8zSaCWzg4sN5ukZ1kNQI+CCYO7/2Y/K8uppBu9HXRkDWPV3GmBsmo+26b24O5jBJIKlJCBHSioSY1n7NFV0llcJrK6WSPR3irMmAoROMcu9S1+iZi+iX/a5+hAjO/tmMZ7JxyG19M3GrNyR1ilqx4aSQC/zfaXIS/ilwvoK4AeW95zT6a5XhfZxrtOXJBkB+cWdK7DpVcz5PSQAyhUAvyAUSBzoXq2M97JT4uSgT+bbUiO6uVpXd3LTmb8Hp00U6UOrg7l9IpO/wFlMtA9JhFIrcTfmRv6OvSEUOeGhORecC8TeB3soctL9uGBabG6ROdtDl9KPQMxHhI8inkOozZxlvrLkkMjnxQO/vW8Lza1bOybFcjlJuckTvXB/Ja5vyGLRX0yZMQwcZV4D99pOUm+HUS4Zmuwj2cZ1lGatLtQZFmaXQZpFjHSkdyRj4PyCHUs5s6f18QXYUm04Kg8QFWUjdPbM/5W7LsiJNzdqq634mgTvaFqnLAzurNjpci+6uqs8WnErK2AVmDzzyQpF90RwsmeZ4Jk5YPHzpBPMSKssKuCqJI+2ghv7xSqXKDdFeN8KcBeOAzGkZaZlBjh24OeDBYpQxqzdIysQYmGXEJeobG1KcpGImWTa1gKH/BBTDqZmv++UV/FVKPNfYoTO9J3MsoLUHBzIH1pTYm9N+0QEEEFaInu2DrmV7HwZPDp65W5hUvVNq5VROJybw67sbToyElA8pLQCIZA4/kB9BiKfqwB92kOc3nzuWRzb4W81HgeVFztTYaGXH5Uo4s1EHPFERzQOq4qIXoWoUaJyXsi3NS9iNHjXLFdK178ejf10bxKuXGcjpwKFnXYi6dC91pcGBzNQeg3WrDtYZH0YcDPSHprWz+DSMhJffdsmnKPk6VeTf2PqZnIyrTJHmP6C/04ZUQ0ydFXYVVKYj/vQcTsuFQaD6OOFJ9HAW3Aoi7PxSfo58s7vl3iysu/v2042voekHU5tm1Atsqm56mbJwXModaHMU9ouC4oAZpOPynqprCcIabDeqO6pBOn2ucTGkAl3lAFXsSAIxR12WIzYL41eHs9zrxFHzZL21+H2WDuK/lJCI+banr1scA7hrfMCBgMOz/Wc8x1jlMaQT6rPKcCFbymbUae7HBS0bBx1uejzfGPiofporynks5WaWEpx1s6fbiwHF4n/A7ooByuRLfvuaSeRjDf81wdzXSxKRtYYwbtgpwGs7XfjTcj6qV5s4pMYwj/xtdR+aB2mjwYHW7qbJeTVTPkeSCD1Qe4ZhiRFQ/yRM7ojoq7DAEdE24ABsBHUAmwAcxPinqn/Vc1I1Y6vovYlJMOfpjxJQyN8x8QkONbtezhjufPjaHRqmETpe50pv7E7IvtjRkwpALZ6AoGyFShDMAxW8ocw1Pf9LG4ANQRaviVw/vHrA51M2KPXfZ2Hqm1NJSFQ5Rtyp1gjRQcsU7qJRiS15W+6+st/ElIgftPiltyJmi44umt6TTE5BOetyvH0wDtk4rXtegO5JUdWg0MRir4/EMAYqnwEcHwWGb7GD5hmYRQX4GX0jFqwM2TKi4/ahue6pxEgpckAU3uXNSNMm2GdUyE7Ke4a5Y9xBXjKHDD3k2o6kHA1fu5k112BM+MkJU8Mus62Bnam213Tjl3IRxLvKPDa3tkrMnSLjJqnRQzrP32iISjPjyuMJn5sEXXzzNni3Yq+22DRFVZHO76KLyK+FF1fkXDwSOwdhK7QCFfHBkC7qokldg2UTfGcl6l7DG/GMbalbo8rH+Pp/hpg1UOw5TLsX7uxM/lsTZCgI/MFgHPt1AAgDjB7XZcVFIwMWokojmwqWPQ0WZQyvZcJB9zWPoJEQO7EdwmqrPngbtq+ciX42WmnAyg9ZcaiOApsApDR9vI71t1y6PacG0UDKUuxe+UDlGibAg+eakcpGTW6+TjHEZWnHcGfkL36miFo7DXLVizJJOtjovEN7st60vLFsDq1E0GgJJlNA29v4sYFngTfcBvj6UJfi3KA6Qf0ECZ+sMzaU3XOhAebSuRucNSDfyz6xSJ6FB8IAGnZMBNpYAU3rD2Sw5ML2RXThHSXPWcBqaA0lVdYH+cVoXE2/voOJZyOzMB0ToSM0P1x0x5tlAu4JegDFNOTlRBZs7Z9eMrRZ9pt+7R0K5N/cKKwF727LZRTf25I655TFKL2xVjOwWz81c8iRUr0N1RAtW9VycmKtqayodR8ouGCOjTs+NKls4Lkc5yfhkfwFTOTE9bDEZz/QrdtGeFMqv9fgQSuj8P3xHnYsDZKYW1mxFAj6vffJ+iht76Pkpmb4usAfb9xpB+A1I9GbiaMnBB5hlK09jqHpvZw7bv2wCtS/MO91aj44wZiOMueu2TQOU/m9LTZhQcKCOAJNzyKCzDchaxmkWEF4o0WYtgD0WKrmi5haqlLGVkKdNjoQBDidwthsdq1A3O87Uikj/ouvzRQ1WdgQS+k4MxfLHm7AYhUUAwqFZENlgvk+UC1WzOx0q+59aTBQPz2H7+nOEF5PxNsVCcdeo1rN8J9JvSjKGm+BjtSxUNBU+kSD/MbYpJoAAuH6J1FMttw75aRO5AOw+kzp2j3HugTvO0OopM/3bm220rke3zskUXup/LG1K3hFpS9xksPJmeDCLWc79c1xhs0rOntP9EmaCvooEZ8YzR72yIRUgbPYVeIFkLHPfe3Te80fx78FZbZnj/UPb0dIjwg8Ao669+bOPqH5ybEAQfoWx4YfrEJp6WBTZBA1ntCUZEQ+6cYKXIHD3ZkR16N/UUTqcHbKieKORlBo3B0MhfmgH/W/cn/Mctq//1ZzYqyB5QGktu8aHpM8XFFvw0YxCGG/3lHUUMH+6uBgvcZhcAFZK9l1AMyylAdqhCgtyyF/aBDlFhk6sdIw8Tnq0wE+E+fWxsu1W8iAXegDBVfZMSEuBNNLBoYhuvn6ccFt5CaJwoD9NKGtTann9he0DBw69fM1HwUrlgRIrEsYKIZMSccZGOxZzPEoCWnIIpv0ttff4YtlrsSZ0zsLfMk7fxTWXfn1DK0SMMRD4js3Xwin0ocNIGsz7BGU8nHg55cL8nxFqEnh9eltWsD90BT9y83sZHInZk3l36SE+CpcL6oYCDlRJRokVpEhV4ILiCam+Z3/ZVxalbkORWBIMxSpFdPe76IEGeRT4En0h8TykSk7rdtHpWkASQfAkYYuFfgLFNus01hLtcThhOWxcy8UJuUaC2w9b5h9dGeT3DVB6tzMo3UpKjg61cRc/uoMu8dSnIhh4MYNOBANPtYoceHJ/+gEJ5bcrL/gN6q8tuLCH3k1vDXGh6Tv2LLqqeJr9vez2QmjqOaAeGwKnSuZCpjhShapzN0yKe8psZWbSiqY5EkUSdJiHOVH9GD43laq0l6M9VnXYBt/dJ+KrQBUGxqHVEwTJUM0dVz28XFXKu31IFucdQe9WHFn8TGknwpHjtrijj58mTpLcBDEBBtbe8MXuRq9y+88vbLHeQPfETNU+X9MYV5gdaEdfRZICcmAdDg/mGtBpHrn5o9tQK0VcLp6DFkcF4WZTSZ3NKeLu9sRKexi3rIRd47TAcRUdVabhaytBTBg06eMDsCo2c3M/KZeDAe6vm352xtNKDvAVwWVfKGmWC8tlQS4YIInp73JpGW9U/cJMQQ28e8Bx6KQ+YxDtzGrQUtqK0M6lLIV0nfnFCtp1+P2bAI+9uRaWYcMW4IToFlgVL2mqevJ8x+EAmD+507iyCZJbwnRMnnK6zMH9ptIDROfBMsV1pmydhRRgrnZoG34KjEiAA+PBI/44bsOUj8FVNqog9cQxp6KFX1WakRevQ7CgygWfjAQeEczjpuCKyYufDZ1dKmYYiiQ3hk2qFjW7dfhdlNtP9up1Y3nHGhteCQSj5Q2mCD7KIkqx7Js9mDfZpSbeSh1vCZ6M9KKxz3cUywShtkiz7CosuAtNkWIE8OSwOwR60mZ9tyqqj/CJy65teERbEkDagkEV0wUY4EBMinbaVAdc67g1o3POfG/MdoqybIWs2qF5wkU/Ck36KeyWV2RAEj97toK8+OtpqgMh6x9xuc5Cn9iEMfuE4GsapMLeCQlNlwKMAhW7awwq9ixmn5dJU0aSXrx4unajjmNz+Y3ElBU9HSRxrLTnVRPCWnSN6LzEXOOzGEkSSilW5pKuVYvNoS6h23HjeV17SWBqwxibKQR1haPUtuvWQFSHyHP9hP5wMibxGrl9IrIIEVR2SMbB/RbLqTe4WnyVHvIGeQ3dj3C4u/UG0Ridg9xYrdh/r99ldY8SiMT0ORIFsUTxHwjs+NmgERj4zYNndhCLA5TQjKlW6VFmi3rMi2EQ/DmsYMPmroP/kMey9SwW3bV2u42qG7xTWJb2s4dKNm2rDZq6iUEQNAv1Pu9h4YON/u3xSveANF9lUjBbRpytplDGDSo+o+EulifV/ka9nyo0oXTLccdtldQ/xr2VsoQUinT+726Kd+IdXXWPkWZ+XxeTnwya6nTQl7jpD0+aEPXXCVbZf4yap/rmzAFP2rM0iPzyonBvn+brMkcaaPEMqYDfV4F5M9K+6+AONhbyyOsektf6CPVOSbiEoIbMevbWnbeNTR/FOKldujZsSwaSS34vkFhw4KmlhQP3gk6XL48VejjziJRjwXeoZze+GTyI928a9GadP1wVPexNFbUPHD437LEgEvmN2b4vganHDRn33mCKle3yyUj0xuWSm8d84aaW+xBPFaBLOj7avrzX+6XRUm6N/8Rw+1XOQ6S+eC1+/5oQ0EF6wx9lcZk0w7iZUDgsdG4F93UHTuWx58Kv3TCfsAKrFzt26oo8hqyIUMWAX0vfm47fo6Uzv86hnVgkhb7XJAFDhhghQ11lUyEikWItG7kNR2wzXYY920Vk0KoDXy2LqpLrP5LTH7qn5k6l1mCb6dKTtJtRw0spA5pECXWOPHZpSdlAmf0KQWjBcJwN94Sx1zU52bkpN3XzyOqWH9NOqfvwoH8FV/XkUUoexaSOBNGbPYI53r4JqldP2VefNpGmVwRNqLGH0Bn8jNzCF9v718E8DmebF7QGt52SpTCM5NGJozt86Rc/zAqrNEbk5HHDrVrJlNoYlxij+eXcB0aRahcbwpbG9fFDEwxATpBdiM6N8mz6YmvjbUpzA5GJt2NtXB4+6lKNG8Zm4eaZgJdeGlSVwUZUDBfNzCRgAKbO+C4mPRqAFb+1/BhVg8WWOHO+QNSJVINgZ39J7xCiUvHSFVlawfWJZxJ55AEE9IsHhZz+COypiCR8WTEnpeZcu/Er5ycPWL96Sf3dLSBsxYjs/l02CzTmzshRi4zOSx+VjQOtASMh6JCAcLS6jKgvFGdWKcirPjCzp2A3tv7WY5KM32NVYE2H4WOUGVzupBVmp0V3p/5ftVAbUvfq6TfJ0pXC1lDZL/FyyBY43aIsyCe0kWT2Wc/CLguoO1cC9MZJGHFapc2T65X5En+9yW0HAHIRHxAJR5yQ7wo8ciZsPjd9ZaVS5d56lexY6ccXOHemaNR8wjOU5EbOPhcpGmVnA7YD8gCuLpKxGqghXPMI+Uy55KhyV+cCYXOzAqyY4+IRb41q18mL0Rr5hjRvBkeNFkkWgur+yrQVgKZCXayzqYIIXYfSMR7Pisg1BExmP5LMxq7pDt5JQ86WceLVs/HcJK/jH2Rlk8+VgvFnKFoPsFmT8HLx/7bYWRlgTqEZzfXkJAsTnDWr7eWYOtvt+5jy2cYZaL0BTlq0xe/+6PsWLEy+B83drly1fJBCYuOVZdetOVAdihAscmjQZNjXV5kG9BAoOulE7bFfB+85VcLQw+w4Ry8K5UhezEdFPAI1kIpmDSUSLUznr2yWo38ozqnyeWH/wc/8VjP0m9UshAzT9gyrGKhn0lBMEKv2Cf1WRqLmNccDmoJv129Ny7wHLl6/TcRPPJLQwSAt9Ph6UaGngL1qCvOPNvAJnoJNsRNd0SJNrEaYTsaqPRiOm8RRWDrY2+rl2oKGx1ZNLquxg3IxEQJQVfqDLkR7KEH1LU4pscjH6uCj3gn6hUnB8m/MCqUh1xuraWtLMR5AjQceo6lgJ/rPYG9W0QeKTioIqdMuXpP/Q3RdCgDKnAHGCJETJaKrNS4VONFN+tfi0hMh+Jb2Hdw7izrL8Mamvthl78MQEuIDy+87w3NkcZP23McxSm/imib8PjBs7uneX00fuL37e3gyEHzqq4qSZY+67W6CWxepOq/BggZ0Qo1LC4GvCsbjSVbsM4r2oon0BgYq0PKfhastElyRDZZCiFXRJg7UEetkJCzqWT2uCWqKbHyPgzzqyFSBWupenQOAAT8GwyLDp3btkqY5HaVwM5vAmDI+Q4iOOTqBw5IrTUYn/thgs20gCnqljhgW+UuAsJly2zUIoMbRJpbtNEHOT2shsN8+gV7K7dqGvZ1XQU8FFL6ZWVkQpku/ZaUgPDFZBLS/X7UgpfrPv1h8Ab2GSimUcatrun2H+UFf6EF5k1Jd8pmvPvg/W1hI6VL4W57/BeFUsuJ+FbhnUmGysUgLoVSG56vNtGuye0OZUXe05V91GLkHVCyIjTVQjIL5P+xQ4Cnp9Zh7K3JUvucBABK6T1HiO8MBzot6wV+v1mCfpR9cnC0cBf5LD/WmKfRndDmH+jUwGiHEFtofqZop73BOdkXmJskS/Fv9qh7GZKFnBLhEL9+Jz+dIZ3RazoN9dQaKQzpzZ9XziC/ituCY+RdPzYtjFzC7DdzmPqRDTPWU8Dh3ssY2RTiarJygPNQS+WxaFAo4mEUfvxSFT/0+4CLX518h9JzGFF+UcMwTflyCqDWrWgK4lq9tbzJvF2b43BV9wYqD+PZYoy99W1eF5Lx2bPETOs+nVnjUBDbn7AB9eq4uBxF2UyC12VV4L+TkCxlSBwGRywCnIrAsbr9MoPk0DlE+tBeISGPhMy2yCwJPV4KuQJ89fM7UT+AGLYT1EiaCCujz1nmrs58ePeoEhcgQLoDl86mmeXNFfjy4ybCh0XEYn6IsKLJmRUCFeUBJwuqY1Zja6PlXcVpJXM0TQARzwKTrXIxmqqJVf9Wjd5sRjitOaOz356KmC6eLUSFhDh3iHyMms/bORJ1dHgiKCRmK3Q3LfQ8KMVJiX/1WdeMZ+ijvEWLBhuHwI5jFqPeSpM33BlA3IHamI0/LhW/JL8ShAaOzB/3I3I6PIXPF9bZF3h26YYAXrJbWeUCtR0XgJIUC7oAXyJvpxmH68YuNjj3ZOAT3SmtOIRX5xofRQ1QsBBTIbP563ujJVPbL5TYJxeetiSJ2vxZkhmwQRppypKqx6Rfyq3pvZQcIdASCh690ib1Q3qwrN6ThqlBJ5M+0yNV+ljp9ZAIDXRnaUPotYjs0yOD7m1Eqd129BkHE6mIN659haOrjrv+MMrDm7429Y/YWXXKV+H8rhxu2505UwaEXVMz6T0OJjc0s+xPnE7MVcblFhws+YYA1KSMBx+5yH3mb3heYqcViMS+KEAlVbXK69zieYEgn37FW32Tt26YLH1X1YUoVjhnbLQCiNGLco8eiSFJ6BxWu7iQTvzkQNDCK87lutaO43HEB7pW/YNbFS+0axCavNSjCD29GNQ6cODkh4UQRdCE20PS2Lj31N+lv7UVeAlF/0Onpk2/v785mmqfcs6HO4xGFVSkrOTUMnwNwbEE6jFcoy19YypaJJy5r9qxiQFE8+nVD2NeF7uD2IbZ1v3JWzPSUhSwToahoymrut242Y6jz/hl24MUl2iu6lCdLYQnX9Vx1JB1qF/N9KYi/9uY+dx9MQ40ICvYx6cVbmZ0evQ2n+hEMP9liWy5DPMLELtGEJ2CI9djlMGx8MWzoJxkIeTGR1liKlBFJwtCPbP0xiQEe8L58Jexf8StQhhX+SMYK8UGuDZbFpDBCSOYcQI4TjLPXQcwDiWudpBSi4uKk5oneEZqoL5QclhugmZaJPoNI/pt3LAXjMU+7OtE0UrOzlhXlytCRZ5tUxzne0Te4sp3oliGkcPs5MI7DC9SzfAJYmucECjATvf+gBzt/zxddpspuoARCeBMgE6UVQJRPrpe1bNWWnDRlg62cr30SnlVEL0FBgxrU6dTg2WZi9RgazFZ3jhju1UG/yYT0N3gcdUIY/lI/w0Kh+utowlIYLM/Bn2n3PjBcChDUS96k0QiVkBQnIB3fOm7vxtlKkImJMcwsVbT4Mt6a6fdDCOeftB1yXD62JmGGu1tqGxIuNbx0B6s5uefUzx4VZJl4cjPoo7LlUMRRpBISPsD+dIprh9S16y9GIi4tv2rRJ6r40UaY2FzDqzSJUQV3NYfi7JUq3i18eTr6ciH2KDgMhKHfUt3wf3gTONbbjavqrRs7lzuyP/lFwDh0N+XXdfjq4JyifShrdf0K7s7oVpqF4dxDuU9skGgfn7HWozGqArIE+QmeJBVEXZWNcbINx3gNvjalWolhaBQkKBgBGQV0ueVzRhxPuEu/3hFZTaFgEzAi7C5XoQMy4jJPa+VObFjG/Itn7FixtDNiQGGxTciwNBXQr2jmO5wPyG8kh8fy1UROFINKTmi+vrTKTWrboV132HaIIYkaSXubDlm0O6jc++XvZJJ2gScXvoM6VAEhgSIHDwLXsZe+FoG9rDqNSpS9QD58YyF6DA/PSQQz1He3ooYnm1RufJD6H8JmEZH9n1rV+opqTNdN0J+R2tRdnmEmy0yz2AjITsXl1RBXyC4OfzfXTBVDYsP8hV0/CNMqglH43J6cREQ79SHElrpgeMCxRiT3C5dtxMMmixaP4O85ruv7aS6nJFH0cESrwpjfbEUts+CvZfjDpvDCJSZxYBsHgxyKXdTIryjchLWb4zkvSbcFTQKWjXP9Y6IiP1CMimcTg3VbHeJsAbhrAypfoREY/n/B6eYY/AigSEvVMu1wKKjQN6jcF2+2OCU5VYqUrbwd8uNrzLjjPb3ix3mt197gLZ72bjRMmYca0FXP49hsTyzYhZTZnXAB2vRGWjlbLv1Uwk9h25WzYXRtFIXtmWdfhOZl9n6yMtwi3xKajV/REw36kCjkx3XCGezdHUHy8NMBCgspVFsNPYRA73FHzCQEnlNfMsv6DP5uTAGvEb+OKUwzbCwnVG3fugDA32OKfoJ3HxEvYBqSoCLOa1IN3yCPeDV9nZPV1qudWQZ3+SG4SIsnpnbCze5v2atpJgPsMZhiC+gNh7063ybGy4SDiB5VWZa9Y7AxDYVMbWSEVxNdcF22W8qfaq6Zq9oZRs2k/7ZwvPiAIDCTLuGxEE4gxQrz2SoRFE15glrPDGfF2Qa94jGjiyqv+TmfBuXVFeUblLLfSLcH2cmQQt/qnH1e7HiMNSSJzFyQ6+5YABc11+AqJwbf1LlHFC9/GYD21X5tCe6sGXfjsafMY7g02sGxax5flTNGfz1IbdqVTBJACVh6D9gsjdioIpoHtVR+Yix3PC6Q7g8htdIzmLyqO+wsJfUW36upbnmNIkRlq62r31ol4GxpxU4Y4+xRuIH56o+OrVyw3jkc/32J2uPproFta/rkLnpq/2Q5bTQmGdPs4RGrAO0b3AFvnbXS8Oy0GwdwTsnhuPHRlyt9aKf93ME4CW2ycVNUUrE+GXWtIn5cKNKEkg7sojILCZWbKVL30PpB4m0m4vRHcSWiGU4WlCZIkzeS9Gw/XfJxX2h53lxrZuK1itO0iQv1/t/RieMZ5soBYRtEj3cdF/DrRcnPwp3PY7vZwD7HDncg/CdcSCWoRqPcKfRg8p69Z2ahVcku/5gKuARLwUwqN+dID7+17R/JMpQhTkLaHpL3srhcwBPko+LwuJs6DU3Tgx4pf8LmeiAy0SF0P+nwNBebaf6LvQ5rebVBsyPHWkgqGLjOYGpNULnwbGKs30en09UptDf3x+HuWrq7FB61IA8AxHJMxcoawovW2nImG00nEXvN5uUXZT5me5hUXzkGz23ZT6Wz2agNCXwPLZFz8mcYtw1IhvBopnKcsIXHCmM5ep/RAquY0vpdZoN8hn8UPUK9M9Ct4lahAwbd+QaUH7zM0FgNU0q/fmE6r9yzCYvFu8Otj7SnG+TX3ZVnyy2Mm8D9KQvN+X4icsL83JvFbKk+wnusuiOPha/OqHw4mFxrXNGAr/tB5FgWs1NX5SzBWbkXgBspjFb45pqplK3L7QjLQZOsAUKt5xz/PqLM01m5g8kwcFXGgLpWSGOI4rmAnP/uK+5xea6CZfPgiwHugyGLCPX/qcrHodvb+kL+kwOF1Ipv7lrkVBj3ftb2BrjUbTiH2ngp/ql2PCSzgFhdl552LOCumZP+M7celkMP5H7rlhYDpHmQfupkSRAfZr3SurwpBnzz4Riz34F1zjAnh2Bm5RHrfwmzJ3fWxYfGH4sWfsVGg1zUTPSYD9eGckb/qnHwp3M4YlEy33fyr/GGowtdEU+whAJwCZJoE+qCT8nyYyTrfzcl5AHFDaQKDtTNWVsrwlfZKWy+4CCexqD6tnzDehv4lmQbBktCWk9QdAqXZX0GvNtIXiwbtPe4u/fIDArlYbLw14ycacMd710hEMRT/VmmsRX2rR8WOPIjiuDeAerMOd6jhF4XWciJMSxerXAynQ0VnwsxuphbSfwcAZMHPkr4ApxraPcLffoi/ebNeSZVR5uYO+a5vUfN53RCdoFNS73gH688JGEFNDNdcjqxrO6YbiAdUhAULTih0m2gAq3hHFHm/TIPCUD+cCTgpFv9e2i9cT0gjqgcXk7uTbi/0nMOkG9669YcWvYn3b/WleQVHOeIbYKesbB9TJMiwqsvbgrDt+AZRRv3hmipNObViF2QcFjK6JYg0RKRPwON9UtIsLCuq+xoENj/YXB6Cqm30OqiJ6kWhYqqlMbhMr9F25hNa8+jpSI24ruA3845e2bgEjSbw+sxUw/W6xhNpCQai6dEIeJD8ChHn6WS3L8k6gYs/IxUj8yb9j4Ehzz2A4e4rllX3jCctuD7L/xladBgqQn67hzL3/us1yXn5x3RCqAB2BaEZ4OkEcrwQSlzWTiS5+AyEsku1m25nrjgAddrm2wyeYwPh3sML2skkL61hnHDogEk9ZFr7OIldrA40ywWzqL8ei7wTGspzgpIfOV1iSQh12FVc5lgrslc2SNCCoPly8Qk0NwboCR0uRifEj5KbUdS4OMIVAk+KMrCgVURrEZHzWJh0r0OYV5xfzqApd6C6QagWoeOco0ghYXM0Xt5vN4BGhDrhp/kY9pK/K6Bjty9J1S31DDA075M/N/ewHgC/OSk6JKmPT5QXSceq+c8q47PyrQKXlBE5kmEcLOpZDLFrqR51fXLyW91pL2R8RNq1sSeJGHjbiEY5qD9wJACQB5x4BVecGUmodChPj0Hf+0xOiZXt4+sNeqiFZL9gbQ0wLIhvB0yu6lfxU8X0+y6OpRd71liuIKtk/9lG14JxLGyaqPK5uoWfX/ZnOUDBFezffO/vN7JyxVwe2SUXohVBj0RAWoEvLpWAHQGPOVcedQ+lQ5JLNZyi6Sgbf8O+VBl3wbLwRgArCcNznmLiyUkIkWXgbD6kka+9UyZUx6Z3M8foHT0gGvFjMBsiQUEL+eS6q3/1k8mIcPcPDBCdNWTJiK/OzOuPDpAcPYWA0UlHvzDTD11qA34L79Xo+Fcd8GY9tpataEtkGUblROK4w73ZevrhYIir77t9LcDl7sWd4FNJcvrsTxAQxwvHxMWz9WABVGEMemNV0pkYqfdR43mmLJFMfP1Vk0yEyCN+4cFlJRYhdVsSqd7JqXdwjymdbAE/XtyNObJwOY8bzesOzorpNXrEuyL2uwiTRQVMQDcgYXsxY0EfJkkdt6BGZ9BdnsUIP7gak5uv/c8z+rTKvp9RaWW6zl4U0RhTXrucEgFNvdoqybgMjJvbwWIhOFuh3Cjiclj3Hh63eW3MlyYE4p4J6pkNBQAFODPv9lVKnBnilCjgC66MfFUo/5eo4kaHYPypgVTZ5/ZaYuxKztlc6Xwn/iXK3tAqX5k2WP45o2pO/e9QfpuEGIx5J9EiWZOmSgpt1wOLxjquLBTUzmlE0zshZeHex4miOawfPbkSYU0a83bfacCOyJkTcSwlzVasdSTW4T9sNQXkzfYBOX+NE7pGNAh1JbyrZLahODxN1If7w1hVUbm/wqOLv1mvxNVdcVxOhvaXDuV/6VxrtDCfEpI8teGCvAgNGX+STFX9xchLPddhhu62C6iWbYuzDlDPGNxHsHgIE109p2TgVSkJGDvk7WGg5VDXgsfEwc8QAYgtlpPJHtsQEK5tee1tThcRDuULEpKYxiBzQIFlvTM9acbngO0x+NRGNRVIIHw7qaDrYmuxdXQsEOJI3hzRHsjTPZ/HhgIyQ49e6aLvwC8Ax7h1P46FF3zhATzgPRzrnEx9War9MqNENR6eQmAx+kz3PH1+jvRHjkJvwxFGHT+4sf/iO6CmwjrEuXuou+VHWoxebaV9SthzRv78cEiGuu6oGrFtcg1NfM9iCQL+TesJ5HR1eDJ+8kgOIKkaW1bbi/7yHlNROsLbanP40Y4G+/B2MTGG6H+7RBQ1ed3ArFBg5/DfUiDepIhbZDjwuziHfKUbAPKQgt/pbqbh7IszwIYlDrkoBrcTgAvhY5+RJPrjLo7JSWytCnAKFKBiZWlvNtDLuuVjQSwp3HQdKKTuQpLGqra0y91t2UVyTobrn8JkYKRFxpeubyveMA3RWBh/QuU6+lRXblWkEuBAbcsnS3liVP8N4BulOMdYaNwY6czFt7BFk2yErLpn0XozDxxlPC+LW2vB7feidGk0FlQcrXHkRxRSZbGhp4/ySXrP4Uo+rJj9SFYQPhxu1JQUoOtD64JwMjC89tDuvRKfLyNTOtB069Olcspa/zKqo8U7gKnus5CqgZz6tTvA6efLsRNiLmWHa6dx6PVKBkhhZppb5m2jzesbry38PqJzsUsTvHgdji2w0gnQ2ZcRZKVxSXVNIXIIdxVA24PebDviX6on/8IP70agv8PVmP36NPNT9G0PL663b1Htwp+lDRhXtWorpv2DZ8OwQ+YxVHXcwex/3A2Kn4bt8ffhXyt7mtDr4XlYZKipso9SE+2aKGM0oZYsld5tYnm+j3Jkv+Ox1E+79xXT0qoliJUfLNKcczTbymVzTCjqELKLsiaVY6aIbI9HyIWcEijaYoiewZGBH5r5kxaVy9CtykUPuunmd8oq94UceAzvqc4RBR0Mrx8/iQuzHE9negehYBCgPfjSgS92FgEHXYmKcX0XCXk7bAwI1F9O0UWavFAcucTH4YinbA0vw9UDT/Fy8zv7I+ndbC6ia97yEZO7Yg8ue34gjuKJCf2ivj9O2HMqnocR4XkYgeexMt/WJCRK6UiBLDQQPvUzQJQvai8W1iyt6AJil5CdekFfYUCP6FHC80W1kex/a/5ZaJ/HJBdLLEze6ZX8T82vJYpqMF8ccIHxS8J34FxFzvefDRSXejtXNAY98/JvS7acSU69aFzeGEQbh/Dj/0WVJEg9eFpwQgoRtDN/1M7SIyeRvl+IHE1y4dcp8nbKYzsm4P2qEmF3rj8OUj9vAFYkZMSWEv7cxg3KKjqwM1NeGDsq8K2jJ2q9SW4JoYi4y2vkhTDZZklwGOS7/2y04nEr0aYXduo5AmGVc7G5PATwfPWX1MUj9lGwt6BJuAhg6AcnjE+bnesEuy1HIB47KNjlXRMUehVvdHoY2XFgykgsDWI/sxeSAvkbYKKrkloOw0xV0nk2CbJ7R+TFZvSk2jTwZy/KHtmEOqNPr1IH/wpkKGIDvnnlxSynWRqqM0MbL4SSYa/AVvmxgu7VChjF/Sqx+n21NFLh0c6/aGWYp1hXttpzWxC7XerFXH9+0nJXzHLiYC6fRcoPyKYh7v6hz2ZBUv5QWKi3HXYK4l8FLo5UOBpQDUn50ZZ1OzxBLx5VB29emoIJYtSuQtlNUhUEehGKiakQV7kwVxiaDYDuCCdaiPLzaCgUzPVm37oC9ny1bTUmFo2oRRS/qinjlkBCVHFT4/OP16VjvJljjUQL8ZDqxrJnguaCPlDQCT5Kuzko/zIBylN4UBLX4nWP/XMuLzUGF1X8gFiFzKpJ3ms8juNySpnNdbWOCm/OK9eqj/UjlF/w4ypfZLAkCeGaWj0ctrQF0GrB0dbgFvH2RIEzTf7CEsy7BXwmW6rqfBt/DEh0/C/mmpxqgA2t6abM5x/RZHWqHmyeTZvUAYASOUyQmErqaRGuDmWsmO6JEH0l+LMCaxaksbnzRPuP43cuSTeL4BEdeahgNJz8RofO9NNwHQfp3Llyis58f7b+oAtIjC4TM6Vc25mF2rdiXf/2bqxHvcTgutT/m7JMXqJh497ObPwXFwTM74Jt7Z294qAbwgxLm3JmkHTogSTCqWosGGDvFjDL2P5TOxRja3MkDSRYlQ28Cb6S/oSNusx0BYWl4aFyGX/Sk7ry89mC5W0EAqIUN8cSrUBkAFL+k9i+FjN5D/OLnCtNwU6gMRUqzYHNYKZQRbyibQBsr5AwTHP0f7rf5iRfz4nP6BVZxNjtzueOgMa2x93vgUro1qPyqzTldmBNakfqbf2Slyym9WqHihPEVwUdXpGhdmbqTtqcH0Upocyo3O0aWmw220pvKieYwMN8sWvSWdjv+zuCviLnFRx7zuvWGwMeRN7MuVN0nWmDtuT5N7d2X6Spsvlm1zPH8Xw5kEB7WZOXs9ggBzla3OQK6RyxdJY1EkUI0QiZZ3TP+jj5AlmgDKdzKgYkc3g0A1YrUgc0rNxk8HcuJnmlVNix6k2KJnt+yTYb28CijB+EccM7QnO/VvtXR+XFo35gCwFBVLojpjcTS3E45VUZ0KzqpT73e4mvD2Nr25Gbmc0lVTBngKehcs/0bHGKC9tTeuxdd42uQC4gsSFS5uKqB+homLbj3azJidRNLjniEE/8k7oaI6xYn0g1wt2YVXF2PjmUtmljFXYUHPDr7OLGUerBBDNzIU7vCOHgXAdptIdt2i5wEmpTZAD4Ic0tn9KY+Lu4WorUy/FhCHC22Ft/TGg1uSS3OgPZrL59IuggeUsfHLs/3I4kSHabXh1MRHmrDwedslBBYlDFHiOF/rKYNseZId9f9U6oyulf4eWgf5GsadMd9VmhlGGj7q0FP05y1jn96o30tJUUx50V3veJMvoGo/7amQQltjMcaXjN/O5mIP12dTTKRfdk4Thef0AmCI+w626QwY7OCZ6lxVFKBJPEaUbfeVijuMhTiKgHFxmcCR69Y2JHLk2UuVcPGzlj1aLaw39xY2Gc4iT5MntXvBshCh/UwbOD8PLlWPTrCFLxsefP22XV9UFjxnABK0vPrm+bFCY4Xu516MDN6pkLTa74djYon4xFU4S88D7Wo4eiwlkOZsgzHT8ErFDXa+frsdPRidy8MHuvEtkrFYcuvSCoVn/tBQgMnhkh0Ev3vb998PqDc5Jw8ecSSnTxOiiVG6cn+gfaiTBPWK1gnCntC5UFxuHUX3Q1njGX+C+dK2wFfGpGxQJUHUPChcQCOFh/QrQwzNtfMBg2gD0gOqsxS26U3ut5Urb+7hJAo7Rbs2nVHvemWPnE9yALH7IjaxPn3gQvlBPbu2/0fFnfrfUYnKuh/F/NpWWxUZ0xnBuLhVBxAQxwBgyLyGsggL7ud0kp0rhuqdgFifgcrLJIkkTKNARBBowX7TyfchJX8el5gLmdbJHsQ5VKRMHT6QIT9vuuTbryJaS5sqaNQbDlixq/G2xmwB77b1mAFC4xD/AR9XA5owPIsWpuoYmAfZU9GVS87naJvwi8fenRfb/KFtUAgvINDyAE8lMJmrP8OjKlD3fHVeTWGl/clFQsHFCGuSMbVEVAykFwN+B17EBxhstVM5fWlwEArZqgtj2qaL29R9fSllW8jyXcI/JXLhJ8StKEEj3FbqrIXr5EoJ535o7cQgw/JXyh6iwkxlYLrROZgFaNhfhFanYDLCO7Qp34Bb3rjQ8ct9W8rl9BCsQVTCQidEhhYd8HnPssKoksPNHN3Gpy6yjXqKfb1MKULvy2J+AY2v2njfOVfmEDtA1Cn5FE5HJHtxfTpnCIy76rVuB6sBw6jFlDbysBMiSZFLN+cbiS60qmnFtqgHhG4FklXRdauK9bJltjeWqlETfmoebwmtB2nx603u1rX6wlar1eCF0bZl4BuKT7TnBMAmwxopw4XN76HI7rNY/gXvh9ABnDFJHpqaj+h2OYzPqY0EP3YfvVIAM0L+ZiR/2uwTyn2EV6x9iPzLuFqkIOj9YJ79u7QgCMwpqyUGj7Z5NoK93vvhqauF9ncLRVHZc4Ubtw4SrtrzEPOyKUzthfS7vZk/2FiAI+4YvsyZ644tXh8j9GrD50EPtzuOo4ZH31YEDLuTfE6ccRBfnUqfhG4ZzzO5MIUJNH2k7MKlJGPFYd1z4WlRD2Gcy4qqS6US1L/EHFEM5KiL8dLWbskKT29oxAUucj+lG7rH/zf1DvZQM8D0mt+Ap3PUuAkDXUBH8RYw6+ygiwXPIS3eeWwJMPgEJm8o6+jkgZq7D+xT8hpwrnaif2Y9RmdQfVsRwshOGxcNYTarqV7iW3gI806ZCm3w6x9vsnYKg0xoo7VFRSCmNBRZDl88aZR8kV3f//32M4G9dTyf6PuH+UsdhuWj8/RIlQyIprOJ0Av0ys1SoMR1A0cHoVk0ehvZsctqiJph5qvycc16K0BgxvTEwIjAoIUrbmNG5Gtxym+QjhCGmrAlVN+rwKwdQQlbaNQAFp7WfIKE5xdXFYfrJPXTRdDDr77AirlNEvDtif9vdRHOyG8DdSQziSryIsXsYuztX/Ad/Nzc/+Btho8WjjiHanIgFrKLHMpQzEojlyVHi0aRvARW/NN1WJEymyTc3khg8NmUnGqPp3ugRuweXU3lGaSjYSwt22dMJeZmFBCc//Ro3+j6iu/EA5g5LpyYqH99Haz7n/ju+f0SzvL4lXw3b0BITjPIRT21IBTbmp8G5EyXoOSSoEkBU1uMkH4vT3gasb/v7tsLCeyshduo3Jv2A89jlhzJE044cbL80enw7h2wHfWgcKoFrHjsH3BCpiA+Gzjjt22PfFkQ/kx85BT+duv6P5ddUT7B6qeR/7ik0AsSqbsX1fGgYXArdEwHCdDsSOfX00LWCFiIoSlG5KT75o+3FO4KIDGNzEXn+K3SdiK7tGtIek8Lf3ZIvUVL/aDk1nvsQTC43LHiAbiHfL7I5ktiu1DdLT0ytdF+qMPm56HcWQjpqfNsWu01GIZvVTb13ak5uUQNXfUApqWh8gIsxbQtYqqxfyiugypXcprMJR9PTDSFV1wVYA0kUioAip+XgQMNM6iuJk14M97RTSyUaPWTSJ1a7m/rGJaNTP0RsQL6pmw7bOf4wj9XZwkQJZ1ICtyKcjC6KYLrn57V2pwqBg+tJeU4H6vHOBOk+uU1QNviYMoHi+YQjRyWaoZ3nPS4kzZJFHwHFOrwm0QloWuj2/cAofeTU0CPJ1g55u/bCiiEZwMTiFu9lXlVdp28jSLFzWEGrYfmn85uA8EA7TjPHlEHj5qqwbFwggZpfsALP/i4KNYci3oRJLKRMDp0ijW1pjr3FgpxDxYMKxhnJdkv88CqviB90VemqK0d58Vf4lhJFNkh9RHYTNcTZgZV4tPDmKKgHp6VkS8Fz+KFGbWDBXD/I3pxqjOsKgm7YG8gjt1ftb7/vEHOoB33rzDe22OXcs+5XO4Es1Ufy3IlIcutAU32IoCkClCV0OKZAhZMbtQLVeGdReN3Mffd5vkuwjR73ZHmy5FAei3X6UqHEs2RNiGaLrZlKi+we6tzanVWukcuBH/Yl18B5Hwf6sm9ZQaakNE0cXdc8jhnPT1rkjFot5cEih335T/9qFLc3OXC7Njep4Q5xNPVWIPGrRxEZNmQkb6mdOnT+GX82pB/llb+xRtZoXPa+ONAgzimNlV1xq/luwN8XZCvMoGRfNaa6b8//PYUwP9C1LeEbjLXu9qJaOWNOla0/z+WA4ST3fDdN3PfYJ72L7ni60dLHAnL/xW5fIUDiJO+AdIDp/0EO/+dns7BAFp7IvRPKOo2rpXS2MblPb0aaH7BYZ2j8092zd09cp2kGf4d5/7C9vVwx8d3ALvMlxjf6xK/n8hIMYBRwAEdM7FZs1EGxTNTwFazOe8dFdOGsZeJhkGE+svSIlCBQR1yFi0tA8yWr4eiHXJj4IfgKEJkx7Pp/kywcmq0u7Y9D7Tnyy+LeYdmLG3voNs3tY0AFLQMjasW6ZkiDKz33y4ZAQyBJpX+aIaSyhdX2d9SKKLd6C/by6+xkLMkrw/TnRUcMaYITnomnDyDWfCgF047P+ENNgV0YBhRizeNC8IE6aIyF5GU4hVjWRQtfuN/VB843+j0d2huKNrF7dpj49QTLvcl5d4yyx6Cjg0gY3lIWnatN8Uf4akn0ySrdcvsioD8sDZwinHDwxkOndA3hHPDuhkpOafKX3cdiyn8EzhJdl+VhldlKy7hRuBJZ98IyXypBnccfy1bAv8a7OgCcOE0q5GQ1EAIzpUrU36aO3wUvkausLTKusykKmVxMenC9h6D7lpkPIHaDDQWJkZX++Us8T1FVGGXr+UgQrve38y0geQYmsrhckXzXbLxGWG9kTcSp/ZfFmgq1m9l/gPfLOKEDw5+28/bDWrfwIxcDFufyHPIriav6Y8wFHJm5o/9l4BtJj+kPOLXiNP0JS8gndzTAmIv3WABgyad5t5xZ2NMXLXm9kl+L2BpKPXF4rrkH26irB90WXnLW8GrOTxXXtGdtT49FoY22uV74RAlaZ/k7UvuGtI6X8VCZEEg4XPbNd6VvbbiUon3oPbLGNVBry9iYVB4bJeESDUJt8QhBHbY1RsuumlQWfMqqorOLhFZ998G+YMqmktwP1RngGcuiDdep8TNbh4LBNqErEL+rl7y0KLkKhWI0HKpf3JJNx1XsD+gnQRvdWLwWimNPHqE7CYOEAQ7qdHT3fR8jG7hIsI2qR7eQa4iYqG+LxK4Gs5T9478TDDVoaicjLf9BLt/Rt+H+fWA0fasbAfYmmYA45LMVxw/HCfMAXhFIL1a1Og+7T/sgMfmRRPzjssxBQS54gxj/LQ/2CFAEeYUiMMnnEQ0soX9kSNYvXg44u6Ecu8evcC9icc9Px7eehEcnpsdNOSfvYW9l27/uMZM8SkqDQzubcjyoX3Ws7wLPGtwsSOPsibGKxwIu98dZfQB+86OSkiCj2vDgfFnkOEYKOxfi7uCkM2K9vOtvnFaYI8/PQPiTxZZw0EUzjFdoMUutiGbTvpfuOnvl0WzM8Merqw+siGEdRf2TXZ+D72VXKt1sYpZ5XK1rJEOsfDEHoyTJPeOjcX0k2FbYI5qoz6+txtYyz1vREmU03sFX0nbgvxRyBCQgFwnILHIMz+71McR1XKhCyGFQ85iq+nE4BEj5MiIxL81OfwImM4egMEJZQ1qCDDoLvK9cQImtHVYGQBNbZc3mrIhhuNZqnthRL7ATsP5aKkS7HYojp/85YNTB0qZaSSvwppoAkV3iu2wdQsbejEWVN7laFv54iTzvfUvoLy+9w/fDnMqlXv8BdHZZfCByVYMKsqBiKbk+TD+DKvM1UCnPJPk9cagnKMKwlxmTp3FJsKS/7RI1NRvUeKe1YZTVR35mi6ex8qrC7SmM0CGiKKU/P2/VPZjfA03C0rtfQqQPP8Fy2baSQ9B4ZlzOWIcfdmMscwOPUBvIAFcZjSSVHaFaaJVnKpWUX4rIk1biC32OBNqfR0B8H8xccL5odmQuv+tAMUA27DgUzh9XsWMlk7yD7OFvwYlQSVRn+M0IitnLys9k+qOTXLYXAB+TRAzlJy0UBBimJQkgicXW9bHqw1sQmcBAQ56b2DdEdHzjB1sNS4Z855K4dhgyq90G29kbO8Sn63S0ahnntnAEXRD4hIQ65rD3LjWuqY5AH0AGHAHj/IN0dss/l7K79nLZWkeL9l5MgiFxZzq/09PMj7V2KTKAOkmkBR3MMSwfHr6f6ioNwl6R2qRGY7IMXQtC95NUXzRS+92ah8W7ZOzXQWyoWIdTRiQuDKCjrAv3JgMkEE2Yxt0eAnF0DF1za6nkjy1YzVZVQxLJfg9vzcjspVX1RQ/UAvJRMlgaarSbZFZBAAAA=" />
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="" />
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['mainForm'];
+if (!theForm) {
+    theForm = document.mainForm;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
+
+
+<script src="/WebResource.axd?d=pynGkmcFUV13He1Qd6_TZEwxevNHYVPiVa1Imd_CfwV7Ab8FE1aS0qMo2VVt5LKJo2QwSrlAqlF7-BPzzVxibA2&amp;t=639190689332169432" type="text/javascript"></script>
+
+
+<script src="/Telerik.Web.UI.WebResource.axd?_TSM_HiddenField_=ctl04_seamless_script_manager_TSM&amp;compress=1&amp;_TSM_CombinedScripts_=%3b%3bSystem.Web.Extensions%2c+Version%3d4.0.0.0%2c+Culture%3dneutral%2c+PublicKeyToken%3d31bf3856ad364e35%3aen-GB%3add3ac3d5-1e29-4112-8fed-529caffa8f24%3aea597d4b%3ab25378d2" type="text/javascript"></script>
+<script src="/ScriptResource.axd?d=Dgt4HF_ft_aJ1oNhpkWrMiNDmBLKt_DsvWnSAz2w6tEELqoI6U0la4w2SXOqY6aKSQopJdYQ7QqurDo6luOWtmOtc0ilepv84Pn5KcIhMMrgeTsEf5EuV8_Sa3cCDWfG--Hnf94oO4VdVbckSgJaVhayxbZ7XIfk_l5vwX8rf1j3PHHLVdsirYnSQi7H-FBaAoI8vrsBRaLWZaSMhQbjtYYKqDWglhIGGk6W571YqSk-uulGq2FPvDWIH4jcRJViiV9xArPU8giGtZPgZuzgazGDA9l8J7QQlNhfdKhxD-RT-xq7lTMNzZtN4P2818X2kcTOPsVXuC5sJXLwZ_95djU3-fBGudmoTPxL2612tOyiZZah_zDS4uE2zWSOvuEiX7jWqffsB-AvNOYbMeUCVMkDWwxm4SnM9P_FzJ7I9RNhaF2SxAANL2e2AV_KOoQt0" type="text/javascript"></script>
+<script src="/Telerik.Web.UI.WebResource.axd?_TSM_HiddenField_=ctl04_seamless_script_manager_TSM&amp;compress=1&amp;_TSM_CombinedScripts_=%3b%3bOpenCities.CustomControls%3aen-GB%3a8875e443-f2ef-457b-94fb-857d92f72782%3a8e1d32bf" type="text/javascript"></script>
+    <script type="text/javascript">
+//<![CDATA[
+Sys.WebForms.PageRequestManager._initialize('ctl04$seamless_script_manager', 'mainForm', [], [], [], 90, '');
+//]]>
+</script>
+
+<script type="text/javascript">
+    try{
+        function SeamlessEndRequestHandler(sender, args) {
+            try {
+                var dataItems = args.get_dataItems();
+                if(dataItems.ctl04_seamless_script_manager)
+                    document.getElementById('__SEAMLESSVIEWSTATE').value = dataItems.ctl04_seamless_script_manager;
+            }
+            catch (e) { }
+        }
+
+        Sys.WebForms.PageRequestManager.getInstance().add_endRequest(SeamlessEndRequestHandler);
+    }
+    catch (e) { }
+</script>
+
+    <div class="unsupported-browser-warning js-element"></div>
+    
+    <div hidden>
+        <span id="new-window-0">opens in new tab or window </span>
+    </div>
+    <div class="overlay-container"></div>
+    
+    <div role="region" aria-label="Site announcements" class="emergency-container emergency-container-position-1"><div id="PublicEmergencyAnnouncementList" data-cookiekeydismisseditems="OC_EA_EmergencyAnnouncementList_Dismissed" data-querykeydismisseditem="OC_EA_EmergencyAnnouncementList_Dismiss">
+   <div class="oc-emergency-announcement-container">
+  <div class="oc-emergency-undismissed max-severity-10 results-2">
+    <div class="side-box message-box emergency-message-box oc-emergency-severity-10 " >
+   <h3 class="side-box-title">Review and comment on the draft Strategic Vision!</h3>
+   <div class="side-box-content">
+      <p >Review and comment on the draft Imagine Kalamazoo 2035 Strategic Vision, a community-developed framework that will guide City priorities, services, and investments over the next decade. Share your comments by September 30.</p>
+      <a href="https://www.kalamazoocity.org/News-articles/Review-and-Comment-on-the-Draft-Imagine-Kalamazoo-2035-Vision"  target="_self" >Learn more</a>
+      
+   </div>
+   <button type="button" class="emergency-announcement-item-dismiss" aria-label="Close this announcement" data-cvid="f6b842eb-bac7-4bf1-8891-dc7228721a25"></button>
+</div>
+        
+  
+    <div class="side-box message-box emergency-message-box oc-emergency-severity-30 " >
+   <h3 class="side-box-title">Boil Water Advisory LIFTED for Water Customers (High & Low Districts)</h3>
+   <div class="side-box-content">
+      <p >The Boil Water Advisory for City of Kalamazoo water customers in the Low and High pressure districts has been lifted.</p>
+      <a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts"  target="_self" >Learn more</a>
+      
+   </div>
+   
+</div>
+        
+  </div><div class="oc-emergency-dismissed results-0"></div></div></div></div>
+    <div class="background-container">
+        <div class="page-container">
+            <!-- OC Layout Element GROUP TEMPLATE -->
+            <!--groupTemplateStart--><header><div class="print-header-outer-container print-element">
+<img src="/files/templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/296/print-header.png" alt="City of Kalamazoo - Logo" />
+</div>
+            <div class="toolbar-outer-container">
+  <div class="toolbar-inner-container clearfix">
+    <div class="toolbar-item toolbar-quicklinks toolbar-display-dropdown">
+	<button type="button" aria-controls="toolbar-quicklinks-drop-down" aria-expanded="false" class="toolbar-button toolbar-button-quicklinks js-element"><span>Quick Links</span><i aria-hidden="true"></i></button>	
+	<div id="toolbar-quicklinks-drop-down" class="toolbar-drop-down toolbar-quicklinks-drop-down clearfix">
+		<ul>
+		  <li><a href="http://eepurl.com/bgLggT" class="oc-icon-b oc-i-email link-type-external" target="_blank"><span>Join Our Email List</span></a></li><li><a href="https://www.facebook.com/KalamazooCity" class="oc-icon-b oc-i-facebook link-type-external" target="_blank"><span>Facebook</span></a></li><li><a href="https://www.instagram.com/kalamazoocity" class="oc-icon-b oc-i--none link-type-external" target="_blank"><span>Instagram</span></a></li>
+		</ul>
+	</div>
+</div><div class="toolbar-item toolbar-language notranslate toolbar-display-dropdown"><div class="no-js-element">
+		  <ul>
+		    <li id="toolbar-language-option-en-us-noscript"><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories?oc_lang=en-US" class="lang-item lang-en-us" data-translate-to="en-us" lang="en-US">English<span class="visuallyhidden"> Select this as your preferred language</span></a></li><li id="toolbar-language-option-es-noscript"><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories?oc_lang=es" class="lang-item lang-es" data-translate-to="es" lang="en">Spanish<span class="visuallyhidden"> Select this as your preferred language</span></a></li><li id="toolbar-language-option-ar-noscript"><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories?oc_lang=ar" class="lang-item lang-ar" data-translate-to="ar" lang="en">Arabic<span class="visuallyhidden"> Select this as your preferred language</span></a></li><li id="toolbar-language-option-zh-cn-noscript"><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories?oc_lang=zh-CN" class="lang-item lang-zh-cn" data-translate-to="zh-cn" lang="en">Chinese (Simplified)<span class="visuallyhidden"> Select this as your preferred language</span></a></li>
+          </ul>
+		</div>
+	<button type="button" role="combobox" aria-controls="toolbar-language-drop-down" aria-expanded="false" aria-haspopup="listbox" aria-autocomplete="none" aria-labelledby="toolbar-language-label" class="toolbar-button toolbar-button-language js-element">  
+        <span class="toolbar-language-globe-icon" aria-hidden="true"></span>
+        <span id="toolbar-language-label" class="current-language">
+            Select a language to translate to
+		</span>
+		<i aria-hidden="true"></i>
+	</button>
+	<div id="toolbar-language-drop-down" role="listbox" aria-label="Available languages" class="toolbar-drop-down toolbar-language-drop-down js-element clearfix">
+		<ul role="group">
+		    <li role="presentation"><a id="toolbar-language-option-en-us" role="option" aria-selected="true" href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories?oc_lang=en-US" class="lang-item lang-en-us" data-translate-to="en-us" lang="en-US">English<span class="visuallyhidden"> Select this as your preferred language</span></a></li><li role="presentation"><a id="toolbar-language-option-es" role="option" aria-selected="false" href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories?oc_lang=es" class="lang-item lang-es" data-translate-to="es" lang="en">Spanish<span class="visuallyhidden"> Select this as your preferred language</span></a></li><li role="presentation"><a id="toolbar-language-option-ar" role="option" aria-selected="false" href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories?oc_lang=ar" class="lang-item lang-ar" data-translate-to="ar" lang="en">Arabic<span class="visuallyhidden"> Select this as your preferred language</span></a></li><li role="presentation"><a id="toolbar-language-option-zh-cn" role="option" aria-selected="false" href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories?oc_lang=zh-CN" class="lang-item lang-zh-cn" data-translate-to="zh-cn" lang="en">Chinese (Simplified)<span class="visuallyhidden"> Select this as your preferred language</span></a></li>
+        </ul>
+	</div></div>
+  </div>
+</div>
+            <div class="header-outer-container">
+    <div class="header-container header-layout-3  clearfix">
+			<div class="header-site-logo">
+				<a href="https://www.kalamazoocity.org/Home" lang="en-US" aria-label="City of Kalamazoo - Home - Logo">
+				</a>
+			</div>
+      
+		    <div class="mobile-search-btn js-element">
+		        <button><i aria-hidden="true"></i><span class="mobile-search-btn-text"><span class="visuallyhidden">Open </span>Search</span></button>
+		    </div>
+		    <div class="header-website-settings">
+                <button id="btn-mob-nav" type="button" aria-expanded="false" aria-controls="nav">
+                    <i aria-hidden="true"></i><span class="side-menu-btn-text">Menu</span>
+                </button>
+        	</div>
+          <div class="navigation-outer-container">
+	<div id="nav" role="navigation" class="navigation-container  navigation-container-option-7" data-menu-type="horizontal" aria-label="primary">
+        <div class="grid">
+            <div class="col-xs-12">              
+                <ul class="sf-menu" id="sc-main-menu"><li class="nav-section-quarters-1   first-item nav-item-seq-1">
+<a href="https://www.kalamazoocity.org/Business-Development" class="nav-level-1 nav-has-children"  target="">
+	<i class="item-icon" aria-hidden="true"></i><span class="item-text">Business & Development</span>
+</a>
+<button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow" aria-controls="sc-menu-second-level-nav-item-seq-1">
+              <i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-second-level-nav-item-seq-1">
+
+          
+            <li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Apply-for-Business-Licenses" class=""  target="">Apply for Business Licenses</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Brownfield-Redevelopment-Authority" class=""  target="_self">Brownfield Redevelopment Authority</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs" class="nav-has-children"  target="">Business Support Programs</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-1-nav-item-seq-3"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-1-nav-item-seq-3">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Black-Entrepreneur-Training-Academy-BETA"  target="_blank">Black Entrepreneur Training Academy (BETA)</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Core-60"  target="_blank">Core 60</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Economic-Initiative-Fund"  target="">Economic Initiative Fund</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Kalamazoo-Micro-Enterprise-Grants"  target="_blank">Kalamazoo Micro-Enterprise Grants</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Office-Hours-at-Can-Do-Kalamazoo"  target="">Office Hours at Can-Do Kalamazoo</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Shop-Local-Greater-Kalamazoo"  target="_blank">Shop Local Greater Kalamazoo</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Social-Equity-Cannabis-Chamber"  target="_blank">Social Equity Cannabis Chamber</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Economic-Development-Strategy" class=""  target="">Economic Development Strategy</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Home-based-Business-Standards" class=""  target="">Home-based Business Standards</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Neighborhood-Enterprise-Zones" class=""  target="">Neighborhood Enterprise Zones</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Resources-for-Entrepreneurs" class=""  target="_blank">Resources for Entrepreneurs</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Work-with-the-City-of-Kalamazoo" class="nav-has-children"  target="">Work with the City of Kalamazoo</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-1-nav-item-seq-8"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-1-nav-item-seq-8">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Work-with-the-City-of-Kalamazoo/View-Bid-Opportunities"  target="">View Bid Opportunities</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Work-with-the-City-of-Kalamazoo/Bid-for-City-Projects-and-Purchases"  target="">Bid for City Projects and Purchases</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Work-with-the-City-of-Kalamazoo/Join-the-Bidders-List"  target="">Join the City of Kalamazoo's Bidders List</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Work-with-the-City-of-Kalamazoo/View-More"  target="_self">View More</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Zoning-Code" class=""  target="">Zoning Code</a></li></ul></li>
+          
+            <li class="nav-section-quarters-2   nav-item-seq-2">
+<a href="https://www.kalamazoocity.org/Community" class="nav-level-1 nav-has-children"  target="">Community</a>
+<button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow" aria-controls="sc-menu-second-level-nav-item-seq-2">
+              <i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-second-level-nav-item-seq-2">
+
+          
+            <li class=" "><a  href="https://www.kalamazoocity.org/Community/About-Kalamazoo" class=""  target="">About Kalamazoo</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Calendar" class=""  target="">Calendar</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Cemeteries" class=""  target="">Cemeteries</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Discover-Kalamazoo" class=""  target="_blank">Discover Kalamazoo</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Events-Meetings" class=""  target="">Events & Meetings</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Community-Development-Housing-Programs" class=""  target="">Community Development & Housing Programs</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Historic-Preservation" class=""  target="">Historic Preservation</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Neighborhoods" class=""  target="">Neighborhoods</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Parks-Recreation" class=""  target="_blank">Parks & Recreation</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Projects" class=""  target="">Projects</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Rental-Housing" class=""  target="">Rental Housing</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Sustainability-Our-Environment" class=""  target="">Sustainability & Our Environment</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Share-Your-Feedback" class=""  target="">Share Your Feedback</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Social-Districts" class=""  target="">Social Districts</a></li></ul></li>
+          
+            <li class="nav-section-quarters-3 nav-active-path  nav-item-seq-3">
+<a href="https://www.kalamazoocity.org/Residents" class="nav-level-1 nav-has-children"  target="">Residents</a>
+<button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow" aria-controls="sc-menu-second-level-nav-item-seq-3">
+              <i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-second-level-nav-item-seq-3">
+
+          
+            <li class=" "><a  href="https://www.kalamazoocity.org/Residents/City-View-Newsletter" class=""  target="">City View Newsletter</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Elections" class="nav-has-children"  target="">Elections</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-3-nav-item-seq-2"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-3-nav-item-seq-2">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Residents/Elections/Register-to-Vote"  target="">Register to Vote</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Elections/Vote-Early-or-By-Mail-Using-an-Absentee-Ballot"  target="">Vote Early or By Mail Using an Absentee Ballot</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Elections/Find-Polling-Locations-Drop-Boxes"  target="">Find Polling Locations & Drop Boxes</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Elections/View-More"  target="_self">View More</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Make-a-Payment" class="nav-has-children"  target="">Make a Payment</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-3-nav-item-seq-3"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-3-nav-item-seq-3">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Residents/Make-a-Payment/Pay-a-Water-and-Sewer-Bill"  target="">Pay a Water and Sewer Bill</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Make-a-Payment/Pay-City-Invoices"  target="">Pay City Invoices</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Make-a-Payment/Pay-a-Parking-Ticket"  target="">Pay a Parking Ticket</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Make-a-Payment/Pay-Delinquent-Property-Taxes"  target="_blank">Pay Delinquent Property Taxes</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Make-a-Payment/Pay-Current-Property-Taxes"  target="">Pay Current Property Taxes</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Kalamazoo-Metro" class=""  target="_blank">Kalamazoo Metro</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/My-Area" class=""  target="">My Area</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Resources-for-Students" class=""  target="">Resources for Students</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Snow-Removal" class=""  target="">Snow Removal</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Connect-with-311" class=""  target="_blank">Connect with 311</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Taxes-Assessing" class="nav-has-children"  target="">Taxes & Assessing</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-3-nav-item-seq-9"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-3-nav-item-seq-9">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Residents/Taxes-Assessing/Find-Property-Tax-Information"  target="">Find Property & Tax Information</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Taxes-Assessing/View-GIS-Maps"  target="">View GIS Maps</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Taxes-Assessing/A-Guide-to-Your-Property-Taxes"  target="">A Guide to Your Property Taxes</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Taxes-Assessing/Frequently-Asked-Questions-on-Property-Tax-Assessments"  target="">Frequently Asked Questions on Property Tax Assessments</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Taxes-Assessing/View-More"  target="_self">View More</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Taxes-Assessing/Property-Tax-Estimator"  target="_blank">Property Tax Estimator</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Recycling-Waste" class="nav-has-children"  target="">Recycling & Waste</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-3-nav-item-seq-10"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-3-nav-item-seq-10">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Recycling"  target="">Recycling</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Bulk-Trash"  target="">Bulk Trash</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Yard-Waste-Pickup"  target="">Yard Waste Pickup</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Fall-Leaf-Pickup"  target="">Fall Leaf Pickup</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Food-Scrap-Recycling"  target="">Food Scrap Recycling</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Household-Hazardous-Waste-Center"  target="_blank">Household Hazardous Waste Center</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/View-from-the-Curb"  target="">View from the Curb</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Recycle-Coach"  target="">Recycle Coach</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/EPS-Foam-Recycling-Collection"  target="_self">EPS Foam Recycling Collection</a></li></ul></li><li class="nav-active-path "><a  href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service" class="nav-has-children"  target="">Water & Sewer Service</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-3-nav-item-seq-11"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-3-nav-item-seq-11">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Transfer-Water-Sewer-Service"  target="">Transfer Water & Sewer Service</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Request-Free-Water-Testing-for-Lead-Copper"  target="">Request Free Water Testing for Lead & Copper</a></li><li  class="nav-active-path nav-active-page"><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories"  target="">Boil Water Advisories</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/View-Water-Sewer-Rates"  target="_blank">View Water & Sewer Rates</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Help-with-Utility-Bills"  target="">Help with Utility Bills</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/View-More"  target="_self">View More</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Past-Due-Utility-Accounts-and-Liens"  target="">Past Due Utility Accounts and Liens</a></li></ul></li></ul></li>
+          
+            <li class="nav-section-quarters-4   nav-item-seq-4">
+<a href="https://www.kalamazoocity.org/Government" class="nav-level-1 nav-has-children"  target="">Government</a>
+<button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow" aria-controls="sc-menu-second-level-nav-item-seq-4">
+              <i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-second-level-nav-item-seq-4">
+
+          
+            <li class=" "><a  href="https://www.kalamazoocity.org/Government/Mayor-Vice-Mayor-and-City-Commissioners" class=""  target="">Mayor, Vice Mayor, and City Commissioners</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/ADA-Request" class=""  target="_blank">ADA Request</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Boards-Commissions" class="nav-has-children"  target="">Boards & Commissions</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-4-nav-item-seq-3"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-4-nav-item-seq-3">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Upcoming-Meetings"  target="_self">Upcoming Meetings</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Meeting-Calendar"  target="">Meeting Calendar</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Apply-to-Join-a-Board-or-Commission"  target="">Apply to Join a Board or Commission</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Minutes-Agendas"  target="">Minutes & Agendas</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Special-Meeting-Notices"  target="">Special Meeting Notices</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Watch-City-Meetings"  target="">Watch City Meetings</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Complete-Streets-Advisory-Committee"  target="">Complete Streets Advisory Committee</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Budgets-and-Financial-Reports" class=""  target="">Budgets and Financial Reports</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/City-Charter" class=""  target="_blank">City Charter</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Code-of-Ordinances" class=""  target="_blank">Code of Ordinances</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Departments" class=""  target="">Departments</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Locations-Hours" class=""  target="">Locations & Hours</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Programs-Initiatives" class="nav-has-children"  target="">Programs & Initiatives</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-4-nav-item-seq-9"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-4-nav-item-seq-9">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Government/Programs-Initiatives/Shared-Prosperity-Kalamazoo"  target="">Shared Prosperity Kalamazoo</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Programs-Initiatives/Social-Justice-Youth-Awards"  target="">Social Justice Youth Awards</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Programs-Initiatives/Imagine-Kalamazoo"  target="">Imagine Kalamazoo</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Programs-Initiatives/2027-Budget-Development"  target="">2027 Budget Development</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Request-Public-Documents-FOIA" class=""  target="">Request Public Documents (FOIA)</a></li></ul></li>
+          
+            </ul>
+            </div>
+        </div>
+    </div>
+</div>
+			
+			<div class="header-search-control-container" id="header-search">
+				<div class="search-inner-container">
+					<div class="sc-search-panel" onkeypress="javascript:return WebForm_FireDefaultButton(event, &#39;ctl08_btnSearch&#39;)">
+	<label for="ctl08_txtSearch" id="ctl08_lblSearch" class="sc-search-label">Search</label><input name="ctl08$txtSearch" type="text" id="ctl08_txtSearch" class="sc-search-text" placeholder="Search for a keyword or a page" /><input type="submit" name="ctl08$btnSearch" value="Search" id="ctl08_btnSearch" class="sc-search-button" />
+</div>
+					<div role="status" id="predictiveResults"></div>
+				</div>
+			</div>
+    </div>
+</div>
+
+            </header>
+            <div class="content-outer-container">
+                <div id="main" role="main" class="main-outer-container clearfix">
+                        
+                        <div class="content-main-container">
+                            <div class="grid">
+					            <div class="col-xs-12">
+						            <nav id="breadcrumbs-container" aria-label="You Are Here :">
+							            <span role="list">
+<span role="listitem">
+	<a href="https://www.kalamazoocity.org/Home"  lang="en-US">Home</a>
+	<span class="nav-separator" aria-hidden="true" role="presentation">/</span>
+</span>
+          <span role="listitem"><a href="https://www.kalamazoocity.org/Residents" >Residents</a><span class='nav-separator' aria-hidden="true" role="presentation">/</span></span><span role="listitem">
+	<a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service" >
+		Water & Sewer Service
+	</a>
+	<span class='nav-separator' aria-hidden="true" role="presentation">/</span>
+</span>
+<span class="current-page" role="listitem" aria-current="page" >Boil Water Advisories</span>
+          </span>
+						            </nav>
+					            </div>
+                      
+					            <div class="col-xs-12">
+						            <div class="main-inner-container">
+							            <div id="main-content" class="main-container clearfix">
+							              
+                            <!-- OC Layout Element Conent Template -->
+							              <!--normalTemplateStart--><h1 class='oc-page-title '>Boil Water Advisories</h1>
+<div class="clearfix">
+    
+    <p>Our public water supply system is always under pressure. This prevents any contamination from entering the system and keeps our water safe. But sometimes we need to reduce water pressure to make a repair, replace pipes, or connect new pipes into the system. When the pressure is reduced the water is less protected, so we issue a Boil Water Advisory to let customers know.&nbsp;Before water pressure is reduced, that part system is isolated so that the smallest possible area will be affected.&nbsp;</p>
+<p><span style="color: inherit; font-size: 1em;">Boil Water Advisories are precautionary. They are issued while we test to confirm the water has not been affected. Our team completes two separate rounds of testing before advisories are lifted.&nbsp;</span><span style="color: inherit; font-size: 1em;">While under a Boil Water Advisory, affected customers are advised to boil their tap water for two minutes before consuming it, or use bottled water until the advisory is lifted. No special actions are needed for water used for hygiene.&nbsp;&nbsp;</span></p>
+<p><span style="font-size: 1em;">In the rare case where testing reveals a problem with the water in an area, a Boil Water Order would be issued. This is exceedingly rare, and the vast majority of Boil Water Advisories are issued out of an abundance of caution and lifted within three days.</span></p>
+<p><span style="font-size: 1em;">In the unlikely event that the water system experiences contamination that is not microbial (for instance due to a chemical spill or backflow due to a cross connection) a notice to customers could include &ldquo;Do Not Drink&rdquo; or "Do Not Use" language since boiling the water may not remove the contamination.</span></p>
+<p><span style="font-size: 1em;">Our team hand delivers water advisory notices to affected homes and businesses whenever possible. If the affected area is large and includes a lot of properties, advisories may be issued by media release.</span></p>
+<p>All current and recently lifted water advisories are listed below. You can click the "Subscribe to This Page" button below to get daily updates this list of advisories. You can also subscribe to a specific advisory and be notified when it is updated.</p>
+
+
+</div>
+
+<div class="grid">
+<div class="col-xs-12">
+<div class="search-filter-body landing-page-search clearfix" data-result-highlight-source="true">
+	<label for="ctl10_ctl00_ctl01">
+		By Phrase or Keyword
+	</label>
+	<span class='sc-search-box'><input name="ctl10$ctl00$ctl01" type="text" id="ctl10_ctl00_ctl01" class="inputBox" /></span>
+	<input type="submit" name="ctl10$ctl00$ctl02" value="Search" />
+</div>
+</div>
+        
+<div class="col-xs-12">
+		
+        
+<div class="listing-results">
+4 Result(s) Found
+</div><script>OpenCities.Settings.ContentListFilters['oc-be256919-4fa4-4036-bb09-7a45e7fb7754'] = {"GroupIds":["b9015858-988c-48a4-9473-7c193df083e4"],"ContentParentId":"0bb637d8-2f5b-4694-ac68-9c505b0f6c0f","FileParentId":"00000000-0000-0000-0000-000000000000","DefaultFields":[],"UserFields":[],"ContentTypes":["b1ebd8ca-4a3d-463b-953f-134bd7bf01eb","9cd2b480-237c-4737-9cc5-d44356a5c778","329f493b-ba3b-4eb9-b71c-e4d720e664be","6a06391a-6589-4034-bd40-727526c58938","140c5e68-58d5-4107-a56a-98ec863e5b4b"],"Keyword":null}</script><div class='search-subscription' data-filter-id='oc-be256919-4fa4-4036-bb09-7a45e7fb7754'></div>
+<div class="list-container landing-page-list-container left">
+        
+<div class="list-item-container">		
+	<article>
+		<a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LOW-and-HIGH-Pressure-Districts-ONLY"  target="_self">	
+			<h2 class="list-item-title">
+				Boil Water Advisory: LOW and HIGH Pressure Districts
+			</h2>
+      
+			<p>		
+				E.coli bacteria were found in one sample on September 18, 2026. Municipal water customers within the affected area should not drink the water without boiling it first.
+			</p>
+		</a>
+	</article>
+</div>
+        <div class="list-item-container">		
+	<article>
+		<a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Scheduled-Boil-Water-Advisory-Baker-St"  target="">	
+			<h2 class="list-item-title">
+				Scheduled Boil Water Advisory: Baker St
+			</h2>
+      
+			<p>		
+				A precautionary boil water advisory will be issued on Wednesday, September 23 at approximately 8 a.m. for 1405, 1419, and 1427 Baker Street due to scheduled water system repairs. Water service will be temporarily shut off while the work is completed.
+			</p>
+		</a>
+	</article>
+</div>
+        <div class="list-item-container">		
+	<article>
+		<a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Scheduled-Boil-Water-Advisory-Wheaton-Ave-Axtell-St-Merrill-St"  target="">	
+			<h2 class="list-item-title">
+				Scheduled Boil Water Advisory: Wheaton Ave, Axtell St, Merrill St
+			</h2>
+      
+			<p>		
+				A precautionary boil water advisory will be issued for some customers on Monday, September 21, at approximately 8 a.m. due to water main work on Newton Ct. Water services will temporarily be shut off during this work.
+			</p>
+		</a>
+	</article>
+</div>
+        <div class="list-item-container">		
+	<article>
+		<a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-Lifted-Rose-Arbour-Dr"  target="">	
+			<h2 class="list-item-title">
+				Boil Water Advisory Lifted: Rose Arbour Dr
+			</h2>
+      
+			<p>		
+				This advisory has been lifted.
+			</p>
+		</a>
+	</article>
+</div>
+        
+</div>
+<div class="seamless-pagination left seamless-pagination-count-1">
+	<div class="seamless-pagination-controls">
+		<span class="button-previous"><input type="submit" name="ctl10$ctl00$ctl08" value="Previous" disabled="disabled" title="Previous page" class="btn_scPagingNonJS_disabled" /></span>
+	    <div class="seamless-pagination-data" aria-label='Pagination' role='navigation'>
+        Page <select name="ctl10$ctl00$ctl10" disabled="disabled" title="Please select the page here." class="scSearchInputBox">
+	<option selected="selected" value="1">1</option>
+
+</select><input type="submit" name="ctl10$ctl00$ctl11" value="Go" disabled="disabled" title="Change page" class="btn_scPagingNonJS_disabled" />
+	    </div>
+	    <span class="button-next"><input type="submit" name="ctl10$ctl00$ctl12" value="Next" disabled="disabled" title="Next page" class="btn_scPagingNonJS_disabled" /></span>
+    </div>
+    <div class="seamless-pagination-pages" aria-label="Pagination" role="navigation">
+    </div>
+</div>
+<div class="seamless-pagination-info right" role="status">
+  Page 1 of 1
+</div>
+        
+
+
+</div>
+</div>
+        
+
+
+
+
+
+
+<!--normalTemplateEnd-->
+                            
+                            
+                            
+							            </div>
+						            </div>
+					            </div>
+                        
+                            </div>
+                        </div>
+                        <div class="back-to-top-container text-center">
+                            <a href="#body-top" id="back-to-top"><i aria-hidden="true"></i><span class="js-visuallyhidden">Back to top</span></a>
+                        </div>
+                </div>
+            </div><!--groupTemplateEnd-->
+            <footer>
+                
+                    <div class="footer-outer-container footer-first-row">
+                        <div class="footer-container clearfix">
+                            <div class="grid grid-pad">
+                                <div class="col-xs-12 col-s-12 col-m-6 col-lg-3" >
+	
+			<h2 class="visuallyhidden">Site Footer</h2>
+			<h3 class="footer-title">Contact Us</h3>
+			
+	<p>City of Kalamazoo<br />
+241 W South Street<br />
+Kalamazoo, MI 49007<br />
+<a href="https://maps.google.com/maps?q=241%20W%20South%20Street%20Kalamazoo,%20MI%2049007,%20USA" target="_blank">View on Map</a><br />
+<a href="https://www.kalamazoocity.org/Government/Locations-Hours">Locations &amp; Hours</a></p>
+<p>Phone:&nbsp;<a href="tel:311">311</a> or <a href="tel:2693378000">(269) 337-8000</a><br />
+Email:&nbsp;<a href="mailto:311@kalamazoocity.org">311@kalamazoocity.org</a></p>
+
+
+	
+	
+</div><div class="col-xs-12 col-s-12 col-m-6 col-lg-3" >
+	
+			<h2 class="visuallyhidden">Site Footer</h2>
+			<h3 class="footer-title">Quick Links</h3>
+			
+	
+	<ul class="footer-links without-icons ">  <li>
+<a href="https://www.governmentjobs.com/careers/kalamazoomi" target="_blank"  >Jobs</a>
+</li>
+          <li>
+<a href="https://www.imaginekalamazoo.com" target="_blank"  >Imagine Kalamazoo</a>
+</li>
+          <li>
+<a href="https://www.kalamazooffe.org" target="_blank"  >Foundation for Excellence</a>
+</li>
+          <li>
+<a href="https://www.kzooparks.org" target="_blank"  >Kzoo Parks</a>
+</li>
+          <li>
+<a href="https://www.kalamazoopublicsafety.org" target="_blank"  >Kalamazoo Public Safety</a>
+</li>
+          <li>
+<a href="https://www.kalamazoocity.org/Government/Departments/Diversity-Equity-and-Inclusion" target="_self"  >Diversity, Equity, and Inclusion</a>
+</li>
+           </ul>
+	
+</div><div class="col-xs-12 col-s-12 col-m-6 col-lg-3" >
+	
+			<h2 class="visuallyhidden">Site Footer</h2>
+			<h3 class="footer-title">Share &amp; Connect</h3>
+			
+	
+	<ul class="footer-links with-icons social-media-links">  <li class="footer-link-facebook">
+	<a href="http://www.facebook.com/kalamazoocity" target="_blank"  >
+<i aria-hidden="true"></i>Like us on Facebook
+</a>
+</li>
+          <li class="footer-link-youtube">
+	<a href="https://www.youtube.com/channel/UCIgXSSXLSDxThVaaiRMsR5Q" target="_blank"  >
+<i aria-hidden="true"></i>Watch our YouTube Channel
+</a>
+</li>
+          <li class="footer-link-">
+	<a href="https://www.kalamazoocity.org/Community/Stay-in-Touch" target="_self"  >
+<i aria-hidden="true"></i>Stay in Touch
+</a>
+</li>
+           </ul>
+	
+</div>
+                            </div>
+                        </div>
+                    </div>
+                
+                <div class="footer-outer-container footer-second-row">
+                    <div class="footer-container clearfix">
+                        <div class="grid grid-pad footer-secondary-links">
+                            <div class="col-xs-12 col-m-7">
+                                
+                                    <div><a href="https://www.kalamazoocity.org/Policies/General-Disclaimer" target="_self"  >Disclaimer</a>&nbsp;| <a href="https://www.kalamazoocity.org/Policies/Privacy-Policy" target="_self"  >Privacy Policy</a>&nbsp;| <a href="https://www.kalamazoocity.org/Policies/Social-Media-Policy" target="_self"  >Social Media Policy</a></div>
+                                
+                            </div>
+                            <div class="col-xs-12 col-m-5 powered-by">
+                                <div class="right">
+                                    &copy; 2026 City of Kalamazoo&nbsp;|&nbsp;<span class="powered-by">Powered by <a href="https://granicus.com/solution/govaccess/opencities/" target="_blank">Granicus</a></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <script src="/files/oc-resources/b9015858-988c-48a4-9473-7c193df083e4/JsTextSnippets.js?ocsvclang=en-US" type="text/javascript"></script><script></script>
+    
+    <script type="text/javascript">
+_linkedin_partner_id = "7175250";
+window._linkedin_data_partner_ids = window._linkedin_data_partner_ids || [];
+window._linkedin_data_partner_ids.push(_linkedin_partner_id);
+</script><script type="text/javascript">
+(function(l) {
+if (!l){window.lintrk = function(a,b){window.lintrk.q.push([a,b])};
+window.lintrk.q=[]}
+var s = document.getElementsByTagName("script")[0];
+var b = document.createElement("script");
+b.type = "text/javascript";b.async = true;
+b.src = "https://snap.licdn.com/li.lms-analytics/insight.min.js";
+s.parentNode.insertBefore(b, s);})(window.lintrk);
+</script>
+<noscript>
+<img height="1" width="1" style="display:none;" alt="" src="https://px.ads.linkedin.com/collect/?pid=7175250&fmt=gif" />
+</noscript>
+
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5P6VBML5"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+
+
+<script type="text/javascript"> 
+    window._monsido = window._monsido || {
+        token: "gAt7oi20yH1GA80GPMjYUA",
+        statistics: {
+            enabled: true,
+            cookieLessTracking: true,
+            documentTracking: {
+                enabled: true,
+                documentCls: "monsido_download",
+                documentIgnoreCls: "monsido_ignore_download",
+                documentExt: [],
+            },
+        },
+        heatmap: {
+            enabled: true,
+        },
+        pageCorrect: {
+            enabled: true,
+        },
+        pageAssistV2: {
+            enabled: true,
+            theme: "light",
+            mainColor: "#0177bb",
+            textColor: "#ffffff",
+            linkColor: "#0177bb",
+            buttonHoverColor: "#0177bb",
+            mainDarkColor: "#052942",
+            textDarkColor: "#ffffff",
+            linkColorDark: "#FFCF4B",
+            buttonHoverDarkColor: "#FFCF4B",
+            greeting: "Discover your personalization options",
+            direction: "leftbottom",
+            coordinates: "   ",
+            iconShape: "circle",
+            title: "Personalization Options",
+            titleText: "Welcome to PageAssist™ toolbar! Adjust the options below to cater the website to your accessibility needs.",
+            iconPictureUrl: "logo",
+            logoPictureUrl: "",
+            logoPictureBase64: "",
+            languages: ["en-US", "es-MX"],
+            defaultLanguage: "en-US",
+            skipTo: true,
+            alwaysOnTop: false,
+        },
+    };
+</script>
+<script type="text/javascript" async src="https://app-script.monsido.com/v2/monsido-script.js"></script>
+    <!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-44565305-6"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-E4D3S5SRYZ');
+  gtag('config', 'UA-44565305-6');
+</script>
+    
+    
+
+<script type="text/javascript">
+//<![CDATA[
+window.__TsmHiddenField = $get('ctl04_seamless_script_manager_TSM');//]]>
+</script>
+</form>
+</body>
+</html>

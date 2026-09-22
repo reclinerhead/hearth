@@ -54,11 +54,17 @@ export async function updateSession(request: NextRequest) {
   // /sitemap.xml and /robots.txt are crawler entry points that must
   // never bounce to /login — they pass through the proxy because the
   // root matcher only excludes _next internals and image files.
+  //
+  // /api/advisories/* are the tokenized confirm / unsubscribe links in
+  // water advisory emails (issue #331). The recipient is a neighbor, not
+  // a Hearth user, so there is no session; the random token in the query
+  // string is the capability and the handlers validate it.
   const isPublicRoute =
     pathname === "/" ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/auth") ||
     pathname.startsWith("/api/cron") ||
+    pathname.startsWith("/api/advisories/") ||
     pathname === "/how-it-works" ||
     pathname === "/water" ||
     pathname.startsWith("/water/") ||
@@ -118,6 +124,23 @@ export async function updateSession(request: NextRequest) {
     const canCreate =
       profile?.is_admin === true || profile?.plan_tier === "premium";
     if (!canCreate) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      return NextResponse.redirect(url);
+    }
+  }
+
+  // Admin gate: /admin/* requires public.profiles.is_admin (issue #331).
+  // Same shape as the /houses/new gate — one thin profile read here so a
+  // stale-session direct hit never renders the page shell; the pages
+  // re-check as defense in depth.
+  if (user && (pathname === "/admin" || pathname.startsWith("/admin/"))) {
+    const { data: profile } = await supabase
+      .schema("public")
+      .from("profiles")
+      .select("is_admin")
+      .maybeSingle();
+    if (profile?.is_admin !== true) {
       const url = request.nextUrl.clone();
       url.pathname = "/dashboard";
       return NextResponse.redirect(url);

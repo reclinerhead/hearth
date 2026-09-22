@@ -274,6 +274,22 @@ function RootMenu({
         </Link>
       ) : null}
 
+      {/* Admin-only: the water advisory subscriber list (issue #331).
+          Gated here on the resolved capability and again in the proxy +
+          page, so a non-admin never sees the entry or the page.        */}
+      {capabilities.isAdmin ? (
+        <Link
+          href="/admin/water-advisories"
+          role="menuitem"
+          onClick={onClose}
+          className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[color:var(--color-bg-surface)]"
+          style={{ color: "var(--color-text-primary)" }}
+        >
+          <Icon name="droplet" size={16} />
+          <span>Water advisories</span>
+        </Link>
+      ) : null}
+
       <div className="sm:hidden">
         <ThemeToggleMenuItem onClick={onClose} />
       </div>

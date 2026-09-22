@@ -2,7 +2,7 @@
 
 **What:** a homeowner document- and knowledge-management web application — a production SaaS-shaped product, designed, built, and operated solo
 **Active:** May 2026 – present · deployed to production on Vercel · ~320 issues/PRs merged
-**Last updated:** 2026-08-20 · updated after milestones, not every change (see AGENTS.md)
+**Last updated:** 2026-09-22 · updated after milestones, not every change (see AGENTS.md)
 
 > **Purpose of this file.** A self-contained, factual summary of this project and the skills it demonstrates, written to be pasted into an AI session for resume building, cover letters, or interview prep. Every claim is accurate and interview-defensible. Two lenses matter: **skills demonstrated** (shipped and running) and **skills in development** (actively being explored).
 
@@ -47,6 +47,8 @@ The product surface is deliberately designed, not defaulted: a custom design-tok
 
 ### Reliability & operations
 - Wrote a scheduled storage-reconciliation job that diffs each private bucket against its owning database rows and removes orphans — with the diff logic as a pure, unit-tested function and layered safety rails: rows-first ordering, an age guard, a dry-run gate, and a per-run cap.
+- Built a civic-alert watcher after a city-wide boil-water advisory reached almost no one: a 30-minute cron scrapes the municipality's advisory page (behind Akamai bot protection, no feed), classifies each notice by status and district-wide vs. street-level scope with pure, fixture-tested parsers, diffs against stored rows to derive issued/updated/lifted events, and emails an admin-managed, double-opt-in subscriber list through Resend — with an idempotency log so retries can't double-send, a seed-silently first run, a dry-run gate, and a "watcher is blind" alarm so a broken scrape never looks like calm.
+- Shipped the app's first admin-only surface behind three layers of gating (proxy, page, and row-level security via a `SECURITY DEFINER` predicate), plus unauthenticated tokenized confirm/unsubscribe routes designed for recipients who are not app users.
 - CI runs the test suite on every PR; every feature branch gets an isolated preview deployment; merge to main is the production deploy.
 
 ### Engineering process & documentation
@@ -65,4 +67,4 @@ The product surface is deliberately designed, not defaulted: a custom design-tok
 
 ## Technology inventory
 
-TypeScript (strict) · Next.js App Router / React 19 / React Server Components / React Compiler / Turbopack · Tailwind CSS v4 + design tokens · Supabase (Postgres, RLS, GoTrue auth, Storage, Realtime) · Vercel (hosting, preview deployments, cron) · Vercel AI SDK + AI Gateway (Anthropic / OpenAI / xAI) · Vercel Workflow SDK (durable background jobs) · Mapbox (address autofill / geocoding) · public datasets: EPA (radon, Superfund), FEMA (flood zones), SDWIS-family drinking-water data · Vitest · GitHub Actions CI · pnpm
+TypeScript (strict) · Next.js App Router / React 19 / React Server Components / React Compiler / Turbopack · Tailwind CSS v4 + design tokens · Supabase (Postgres, RLS, GoTrue auth, Storage, Realtime) · Vercel (hosting, preview deployments, cron) · Vercel AI SDK + AI Gateway (Anthropic / OpenAI / xAI) · Vercel Workflow SDK (durable background jobs) · Resend (transactional email) · Mapbox (address autofill / geocoding) · public datasets: EPA (radon, Superfund), FEMA (flood zones), SDWIS-family drinking-water data, municipal advisory pages · Vitest · GitHub Actions CI · pnpm

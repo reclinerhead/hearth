@@ -16,7 +16,8 @@ This file is the **hub**. It carries only what is globally true and changes slow
 | Auth + DB | Supabase (Postgres + GoTrue + RLS + Realtime) |
 | Maps / geocoding | Mapbox Address Autofill via `@mapbox/search-js-react` |
 | AI | Vercel AI SDK v6 + Vercel AI Gateway (BYOK Anthropic / OpenAI / xAI) |
-| Background jobs | Vercel Workflow SDK (`workflow` + `@workflow/ai`) |
+| Background jobs | Vercel Workflow SDK (`workflow` + `@workflow/ai`); Vercel Cron for the storage sweep and the water advisory watcher |
+| Email | Resend (water advisory notifications, confirmations, watcher alarm) |
 | Hosting | Vercel |
 | Tests | Vitest (selective coverage on pure logic) |
 | Package manager | pnpm |
@@ -114,6 +115,11 @@ The rules that apply across the whole codebase. Where the full detail of one of 
 - **Server actions return `redirect()`**: `redirect()` throws a Next-internal error. Treat the return type as "error object or never", and don't wrap a `redirect()` call in a try/catch.
 - **AI defaults to non-reasoning models.** Reasoning models earn their cost only when determinism matters (the serial-decode pipeline is the canonical case — see [ingestion.md](architecture/ingestion.md#serial-number-decode-pipeline)). The default for streamed user-facing surfaces (Research, briefings, AI Insights) is the non-reasoning model selected per-feature via env var. Fix accuracy with prompts before swapping in a reasoning model.
 - **Lazy re-analysis, not eager regeneration.** AI surfaces re-run on user demand (Research button, Build maintenance plan, Recheck findings) or on a coordinated invalidation hook (a key-field edit clears stale insights so the next click regenerates against the new data). We do not burn AI Gateway credits on every row write.
+- **Models configure the watcher; they never run inside it.** Scheduled jobs that decide who gets notified (the water advisory watcher) are deterministic, idempotent, and unit-tested. Any model involvement in that domain happens at configuration time (source discovery), never on the polling path. See [water-advisories.md](architecture/water-advisories.md).
+
+### Admin surfaces
+
+- **`/admin/*` is gated three times**: the proxy (`profiles.is_admin`, mirroring the `/houses/new` gate), the page (re-check + `redirect("/dashboard")`), and the database (admin-only tables use `hearth.is_admin()` in their RLS policies). The account dropdown renders admin entries only when `capabilities.isAdmin`. Admin promotion stays the manual SQL path in [data-and-auth.md](architecture/data-and-auth.md#admin-bootstrap).
 
 ---
 
@@ -215,7 +221,7 @@ These appear in the schema or the dashboard mockup but are not real flows. Treat
 
 ## Spoke index
 
-The deeper architectural detail is split across eight domain spokes under [`docs/architecture/`](architecture/). Read the hub first, then the spoke(s) relevant to the task at hand. Each spoke is a well-formed standalone doc.
+The deeper architectural detail is split across nine domain spokes under [`docs/architecture/`](architecture/). Read the hub first, then the spoke(s) relevant to the task at hand. Each spoke is a well-formed standalone doc.
 
 | Spoke | Domain | Read when | Keyword tags |
 |---|---|---|---|
@@ -227,3 +233,4 @@ The deeper architectural detail is split across eight domain spokes under [`docs
 | [briefing-and-house-image.md](architecture/briefing-and-house-image.md) | Onboarding action and the first-run discovery modal (phase machine, refresh mode, `HabitatModule.getOnboardingMessage`), the dashboard hero image surface (static SVG illustration when no user photo is present, user-uploaded photo otherwise), the `house-photos` bucket and signed-URL caching contract, and the vestigial `briefing_*` / `generated_image_*` columns left behind by issue #210. | Working on the discovery modal, the house-image surface, or the user-photo upload flow. | onboarding, discovery modal, home setup, house image, static SVG, user photo, signed URL caching, vestigial briefing columns |
 | [public-pages.md](architecture/public-pages.md) | The `app/(public)/` route group: place-keyed SEO-indexable pages (public water system profile), the slug allowlist, the server-side service-role read posture (no anon RLS), the derived-values-only rule for user-contributed CCR data, proxy exemptions, sitemap/robots/canonical plumbing | Working on anything under `app/(public)/`, the slug registry, public data read paths, or SEO plumbing. | public pages, SEO, slug, sitemap, robots, ISR, place-keyed, anon, canonical |
 | [storage-reconciliation.md](architecture/storage-reconciliation.md) | The scheduled storage sweep that reconciles each private bucket against its owning rows and removes orphans (best-effort-delete failures + the upload-then-insert window), the pure `planStorageRemovals` diff and its three orphan classes, the safety rails (rows-first ordering, age guard, dry-run gate, per-run cap), and the first-cron scaffolding (`vercel.json`, `/api/cron/*` proxy exemption, `CRON_SECRET` gate). | Working on the storage sweep, a storage-backed delete path's best-effort cleanup, or anything that uploads to a private bucket and relies on a row to own the bytes. | storage sweep, orphan, reconciliation, cron, CRON_SECRET, age guard, dry-run, service-role, best-effort delete |
+| [water-advisories.md](architecture/water-advisories.md) | The water advisory watcher: the 30-minute cron that polls each watched city's advisory page through a per-kind adapter (`opencities_list` today), the pure classifier (status + district-wide/localized scope) and diff (seed-silently, issued/updated/lifted events, idempotency key), the four `water_advisory_*` tables and `hearth.is_admin()`, the Resend emails and the dry-run rail, the tokenized confirm/unsubscribe routes (the service-role exception), the watcher-blind alarm, and the first admin-only page (`/admin/water-advisories`). | Working on the advisory watcher, an adapter, the subscriber list, advisory emails, the admin page, or any future admin-gated surface. | water advisory, boil water, watcher, adapter, OpenCities, subscribers, Resend, dry-run, is_admin, admin page, notifications |

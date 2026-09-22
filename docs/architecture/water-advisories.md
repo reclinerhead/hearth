@@ -1,0 +1,120 @@
+# Water advisories
+
+How Hearth watches a municipality's boil-water-advisory page and notifies an admin-managed email list when a district-wide advisory is issued, updated, or lifted (issue #331). This is the first time Hearth acts *for* the homeowner on a schedule rather than answering a question on demand, and the first admin-only surface in the app.
+
+Read this spoke when working on the watcher cron, an advisory adapter, the classifier, the subscriber list, the confirm/unsubscribe token routes, the advisory emails, or the `/admin/water-advisories` page.
+
+---
+
+## Why it exists
+
+On Sept 19–21, 2026 the City of Kalamazoo issued a boil-water advisory covering 19 of its 22 neighborhoods (~30,000 customers) after an E. coli-positive sample. It went out as a news release, a page on the city site, and Facebook. Most residents heard by word of mouth. The city's website exposes no feed (its "Subscribe to this page" is a once-a-day digest), and the county RAVE system was not used. An advisory is inherently PWSID-scoped — it affects everyone on the utility, not one house — so it fits the place-keyed water model the WQA module and the public water pages already use.
+
+## The pipeline
+
+```
+Vercel Cron (*/30)  →  /api/cron/water-advisories
+                          │
+   per enabled source:    ├─ adapter(kind, config)  → ParsedAdvisory[]     (I/O: lib/water-advisories/adapters/*)
+                          ├─ classify()             → status + scope       (pure: classify.ts)
+                          ├─ planAdvisoryRun()      → upserts + events     (pure: plan.ts)
+                          ├─ apply upserts to hearth.water_advisories
+                          ├─ notifiable events × confirmed subscribers → water_advisory_notifications row → Resend
+                          └─ health bookkeeping on hearth.water_advisory_sources (+ alarm email)
+```
+
+The route ([`app/api/cron/water-advisories/route.ts`](../../app/api/cron/water-advisories/route.ts)) is the thin I/O shell — auth, reads, applying the plan, sending, logging. The decisions are pure and tested: HTML → entries ([`parse.ts`](../../lib/water-advisories/parse.ts), against committed fixture snapshots of the city's pages), status/scope ([`classify.ts`](../../lib/water-advisories/classify.ts)), and the diff ([`plan.ts`](../../lib/water-advisories/plan.ts)). **Models never run inside the watcher.** Anything a model does for this feature happens at configuration time (the discovery agent, issue #338), never on the 30-minute path.
+
+## Tables
+
+All in the `hearth` schema, migration `20260922200000_create_water_advisories.sql`.
+
+| Table | Role | RLS |
+|---|---|---|
+| `water_advisory_sources` | One row per watched city, keyed by PWSID (FK → `water_systems`). `kind` picks the adapter, `config` (jsonb) configures it. Health columns: `last_run_at`, `last_ok_at`, `consecutive_failures`, `last_error`, `failure_alerted_at`. This table *is* "cities on file" for the admin page. | shared-cache: `to authenticated` SELECT, service-role writes, no `anon` |
+| `water_advisories` | One row per advisory URL ever seen: title, summary, `status`, `scope`, `published_on`, `on_emergency_banner`, `content_hash`, first/last seen, `last_changed_at`, `raw` capture. | same |
+| `water_advisory_subscribers` | The admin-managed list: name, email, optional address fields (stored now, used by a later street-matching increment), `status` (`pending` → `confirmed` → `unsubscribed`), `confirm_token`, `unsubscribe_token`, `created_by`, `added_by_label`. Unique on `(pwsid, lower(email))`. | admin-only via `hearth.is_admin()` for select/insert/update/delete; service-role for cron + token routes |
+| `water_advisory_notifications` | Idempotency log: `(advisory_id, subscriber_id, channel, event, content_hash)` unique. `channel` is `email` today (`push` reserved for #332). | admin-only select; service-role writes |
+
+**`hearth.is_admin()`** is a `SECURITY DEFINER` SQL function reading `public.profiles.is_admin` for `auth.uid()`. It exists so admin-only tables have one predicate to gate on; reuse it for any future admin surface rather than inlining the profiles subquery.
+
+## Adapters
+
+Parsing sits behind a per-kind adapter with one signature:
+
+```ts
+fetchAdvisories(config, { knownUrls, fetchImpl? }) → Promise<ParsedAdvisory[]>
+```
+
+The watcher dispatches on `source.kind`. One adapter ships today; a second municipality is a new adapter file plus a source row, not a rewrite. Deliberately no registry, plugin loader, or base class — the switch statement in the route is the dispatch.
+
+| Kind | Config | Cities | Failure semantics |
+|---|---|---|---|
+| `opencities_list` ([`adapters/opencities-list.ts`](../../lib/water-advisories/adapters/opencities-list.ts)) | `{ list_url, system_wide_phrases? }` | Kalamazoo (`MI0003520`) | Throws on non-2xx, on Akamai's "Access Denied" stub, and on a page that parses to **zero** list entries (the list has never been empty; zero means the markup changed or we got a challenge page). |
+
+**What the OpenCities adapter reads.** Granicus OpenCities renders the list server-side: `div.list-item-container > article > a[href] > h2.list-item-title + p`. The same page carries the site-wide emergency banner (`div.oc-emergency-announcement-container` → `.emergency-message-box.oc-emergency-severity-NN` with `h3.side-box-title`, `p`, `a[href]`). Banner announcements whose link lives under the list URL are advisories too — on 2026-09-21 the district-wide LIFTED notice was banner-only (its URL was not in the list), so without this the lift would have been missed. Banner appearance also marks a list entry `on_emergency_banner`, which forces district-wide scope. For URLs the store hasn't seen, the adapter fetches the detail page (best-effort, capped per run) to read `Published on Month D, YYYY` and the page `h1`; a detail failure just leaves `published_on` null.
+
+**Bot protection.** The Kalamazoo site sits behind Akamai. PowerShell `Invoke-WebRequest` is rejected outright; Node `fetch` (the Vercel runtime) gets the page. The adapter sends browser-like `User-Agent` / `Accept` headers, but the real defense is the health alarm below: if Akamai changes its mind, the watcher goes blind loudly rather than quietly.
+
+**Fixtures.** `lib/water-advisories/fixtures/` holds the list page and one detail page captured 2026-09-22. `parse.test.ts` runs against them, so a template change on the city side fails the suite before it fails production. Refresh the fixture (a Node `fetch` script — see the issue) when updating the parser.
+
+## Classification (`classify.ts`)
+
+- **Status** from the title (then summary): `lifted` (title says lifted/rescinded, or summary says "has been lifted"), else `scheduled`, else `active` for advisory/order/notice/do-not-drink wording, else `unknown`.
+- **Scope**, in precedence order: on the emergency banner → `system_wide`; title or summary contains a system-wide phrase → `system_wide`; the title's subject (after the colon) looks like a street list or house-number range → `localized`; else `unknown`.
+- The generic phrase list is city-agnostic (`pressure district`, `all customers`, `city-wide`, …). A source adds its own wording through `config.system_wide_phrases` (Kalamazoo: "City of Kalamazoo water customers").
+
+Bias is toward over-notifying: `unknown` is treated as district-wide by the planner. The failure mode we accept is one extra email, never a missed city-wide advisory.
+
+## The plan (`plan.ts`)
+
+`planAdvisoryRun({ stored, parsed, nowIso })` returns upserts and events.
+
+- **Seed silently.** An empty store for a source means "first run": every parsed entry is inserted and no events fire. Otherwise the initial import would email everyone about last month's history.
+- **Events.** `issued` — a new URL with status active/scheduled/unknown. `lifted` — a new URL with status lifted, or an existing row whose status flips to lifted (takes precedence over updated). `updated` — an existing URL whose `content_hash` (normalized title + summary; status is not part of it) changed. An entry that disappears from the page is left alone; it never notifies.
+- **Notifiable** = scope is `system_wide` or `unknown`. Localized events are recorded and shown on the admin page but not sent — **district-wide only for now**.
+- **Scope ratchets up.** Once a row is district-wide (e.g. it was on the banner), a later run that no longer sees the banner does not downgrade it.
+- **`raw` merges.** The stored capture is merged under the fresh parse on existing rows, so detail-page fields read only on first sight (`detail_title`) survive later runs; the fresh parse wins for the keys it carries.
+- **Idempotency key** is `(advisory, subscriber, channel, event, content_hash)`; the same content can never produce the same event twice.
+
+## Notifications and the dry-run rail
+
+For each notifiable event and each **confirmed** subscriber the route inserts the `water_advisory_notifications` row **before** calling Resend (a `23505` unique violation means "already sent" → skip), sends, then records `sent_at` + `provider_message_id` or `error`. A crash mid-batch and a retried run cannot double-send.
+
+`WATER_ADVISORY_NOTIFY_ENABLED` is the master switch. Anything other than `"true"` is **dry-run**: the watcher records advisories, computes events, and logs every planned send (`event[kind] "title" → N subscriber(s) (dry-run)`), but inserts no notification rows and emails nobody. Events that fire during dry-run are not replayed once the switch flips — they were one-time changes.
+
+**Rollout order:** migration → deploy dry-run → first run seeds silently → add yourself as a subscriber and confirm → "Send test email" from the admin page → review the dry-run logs across a real change on the city page → set `WATER_ADVISORY_NOTIFY_ENABLED=true`.
+
+## Email (`email.ts`)
+
+Resend via the `resend` package; `RESEND_API_KEY` + `WATER_ADVISORY_FROM_EMAIL` (a verified ToddTech sender). Plain text + minimal inline-styled HTML, no template library. Four messages: **issued**, **updated**, **lifted** (the city's title and summary quoted and attributed, the published date, a link to the city's page, boil/bottled guidance on issued/updated, the "{admin} added you" line, a one-click unsubscribe link), the **confirmation** (double opt-in), and the **watcher alarm** / recovery note. Every scraped string is HTML-escaped before it reaches a template.
+
+`added_by_label` is captured on the subscriber row at insert (the admin's OAuth display name, else email) because `public.profiles` carries no name and the cron has no session to ask.
+
+## Token routes (the service-role exception)
+
+`GET /api/advisories/confirm?token=…` and `GET /api/advisories/unsubscribe?token=…` are unauthenticated: the recipient is a neighbor, not a Hearth user, and there is no session. The proxy exempts `/api/advisories/`. The token — 192 random bits, unique per subscriber — is the capability. The handlers validate its shape, look up exactly one row by it, make a one-column state change (`pending → confirmed`, or `→ unsubscribed`, idempotent), and return a tiny self-contained HTML page ([`token-page.ts`](../../lib/water-advisories/token-page.ts)). They use the **service-role client**, which the hub invariant otherwise confines to background work; the exception is allowed here for the same reason the cron has it — no session exists to bind RLS to — and the write surface is one row matched by an unguessable token.
+
+## Watcher health and the alarm
+
+Every run updates the source's health columns. A fetch/parse failure (or a DB failure after the fetch) increments `consecutive_failures` and stores `last_error`; a success resets both. When failures reach `WATER_ADVISORY_FAILURE_ALERT_AFTER` (default 2 — about an hour at the 30-minute cadence) the route emails `WATER_ADVISORY_ALERT_EMAIL` once (`failure_alerted_at`), and once more when a run succeeds again. This is independent of the notify switch: silence must never look like "no advisory."
+
+## Admin page (`/admin/water-advisories`)
+
+The first admin-only surface. Gated in the proxy (`/admin/*` → `profiles.is_admin`), re-checked in the page, reached from the account dropdown's "Water advisories" entry (rendered only when `capabilities.isAdmin`). Per city: the watcher's mode (dry-run vs live, email configured), last check and health, the recent advisories with status/scope pills (tooltips explain the categories), and the subscriber list with **Add** (name, email, optional address — plain inputs, no Mapbox), **Remove** (confirmed → `unsubscribed`; never-confirmed → deleted), **Resend confirmation** (pending only), and **Send test email to me** (renders the issued template against the latest stored advisory and sends it to the signed-in admin, bypassing the list — the way Resend wiring is verified before going live).
+
+Server actions under `app/actions/water-advisories/` run under the session client; the RLS policies are the real gate and `requireAdmin` exists for readable errors and the admin's display label.
+
+## Environment variables
+
+| Var | Default | Role |
+|---|---|---|
+| `CRON_SECRET` | — (required) | Bearer token, shared with the storage sweep. |
+| `RESEND_API_KEY` / `WATER_ADVISORY_FROM_EMAIL` | — | Resend credentials + verified sender. Required for any email. |
+| `WATER_ADVISORY_ALERT_EMAIL` | — | Recipient of the watcher-blind alarm. |
+| `WATER_ADVISORY_FAILURE_ALERT_AFTER` | `2` | Consecutive failures before the alarm. |
+| `WATER_ADVISORY_NOTIFY_ENABLED` | unset (dry-run) | `"true"` enables subscriber sends. |
+
+## Not built here (follow-ups)
+
+Generic RSS adapter + Portage (#337), agent-based source discovery (#338), web push (#332), street-level matching against subscriber addresses, and a live "active advisory" banner on the public water page and the in-app WQA finding. Social-media ingestion was evaluated and rejected (no read API, terms problems, and social is downstream of the city page).
