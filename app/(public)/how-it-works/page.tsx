@@ -1625,8 +1625,10 @@ export default function HowItWorksPage() {
                 With more than one year&rsquo;s report on file, Hearth lines
                 each contaminant up across years and shows which way
                 it&rsquo;s moving — an arrow next to the number, a sparkline
-                at three or more readings, and a hover chart of every reading
-                against the limit the report stated <em>that</em>{" "}year. We
+                at three or more readings, and a chart of every reading
+                (hover the sparkline, or tap the chart icon) with each
+                year&rsquo;s level printed beside its point, against the limit
+                the report stated <em>that</em>{" "}year. We
                 compare the two most recent years with a measured value; a
                 change within about 10% reads as stable so ordinary
                 measurement noise doesn&rsquo;t look like a trend.

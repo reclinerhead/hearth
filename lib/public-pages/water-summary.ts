@@ -118,10 +118,17 @@ export type PublicMetalReading = {
 };
 
 /**
- * A single numeric reading in a public trend — year + level only. Units
+ * A single numeric reading in a public trend — year, level, and the limit
+ * that year's report stated (issue #340), all validated numbers. Units
  * live on the row (allowlisted); no extraction strings ride along.
  */
-export type PublicTrendPoint = { year: number; level: number };
+export type PublicTrendPoint = {
+  year: number;
+  level: number;
+  /** The EPA limit as that year's report stated it; null when none was
+   *  printed (the chart says "not stated" rather than substituting). */
+  limit: number | null;
+};
 
 /** The sanitized trend block for one public contaminant row. */
 export type PublicTrend = {
@@ -579,6 +586,12 @@ function toPublicRow(
   const points: PublicTrendPoint[] = trendSource.points.map((p) => ({
     year: p.year,
     level: p.level,
+    // Per-year limit for the expanded chart's limit line — carried only
+    // as a finite positive number; anything else is "not stated".
+    limit:
+      typeof p.limit === "number" && Number.isFinite(p.limit) && p.limit > 0
+        ? p.limit
+        : null,
   }));
   const trend: PublicTrend | null =
     trendSource.yearsOfData >= 2
@@ -587,12 +600,8 @@ function toPublicRow(
           word: trendWord(trendSource.direction),
           tone: trendTone(trendSource.direction),
           spanLabel: trendDataSpanLabel(trendSource),
-          previous: trendSource.previous
-            ? {
-                year: trendSource.previous.year,
-                level: trendSource.previous.level,
-              }
-            : null,
+          // The comparison basis is the second-to-last sanitized point.
+          previous: points.length > 1 ? points[points.length - 2] : null,
           points,
         }
       : null;

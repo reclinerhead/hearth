@@ -10,8 +10,10 @@ import {
   buildTrendClipboardTsv,
   computeTrend,
   findSeriesByName,
+  formatTrendLevel,
   sparklineGeometry,
   trendChartGeometry,
+  trendChartValueLabels,
   trendDataSpanLabel,
   trendPreviousLabel,
   trendTone,
@@ -557,6 +559,22 @@ describe("buildTrendClipboardTsv", () => {
     expect(rows[0]).toBe("2023\t1\tppb\t4");
     expect(rows[1]).toBe("2025\t2\tppb\t"); // limit cell empty
   });
+
+  it("speaks in the third person for the public page (issue #340)", () => {
+    const tsv = buildTrendClipboardTsv({
+      analyteName: "Arsenic",
+      utilityName: "Kalamazoo Public Water Supply",
+      pwsid: null,
+      points,
+      voice: "third",
+    });
+    const lines = tsv.split("\n");
+    expect(lines[1]).toBe("Kalamazoo Public Water Supply");
+    expect(lines[2]).toBe(
+      "Source: the utility's 2024–2025 Water Quality Reports (via Hearth)",
+    );
+    expect(tsv).not.toContain("PWSID");
+  });
 });
 
 /* ---------- trendChartGeometry ----------------------------------------- */
@@ -626,6 +644,88 @@ describe("trendChartGeometry", () => {
     )!;
     expect(geo.limitPolyline).toBeNull();
     expect(geo.points.every((p) => p.limitY === null)).toBe(true);
+  });
+});
+
+/* ---------- trendChartValueLabels (issue #340) ------------------------- */
+
+describe("trendChartValueLabels", () => {
+  const pt = (year: number, level: number, limit: number | null = 10) => ({
+    year,
+    level,
+    unit: "ppb",
+    limit,
+  });
+
+  it("labels every point with the same formatting the tooltip uses", () => {
+    const geo = trendChartGeometry(
+      [pt(2022, 0.64), pt(2023, 2), pt(2024, 7.86), pt(2025, 7.8)],
+      { width: 380, height: 188 },
+    )!;
+    const labels = trendChartValueLabels(geo);
+    expect(labels.map((l) => l.text)).toEqual(["0.64", "2", "7.9", "7.8"]);
+    expect(labels.map((l) => l.x)).toEqual(geo.points.map((p) => p.x));
+    expect(formatTrendLevel(0.64)).toBe("0.64");
+    expect(formatTrendLevel(12)).toBe("12");
+    expect(formatTrendLevel(3.14)).toBe("3.1");
+  });
+
+  it("puts a peak's label above and a trough's label below, off the line", () => {
+    const geo = trendChartGeometry(
+      [pt(2021, 2), pt(2022, 8), pt(2023, 2), pt(2024, 8), pt(2025, 2)],
+      { width: 380, height: 188 },
+    )!;
+    const labels = trendChartValueLabels(geo);
+    expect(labels.map((l) => l.side)).toEqual([
+      "below", // rising into the first peak → below the low start
+      "above", // peak
+      "below", // trough
+      "above", // peak
+      "below", // falling to the low end
+    ]);
+    // Above-labels sit above the point, below-labels beneath it.
+    labels.forEach((l, i) => {
+      if (l.side === "above") expect(l.y).toBeLessThan(geo.points[i].y);
+      else expect(l.y).toBeGreaterThan(geo.points[i].y);
+    });
+  });
+
+  it("keeps every label inside the plot area", () => {
+    // A flat series on the baseline would want "below" labels that fall
+    // into the year-axis strip; they must flip above instead. A series at
+    // the top of the range has headroom by construction (yMax > peak).
+    const flat = trendChartGeometry(
+      [pt(2022, 0.01), pt(2023, 0.01), pt(2024, 0.01)],
+      { width: 380, height: 188 },
+    )!;
+    for (const l of trendChartValueLabels(flat, { fontSize: 10, gap: 7 })) {
+      expect(l.y).toBeLessThanOrEqual(flat.plot.bottom);
+      expect(l.y - 10).toBeGreaterThanOrEqual(flat.plot.top);
+    }
+  });
+
+  it("flips a label that would overlap its predecessor", () => {
+    // Ten near-equal readings on a narrow chart: consecutive labels would
+    // share a baseline and overlap in x. Adjacent labels must never both
+    // sit on the same side at the same height.
+    const points = Array.from({ length: 10 }, (_, i) => pt(2016 + i, 5 + (i % 2) * 0.01));
+    const geo = trendChartGeometry(points, { width: 240, height: 188 })!;
+    const labels = trendChartValueLabels(geo, { fontSize: 10, gap: 7 });
+    for (let i = 1; i < labels.length; i++) {
+      const a = labels[i - 1];
+      const b = labels[i];
+      const xOverlap = Math.abs(a.x - b.x) < (a.text.length + b.text.length) * 3;
+      const yOverlap = Math.abs(a.y - b.y) < 10;
+      expect(xOverlap && yOverlap).toBe(false);
+    }
+  });
+
+  it("returns nothing for empty geometry input", () => {
+    const geo = trendChartGeometry([pt(2024, 1), pt(2025, 2)], {
+      width: 380,
+      height: 188,
+    })!;
+    expect(trendChartValueLabels({ ...geo, points: [] })).toEqual([]);
   });
 });
 
