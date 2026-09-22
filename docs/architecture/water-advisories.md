@@ -54,7 +54,7 @@ The watcher dispatches on `source.kind`. One adapter ships today; a second munic
 
 **What the OpenCities adapter reads.** Granicus OpenCities renders the list server-side: `div.list-item-container > article > a[href] > h2.list-item-title + p`. The same page carries the site-wide emergency banner (`div.oc-emergency-announcement-container` → `.emergency-message-box.oc-emergency-severity-NN` with `h3.side-box-title`, `p`, `a[href]`). Banner announcements whose link lives under the list URL are advisories too — on 2026-09-21 the district-wide LIFTED notice was banner-only (its URL was not in the list), so without this the lift would have been missed. Banner appearance also marks a list entry `on_emergency_banner`, which forces district-wide scope. For URLs the store hasn't seen, the adapter fetches the detail page (best-effort, capped per run) to read `Published on Month D, YYYY` and the page `h1`; a detail failure just leaves `published_on` null.
 
-**Bot protection.** The Kalamazoo site sits behind Akamai. PowerShell `Invoke-WebRequest` is rejected outright; Node `fetch` (the Vercel runtime) gets the page. The adapter sends browser-like `User-Agent` / `Accept` headers, but the real defense is the health alarm below: if Akamai changes its mind, the watcher goes blind loudly rather than quietly.
+**Bot protection (load-bearing).** The Kalamazoo site sits behind Akamai Bot Manager, which scores on source IP reputation. A home connection running Node `fetch` gets the page; **Vercel's production functions get a 403** (observed the day the watcher shipped — every cloud egress range should be assumed blocked). The fix is a fetch proxy: when `WATER_ADVISORY_FETCH_PROXY_URL` is set (a template with a `{url}` placeholder pointing at a proxy/scraping service that supplies its own residential egress), `resolveFetchTarget` routes every adapter fetch through it and drops our browser-like headers (the proxy supplies its own fingerprint). Unset, the adapter fetches directly — fine for local dev, blind in production. A denial is detected by status *or* by the "Access Denied" / reference-id markers in the body, and the thrown error carries the upstream `server` header and a 160-char tag-stripped excerpt so the admin page and the alarm email say *why* without anyone re-running the fetch. The health alarm below is the backstop for the day the proxy stops working too.
 
 **Fixtures.** `lib/water-advisories/fixtures/` holds the list page and one detail page captured 2026-09-22. `parse.test.ts` runs against them, so a template change on the city side fails the suite before it fails production. Refresh the fixture (a Node `fetch` script — see the issue) when updating the parser.
 
@@ -105,6 +105,8 @@ The first admin-only surface. Gated in the proxy (`/admin/*` → `profiles.is_ad
 
 Server actions under `app/actions/water-advisories/` run under the session client; the RLS policies are the real gate and `requireAdmin` exists for readable errors and the admin's display label.
 
+Timestamps on the page are formatted **after mount** (the `When` component): the server renders in UTC, and React keeps a mismatched text node as the server wrote it on hydration, so a server-side `toLocaleString` would silently show UTC as if it were local. Until the effect runs, the string is explicitly labelled UTC.
+
 ## Environment variables
 
 | Var | Default | Role |
@@ -113,6 +115,7 @@ Server actions under `app/actions/water-advisories/` run under the session clien
 | `RESEND_API_KEY` / `WATER_ADVISORY_FROM_EMAIL` | — | Resend credentials + verified sender. Required for any email. |
 | `WATER_ADVISORY_ALERT_EMAIL` | — | Recipient of the watcher-blind alarm. |
 | `WATER_ADVISORY_FAILURE_ALERT_AFTER` | `2` | Consecutive failures before the alarm. |
+| `WATER_ADVISORY_FETCH_PROXY_URL` | unset (direct) | Proxy template with `{url}`; required in production because Akamai blocks Vercel's egress. |
 | `WATER_ADVISORY_NOTIFY_ENABLED` | unset (dry-run) | `"true"` enables subscriber sends. |
 
 ## Not built here (follow-ups)

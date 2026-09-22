@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type FormEvent } from "react";
+import { useState, useSyncExternalStore, useTransition, type FormEvent } from "react";
 import { addSubscriberAction } from "@/app/actions/water-advisories/add-subscriber";
 import { removeSubscriberAction } from "@/app/actions/water-advisories/remove-subscriber";
 import { resendConfirmationAction } from "@/app/actions/water-advisories/resend-confirmation";
@@ -715,16 +715,37 @@ function formatDate(isoDate: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
-/** Local-time timestamp. suppressHydrationWarning because the server
- *  renders in UTC and the admin's browser in their own zone. */
+/**
+ * Local-time timestamp, formatted only after mount. The server renders in
+ * UTC and React does not patch a mismatched text node on hydration (it
+ * keeps the server string), so a server-side toLocaleString would leave
+ * the admin reading UTC labelled as if it were local. Until the effect
+ * runs the element shows an explicit-UTC string so nothing is ever
+ * ambiguous.
+ */
 function When({ iso }: { iso: string }) {
-  const d = new Date(iso);
-  const text = Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-  return (
-    <time dateTime={iso} suppressHydrationWarning>
-      {text}
-    </time>
+  // true only on the client after hydration; the server snapshot is
+  // false, so server and first client render agree (UTC string), then
+  // the post-hydration render swaps to the browser's zone.
+  const hydrated = useSyncExternalStore(
+    subscribeNoop,
+    () => true,
+    () => false,
   );
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return <time dateTime={iso}>{iso}</time>;
+  const opts: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  };
+  const text = hydrated
+    ? d.toLocaleString("en-US", opts)
+    : `${d.toLocaleString("en-US", { ...opts, timeZone: "UTC" })} UTC`;
+  return <time dateTime={iso}>{text}</time>;
+}
+
+function subscribeNoop() {
+  return () => {};
 }
