@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7" lang="en"> <![endif]-->
+<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8" lang="en"> <![endif]-->
+<!--[if IE 8]>         <html class="no-js lt-ie9" lang="en"> <![endif]-->
+<!--[if gt IE 8]><!-->
+<html class="no-js" lang="en-US">
+<!--<![endif]-->
+<head>
+	<!-- Published by OpenCities, 1.37.6.1 -->
+
+    
+        
+    
+    
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="theme-color" content="#FFFFFF"/>
+    <title>Boil Water Advisory LIFTED: LOW and HIGH Pressure Districts City of Kalamazoo</title>
+	<meta name="generator" content="OpenCities - https://granicus.com/product/opencities" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Using mobile-web-app-capable for now to enable full-screen experience on supported platforms -->
+    <!-- Note: This tag works mainly on Android Chrome. It does NOT enable full-screen mode on iOS Safari. -->
+    <!-- For iOS, the correct tag is: <meta name="apple-mobile-web-app-capable" content="yes"> -->
+    <!-- TODO: Monitor for updated meta tag standards from Apple or other browser vendors -->
+    <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="description" content="E.coli bacteria were found in one sample on September 18, 2026. Municipal water customers within the affected area should not drink the water without boiling it first." />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts" />
+    <meta property="og:title" content="Boil Water Advisory LIFTED: LOW and HIGH Pressure Districts" />
+    <meta property="og:description" content="E.coli bacteria were found in one sample on September 18, 2026. Municipal water customers within the affected area should not drink the water without boiling it first." />
+    <meta property="og:image" content="https://www.kalamazoocity.org/files/assets/public/v/1/images/public-services-releases/bwa-map/bwa-2026-09-19-high-low-ecoli.jpg?w=1200" />
+    <meta property="twitter:card" content="summary" />
+    <meta property="twitter:title" content="Boil Water Advisory LIFTED: LOW and HIGH Pressure Districts" />
+    <meta property="twitter:description" content="E.coli bacteria were found in one sample on September 18, 2026. Municipal water customers within the affected area should not drink the water without boiling it first." />
+    <meta property="twitter:image" content="https://www.kalamazoocity.org/files/assets/public/v/1/images/public-services-releases/bwa-map/bwa-2026-09-19-high-low-ecoli.jpg?w=1080" />
+    <link rel="canonical" href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts" />
+
+    
+    <link rel="apple-touch-icon" sizes="180x180" href="/files/ocfavicon/Public/apple-touch-icon.png?V=637751800135347686">
+<link rel="icon" type="image/png" sizes="32x32" href="/files/ocfavicon/Public/favicon-32x32.png?V=637751800135347686">
+<link rel="icon" type="image/png" sizes="16x16" href="/files/ocfavicon/Public/favicon-16x16.png?V=637751800135347686">
+<link rel="manifest" href="/files/ocfavicon/Public/site.webmanifest?V=637751800135347686">
+<link rel="shortcut icon" href="/files/ocfavicon/Public/favicon.ico?V=637751800135347686">
+<meta name="msapplication-TileColor" content="#FFFFFF">
+<meta name="msapplication-config" content="/files/ocfavicon/Public/browserconfig.xml?V=637751800135347686">
+    <script>
+        (function () {
+            if (window.__UNLOAD_LAZY_PATCH__) return;
+            window.__UNLOAD_LAZY_PATCH__ = true;
+
+            var supportsPageHide = ("onpagehide" in window);
+            var mappedType = supportsPageHide ? "pagehide" : "beforeunload";
+            var nativeAdd = window.addEventListener;
+            var nativeRemove = window.removeEventListener;
+            var unloadMap = null;
+            var patched = false;
+
+            function ensurePatched() {
+                if (patched) return;
+                unloadMap = new WeakMap();
+
+                window.addEventListener = function (type, listener, options) {
+                    if (type === "unload") {
+                        var wrapped = function (evt) {
+                            if (supportsPageHide && evt.persisted) return;
+                            listener.call(this, evt);
+                        };
+                        unloadMap.set(listener, wrapped);
+                        return nativeAdd.call(this, mappedType, wrapped, options);
+                    }
+                    return nativeAdd.call(this, type, listener, options);
+                };
+
+                window.removeEventListener = function (type, listener, options) {
+                    if (type === "unload") {
+                        var wrapped = unloadMap.get(listener);
+                        if (wrapped) {
+                            nativeRemove.call(this, mappedType, wrapped, options);
+                            unloadMap.delete(listener);
+                        }
+                        return;
+                    }
+                    return nativeRemove.call(this, type, listener, options);
+                };
+
+                var orig = null;
+                Object.defineProperty(window, "onunload", {
+                    configurable: true, enumerable: true,
+                    get: function () { return orig; },
+                    set: function (h) {
+                        orig = h;
+                        if (typeof h === "function") window.addEventListener("unload", h);
+                    }
+                });
+                patched = true;
+            }
+
+            window.addEventListener = function (type, listener, options) {
+                if (type === "unload") {
+                    ensurePatched();
+                    return window.addEventListener(type, listener, options);
+                }
+                return nativeAdd.call(this, type, listener, options);
+            };
+
+            window.removeEventListener = function (type, listener, options) {
+                if (type === "unload" && !patched) {
+                    return;
+                }
+                return nativeRemove.call(this, type, listener, options);
+            };
+
+            function patchTelerik() {
+                ensurePatched();
+                var ns = window.RadAjaxNamespace;
+                if (!ns || !ns.EventManager || !ns.EventManager.Add || ns.EventManager.__UnloadPatched) return;
+                var origAdd = ns.EventManager.Add;
+                ns.EventManager.Add = function (el, evtName, handler, clientId) {
+                    if (el === window && evtName === "unload") {
+                        return window.addEventListener("unload", handler);
+                    }
+                    return origAdd.call(this, el, evtName, handler, clientId);
+                };
+                ns.EventManager.__UnloadPatched = true;
+            }
+
+            if (window.RadAjaxNamespace)
+                patchTelerik();
+            else (window.requestIdleCallback || function (cb)
+            {
+                setTimeout(cb, 120);
+            })(patchTelerik);
+        })();
+    </script>
+    <!-- Preconnecting to Google Fonts servers -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <!-- Defer Roboto font loading to avoid render-blocking -->
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            const robotoLink = document.createElement('link');
+            robotoLink.rel = 'stylesheet';
+            robotoLink.href = 'https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap';
+            document.head.appendChild(robotoLink);
+        });
+    </script>
+
+    <style>
+        .gm-style, .gm-style * {
+            font-family: 'Roboto', system-ui, -apple-system, "Segoe UI", Arial, sans-serif !important;
+        }
+    </style>
+
+    <script>
+        document.documentElement.className = document.documentElement.className.replace(/\bno-js\b/g, "js");
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;700&family=Poppins:wght@400;700&display=swap" rel="stylesheet">
+    
+        
+            <script type="text/javascript">
+                window.__oc_flags_ImprovedBreakpointEventHandling = true;
+            </script>
+            
+        
+    
+    
+    
+        <script type="text/javascript">
+            var __metaQueryBreakpoints = {
+                'sc-size-4': '(max-width: 480px)',
+                'sc-size-3': '(min-width: 480px) and (max-width: 768px)',
+                'sc-size-2': '(min-width: 768px) and (max-width: 992px)',
+                'sc-size-1': '(min-width: 992px)'
+            }
+
+            var __ocSizePoints = [
+                { min: 0, name: 'sc-size-4' },
+                { min: 480, name: 'sc-size-3' },
+                { min: 768, name: 'sc-size-2' },
+                { min: 992, name: 'sc-size-1' }
+            ];
+
+        </script>
+    
+
+    <!-- Framework Section -->
+    
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+    <script>window.jQuery || document.write('<script src="/files/templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/jquery-1.12.4.min.js?seamlessts=639233016634598299" ><\/script>')</script>
+
+    <!--Google Maps API Loader – Improved Version to avoid Warning
+    This script loads the Google Maps JavaScript API using a dynamic and async method.
+    It replaces the old static <script> tag to avoid performance warnings from Google.
+
+    Dynamically creates the <script> tag with loading = async for better performance
+    Builds the API URL with required libraries(places, geometry, marker, geocoding)
+    Uses a Promise and callback(google.maps.__ib__) to confirm when the script is ready
+
+    It Avoids Google’s warning about direct script loading
+    Improves page load speed by loading the API asynchronously-->
+
+    
+        <script>
+            (function (root) {
+                root.OpenCities = root.OpenCities || {};
+                if (!root.OpenCities.GoogleMapsLoader) {
+                    root.OpenCities.GoogleMapsLoader = {
+                        _cbs: [],
+                        _ready: false,
+                        onReady: function (cb) {
+                            if (this._ready) { try { cb(); } catch (e) { console.error(e); } }
+                            else if (typeof cb === 'function') this._cbs.push(cb);
+                        },
+                        _fire: function () {
+                            if (this._ready) return;
+                            this._ready = true;
+                            var q = this._cbs.splice(0);
+                            for (var i = 0; i < q.length; i++) {
+                                try { q[i](); } catch (e) { console.error(e); }
+                            }
+                        }
+                    };
+                }
+            })(window);
+
+            (g => {
+                var h, a, k, p = "The Google Maps JavaScript API", c = "google", l = "importLibrary", q = "__ib__",
+                    m = document, b = window;
+                b = b[c] || (b[c] = {});
+                var d = b.maps || (b.maps = {}), r = new Set, e = new URLSearchParams,
+                    u = () => h || (h = new Promise(async (resolve, reject) => {
+                        a = m.createElement("script");
+                        e.set("libraries", [...r] + "");
+                        for (k in g) e.set(k.replace(/[A-Z]/g, t => "_" + t[0].toLowerCase()), g[k]);
+                        e.set("callback", c + ".maps." + q);
+                        a.src = "https://maps." + c + "apis.com/maps/api/js?" + e.toString();
+                        a.loading = "async";
+                        a.async = true;
+                        a.defer = true;
+                        d[q] = resolve;
+                        a.onerror = () => reject(Error(p + " could not load."));
+                        a.nonce = m.querySelector("script[nonce]")?.nonce || "";
+                        m.head.append(a);
+                    }));
+                if (d[l]) {
+                    console.warn(p + " only loads once. Ignoring duplicate load.");
+                } else {
+                    d[l] = (f, ...n) => (r.add(f), u().then(() => d[l](f, ...n)));
+                }
+            })({
+                key: "AIzaSyBVAmbQLxYJyRU_i5LbdHHmSvOdxUgbMNQ",
+                v: "3.65"
+            });
+
+            (async () => {
+                try {
+                    if (!google?.maps?.importLibrary) return;
+
+                    if (!window.OpenCities.__mapsLibsPromise) {
+                        window.OpenCities.__mapsLibsPromise = Promise.all([
+                            google.maps.importLibrary('maps'),
+                            google.maps.importLibrary('places'),
+                            google.maps.importLibrary('geocoding'),
+                            google.maps.importLibrary('marker'),
+                            google.maps.importLibrary('geometry')
+                        ]);
+                    }
+                    await window.OpenCities.__mapsLibsPromise;
+
+                    if (window.OpenCities?.GoogleMapsLoader) {
+                        window.OpenCities.GoogleMapsLoader._fire();
+                    }
+                } catch (err) {
+                    console.error('Google Maps failed to initialise', err);
+                }
+            })();
+        </script>
+    
+    <script src="/files/templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/modernizr.custom.710f3bf.js?seamlessts=639233016634598299" defer></script>
+    
+    <!--// End Framework Section -->
+    <!-- OpenCities Section -->
+    <script>
+        var OpenCities = OpenCities || {};
+        OpenCities.Paths = {
+            SiteTemplate: '/files/templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/',
+            ThemePath: '/files/templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/'
+        };
+    </script>
+    <script src='/ocapi/c76c4b5f-8b46-451d-bc45-a6605bb66373/en-US/websitesettings.js'></script>
+    <script src="/files/templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/oc_head.js?applied=20260601085432"></script>
+    <!-- Script Combine. To enter debug mode for this browser session, enter OcScriptCombineDebug=true as a querystring -->
+<link href="/files/oc-templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/oc_grid.css~oc_style.css~oc_wizard_style.css~oc_main.css~oc_forms.css~oc_wizard.css~oc_wizard_menu.css~oc_main_s1.css~oc_wizard_s1.css~oc_wizard_menu_s1.css~oc_grid_s1.css~OcScriptCombine_Minify0?uniqueid=20260601085432" rel="stylesheet" type="text/css">
+    <!-- Script Combine. To enter debug mode for this browser session, enter OcScriptCombineDebug=true as a querystring -->
+<link href="/files/oc-templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/client_style.css~client.css~client_menu.css~client_s1.css~client_menu_s1.css~client_forms.css~OcScriptCombine_Minify0?uniqueid=20260601085432" rel="stylesheet" type="text/css">
+    <script>
+(function (BackgroundSettings, $, undefined) {
+    BackgroundSettings.initialise = function () {
+        this.Application = {"CSSSelector":".background-container","EnableFade":true};
+    };
+} (OpenCities.BackgroundSettings = OpenCities.BackgroundSettings || {}, jQuery));
+OpenCities.BackgroundSettings.initialise();
+</script>
+    
+    <!-- Script Combine. To enter debug mode for this browser session, enter OcScriptCombineDebug=true as a querystring -->
+<link href="/files/oc-templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/oc_print.css~client_print.css~OcScriptCombine_Minify0?uniqueid=20260601085432" rel="stylesheet" type="text/css" media="print">
+    <!-- Script Combine. To enter debug mode for this browser session, enter OcScriptCombineDebug=true as a querystring -->
+<script src="/files/oc-templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/297/external_plugins.js~oc_form_helper.js~oc_main.js~plugins.js~oc_main_init.js~OcScriptCombine_Minify0?uniqueid=20260601085432" defer="true"></script>
+    <!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-5P6VBML5');</script>
+<!-- End Google Tag Manager -->
+
+<script async src="https://docaccess.com/docbox.js"></script>
+
+
+
+<!-- Meta Pixel Code -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '266782160627356');
+fbq('track', 'PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none"
+src="https://www.facebook.com/tr?id=266782160627356&ev=PageView&noscript=1"
+/></noscript>
+<!-- End Meta Pixel Code -->
+    
+
+                                <script>!function(e){var n="https://s.go-mpulse.net/boomerang/";if("False"=="True")e.BOOMR_config=e.BOOMR_config||{},e.BOOMR_config.PageParams=e.BOOMR_config.PageParams||{},e.BOOMR_config.PageParams.pci=!0,n="https://s2.go-mpulse.net/boomerang/";if(window.BOOMR_API_key="DYTCK-JM9C8-ED4EP-C3GGK-Z575H",function(){function e(){if(!r){var e=document.createElement("script");e.id="boomr-scr-as",e.src=window.BOOMR.url,e.async=!0,o.appendChild(e),r=!0}}function t(e){r=!0;var n,t,a,i,d=document,O=window;if(window.BOOMR.snippetMethod=e?"if":"i",t=function(e,n){var t=d.createElement("script");t.id=n||"boomr-if-as",t.src=window.BOOMR.url,BOOMR_lstart=(new Date).getTime(),e=e||d.body,e.appendChild(t)},!window.addEventListener&&window.attachEvent&&navigator.userAgent.match(/MSIE [67]\./))return window.BOOMR.snippetMethod="s",void t(o,"boomr-async");a=document.createElement("IFRAME"),a.src="about:blank",a.title="",a.role="presentation",a.loading="eager",i=(a.frameElement||a).style,i.width=0,i.height=0,i.border=0,i.display="none",o.appendChild(a);try{O=a.contentWindow,d=O.document.open()}catch(_){n=document.domain,a.src="javascript:var d=document.open();d.domain='"+n+"';void 0;",O=a.contentWindow,d=O.document.open()}if(n)d._boomrl=function(){this.domain=n,t()},d.write("<bo"+"dy onload='document._boomrl();'>");else if(O._boomrl=function(){t()},O.addEventListener)O.addEventListener("load",O._boomrl,!1);else if(O.attachEvent)O.attachEvent("onload",O._boomrl);d.close()}function a(e){window.BOOMR_onload=e&&e.timeStamp||(new Date).getTime()}if(!window.BOOMR||!window.BOOMR.version&&!window.BOOMR.snippetExecuted){window.BOOMR=window.BOOMR||{},window.BOOMR.snippetStart=(new Date).getTime(),window.BOOMR.snippetExecuted=!0,window.BOOMR.snippetVersion=14,window.BOOMR.url=n+"DYTCK-JM9C8-ED4EP-C3GGK-Z575H";var i=document.currentScript||document.getElementsByTagName("script")[0],o=i.parentNode,r=!1,d=document.createElement("link");if(d.relList&&"function"==typeof d.relList.supports&&d.relList.supports("preload")&&"as"in d)window.BOOMR.snippetMethod="p",d.href=window.BOOMR.url,d.rel="preload",d.as="script",d.addEventListener("load",e),d.addEventListener("error",function(){t(!0)}),setTimeout(function(){if(!r)t(!0)},3e3),BOOMR_lstart=(new Date).getTime(),o.appendChild(d);else t(!1);if(window.addEventListener)window.addEventListener("load",a,!1);else if(window.attachEvent)window.attachEvent("onload",a)}}(),"".length>0)if(e&&"performance"in e&&e.performance&&"function"==typeof e.performance.setResourceTimingBufferSize)e.performance.setResourceTimingBufferSize();!function(){if(BOOMR=e.BOOMR||{},BOOMR.plugins=BOOMR.plugins||{},!BOOMR.plugins.AK){var n=""=="true"?1:0,t="",a="noglgnixzvm242vsulca-f-7d05a317b-clientnsv4-s.akamaihd.net",i="false"=="true"?2:1,o={"ak.v":"41","ak.cp":"1699437","ak.ai":parseInt("1075935",10),"ak.ol":"0","ak.cr":9,"ak.ipv":4,"ak.proto":"http/1.1","ak.rid":"faf8144","ak.r":38938,"ak.a2":n,"ak.m":"dscb","ak.n":"essl","ak.cport":54646,"ak.gh":"23.55.170.174","ak.quicv":"","ak.tlsv":"tls1.3","ak.0rtt":"","ak.0rtt.ed":"","ak.csrc":"-","ak.acc":"bbr","ak.t":"1790091972","ak.ak":"hOBiQwZUYzCg5VSAfCLimQ==NHpiroUU6I2bGmwWofX30s0BuEAoY9okmY0TKFwjeDIacA9jXPAWANcKCi3PjSOd9BeNRqyMlWnWqswBWk43Oy64ewAlm/eAS1UprK1r5d/jETXgIO7OSEihASY3wKyl3gNgkrt+ukjgeP6/bmzEI119ApBLQn6I7H2MSmsKGdBXez5pO13NlZw1fdp55ieqt8OMMA3ETjEnjjnNJVqPy2WagyNRpba33t/4kYewO273LxLbrcHE/7nee1qp+jPqNRgqIL2yMlmZBkbHQlvx/lFv6GXIedL1pwgThuHLUNjvsuA+0KqQ1ukPPKr/g2CsSgGOKcRLv7JMxS5aQqHzGWbyj/B+lSB1xFkVkO9pzR43r5AyJE/2nXc7TH8CAVLQvKjepiw57XWW+d54+AK3aX0+0waMWADbj5tN0dpoF34=","ak.pv":"339","ak.dpoabenc":"","ak.tf":i};if(""!==t)o["ak.ruds"]=t;var r={i:!1,av:function(n){var t="http.initiator";if(n&&(!n[t]||"spa_hard"===n[t]))o["ak.feo"]=void 0!==e.aFeoApplied?1:0,BOOMR.addVar(o)},rv:function(){var e=["ak.cport","ak.cr","ak.csrc","ak.gh","ak.ipv","ak.m","ak.n","ak.ol","ak.proto","ak.quicv","ak.tlsv","ak.0rtt","ak.0rtt.ed","ak.r","ak.acc","ak.t","ak.tf"];BOOMR.removeVar(e)}};BOOMR.plugins.AK={akVars:o,akDNSPreFetchDomain:a,init:function(){if(!r.i){var e=BOOMR.subscribe;e("before_beacon",r.av,null,null),e("onbeacon",r.rv,null,null),r.i=!0}return this},is_complete:function(){return!0}}}}()}(window);</script></head>
+<body class="body layout-modern  site-search-always-visble  content-type-oc-news-article content-template-oc-full-width group-template-oc-full-width-with-default-header page-name-boil-water-advisory-lifted-low-and-high-pressure-districts page-sequence-2 page-depth-4 page-section-6 website-type-primary device-desktop homepage-show " id="body-top">
+    <div id="skip-to-content-container">
+        <a href="#main-content" class="visuallyhidden focusable" id="skip-to-content-link">Skip to main content</a>
+    </div>
+    <script>
+        // OCNOW-11988 (Cursor): Proactively focus skip link when returning from browser chrome.
+        // Must run inline (not deferred oc_main.js) so focus is intercepted before NVDA speaks footer.
+        (function () {
+            var awaitingReentry = false;
+            var inertSupported = 'inert' in HTMLElement.prototype;
+
+            function isExplicitlyOutsideDocument(node) {
+                return node != null && !document.documentElement.contains(node);
+            }
+
+            function getSkipContainer() {
+                return document.getElementById('skip-to-content-container');
+            }
+
+            function getSkipLink() {
+                return document.getElementById('skip-to-content-link');
+            }
+
+            function applyGuard() {
+                awaitingReentry = true;
+                if (!inertSupported) {
+                    return;
+                }
+                var skipContainer = getSkipContainer();
+                var children = document.body.children;
+                for (var i = 0; i < children.length; i++) {
+                    if (children[i] !== skipContainer) {
+                        children[i].setAttribute('inert', '');
+                    }
+                }
+            }
+
+            function clearGuard() {
+                awaitingReentry = false;
+                if (!inertSupported) {
+                    return;
+                }
+                var children = document.body.children;
+                for (var i = 0; i < children.length; i++) {
+                    children[i].removeAttribute('inert');
+                }
+            }
+
+            function isSkipLinkElement(target) {
+                if (!target) {
+                    return false;
+                }
+                var skipContainer = getSkipContainer();
+                return target.id === 'skip-to-content-link' ||
+                    (skipContainer && skipContainer.contains(target));
+            }
+
+            function focusSkipLink() {
+                var skipLink = getSkipLink();
+                if (!skipLink) {
+                    return;
+                }
+                if (window.scrollY > 0) {
+                    window.scrollTo(0, 0);
+                }
+                skipLink.focus({ preventScroll: true });
+            }
+
+            function scheduleGuardIfDocumentLostFocus() {
+                window.setTimeout(function () {
+                    if (!document.hasFocus()) {
+                        applyGuard();
+                    }
+                }, 0);
+            }
+
+            document.addEventListener('focusout', function (e) {
+                if (isExplicitlyOutsideDocument(e.relatedTarget)) {
+                    applyGuard();
+                }
+            }, true);
+
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Tab') {
+                    scheduleGuardIfDocumentLostFocus();
+                } else if (e.key === 'F6' || (e.key === 'l' && e.ctrlKey)) {
+                    scheduleGuardIfDocumentLostFocus();
+                }
+            }, true);
+
+            window.addEventListener('focus', function () {
+                if (!awaitingReentry) {
+                    return;
+                }
+                applyGuard();
+                focusSkipLink();
+            }, true);
+
+            document.addEventListener('focusin', function (e) {
+                var reentryFromChrome = awaitingReentry || isExplicitlyOutsideDocument(e.relatedTarget);
+                if (!reentryFromChrome) {
+                    return;
+                }
+                if (isSkipLinkElement(e.target)) {
+                    clearGuard();
+                    return;
+                }
+                applyGuard();
+                focusSkipLink();
+                clearGuard();
+            }, true);
+        })();
+    </script>
+    <form name="mainForm" method="post" action="/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts" id="mainForm">
+<div>
+<input type="hidden" name="ctl04_seamless_script_manager_TSM" id="ctl04_seamless_script_manager_TSM" value="" />
+<input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="" />
+<input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value="" />
+<input type="hidden" name="__SEAMLESSVIEWSTATE" id="__SEAMLESSVIEWSTATE" value="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" />
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="" />
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['mainForm'];
+if (!theForm) {
+    theForm = document.mainForm;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
+
+
+<script src="/WebResource.axd?d=pynGkmcFUV13He1Qd6_TZEwxevNHYVPiVa1Imd_CfwV7Ab8FE1aS0qMo2VVt5LKJo2QwSrlAqlF7-BPzzVxibA2&amp;t=639190689332169432" type="text/javascript"></script>
+
+
+<script src="/Telerik.Web.UI.WebResource.axd?_TSM_HiddenField_=ctl04_seamless_script_manager_TSM&amp;compress=1&amp;_TSM_CombinedScripts_=%3b%3bSystem.Web.Extensions%2c+Version%3d4.0.0.0%2c+Culture%3dneutral%2c+PublicKeyToken%3d31bf3856ad364e35%3aen-GB%3add3ac3d5-1e29-4112-8fed-529caffa8f24%3aea597d4b%3ab25378d2" type="text/javascript"></script>
+<script src="/ScriptResource.axd?d=Dgt4HF_ft_aJ1oNhpkWrMiNDmBLKt_DsvWnSAz2w6tEELqoI6U0la4w2SXOqY6aKSQopJdYQ7QqurDo6luOWtmOtc0ilepv84Pn5KcIhMMrgeTsEf5EuV8_Sa3cCDWfG--Hnf94oO4VdVbckSgJaVhayxbZ7XIfk_l5vwX8rf1j3PHHLVdsirYnSQi7H-FBaAoI8vrsBRaLWZaSMhQbjtYYKqDWglhIGGk6W571YqSk-uulGq2FPvDWIH4jcRJViiV9xArPU8giGtZPgZuzgazGDA9l8J7QQlNhfdKhxD-RT-xq7lTMNzZtN4P2818X2kcTOPsVXuC5sJXLwZ_95djU3-fBGudmoTPxL2612tOyiZZah_zDS4uE2zWSOvuEiX7jWqffsB-AvNOYbMeUCVMkDWwxm4SnM9P_FzJ7I9RNhaF2SxAANL2e2AV_KOoQt0" type="text/javascript"></script>
+<script src="/Telerik.Web.UI.WebResource.axd?_TSM_HiddenField_=ctl04_seamless_script_manager_TSM&amp;compress=1&amp;_TSM_CombinedScripts_=%3b%3bOpenCities.CustomControls%3aen-GB%3a8875e443-f2ef-457b-94fb-857d92f72782%3a8e1d32bf" type="text/javascript"></script>
+    <script type="text/javascript">
+//<![CDATA[
+Sys.WebForms.PageRequestManager._initialize('ctl04$seamless_script_manager', 'mainForm', [], [], [], 90, '');
+//]]>
+</script>
+
+<script type="text/javascript">
+    try{
+        function SeamlessEndRequestHandler(sender, args) {
+            try {
+                var dataItems = args.get_dataItems();
+                if(dataItems.ctl04_seamless_script_manager)
+                    document.getElementById('__SEAMLESSVIEWSTATE').value = dataItems.ctl04_seamless_script_manager;
+            }
+            catch (e) { }
+        }
+
+        Sys.WebForms.PageRequestManager.getInstance().add_endRequest(SeamlessEndRequestHandler);
+    }
+    catch (e) { }
+</script>
+
+    <div class="unsupported-browser-warning js-element"></div>
+    
+    <div hidden>
+        <span id="new-window-0">opens in new tab or window </span>
+    </div>
+    <div class="overlay-container"></div>
+    
+    <div role="region" aria-label="Site announcements" class="emergency-container emergency-container-position-1"><div id="PublicEmergencyAnnouncementList" data-cookiekeydismisseditems="OC_EA_EmergencyAnnouncementList_Dismissed" data-querykeydismisseditem="OC_EA_EmergencyAnnouncementList_Dismiss">
+   <div class="oc-emergency-announcement-container">
+  <div class="oc-emergency-undismissed max-severity-10 results-2">
+    <div class="side-box message-box emergency-message-box oc-emergency-severity-10 " >
+   <h3 class="side-box-title">Review and comment on the draft Strategic Vision!</h3>
+   <div class="side-box-content">
+      <p >Review and comment on the draft Imagine Kalamazoo 2035 Strategic Vision, a community-developed framework that will guide City priorities, services, and investments over the next decade. Share your comments by September 30.</p>
+      <a href="https://www.kalamazoocity.org/News-articles/Review-and-Comment-on-the-Draft-Imagine-Kalamazoo-2035-Vision"  target="_self" >Learn more</a>
+      
+   </div>
+   <button type="button" class="emergency-announcement-item-dismiss" aria-label="Close this announcement" data-cvid="f6b842eb-bac7-4bf1-8891-dc7228721a25"></button>
+</div>
+        
+  
+    <div class="side-box message-box emergency-message-box oc-emergency-severity-30 " >
+   <h3 class="side-box-title">Boil Water Advisory LIFTED for Water Customers (High & Low Districts)</h3>
+   <div class="side-box-content">
+      <p >The Boil Water Advisory for City of Kalamazoo water customers in the Low and High pressure districts has been lifted.</p>
+      <a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts"  target="_self" >Learn more</a>
+      
+   </div>
+   
+</div>
+        
+  </div><div class="oc-emergency-dismissed results-0"></div></div></div></div>
+    <div class="background-container">
+        <div class="page-container">
+            <!-- OC Layout Element GROUP TEMPLATE -->
+            <!--groupTemplateStart--><header><div class="print-header-outer-container print-element">
+<img src="/files/templates/00000000-0000-0000-0000-000000000000/85d6a07d-9993-443b-868e-b3f6e64e9076/v/296/print-header.png" alt="City of Kalamazoo - Logo" />
+</div>
+            <div class="toolbar-outer-container">
+  <div class="toolbar-inner-container clearfix">
+    <div class="toolbar-item toolbar-quicklinks toolbar-display-dropdown">
+	<button type="button" aria-controls="toolbar-quicklinks-drop-down" aria-expanded="false" class="toolbar-button toolbar-button-quicklinks js-element"><span>Quick Links</span><i aria-hidden="true"></i></button>	
+	<div id="toolbar-quicklinks-drop-down" class="toolbar-drop-down toolbar-quicklinks-drop-down clearfix">
+		<ul>
+		  <li><a href="http://eepurl.com/bgLggT" class="oc-icon-b oc-i-email link-type-external" target="_blank"><span>Join Our Email List</span></a></li><li><a href="https://www.facebook.com/KalamazooCity" class="oc-icon-b oc-i-facebook link-type-external" target="_blank"><span>Facebook</span></a></li><li><a href="https://www.instagram.com/kalamazoocity" class="oc-icon-b oc-i--none link-type-external" target="_blank"><span>Instagram</span></a></li>
+		</ul>
+	</div>
+</div><div class="toolbar-item toolbar-language notranslate toolbar-display-dropdown"><div class="no-js-element">
+		  <ul>
+		    <li id="toolbar-language-option-en-us-noscript"><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts?oc_lang=en-US" class="lang-item lang-en-us" data-translate-to="en-us" lang="en-US">English<span class="visuallyhidden"> Select this as your preferred language</span></a></li><li id="toolbar-language-option-es-noscript"><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts?oc_lang=es" class="lang-item lang-es" data-translate-to="es" lang="en">Spanish<span class="visuallyhidden"> Select this as your preferred language</span></a></li><li id="toolbar-language-option-ar-noscript"><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts?oc_lang=ar" class="lang-item lang-ar" data-translate-to="ar" lang="en">Arabic<span class="visuallyhidden"> Select this as your preferred language</span></a></li><li id="toolbar-language-option-zh-cn-noscript"><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts?oc_lang=zh-CN" class="lang-item lang-zh-cn" data-translate-to="zh-cn" lang="en">Chinese (Simplified)<span class="visuallyhidden"> Select this as your preferred language</span></a></li>
+          </ul>
+		</div>
+	<button type="button" role="combobox" aria-controls="toolbar-language-drop-down" aria-expanded="false" aria-haspopup="listbox" aria-autocomplete="none" aria-labelledby="toolbar-language-label" class="toolbar-button toolbar-button-language js-element">  
+        <span class="toolbar-language-globe-icon" aria-hidden="true"></span>
+        <span id="toolbar-language-label" class="current-language">
+            Select a language to translate to
+		</span>
+		<i aria-hidden="true"></i>
+	</button>
+	<div id="toolbar-language-drop-down" role="listbox" aria-label="Available languages" class="toolbar-drop-down toolbar-language-drop-down js-element clearfix">
+		<ul role="group">
+		    <li role="presentation"><a id="toolbar-language-option-en-us" role="option" aria-selected="true" href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts?oc_lang=en-US" class="lang-item lang-en-us" data-translate-to="en-us" lang="en-US">English<span class="visuallyhidden"> Select this as your preferred language</span></a></li><li role="presentation"><a id="toolbar-language-option-es" role="option" aria-selected="false" href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts?oc_lang=es" class="lang-item lang-es" data-translate-to="es" lang="en">Spanish<span class="visuallyhidden"> Select this as your preferred language</span></a></li><li role="presentation"><a id="toolbar-language-option-ar" role="option" aria-selected="false" href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts?oc_lang=ar" class="lang-item lang-ar" data-translate-to="ar" lang="en">Arabic<span class="visuallyhidden"> Select this as your preferred language</span></a></li><li role="presentation"><a id="toolbar-language-option-zh-cn" role="option" aria-selected="false" href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts?oc_lang=zh-CN" class="lang-item lang-zh-cn" data-translate-to="zh-cn" lang="en">Chinese (Simplified)<span class="visuallyhidden"> Select this as your preferred language</span></a></li>
+        </ul>
+	</div></div>
+  </div>
+</div>
+            <div class="header-outer-container">
+    <div class="header-container header-layout-3  clearfix">
+			<div class="header-site-logo">
+				<a href="https://www.kalamazoocity.org/Home" lang="en-US" aria-label="City of Kalamazoo - Home - Logo">
+				</a>
+			</div>
+      
+		    <div class="mobile-search-btn js-element">
+		        <button><i aria-hidden="true"></i><span class="mobile-search-btn-text"><span class="visuallyhidden">Open </span>Search</span></button>
+		    </div>
+		    <div class="header-website-settings">
+                <button id="btn-mob-nav" type="button" aria-expanded="false" aria-controls="nav">
+                    <i aria-hidden="true"></i><span class="side-menu-btn-text">Menu</span>
+                </button>
+        	</div>
+          <div class="navigation-outer-container">
+	<div id="nav" role="navigation" class="navigation-container  navigation-container-option-7" data-menu-type="horizontal" aria-label="primary">
+        <div class="grid">
+            <div class="col-xs-12">              
+                <ul class="sf-menu" id="sc-main-menu"><li class="nav-section-quarters-1   first-item nav-item-seq-1">
+<a href="https://www.kalamazoocity.org/Business-Development" class="nav-level-1 nav-has-children"  target="">
+	<i class="item-icon" aria-hidden="true"></i><span class="item-text">Business & Development</span>
+</a>
+<button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow" aria-controls="sc-menu-second-level-nav-item-seq-1">
+              <i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-second-level-nav-item-seq-1">
+
+          
+            <li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Apply-for-Business-Licenses" class=""  target="">Apply for Business Licenses</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Brownfield-Redevelopment-Authority" class=""  target="_self">Brownfield Redevelopment Authority</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs" class="nav-has-children"  target="">Business Support Programs</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-1-nav-item-seq-3"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-1-nav-item-seq-3">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Black-Entrepreneur-Training-Academy-BETA"  target="_blank">Black Entrepreneur Training Academy (BETA)</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Core-60"  target="_blank">Core 60</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Economic-Initiative-Fund"  target="">Economic Initiative Fund</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Kalamazoo-Micro-Enterprise-Grants"  target="_blank">Kalamazoo Micro-Enterprise Grants</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Office-Hours-at-Can-Do-Kalamazoo"  target="">Office Hours at Can-Do Kalamazoo</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Shop-Local-Greater-Kalamazoo"  target="_blank">Shop Local Greater Kalamazoo</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Business-Support-Programs/Social-Equity-Cannabis-Chamber"  target="_blank">Social Equity Cannabis Chamber</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Economic-Development-Strategy" class=""  target="">Economic Development Strategy</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Home-based-Business-Standards" class=""  target="">Home-based Business Standards</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Neighborhood-Enterprise-Zones" class=""  target="">Neighborhood Enterprise Zones</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Resources-for-Entrepreneurs" class=""  target="_blank">Resources for Entrepreneurs</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Work-with-the-City-of-Kalamazoo" class="nav-has-children"  target="">Work with the City of Kalamazoo</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-1-nav-item-seq-8"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-1-nav-item-seq-8">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Work-with-the-City-of-Kalamazoo/View-Bid-Opportunities"  target="">View Bid Opportunities</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Work-with-the-City-of-Kalamazoo/Bid-for-City-Projects-and-Purchases"  target="">Bid for City Projects and Purchases</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Work-with-the-City-of-Kalamazoo/Join-the-Bidders-List"  target="">Join the City of Kalamazoo's Bidders List</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Business-Development/Work-with-the-City-of-Kalamazoo/View-More"  target="_self">View More</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Business-Development/Zoning-Code" class=""  target="">Zoning Code</a></li></ul></li>
+          
+            <li class="nav-section-quarters-2   nav-item-seq-2">
+<a href="https://www.kalamazoocity.org/Community" class="nav-level-1 nav-has-children"  target="">Community</a>
+<button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow" aria-controls="sc-menu-second-level-nav-item-seq-2">
+              <i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-second-level-nav-item-seq-2">
+
+          
+            <li class=" "><a  href="https://www.kalamazoocity.org/Community/About-Kalamazoo" class=""  target="">About Kalamazoo</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Calendar" class=""  target="">Calendar</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Cemeteries" class=""  target="">Cemeteries</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Discover-Kalamazoo" class=""  target="_blank">Discover Kalamazoo</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Events-Meetings" class=""  target="">Events & Meetings</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Community-Development-Housing-Programs" class=""  target="">Community Development & Housing Programs</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Historic-Preservation" class=""  target="">Historic Preservation</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Neighborhoods" class=""  target="">Neighborhoods</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Parks-Recreation" class=""  target="_blank">Parks & Recreation</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Projects" class=""  target="">Projects</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Rental-Housing" class=""  target="">Rental Housing</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Sustainability-Our-Environment" class=""  target="">Sustainability & Our Environment</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Share-Your-Feedback" class=""  target="">Share Your Feedback</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Community/Social-Districts" class=""  target="">Social Districts</a></li></ul></li>
+          
+            <li class="nav-section-quarters-3 nav-active-path  nav-item-seq-3">
+<a href="https://www.kalamazoocity.org/Residents" class="nav-level-1 nav-has-children"  target="">Residents</a>
+<button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow" aria-controls="sc-menu-second-level-nav-item-seq-3">
+              <i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-second-level-nav-item-seq-3">
+
+          
+            <li class=" "><a  href="https://www.kalamazoocity.org/Residents/City-View-Newsletter" class=""  target="">City View Newsletter</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Elections" class="nav-has-children"  target="">Elections</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-3-nav-item-seq-2"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-3-nav-item-seq-2">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Residents/Elections/Register-to-Vote"  target="">Register to Vote</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Elections/Vote-Early-or-By-Mail-Using-an-Absentee-Ballot"  target="">Vote Early or By Mail Using an Absentee Ballot</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Elections/Find-Polling-Locations-Drop-Boxes"  target="">Find Polling Locations & Drop Boxes</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Elections/View-More"  target="_self">View More</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Make-a-Payment" class="nav-has-children"  target="">Make a Payment</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-3-nav-item-seq-3"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-3-nav-item-seq-3">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Residents/Make-a-Payment/Pay-a-Water-and-Sewer-Bill"  target="">Pay a Water and Sewer Bill</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Make-a-Payment/Pay-City-Invoices"  target="">Pay City Invoices</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Make-a-Payment/Pay-a-Parking-Ticket"  target="">Pay a Parking Ticket</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Make-a-Payment/Pay-Delinquent-Property-Taxes"  target="_blank">Pay Delinquent Property Taxes</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Make-a-Payment/Pay-Current-Property-Taxes"  target="">Pay Current Property Taxes</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Kalamazoo-Metro" class=""  target="_blank">Kalamazoo Metro</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/My-Area" class=""  target="">My Area</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Resources-for-Students" class=""  target="">Resources for Students</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Snow-Removal" class=""  target="">Snow Removal</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Connect-with-311" class=""  target="_blank">Connect with 311</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Taxes-Assessing" class="nav-has-children"  target="">Taxes & Assessing</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-3-nav-item-seq-9"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-3-nav-item-seq-9">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Residents/Taxes-Assessing/Find-Property-Tax-Information"  target="">Find Property & Tax Information</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Taxes-Assessing/View-GIS-Maps"  target="">View GIS Maps</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Taxes-Assessing/A-Guide-to-Your-Property-Taxes"  target="">A Guide to Your Property Taxes</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Taxes-Assessing/Frequently-Asked-Questions-on-Property-Tax-Assessments"  target="">Frequently Asked Questions on Property Tax Assessments</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Taxes-Assessing/View-More"  target="_self">View More</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Taxes-Assessing/Property-Tax-Estimator"  target="_blank">Property Tax Estimator</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Residents/Recycling-Waste" class="nav-has-children"  target="">Recycling & Waste</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-3-nav-item-seq-10"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-3-nav-item-seq-10">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Recycling"  target="">Recycling</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Bulk-Trash"  target="">Bulk Trash</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Yard-Waste-Pickup"  target="">Yard Waste Pickup</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Fall-Leaf-Pickup"  target="">Fall Leaf Pickup</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Food-Scrap-Recycling"  target="">Food Scrap Recycling</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Household-Hazardous-Waste-Center"  target="_blank">Household Hazardous Waste Center</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/View-from-the-Curb"  target="">View from the Curb</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/Recycle-Coach"  target="">Recycle Coach</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Recycling-Waste/EPS-Foam-Recycling-Collection"  target="_self">EPS Foam Recycling Collection</a></li></ul></li><li class="nav-active-path "><a  href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service" class="nav-has-children"  target="">Water & Sewer Service</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-3-nav-item-seq-11"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-3-nav-item-seq-11">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Transfer-Water-Sewer-Service"  target="">Transfer Water & Sewer Service</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Request-Free-Water-Testing-for-Lead-Copper"  target="">Request Free Water Testing for Lead & Copper</a></li><li  class="nav-active-path "><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories"  target="">Boil Water Advisories</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/View-Water-Sewer-Rates"  target="_blank">View Water & Sewer Rates</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Help-with-Utility-Bills"  target="">Help with Utility Bills</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/View-More"  target="_self">View More</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Past-Due-Utility-Accounts-and-Liens"  target="">Past Due Utility Accounts and Liens</a></li></ul></li></ul></li>
+          
+            <li class="nav-section-quarters-4   nav-item-seq-4">
+<a href="https://www.kalamazoocity.org/Government" class="nav-level-1 nav-has-children"  target="">Government</a>
+<button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow" aria-controls="sc-menu-second-level-nav-item-seq-4">
+              <i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-second-level-nav-item-seq-4">
+
+          
+            <li class=" "><a  href="https://www.kalamazoocity.org/Government/Mayor-Vice-Mayor-and-City-Commissioners" class=""  target="">Mayor, Vice Mayor, and City Commissioners</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/ADA-Request" class=""  target="_blank">ADA Request</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Boards-Commissions" class="nav-has-children"  target="">Boards & Commissions</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-4-nav-item-seq-3"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-4-nav-item-seq-3">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Upcoming-Meetings"  target="_self">Upcoming Meetings</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Meeting-Calendar"  target="">Meeting Calendar</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Apply-to-Join-a-Board-or-Commission"  target="">Apply to Join a Board or Commission</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Minutes-Agendas"  target="">Minutes & Agendas</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Special-Meeting-Notices"  target="">Special Meeting Notices</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Watch-City-Meetings"  target="">Watch City Meetings</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Boards-Commissions/Complete-Streets-Advisory-Committee"  target="">Complete Streets Advisory Committee</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Budgets-and-Financial-Reports" class=""  target="">Budgets and Financial Reports</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/City-Charter" class=""  target="_blank">City Charter</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Code-of-Ordinances" class=""  target="_blank">Code of Ordinances</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Departments" class=""  target="">Departments</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Locations-Hours" class=""  target="">Locations & Hours</a></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Programs-Initiatives" class="nav-has-children"  target="">Programs & Initiatives</a><button aria-label="Expand" aria-haspopup="true" class="mobnav-subarrow-child" aria-controls="sc-menu-third-level-nav-item-seq-4-nav-item-seq-9"><i aria-hidden="true"></i>
+              </button>
+<ul id="sc-menu-third-level-nav-item-seq-4-nav-item-seq-9">
+          
+            <li  class=" "><a href="https://www.kalamazoocity.org/Government/Programs-Initiatives/Shared-Prosperity-Kalamazoo"  target="">Shared Prosperity Kalamazoo</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Programs-Initiatives/Social-Justice-Youth-Awards"  target="">Social Justice Youth Awards</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Programs-Initiatives/Imagine-Kalamazoo"  target="">Imagine Kalamazoo</a></li><li  class=" "><a href="https://www.kalamazoocity.org/Government/Programs-Initiatives/2027-Budget-Development"  target="">2027 Budget Development</a></li></ul></li><li class=" "><a  href="https://www.kalamazoocity.org/Government/Request-Public-Documents-FOIA" class=""  target="">Request Public Documents (FOIA)</a></li></ul></li>
+          
+            </ul>
+            </div>
+        </div>
+    </div>
+</div>
+			
+			<div class="header-search-control-container" id="header-search">
+				<div class="search-inner-container">
+					<div class="sc-search-panel" onkeypress="javascript:return WebForm_FireDefaultButton(event, &#39;ctl08_btnSearch&#39;)">
+	<label for="ctl08_txtSearch" id="ctl08_lblSearch" class="sc-search-label">Search</label><input name="ctl08$txtSearch" type="text" id="ctl08_txtSearch" class="sc-search-text" placeholder="Search for a keyword or a page" /><input type="submit" name="ctl08$btnSearch" value="Search" id="ctl08_btnSearch" class="sc-search-button" />
+</div>
+					<div role="status" id="predictiveResults"></div>
+				</div>
+			</div>
+    </div>
+</div>
+
+            </header>
+            <div class="content-outer-container">
+                <div id="main" role="main" class="main-outer-container clearfix">
+                        
+                        <div class="content-main-container">
+                            <div class="grid">
+					            <div class="col-xs-12">
+						            <nav id="breadcrumbs-container" aria-label="You Are Here :">
+							            <span role="list">
+<span role="listitem">
+	<a href="https://www.kalamazoocity.org/Home"  lang="en-US">Home</a>
+	<span class="nav-separator" aria-hidden="true" role="presentation">/</span>
+</span>
+          <span role="listitem"><a href="https://www.kalamazoocity.org/Residents" >Residents</a><span class='nav-separator' aria-hidden="true" role="presentation">/</span></span><span role="listitem">
+	<a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service" >
+		Water & Sewer Service
+	</a>
+	<span class='nav-separator' aria-hidden="true" role="presentation">/</span>
+</span>
+<span role="listitem">
+	<a href="https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories" >
+		Boil Water Advisories
+	</a>
+	<span class='nav-separator' aria-hidden="true" role="presentation">/</span>
+</span>
+<span class="current-page" role="listitem" aria-current="page" >Boil Water Advisory LIFTED: LOW and HIGH Pressure Districts</span>
+          
+          </span>
+						            </nav>
+					            </div>
+                      
+					            <div class="col-xs-12">
+						            <div class="main-inner-container">
+							            <div id="main-content" class="main-container clearfix">
+							              
+                            <!-- OC Layout Element Conent Template -->
+							              <!--normalTemplateStart--><div class="grid">
+    <div class="col-xs-12">
+        <h1 class='oc-page-title '>Boil Water Advisory LIFTED: LOW and HIGH Pressure Districts</h1>
+        <p class="published-on small-text">Published on September 19, 2026</p>
+        
+       <picture>
+  <source media="(min-width: 992px)" srcset="/files/assets/public/v/1/images/public-services-releases/bwa-map/bwa-2026-09-19-high-low-ecoli.jpg?dimension=pageimage&w=480">
+  <source media="(min-width: 768px)" srcset="/files/assets/public/v/1/images/public-services-releases/bwa-map/bwa-2026-09-19-high-low-ecoli.jpg?dimension=pageimage&w=480">
+  <source srcset="/files/assets/public/v/1/images/public-services-releases/bwa-map/bwa-2026-09-19-high-low-ecoli.jpg?dimension=pageimage&w=480">
+  <img class="main-page-image" src="/files/assets/public/v/1/images/public-services-releases/bwa-map/bwa-2026-09-19-high-low-ecoli.jpg?dimension=pageimage&w=480" alt="BWA 2026 09-19 HIGH LOW Ecoli.jpg" />
+</picture> 
+      
+        <h2><span style="color: rgb(0,176,80);">This advisory has been lifted.</span></h2>
+<p>As of Monday, September 21, 2026, at 7:00 am, t<strong>he boil water advisory issued September 19, 2026, has been lifted</strong> by the City of Kalamazoo, in cooperation with the Kalamazoo County Health and Community Services Department. Citizens in the affected area can now use City water for consumption as well as all other purposes. All Bacteriological sampling for E. coli (Escherichia coli) and Total Coliform within the affected area have passed therefore verifying that the water is safe to drink. The understanding and cooperation of affected residents, businesses and institutions is much appreciated.</p>
+<p>We recommend flushing your home or facility and replacing filter cartridges.&nbsp;</p>
+<p><strong><a href="https://www.kalamazoocity.org/files/assets/public/v/2/public-services/household-flushing.pdf" target="_blank">Flushing your home plumbing system</a></strong></p>
+<h2>Sunday, September 20 Update:&nbsp;</h2>
+<p>The latest round of water testing is complete. <strong>Samples analyzed this morning showed no detections of E. coli and no detections of coliform group bacteria.</strong></p>
+<p>Public Services staff are continuing to collect additional samples that will be analyzed over the next 24 hours. Crews are also continuing to flush the water system and conduct additional system checks.</p>
+<p><strong>The Boil Water Advisory remains in effect at this time.</strong> If all samples analyzed Monday morning also show no detections of E. coli or coliform bacteria, the City expects to lift the advisory on Monday, September 21.</p>
+<p>Until the advisory is officially lifted, customers in the affected area should continue to use bottled water or boil tap water for at least two minutes before using it for drinking, making ice, preparing food, brushing teeth, washing dishes, or other consumptive purposes.</p>
+<p>The advisory affects many City of Kalamazoo water customers, but not all customers. The affected area includes 19 of Kalamazoo&rsquo;s 22 neighborhoods, the City of Portage north of I-94, and portions of Kalamazoo, Comstock, Cooper, and Pavilion townships.</p>
+<p><a href="https://gis.kalamazoocity.org/portal/apps/experiencebuilder/experience/?id=4ca37d0e376243ad870fc6b8662840a0&amp;page=Page-2&amp;views=View-7" target="_blank" class="styled-button-calltoaction">Check your address on the searchable map</a></p>
+<p>______________________________________________________________</p>
+<p>&nbsp;</p>
+<p>E.coli bacteria were found in one sample on September 18, 2026. When bacteria is detected, three repeat samples are collected. One repeat sample was total coliform-positive but did not contain E. coli. The other two repeat samples did not contain bacteria. Because one sample contained E. coli and a repeat sample was positive for total coliform, a violation occurred. A public notice is required for this violation.&nbsp;</p>
+<p><a href="/files/assets/public/v/1/images/public-services-releases/bwa-map/bwa-2026-09-19-high-low-ecoli.jpg" class="document ext-jpg"><i aria-hidden="true"></i><img alt="BWA 2026 09-19 HIGH LOW Ecoli.jpg" src="/files/assets/public/v/1/images/public-services-releases/bwa-map/bwa-2026-09-19-high-low-ecoli.jpg" /><span class="file-info">(JPG,&nbsp;5MB)</span></a></p>
+<p>&nbsp;</p>
+<p>As our customers, you have the right to know what happened and what we are doing to correct this situation. These bacteria can make you sick and are of particular concern for people with weakened immune systems. We are now conducting additional sampling to determine the extent of the problem and a thorough investigation to determine the source of the contamination.</p>
+<p>The boil water advisory applies only to persons consuming water within the City of Kalamazoo's Low and High pressure districts (see map).</p>
+<p><strong>Municipal water customers within the affected area should not drink the water without boiling it first.&nbsp;Customers should use bottled water or bring tap water to a rolling boil and boil for at least two minutes before using it for drinking, making ice, preparing food, brushing teeth, washing dishes, or other consumptive purposes.</strong></p>
+<p>E. coli are bacteria whose presence indicates that the water may be contaminated with human or animal wastes. Human pathogens in these wastes can cause short-term effects, such as diarrhea, cramps, nausea, headaches, or other symptoms. They may pose a greater health risk for infants, young children, some of the elderly, and people with severely-compromised immune systems.</p>
+<p>The City will continue collecting and evaluating water samples and will provide additional information as it becomes available. The drinking water warning will remain in effect until the City determines that the affected water is safe for normal use and the warning can be lifted.</p>
+<h2>What happened? What is being done?</h2>
+<p>Further follow up sampling to confirm results and source are being conducted currently. We will inform you when tests show no bacteria and you no longer need to boil your water. We anticipate resolving the problem by 9/22/2026.</p>
+<p>For more information and general inquiries, please contact the City of Kalamazoo at 311 or (269) 337-8000 during business hours. General guidelines on ways to lessen the risk of infection by microbes are available from the United States Environmental Protection Agency&rsquo;s Safe Drinking Water Hotline at 1(800) 426-4791.</p>
+<p>For water emergencies, please contact the City of Kalamazoo Water Emergency number at (269) 337-8148</p>
+<p>No special precautionary measures are necessary for water used for bathing or showering unless otherwise directed by the City or the Kalamazoo County Health and Community Services Department.</p>
+<p>Please share this information with all the other people who drink this water, especially those who may not have received this notice directly (for example, people in apartments, nursing homes, schools, and businesses). You can do this by posting this notice in a public place or distributing copies by hand or mail.</p>
+<p>&nbsp;</p>
+<h2>FAQ&nbsp;</h2>
+<p><strong>What is E. Coli?</strong></p>
+<p>E. coli (Escherichia coli) is a group of bacteria that normally live in the intestines of humans and animals. Most strains are harmless, but some can cause illnesses such as diarrhea, urinary tract infections, and foodborne disease.</p>
+<p><strong>What is the source or cause of the bacteria?</strong></p>
+<p>The source of the bacteria detection is unknown at this time. An assessment will be conducted by EGLE staff to help to determine any potential source and contributing factors. Sources, although unknown at this time, could include sampling errors, sampling interference, external interference at the sample tap, environmental deposit or human touch of the sample tap, stagnation of water in the sample tap, and/or low chlorine residuals within the distribution system can all contribute to bacteria detection. An assessment by EGLE will also help to rule out any infrastructure related concerns.</p>
+<p><strong>What are low and high pressure districts and why are those the areas of concern?</strong></p>
+<p>The Kalamazoo Public Water Supply is comprised of 11 pressure districts and 13 sources of water supply. The pressure districts are elevation based isolated portions of the system designed to serve customers at uniform pressure. The naming convention of the pressure districts references the base ground elevation in relationship to the hydraulic grade line of the system. The Low Pressure District for example is at the lowest elevation of the system, however the water pressure delivered to customers is the same as all of the other pressure districts at higher elevation gradients.</p>
+<p>The Boil Water Advisory includes the pressure district where the initial detection occurred, the Low Pressure District and the immediately adjacent pressure district, the High Pressure District as a precautionary measure.</p>
+<p><strong>How does the bacteria problem get resolved?</strong></p>
+<p>Distribution sampling locations are being flushed to ensure that the lines are clean and that proper chlorine residuals are maintained. Resampling is occurring to ensure that no bacteria are present.</p>
+<p><strong>What are the areas in and around the City of Kalamazoo that contain the presence of E. Coli?</strong></p>
+<p>The E. Coli was detected at a single distribution sampling tap of the drinking water system along Miller Road within the Low Pressure District. Subsequent resampling did not detect any E. Coli. No E Coli were detected in any source water of the drinking water system.</p>
+<p>The Boil Water Advisory includes the pressure district where the initial detection occurred, the Low Pressure District and the immediately adjacent pressure district, the High Pressure District as a precautionary measure.</p>
+<p><strong>Why is this notice important to residents?</strong></p>
+<p>The City of Kalamazoo received an E. Coli positive result on Friday (9/18/2026) from a sample collected on Thursday from a distribution monitoring location. The Department of Public Services resampled multiple locations within the distribution system and all sources at multiple locations with results available this morning (Saturday 9/19/2026). The results of the enhanced sampling indicated no detections of E. Coli, however there was one detection from a different distribution location with a positive result for total coliform group bacteria.</p>
+<p>The violation notice was due to the single E. Coli detection. The E. Coli detection activated an enhanced sampling plan with results available this morning, Saturday 9/19/2026.</p>
+<p>The Boil Water Advisory is due to the detection of the coliform group bacteria detected this morning, Saturday 9/19/2026.</p>
+<p><strong>Does the presence of E. Coli pose a risk to the public?</strong></p>
+<p>E. Coli can spread from person to person. Common symptoms include abdominal cramps, diarrhea which may be bloody, nausea, and constant fatigue.</p>
+<p><strong>Will the City be providing bottled water to residents?</strong></p>
+<p>The City will not be providing bottled water to residents via any direct point of distribution. Municipal water customers in the affected area may use individually sourced bottled water for consumptive purposes or boil their tap water for 2 minutes prior to use for drinking or other ingestion.</p>
+<p>No special precautionary measures are necessary for water used for personal hygiene.</p>
+<p>It is anticipated that the BWA will be lifted by 9-22-2026.</p>
+<p><strong>The City states the problem will be resolved by 9.22. Is there a chance this could go on further?</strong></p>
+<p>While it is unlikely, any additional positive detections of either E. Coli or total coliform bacteria would result in an extension of the BWA. Please note that there are other ongoing and newly issued BWA(s) due to construction and water infrastructure repairs across the coverage area.</p>
+<p><strong>What are the steps that the City of Kalamazoo and the Michigan Department of Environment, Great Lakes and Energy are taking to resolve the situation?</strong></p>
+<p>The City of Kalamazoo is in contact with the Michigan Department of Environment, Great Lakes and Energy (EGLE) to monitor the E. Coli presence. One routine sample was E. coli-positive, followed by one repeat total coliform-positive (E. coli-negative). This is an E. coli MCL violation. Distribution sampling locations are being flushed to ensure that the lines are clean and that proper chlorine residuals are maintained. Resampling is occurring to ensure that no bacteria are present.</p>
+<p>A tier 1 public notice is required to be distributed within 24-hours and an assessment will be conducted by EGLE staff. The assessment will help to identify additional corrective actions.</p>
+
+
+    </div>
+	<div class="col-xs-12">
+		
+	</div>
+	<div class="col-xs-12">
+		<div class="grid">
+			<div class="col-xs-12">
+				<div class="categories-list-container"><span role="heading" aria-level="2">Tagged as:</span><ul class="categories-list clearfix">
+	<li><a href="https://www.kalamazoocity.org/News-articles?dlv_OC%20CL%20Public%20News%20Listing=(dd_OC News Categories=News)">News</a></li></ul></div>
+            </div>	
+            
+            
+             
+            
+		</div>
+	</div>
+</div>
+<!--normalTemplateEnd-->
+                            <div id="content-subscription-form"></div>
+                            
+                            
+							            </div>
+						            </div>
+					            </div>
+                        
+                            </div>
+                        </div>
+                        <div class="back-to-top-container text-center">
+                            <a href="#body-top" id="back-to-top"><i aria-hidden="true"></i><span class="js-visuallyhidden">Back to top</span></a>
+                        </div>
+                </div>
+            </div><!--groupTemplateEnd-->
+            <footer>
+                
+                    <div class="footer-outer-container footer-first-row">
+                        <div class="footer-container clearfix">
+                            <div class="grid grid-pad">
+                                <div class="col-xs-12 col-s-12 col-m-6 col-lg-3" >
+	
+			<h2 class="visuallyhidden">Site Footer</h2>
+			<h3 class="footer-title">Contact Us</h3>
+			
+	<p>City of Kalamazoo<br />
+241 W South Street<br />
+Kalamazoo, MI 49007<br />
+<a href="https://maps.google.com/maps?q=241%20W%20South%20Street%20Kalamazoo,%20MI%2049007,%20USA" target="_blank">View on Map</a><br />
+<a href="https://www.kalamazoocity.org/Government/Locations-Hours">Locations &amp; Hours</a></p>
+<p>Phone:&nbsp;<a href="tel:311">311</a> or <a href="tel:2693378000">(269) 337-8000</a><br />
+Email:&nbsp;<a href="mailto:311@kalamazoocity.org">311@kalamazoocity.org</a></p>
+
+
+	
+	
+</div><div class="col-xs-12 col-s-12 col-m-6 col-lg-3" >
+	
+			<h2 class="visuallyhidden">Site Footer</h2>
+			<h3 class="footer-title">Quick Links</h3>
+			
+	
+	<ul class="footer-links without-icons ">  <li>
+<a href="https://www.governmentjobs.com/careers/kalamazoomi" target="_blank"  >Jobs</a>
+</li>
+          <li>
+<a href="https://www.imaginekalamazoo.com" target="_blank"  >Imagine Kalamazoo</a>
+</li>
+          <li>
+<a href="https://www.kalamazooffe.org" target="_blank"  >Foundation for Excellence</a>
+</li>
+          <li>
+<a href="https://www.kzooparks.org" target="_blank"  >Kzoo Parks</a>
+</li>
+          <li>
+<a href="https://www.kalamazoopublicsafety.org" target="_blank"  >Kalamazoo Public Safety</a>
+</li>
+          <li>
+<a href="https://www.kalamazoocity.org/Government/Departments/Diversity-Equity-and-Inclusion" target="_self"  >Diversity, Equity, and Inclusion</a>
+</li>
+           </ul>
+	
+</div><div class="col-xs-12 col-s-12 col-m-6 col-lg-3" >
+	
+			<h2 class="visuallyhidden">Site Footer</h2>
+			<h3 class="footer-title">Share &amp; Connect</h3>
+			
+	
+	<ul class="footer-links with-icons social-media-links">  <li class="footer-link-facebook">
+	<a href="http://www.facebook.com/kalamazoocity" target="_blank"  >
+<i aria-hidden="true"></i>Like us on Facebook
+</a>
+</li>
+          <li class="footer-link-youtube">
+	<a href="https://www.youtube.com/channel/UCIgXSSXLSDxThVaaiRMsR5Q" target="_blank"  >
+<i aria-hidden="true"></i>Watch our YouTube Channel
+</a>
+</li>
+          <li class="footer-link-">
+	<a href="https://www.kalamazoocity.org/Community/Stay-in-Touch" target="_self"  >
+<i aria-hidden="true"></i>Stay in Touch
+</a>
+</li>
+           </ul>
+	
+</div>
+                            </div>
+                        </div>
+                    </div>
+                
+                <div class="footer-outer-container footer-second-row">
+                    <div class="footer-container clearfix">
+                        <div class="grid grid-pad footer-secondary-links">
+                            <div class="col-xs-12 col-m-7">
+                                
+                                    <div><a href="https://www.kalamazoocity.org/Policies/General-Disclaimer" target="_self"  >Disclaimer</a>&nbsp;| <a href="https://www.kalamazoocity.org/Policies/Privacy-Policy" target="_self"  >Privacy Policy</a>&nbsp;| <a href="https://www.kalamazoocity.org/Policies/Social-Media-Policy" target="_self"  >Social Media Policy</a></div>
+                                
+                            </div>
+                            <div class="col-xs-12 col-m-5 powered-by">
+                                <div class="right">
+                                    &copy; 2026 City of Kalamazoo&nbsp;|&nbsp;<span class="powered-by">Powered by <a href="https://granicus.com/solution/govaccess/opencities/" target="_blank">Granicus</a></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <script src="/files/oc-resources/b9015858-988c-48a4-9473-7c193df083e4/JsTextSnippets.js?ocsvclang=en-US" type="text/javascript"></script><script></script>
+    
+    <script type="text/javascript">
+_linkedin_partner_id = "7175250";
+window._linkedin_data_partner_ids = window._linkedin_data_partner_ids || [];
+window._linkedin_data_partner_ids.push(_linkedin_partner_id);
+</script><script type="text/javascript">
+(function(l) {
+if (!l){window.lintrk = function(a,b){window.lintrk.q.push([a,b])};
+window.lintrk.q=[]}
+var s = document.getElementsByTagName("script")[0];
+var b = document.createElement("script");
+b.type = "text/javascript";b.async = true;
+b.src = "https://snap.licdn.com/li.lms-analytics/insight.min.js";
+s.parentNode.insertBefore(b, s);})(window.lintrk);
+</script>
+<noscript>
+<img height="1" width="1" style="display:none;" alt="" src="https://px.ads.linkedin.com/collect/?pid=7175250&fmt=gif" />
+</noscript>
+
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5P6VBML5"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+
+
+<script type="text/javascript"> 
+    window._monsido = window._monsido || {
+        token: "gAt7oi20yH1GA80GPMjYUA",
+        statistics: {
+            enabled: true,
+            cookieLessTracking: true,
+            documentTracking: {
+                enabled: true,
+                documentCls: "monsido_download",
+                documentIgnoreCls: "monsido_ignore_download",
+                documentExt: [],
+            },
+        },
+        heatmap: {
+            enabled: true,
+        },
+        pageCorrect: {
+            enabled: true,
+        },
+        pageAssistV2: {
+            enabled: true,
+            theme: "light",
+            mainColor: "#0177bb",
+            textColor: "#ffffff",
+            linkColor: "#0177bb",
+            buttonHoverColor: "#0177bb",
+            mainDarkColor: "#052942",
+            textDarkColor: "#ffffff",
+            linkColorDark: "#FFCF4B",
+            buttonHoverDarkColor: "#FFCF4B",
+            greeting: "Discover your personalization options",
+            direction: "leftbottom",
+            coordinates: "   ",
+            iconShape: "circle",
+            title: "Personalization Options",
+            titleText: "Welcome to PageAssist™ toolbar! Adjust the options below to cater the website to your accessibility needs.",
+            iconPictureUrl: "logo",
+            logoPictureUrl: "",
+            logoPictureBase64: "",
+            languages: ["en-US", "es-MX"],
+            defaultLanguage: "en-US",
+            skipTo: true,
+            alwaysOnTop: false,
+        },
+    };
+</script>
+<script type="text/javascript" async src="https://app-script.monsido.com/v2/monsido-script.js"></script>
+    <!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-44565305-6"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-E4D3S5SRYZ');
+  gtag('config', 'UA-44565305-6');
+</script>
+    
+    
+
+<script type="text/javascript">
+//<![CDATA[
+window.__TsmHiddenField = $get('ctl04_seamless_script_manager_TSM');//]]>
+</script>
+</form>
+</body>
+</html>
