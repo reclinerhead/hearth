@@ -53,6 +53,8 @@ export type AdminCity = {
   placeName: string;
   kind: string;
   listUrl: string | null;
+  officialAlertsUrl: string | null;
+  officialAlertsNote: string | null;
   enabled: boolean;
   lastRunAt: string | null;
   lastOkAt: string | null;
@@ -324,8 +326,26 @@ function WatcherPanel({
               className="btn btn-ghost"
             >
               <Icon name="external-link" size={16} />
-              City page
+              {city.kind === "rss" ? "Source feed" : "City page"}
             </a>
+          ) : null}
+          {city.officialAlertsUrl ? (
+            <Tooltip
+              content={
+                city.officialAlertsNote ??
+                "The city's own alert signup. Hearth links to it in every email; it doesn't sign anyone up."
+              }
+            >
+              <a
+                href={city.officialAlertsUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-ghost"
+              >
+                <Icon name="info" size={16} />
+                Official alerts
+              </a>
+            </Tooltip>
           ) : null}
         </div>
       </div>

@@ -28,10 +28,13 @@ import {
   parsePublishedOn,
 } from "../parse";
 import type { ParsedAdvisory } from "../types";
+import { fetchText } from "./fetch";
 
 export const openCitiesListConfigSchema = z.object({
   list_url: z.url(),
   system_wide_phrases: z.array(z.string()).optional(),
+  /** Route fetches through WATER_ADVISORY_FETCH_PROXY_URL (see adapters/fetch.ts). */
+  use_fetch_proxy: z.boolean().optional(),
 });
 export type OpenCitiesListConfig = z.infer<typeof openCitiesListConfigSchema>;
 
@@ -41,76 +44,18 @@ export type AdapterContext = {
   fetchImpl?: typeof fetch;
 };
 
-// Proxy services fetch upstream on our behalf and are slower than a direct
-// hit; the list page plus a handful of detail pages must still fit inside
-// the route's 60 s maxDuration.
-const FETCH_TIMEOUT_MS = 20_000;
 // Bound the per-run detail fetches so a first seed of a long list can't
 // blow the route's maxDuration. published_on is read on first sight only,
 // so an entry past the cap keeps a null date; in practice the cap is only
 // reachable on the silent seed run (the list carries a handful of items).
 const MAX_DETAIL_FETCHES = 12;
 
-const BROWSER_HEADERS: Record<string, string> = {
-  "user-agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-  accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "accept-language": "en-US,en;q=0.9",
-};
-
-/**
- * Optional fetch proxy. Akamai fronts the Kalamazoo site and rejects
- * requests from cloud egress ranges (Vercel's AWS IPs get a 403; a home
- * connection running the same Node fetch gets the page). When
- * `WATER_ADVISORY_FETCH_PROXY_URL` is set it is a template such as
- * `https://api.example.com/?api_key=…&url={url}`; `{url}` is replaced
- * with the encoded target and the request goes to the proxy instead.
- * Unset (local dev, or a source that doesn't need it) → direct fetch.
- */
-export function resolveFetchTarget(url: string): { target: string; viaProxy: boolean } {
-  const template = process.env.WATER_ADVISORY_FETCH_PROXY_URL;
-  if (!template || !template.includes("{url}")) return { target: url, viaProxy: false };
-  return { target: template.replace("{url}", encodeURIComponent(url)), viaProxy: true };
-}
-
-async function fetchHtml(url: string, fetchImpl: typeof fetch): Promise<string> {
-  const { target, viaProxy } = resolveFetchTarget(url);
-  const res = await fetchImpl(target, {
-    // A proxy service supplies its own browser fingerprint; sending ours
-    // through it would only confuse the upstream.
-    headers: viaProxy ? undefined : BROWSER_HEADERS,
-    redirect: "follow",
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  const body = await res.text();
-  // Akamai's denial page is a 403 (sometimes 200) HTML stub that names a
-  // reference id. Name the cause and keep a short, tag-stripped excerpt
-  // of the body so the admin page and the alarm email are actionable
-  // without anyone re-running the fetch.
-  const botWall = /Access Denied|errors\.edgesuite\.net|Reference&#32;#|Reference #/i.test(
-    body.slice(0, 4_000),
-  );
-  if (!res.ok || botWall) {
-    const excerpt = body
-      .replace(/<[^>]+>/g, " ")
-      .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 160);
-    const served = res.headers.get("server") ?? "";
-    throw new Error(
-      `GET ${url} → ${res.status}${botWall ? " bot wall" : ""}${served ? ` (server: ${served})` : ""}${excerpt ? ` — ${excerpt}` : ""}`,
-    );
-  }
-  return body;
-}
-
 export async function fetchOpenCitiesAdvisories(
   config: OpenCitiesListConfig,
   ctx: AdapterContext,
 ): Promise<ParsedAdvisory[]> {
-  const fetchImpl = ctx.fetchImpl ?? fetch;
-  const html = await fetchHtml(config.list_url, fetchImpl);
+  const fetchOpts = { fetchImpl: ctx.fetchImpl, useProxy: config.use_fetch_proxy ?? false };
+  const html = await fetchText(config.list_url, fetchOpts);
 
   const entries = parseOpenCitiesList(html);
   if (entries.length === 0) {
@@ -158,7 +103,7 @@ export async function fetchOpenCitiesAdvisories(
     if (detailFetches >= MAX_DETAIL_FETCHES) break;
     detailFetches++;
     try {
-      const detail = await fetchHtml(p.source_url, fetchImpl);
+      const detail = await fetchText(p.source_url, fetchOpts);
       p.published_on = parsePublishedOn(detail);
       const detailTitle = parseDetailTitle(detail);
       if (detailTitle) p.raw.detail_title = detailTitle;

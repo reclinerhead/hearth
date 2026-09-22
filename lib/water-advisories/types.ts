@@ -12,7 +12,7 @@ export type AdvisoryScope = "system_wide" | "localized" | "unknown";
 export type AdvisoryEventKind = "issued" | "updated" | "lifted";
 
 /** Adapter kinds. Widened alongside the CHECK constraint on `sources.kind`. */
-export type SourceKind = "opencities_list";
+export type SourceKind = "opencities_list" | "rss";
 
 /**
  * What an adapter hands back for one advisory, before classification.
