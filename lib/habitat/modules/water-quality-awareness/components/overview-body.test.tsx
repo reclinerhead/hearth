@@ -576,11 +576,15 @@ describe("WqaOverviewBody — CCR contaminant list (issue #199)", () => {
     expect(text()).toContain("Cau-A");
     // Disclosure summary shows the count of collapsed rows.
     expect(text()).toContain("3 more contaminants detected at low levels");
-    // The context rows themselves are inside the <details> — the
-    // summary doesn't contain them, but textContent walks the whole
-    // tree so the names ARE in the text. Test what's structurally
-    // observable instead: the summary text is present.
-    expect(text()).toMatch(/3 more contaminants detected at low levels/);
+    // Issue #340: the disclosure is its own headed block — an eyebrow, an
+    // explanation of what "low levels" means, and an explicit show/hide
+    // cue — not an accent line tucked under the last card.
+    const details = container.querySelector("details[data-low-levels-disclosure]");
+    expect(details).not.toBeNull();
+    expect(details?.textContent).toContain("Also in your report");
+    expect(details?.textContent).toContain("well below its federal limit");
+    expect(details?.textContent).toContain("Show them");
+    expect((details as HTMLDetailsElement).open).toBe(false);
   });
 
   it("keeps a single context row inline (no disclosure overhead for one row)", () => {
@@ -886,6 +890,67 @@ describe("WqaOverviewBody — year-over-year trends (issue #289)", () => {
     expect(dialogText).toContain("PWSID MI0000001");
     expect(dialogText).toContain("Test Utility");
     expect(dialog?.querySelector("svg")).not.toBeNull();
+  });
+
+  it("opens the same chart when the sparkline is hovered, and closes it after the pointer leaves (issue #340)", () => {
+    vi.useFakeTimers();
+    try {
+      const findings = cwsWithCcrFindings([
+        { name: "Arsenic", level: 7.8, mcl: 10, tier: "caution" },
+      ]);
+      findings.ccr_findings!.contaminant_history = [
+        {
+          key: "arsenic",
+          display_name: "Arsenic",
+          unit: "ppb",
+          points: [
+            { year: 2022, level: 0.5, unit: "ppb", limit: 10 },
+            { year: 2023, level: 1.2, unit: "ppb", limit: 10 },
+            { year: 2024, level: 0.64, unit: "ppb", limit: 10 },
+            { year: 2025, level: 7.8, unit: "ppb", limit: 10 },
+          ],
+        },
+      ];
+      render(findings);
+      const spark = container.querySelector("[data-trend-sparkline]") as HTMLElement | null;
+      expect(spark).not.toBeNull();
+      // In-app the sparkline is not a second tab stop — the icon is the
+      // accessible control.
+      expect(spark?.tagName).toBe("SPAN");
+      expect(spark?.getAttribute("tabindex")).toBeNull();
+
+      // Hover intent: nothing opens on entry alone…
+      act(() => {
+        spark!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      });
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      // …but the chart opens once the intent delay passes.
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      const dialog = document.querySelector('[role="dialog"]');
+      expect(dialog).not.toBeNull();
+      // Every year's value is printed on the chart, not just on hover.
+      const svgText = dialog?.querySelector('svg[role="img"]')?.textContent ?? "";
+      expect(svgText).toContain("0.64");
+      expect(svgText).toContain("7.8");
+      expect(svgText).toContain("2022");
+      expect(svgText).toContain("2025");
+      // Exactly one popover for the row: the icon and the sparkline share it.
+      expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+
+      // Leaving the sparkline closes an unpinned chart after the grace period.
+      act(() => {
+        spark!.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+      });
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders a per-analyte trend inside the PFAS family card", () => {

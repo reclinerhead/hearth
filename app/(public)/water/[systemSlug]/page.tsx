@@ -15,13 +15,9 @@ import {
   type PublicDetectedItem,
   type PublicDetectedRow,
   type PublicMetalReading,
-  type PublicTrend,
   type PublicWaterSummary,
 } from "@/lib/public-pages/water-summary";
-import {
-  sparklineGeometry,
-  trendArrowPath,
-} from "@/lib/habitat/water-quality/contaminants/trends";
+import { PublicTrendLine } from "./trend-line";
 import { buildWqaNextSteps } from "@/lib/habitat/water-quality/closing-copy";
 import {
   NSF_CERTIFIED_PRODUCTS_URL,
@@ -117,7 +113,7 @@ export default async function PublicWaterSystemPage({
       <IdentitySection summary={summary} />
       <ComplianceSection summary={summary} entry={entry} />
       <PfasSection summary={summary} />
-      <DetectedSection summary={summary} />
+      <DetectedSection summary={summary} entry={entry} />
       <RemediationSection summary={summary} entry={entry} />
       <CcrSection summary={summary} entry={entry} />
       <NextStepsSection summary={summary} entry={entry} />
@@ -524,15 +520,26 @@ function PfasSection({ summary }: { summary: PublicWaterSummary }) {
  *
  * Mirrors the in-app finding modal's register: serif contaminant
  * name, tier badge, mono level-vs-limit line, year-over-year trend
- * with a static SVG sparkline, editorial description, EPA link.
- * Everything rendered here comes from the PublicWaterSummary view
- * model, which only carries canonical-reference text and validated
- * numbers — no extraction free-text (epic #298 hard rule 4, as
- * amended by #303).
+ * with a sparkline that opens the expanded chart (issue #340 — the
+ * page's one client island, `PublicTrendLine`), editorial
+ * description, EPA link. Everything rendered here comes from the
+ * PublicWaterSummary view model, which only carries canonical-
+ * reference text and validated numbers — no extraction free-text
+ * (epic #298 hard rule 4, as amended by #303).
  * ------------------------------------------------------------- */
 
-function DetectedSection({ summary }: { summary: PublicWaterSummary }) {
+function DetectedSection({
+  summary,
+  entry,
+}: {
+  summary: PublicWaterSummary;
+  entry: PublicWaterSystemEntry;
+}) {
   const { detected } = summary;
+  const attribution = {
+    systemName: summary.identity.name,
+    placeName: entry.placeName,
+  };
   if (detected.kind !== "available") return null;
   if (detected.items.length === 0 && detected.omittedCount === 0) return null;
 
@@ -578,7 +585,7 @@ function DetectedSection({ summary }: { summary: PublicWaterSummary }) {
         }}
       >
         {detected.items.map((item, i) => (
-          <DetectedItem key={i} item={item} />
+          <DetectedItem key={i} item={item} attribution={attribution} />
         ))}
       </ul>
       {detected.omittedCount > 0 ? (
@@ -604,13 +611,24 @@ function DetectedSection({ summary }: { summary: PublicWaterSummary }) {
   );
 }
 
-function DetectedItem({ item }: { item: PublicDetectedItem }) {
+function DetectedItem({
+  item,
+  attribution,
+}: {
+  item: PublicDetectedItem;
+  attribution: { systemName: string; placeName: string };
+}) {
   if (item.kind === "single") {
     return (
       <li className="surface" style={{ padding: "var(--space-4)" }}>
         <DetectedRowHeader name={item.row.name} tier={item.row.tier} />
         <MeasureLine row={item.row} />
-        <TrendLine trend={item.row.trend} unit={item.row.unit} />
+        <PublicTrendLine
+          trend={item.row.trend}
+          unit={item.row.unit}
+          analyteName={item.row.name}
+          {...attribution}
+        />
         <p
           className="text-small"
           style={{
@@ -658,7 +676,12 @@ function DetectedItem({ item }: { item: PublicDetectedItem }) {
               <span style={{ fontWeight: 500 }}>{a.name}</span>
               <MeasureLine row={a} inline />
             </div>
-            <TrendLine trend={a.trend} unit={a.unit} />
+            <PublicTrendLine
+              trend={a.trend}
+              unit={a.unit}
+              analyteName={a.name}
+              {...attribution}
+            />
           </li>
         ))}
       </ul>
@@ -753,92 +776,6 @@ function MeasureLine({
       {limit ? (
         <span style={{ color: "var(--color-text-tertiary)" }}>{limit}</span>
       ) : null}
-    </div>
-  );
-}
-
-/** Trend tone → page color, matching the modal's mapping. */
-function trendColor(tone: PublicTrend["tone"]): string {
-  if (tone === "attention") return "var(--color-accent)";
-  if (tone === "positive") return "var(--color-success)";
-  return "var(--color-text-tertiary)";
-}
-
-/**
- * The trend row beneath a measure line: direction arrow + word, a
- * static SVG sparkline once there are 3+ readings, the prior reading,
- * and the honest data-span caption. Server-rendered — the pure
- * geometry helpers do the math, so no client JS ships for this.
- */
-function TrendLine({
-  trend,
-  unit,
-}: {
-  trend: PublicTrend | null;
-  unit: string | null;
-}) {
-  if (!trend) return null;
-  const color = trendColor(trend.tone);
-  const geo =
-    trend.points.length >= 3
-      ? sparklineGeometry(
-          trend.points.map((p) => ({ year: p.year, level: p.level, unit: null })),
-          { width: 56, height: 16, padding: 2 },
-        )
-      : null;
-  const prev = trend.previous
-    ? `was ${trend.previous.level}${unit ? ` ${unit}` : ""} in ${trend.previous.year}`
-    : null;
-  return (
-    <div
-      className="flex items-center gap-2 flex-wrap"
-      style={{ marginTop: 6 }}
-    >
-      <span className="inline-flex items-center gap-1" style={{ color }}>
-        <svg viewBox="0 0 12 12" width={12} height={12} aria-hidden>
-          <path
-            d={trendArrowPath(trend.direction)}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.4}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        <span className="text-small" style={{ fontWeight: 500 }}>
-          {trend.word}
-        </span>
-      </span>
-      {geo ? (
-        <svg
-          viewBox={`0 0 ${geo.width} ${geo.height}`}
-          width={geo.width}
-          height={geo.height}
-          aria-hidden
-        >
-          <polyline
-            points={geo.polyline}
-            fill="none"
-            stroke={color}
-            strokeWidth={1.4}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <circle
-            cx={geo.dots[geo.dots.length - 1].x}
-            cy={geo.dots[geo.dots.length - 1].y}
-            r={1.8}
-            fill={color}
-          />
-        </svg>
-      ) : null}
-      <span
-        className="text-small"
-        style={{ color: "var(--color-text-tertiary)" }}
-      >
-        {prev ? `${prev} · ` : ""}
-        {trend.spanLabel}
-      </span>
     </div>
   );
 }

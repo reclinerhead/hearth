@@ -133,6 +133,12 @@ summary {
   cursor: pointer;
 }
 
+/* A disclosure that draws its own chevron hides the native marker
+   (the `list-style: none` inline style covers everything but WebKit). */
+[data-low-levels-disclosure] > summary::-webkit-details-marker {
+  display: none;
+}
+
 /* Typography primitives */
 
 .h1,

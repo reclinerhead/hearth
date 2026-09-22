@@ -34,7 +34,12 @@ import { CcrUploadModal } from "@/components/ccr-upload/CcrUploadModal";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
 import { RemediationMatrixView } from "./remediation-matrix-view";
-import { TrendChartButton } from "./trend-chart-popover";
+import {
+  TrendChartIconButton,
+  TrendSparklineTrigger,
+  useTrendChart,
+  type TrendChartHandle,
+} from "./trend-chart-popover";
 
 /** Utility name + PWSID threaded to each trend popover so a screenshot of
  *  the chart carries its own attribution (issue #293). */
@@ -53,9 +58,7 @@ import {
   type AwarenessItem,
 } from "@/lib/habitat/water-quality/contaminants/pfas-grouping";
 import {
-  computeTrend,
   findSeriesByName,
-  sparklineGeometry,
   trendArrowPath,
   trendDataSpanLabel,
   trendPreviousLabel,
@@ -1564,14 +1567,8 @@ function CcrContaminantList({
         </ul>
       ) : null}
       {collapseContext ? (
-        <details>
-          <summary
-            className="text-small cursor-pointer"
-            style={{ color: "var(--color-accent)" }}
-          >
-            {contextRows.length} more contaminants detected at low levels
-          </summary>
-          <ul className="flex flex-col gap-2 mt-2">
+        <LowLevelsDisclosure count={contextRows.length}>
+          <ul className="flex flex-col gap-2 mt-3">
             {contextItems.map((item, i) => (
               <CcrAwarenessItem
                 key={`context-${i}`}
@@ -1581,9 +1578,87 @@ function CcrContaminantList({
               />
             ))}
           </ul>
-        </details>
+        </LowLevelsDisclosure>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The collapsed low-levels block (issue #340). Before, the disclosure was a
+ * small accent-colored `<summary>` sitting in the same column right under
+ * the last headline card, so it read as part of that card and the bulk of
+ * the report's detections hid behind a line people didn't notice. Now it's
+ * its own headed block: a top rule and an eyebrow separate it from the
+ * cards above, the summary line is body-size in the primary color with a
+ * chevron that turns, and a one-line explanation of what "low levels"
+ * means sits beneath it. Still a native `<details>` — collapsed by default,
+ * same 2+ rows threshold, same rows inside — only the framing changed.
+ */
+function LowLevelsDisclosure({
+  count,
+  children,
+}: {
+  count: number;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details
+      open={open}
+      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+      className="mt-2 pt-4"
+      style={{ borderTop: "1px solid var(--color-border-subtle)" }}
+      data-low-levels-disclosure
+    >
+      <summary
+        className="flex items-start gap-2"
+        style={{ listStyle: "none" }}
+        aria-label={`${open ? "Hide" : "Show"} the ${count} more contaminants detected at low levels`}
+      >
+        <span
+          aria-hidden
+          className="shrink-0 inline-flex items-center justify-center"
+          style={{
+            width: 24,
+            height: 24,
+            marginTop: 12,
+            borderRadius: "var(--radius-sm)",
+            backgroundColor:
+              "color-mix(in oklab, var(--color-text-tertiary) 14%, transparent)",
+            color: "var(--color-text-secondary)",
+            transition: "transform 160ms ease",
+            transform: open ? "rotate(90deg)" : "none",
+          }}
+        >
+          <Icon name="chevron-right" size={14} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="eyebrow block mb-1">Also in your report</span>
+          <span
+            className="block"
+            style={{
+              fontSize: "var(--text-body)",
+              fontWeight: 500,
+              color: "var(--color-text-primary)",
+              lineHeight: 1.35,
+            }}
+          >
+            {count} more contaminants detected at low levels
+          </span>
+          <span
+            className="text-small block mt-1"
+            style={{ color: "var(--color-text-secondary)", lineHeight: 1.5 }}
+          >
+            Each one measured well below its federal limit.{" "}
+            <span style={{ color: "var(--color-accent)" }}>
+              {open ? "Hide them" : "Show them"}
+            </span>
+          </span>
+        </span>
+      </summary>
+      {children}
+    </details>
   );
 }
 
@@ -1710,8 +1785,11 @@ function CcrContaminantRow({
   provenance: TrendProvenance;
 }) {
   const ref = findWqaContaminantByAlias(c.contaminant_name);
-  const series = findSeriesByName(history, c.contaminant_name);
-  const trend = computeTrend(series);
+  const chart = useTrendChart({
+    series: findSeriesByName(history, c.contaminant_name),
+    analyteName: c.contaminant_name,
+    attribution: { ...provenance, voice: "first" },
+  });
   return (
     <li
       className="rounded-md p-3"
@@ -1726,14 +1804,10 @@ function CcrContaminantRow({
       </div>
       <div className="flex items-center gap-1.5">
         <CcrMeasureLine c={c} />
-        <TrendChartButton
-          series={series}
-          analyteName={c.contaminant_name}
-          utilityName={provenance.utilityName}
-          pwsid={provenance.pwsid}
-        />
+        <TrendChartIconButton chart={chart} />
       </div>
-      <TrendIndicator trend={trend} />
+      <TrendIndicator chart={chart} />
+      {chart.popover}
       {ref?.description ? (
         <p
           className="text-small"
@@ -1798,60 +1872,80 @@ function CcrPfasFamilyCard({
             "1px solid color-mix(in oklab, var(--color-text-tertiary) 28%, transparent)",
         }}
       >
-        {analytes.map((a, i) => {
-          const series = findSeriesByName(history, a.contaminant_name);
-          const trend = computeTrend(series);
-          return (
-            <li
-              key={`${a.contaminant_name}-${i}`}
-              className="flex flex-col gap-0.5"
-              style={
-                i > 0
-                  ? {
-                      borderTop:
-                        "1px solid color-mix(in oklab, var(--color-text-tertiary) 28%, transparent)",
-                      paddingTop: 8,
-                    }
-                  : undefined
-              }
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span
-                  className="text-small"
-                  style={{ color: "var(--color-text-primary)" }}
-                >
-                  {a.contaminant_name}
-                </span>
-                <span className="flex items-center gap-1.5 shrink-0">
-                  <span
-                    className="mono text-small"
-                    style={{
-                      color: "var(--color-text-secondary)",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {formatDetectedAgainstLimit(a)}
-                    {a.monitoring_period ? (
-                      <span style={{ color: "var(--color-text-tertiary)" }}>
-                        {" "}
-                        · {a.monitoring_period}
-                      </span>
-                    ) : null}
-                  </span>
-                  <TrendChartButton
-                    series={series}
-                    analyteName={a.contaminant_name}
-                    utilityName={provenance.utilityName}
-                    pwsid={provenance.pwsid}
-                  />
-                </span>
-              </div>
-              <TrendIndicator trend={trend} />
-            </li>
-          );
-        })}
+        {analytes.map((a, i) => (
+          <CcrPfasAnalyteRow
+            key={`${a.contaminant_name}-${i}`}
+            a={a}
+            first={i === 0}
+            history={history}
+            provenance={provenance}
+          />
+        ))}
       </ul>
       {ref?.learn_more_url ? <CcrEpaReferenceLink url={ref.learn_more_url} /> : null}
+    </li>
+  );
+}
+
+/** One analyte line inside the PFAS family card, with its own trend chart
+ *  (a component rather than a map body so the chart hook has a home). */
+function CcrPfasAnalyteRow({
+  a,
+  first,
+  history,
+  provenance,
+}: {
+  a: CcrSummarizedContaminant;
+  first: boolean;
+  history: ContaminantHistory | null;
+  provenance: TrendProvenance;
+}) {
+  const chart = useTrendChart({
+    series: findSeriesByName(history, a.contaminant_name),
+    analyteName: a.contaminant_name,
+    attribution: { ...provenance, voice: "first" },
+  });
+  return (
+    <li
+      className="flex flex-col gap-0.5"
+      style={
+        first
+          ? undefined
+          : {
+              borderTop:
+                "1px solid color-mix(in oklab, var(--color-text-tertiary) 28%, transparent)",
+              paddingTop: 8,
+            }
+      }
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span
+          className="text-small"
+          style={{ color: "var(--color-text-primary)" }}
+        >
+          {a.contaminant_name}
+        </span>
+        <span className="flex items-center gap-1.5 shrink-0">
+          <span
+            className="mono text-small"
+            style={{
+              color: "var(--color-text-secondary)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {formatDetectedAgainstLimit(a)}
+            {a.monitoring_period ? (
+              <span style={{ color: "var(--color-text-tertiary)" }}>
+                {" "}
+                · {a.monitoring_period}
+              </span>
+            ) : null}
+          </span>
+          <TrendChartIconButton chart={chart} />
+        </span>
+      </div>
+      <TrendIndicator chart={chart} />
+      {chart.popover}
     </li>
   );
 }
@@ -1872,9 +1966,12 @@ function trendColor(trend: ContaminantTrend): string {
  * measure line already shows the single year. Honest by construction: the
  * direction word, the prior-year value, and the exact data span all come
  * from the shared trend module, so the modal never implies more history
- * than the reports hold. The sparkline appears once there are 3+ readings.
+ * than the reports hold. The sparkline appears once there are 3+ readings
+ * and is a hover trigger for the row's expanded chart (issue #340) — the
+ * same popover instance the chart-line icon opens.
  */
-function TrendIndicator({ trend }: { trend: ContaminantTrend }) {
+function TrendIndicator({ chart }: { chart: TrendChartHandle }) {
+  const trend = chart.trend;
   if (trend.yearsOfData < 2) return null;
   const color = trendColor(trend);
   const prev = trendPreviousLabel(trend);
@@ -1887,9 +1984,7 @@ function TrendIndicator({ trend }: { trend: ContaminantTrend }) {
           {trendWord(trend.direction)}
         </span>
       </span>
-      {trend.points.length >= 3 ? (
-        <TrendSparkline trend={trend} color={color} />
-      ) : null}
+      <TrendSparklineTrigger chart={chart} color={color} />
       <span
         className="text-small"
         style={{ color: "var(--color-text-tertiary)" }}
@@ -1918,37 +2013,6 @@ function TrendArrow({ direction }: { direction: ContaminantTrend["direction"] })
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </svg>
-  );
-}
-
-function TrendSparkline({
-  trend,
-  color,
-}: {
-  trend: ContaminantTrend;
-  color: string;
-}) {
-  const geo = sparklineGeometry(trend.points, { width: 56, height: 16, padding: 2 });
-  if (!geo) return null;
-  const last = geo.dots[geo.dots.length - 1];
-  return (
-    <svg
-      viewBox={`0 0 ${geo.width} ${geo.height}`}
-      width={geo.width}
-      height={geo.height}
-      aria-hidden
-      style={{ display: "inline-block", verticalAlign: "middle" }}
-    >
-      <polyline
-        points={geo.polyline}
-        fill="none"
-        stroke={color}
-        strokeWidth={1.4}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx={last.x} cy={last.y} r={1.8} fill={color} />
     </svg>
   );
 }

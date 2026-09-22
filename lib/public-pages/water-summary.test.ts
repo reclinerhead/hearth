@@ -663,11 +663,40 @@ describe("detected block (issue #303)", () => {
     expect(item.row.trend?.word).toBe("Falling");
     expect(item.row.trend?.tone).toBe("positive");
     expect(item.row.trend?.spanLabel).toBe("2 readings · 2023–2024");
-    expect(item.row.trend?.previous).toEqual({ year: 2023, level: 2.0 });
+    expect(item.row.trend?.previous).toEqual({ year: 2023, level: 2.0, limit: 10 });
     expect(item.row.trend?.points).toEqual([
-      { year: 2023, level: 2.0 },
-      { year: 2024, level: 1.2 },
+      { year: 2023, level: 2.0, limit: 10 },
+      { year: 2024, level: 1.2, limit: 10 },
     ]);
+  });
+
+  it("carries each year's stated limit as a validated number, null otherwise (issue #340)", () => {
+    const s = buildPublicWaterSummary({
+      record,
+      violations: [],
+      lcrSamples: [],
+      ccrYears: [
+        // 2022: no limit printed at all.
+        ccrYear(2022, extraction({ detected_contaminants: [contaminant({ detected_level: 2.0, mcl: null })] })),
+        // 2023: a garbage limit (not a finite positive number) must not leak.
+        ccrYear(2023, extraction({ detected_contaminants: [contaminant({ detected_level: 1.6, mcl: Number.NaN })] })),
+        // 2024: a real limit.
+        ccrYear(2024, extraction({ detected_contaminants: [contaminant({ detected_level: 1.2, mcl: 10 })] })),
+      ],
+      now: NOW,
+    });
+    if (s.detected.kind !== "available") throw new Error("expected available");
+    const item = s.detected.items[0];
+    if (item.kind !== "single") throw new Error("expected single");
+    expect(item.row.trend?.points).toEqual([
+      { year: 2022, level: 2.0, limit: null },
+      { year: 2023, level: 1.6, limit: null },
+      { year: 2024, level: 1.2, limit: 10 },
+    ]);
+    // Every point's limit is a number or null — never a string.
+    for (const p of item.row.trend?.points ?? []) {
+      expect(p.limit === null || typeof p.limit === "number").toBe(true);
+    }
   });
 });
 

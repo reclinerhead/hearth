@@ -555,6 +555,12 @@ export function buildTrendClipboardTsv(input: {
   utilityName: string | null;
   pwsid: string | null;
   points: ContaminantYearPoint[];
+  /**
+   * Whose reports these are. `first` ("your … reports") is the in-app
+   * finding, where the reader is the household; `third` ("the utility's …
+   * reports") is the public place page (issue #340). Defaults to `first`.
+   */
+  voice?: TrendChartVoice;
 }): string {
   const points = input.points.slice().sort((a, b) => a.year - b.year);
   const lines: string[] = [input.analyteName];
@@ -571,7 +577,8 @@ export function buildTrendClipboardTsv(input: {
     const first = points[0].year;
     const last = points[points.length - 1].year;
     const span = first === last ? `${last}` : `${first}–${last}`;
-    lines.push(`Source: your ${span} Water Quality Reports (via Hearth)`);
+    const whose = input.voice === "third" ? "the utility's" : "your";
+    lines.push(`Source: ${whose} ${span} Water Quality Reports (via Hearth)`);
   }
 
   lines.push("");
@@ -587,6 +594,109 @@ export function buildTrendClipboardTsv(input: {
     );
   }
   return lines.join("\n");
+}
+
+/**
+ * Whose reports a chart surface is describing. The in-app finding speaks
+ * to the household (`first`: "your reports"); the public place page
+ * speaks about the utility (`third`: "the utility's reports"). Issue #340.
+ */
+export type TrendChartVoice = "first" | "third";
+
+/**
+ * Format a measured level for display next to its point — the same
+ * rounding the chart tooltip and the value labels share, so the number
+ * printed on the chart never disagrees with the number in the tooltip.
+ * Integers print as-is; sub-1 values keep two decimals (PFAS at 0.64 ppt
+ * must not round to "0.6"), everything else one.
+ */
+export function formatTrendLevel(value: number): string {
+  if (Number.isInteger(value)) return String(value);
+  return value < 1 ? value.toFixed(2) : value.toFixed(1);
+}
+
+/** One always-visible value label on the expanded chart (issue #340). */
+export type TrendChartValueLabel = {
+  /** Text-anchor middle x — the point's own x. */
+  x: number;
+  /** Baseline y for the SVG <text>. */
+  y: number;
+  text: string;
+  /** Which side of the point the label sits on. */
+  side: "above" | "below";
+};
+
+/**
+ * Place a value label at every point of the expanded chart so the reader
+ * gets each year's level without hovering (issue #340). Pure.
+ *
+ * Side selection keeps the label off the line: a point that sits at or
+ * above the average of its neighbours (a peak or the top of a rise) is
+ * labelled above; a trough or the floor of a fall is labelled below. The
+ * first/last points follow their single neighbour. A label that would
+ * leave the plot area (above the top edge, or below into the year-axis
+ * strip) flips to the other side. Finally, consecutive labels that would
+ * overlap — close in x, close in y — flip the later one to the opposite
+ * side of the earlier one, so dense series with near-equal values don't
+ * print on top of each other.
+ *
+ * `fontSize` and `gap` are the caller's rendering choices; width is
+ * estimated from the text length at ~0.6em per glyph (mono-ish digits),
+ * which is the standard SVG approximation and errs on the wide side.
+ */
+export function trendChartValueLabels(
+  geo: TrendChartGeometry,
+  opts: { fontSize?: number; gap?: number } = {},
+): TrendChartValueLabel[] {
+  const fontSize = opts.fontSize ?? 10;
+  const gap = opts.gap ?? 6;
+  const pts = geo.points;
+  if (pts.length === 0) return [];
+
+  const aboveY = (p: TrendChartPoint) => round(p.y - gap);
+  const belowY = (p: TrendChartPoint) => round(p.y + gap + fontSize);
+  const fitsAbove = (p: TrendChartPoint) => aboveY(p) - fontSize >= geo.plot.top;
+  const fitsBelow = (p: TrendChartPoint) => belowY(p) <= geo.plot.bottom;
+
+  const labels: TrendChartValueLabel[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const prev = pts[i - 1];
+    const next = pts[i + 1];
+    // Smaller y = higher level. Compare against the neighbours' mean y.
+    const neighbourMeanY =
+      prev && next ? (prev.y + next.y) / 2 : (prev ?? next)?.y ?? p.y;
+    let side: TrendChartValueLabel["side"] =
+      p.y <= neighbourMeanY ? "above" : "below";
+
+    if (side === "above" && !fitsAbove(p) && fitsBelow(p)) side = "below";
+    if (side === "below" && !fitsBelow(p) && fitsAbove(p)) side = "above";
+
+    const text = formatTrendLevel(p.level);
+    let y = side === "above" ? aboveY(p) : belowY(p);
+
+    // Collision with the previous label: overlapping x extents and
+    // baselines within one line of each other → flip this one.
+    const last = labels[labels.length - 1];
+    if (last) {
+      const halfW = (t: string) => (t.length * fontSize * 0.6) / 2 + 2;
+      const xOverlap = Math.abs(p.x - last.x) < halfW(text) + halfW(last.text);
+      const yOverlap = Math.abs(y - last.y) < fontSize;
+      if (xOverlap && yOverlap) {
+        const flipped: TrendChartValueLabel["side"] =
+          last.side === "above" ? "below" : "above";
+        const flippedFits =
+          flipped === "above" ? fitsAbove(p) : fitsBelow(p);
+        if (flippedFits) {
+          side = flipped;
+          y = side === "above" ? aboveY(p) : belowY(p);
+        }
+      }
+    }
+
+    labels.push({ x: p.x, y, text, side });
+  }
+  return labels;
 }
 
 /** Round a positive number up to the nearest 1/2/5 × 10ⁿ — for tidy axis steps. */
