@@ -1650,7 +1650,7 @@ function LowLevelsDisclosure({
             className="text-small block mt-1"
             style={{ color: "var(--color-text-secondary)", lineHeight: 1.5 }}
           >
-            Each one measured well below its federal limit.{" "}
+            Each one measured below its federal limit.{" "}
             <span style={{ color: "var(--color-accent)" }}>
               {open ? "Hide them" : "Show them"}
             </span>
