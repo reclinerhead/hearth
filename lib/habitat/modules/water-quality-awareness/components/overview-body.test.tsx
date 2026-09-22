@@ -582,7 +582,10 @@ describe("WqaOverviewBody — CCR contaminant list (issue #199)", () => {
     const details = container.querySelector("details[data-low-levels-disclosure]");
     expect(details).not.toBeNull();
     expect(details?.textContent).toContain("Also in your report");
-    expect(details?.textContent).toContain("well below its federal limit");
+    // "below", not "well below" — a context-tier row can sit at 60%+ of
+    // its limit (Kalamazoo copper: 0.8 / 1.3 ppm), so "well" overstated it.
+    expect(details?.textContent).toContain("Each one measured below its federal limit");
+    expect(details?.textContent).not.toContain("well below");
     expect(details?.textContent).toContain("Show them");
     expect((details as HTMLDetailsElement).open).toBe(false);
   });
