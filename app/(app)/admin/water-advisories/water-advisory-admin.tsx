@@ -362,7 +362,7 @@ function AdvisoriesPanel({ city }: { city: AdminCity }) {
   return (
     <section>
       <SectionHeader
-        eyebrow="Recorded from the city page"
+        eyebrow="Recorded from the source"
         title="Recent advisories"
         trailing={
           city.advisories.length > 0 ? (

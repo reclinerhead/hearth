@@ -1619,6 +1619,34 @@ export default function HowItWorksPage() {
               }}
             >
               <h3 className="h3" style={{ margin: 0 }}>
+                Boil water advisories
+              </h3>
+              <p style={{ margin: 0 }}>
+                For the cities it watches, Hearth checks the official
+                advisory source every 30 minutes and records each boil water
+                advisory as it is issued, updated, and lifted. Your water
+                finding and the public water page show the most recent few,
+                oldest to newest, with an advisory that is still in effect
+                called out. Where a city&rsquo;s own page can&rsquo;t be read
+                from the cloud, Hearth watches a local newsroom&rsquo;s feed
+                instead and says so — that source typically runs one to three
+                hours behind the city. Advisories that apply across the whole
+                water system are treated as district-wide; ones that name a
+                few streets are recorded as localized. Notifications are
+                district-wide only for now.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "62ch",
+              }}
+            >
+              <h3 className="h3" style={{ margin: 0 }}>
                 Year-over-year trends
               </h3>
               <p style={{ margin: 0 }}>

@@ -55,11 +55,26 @@ export async function fetchText(url: string, opts: FetchTextOptions = {}): Promi
   const headers = viaProxy
     ? undefined // the proxy supplies its own browser fingerprint
     : { ...BROWSER_HEADERS, ...(opts.accept ? { accept: opts.accept } : {}) };
-  const res = await fetchImpl(target, {
-    headers,
-    redirect: "follow",
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  let res: Response;
+  try {
+    res = await fetchImpl(target, {
+      headers,
+      redirect: "follow",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    // undici wraps network-level failures as a bare "fetch failed" with
+    // the real reason on `cause` (ECONNRESET, ENOTFOUND, a TLS error…).
+    // Surface it so a transient blip and a real outage read differently
+    // on the admin page and in the alarm (issue #347).
+    const cause =
+      err instanceof Error && err.cause instanceof Error ? err.cause.message : null;
+    const name = err instanceof Error ? err.name : "Error";
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `GET ${url} → ${name === "TimeoutError" ? "timed out" : msg}${cause ? ` (${cause})` : ""}`,
+    );
+  }
   const body = await res.text();
   const botWall = /Access Denied|errors\.edgesuite\.net|Reference&#32;#|Reference #/i.test(
     body.slice(0, 4_000),
