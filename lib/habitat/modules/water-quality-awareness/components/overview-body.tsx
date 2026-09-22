@@ -10,6 +10,8 @@
  *   1. Branch-aware header strip (conditional per branch)
  *   2. "Your water system" card with 3-stat grid (cws_no_ccr,
  *      non_community, cws_with_ccr — anywhere there's a system_card)
+ *   2b. Recent boil-water advisories from the watcher (issue #347),
+ *      live-fetched, only for cities Hearth watches
  *   3. Recommended for your situation (when recommended_actions
  *      is populated)
  *   4. Detected in your water (lead and copper measurements with
@@ -33,7 +35,15 @@ import {
 import { CcrUploadModal } from "@/components/ccr-upload/CcrUploadModal";
 import { Icon, type IconName } from "@/components/icon";
 import { Tooltip } from "@/components/tooltip";
+import { WqaAdvisoriesSection } from "./advisories-section";
 import { RemediationMatrixView } from "./remediation-matrix-view";
+
+/** Branches with a resolved water system the advisory watcher can be keyed to. */
+const ADVISORY_BRANCHES: ReadonlySet<WqaBranch> = new Set<WqaBranch>([
+  "cws_no_ccr",
+  "cws_with_ccr",
+  "non_community",
+]);
 import {
   TrendChartIconButton,
   TrendSparklineTrigger,
@@ -209,6 +219,12 @@ export function WqaOverviewBody({
           onUploadCcr={card?.pwsid ? () => setCcrModalOpen(true) : null}
         />
       )}
+      {/* Issue #347 — the watcher's recent advisories, live-fetched, on
+          any branch that resolved a PWSID. Renders nothing for a city
+          Hearth doesn't watch.                                          */}
+      {!isReRunningForCorrection && card?.pwsid && ADVISORY_BRANCHES.has(f.branch) ? (
+        <WqaAdvisoriesSection pwsid={card.pwsid} />
+      ) : null}
       <RecommendedActionsSection
         findings={f}
         onOpenMatrix={() => setView("matrix")}

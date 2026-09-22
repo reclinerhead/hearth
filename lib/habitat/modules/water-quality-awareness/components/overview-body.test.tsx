@@ -36,6 +36,50 @@ vi.mock("@/app/(app)/dashboard/actions", () => ({
   triggerHabitatModuleRecheck: async () => ({ ok: true }),
 }));
 
+// Issue #347 — the advisories section live-fetches through the browser
+// client. A tiny chainable fake stands in: tests set what each table
+// returns; the default (no source row) renders nothing, so every
+// pre-existing assertion is untouched.
+//
+// Query promises resolve only when a test calls `flushEffects()`, so the
+// dozens of synchronous tests that never flush see no state update
+// outside act() (the component's cleanup flag cancels them on unmount).
+type FakeResult = { data: unknown; error: { message: string } | null };
+const fakeTables: Record<string, FakeResult> = {};
+const pendingQueries: Array<() => void> = [];
+function setFakeTable(table: string, data: unknown, error: FakeResult["error"] = null) {
+  fakeTables[table] = { data, error };
+}
+function deferred(table: string): Promise<FakeResult> {
+  return new Promise((resolve) => {
+    pendingQueries.push(() => resolve(fakeTables[table] ?? { data: null, error: null }));
+  });
+}
+function fakeQuery(table: string) {
+  const chain: Record<string, unknown> = {};
+  for (const m of ["select", "eq", "order", "limit"]) chain[m] = () => chain;
+  chain.maybeSingle = () => deferred(table);
+  chain.then = (resolve: (v: FakeResult) => unknown, reject?: (e: unknown) => unknown) =>
+    deferred(table).then(resolve, reject);
+  return chain;
+}
+vi.mock("@/lib/supabase/client", () => ({
+  createClient: () => ({ from: (table: string) => fakeQuery(table) }),
+}));
+
+/** Resolve every pending fake query (the second query is issued after the
+ *  first resolves, so drain twice) inside act(). */
+async function flushEffects() {
+  await act(async () => {
+    for (let round = 0; round < 3; round++) {
+      const batch = pendingQueries.splice(0);
+      for (const resolve of batch) resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+  });
+}
+
 import { WqaOverviewBody } from "./overview-body";
 import { PFAS_FAMILY_HEADING } from "@/lib/habitat/water-quality/contaminants/pfas-grouping";
 import type { HabitatFindingRow } from "@/lib/hooks/use-habitat-findings";
@@ -56,6 +100,8 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  for (const k of Object.keys(fakeTables)) delete fakeTables[k];
+  pendingQueries.length = 0;
 });
 
 function render(findings: WqaFindings) {
@@ -1144,5 +1190,79 @@ describe("WqaOverviewBody — Where to go from here (issue #299)", () => {
       expect(text()).not.toContain("Where to go from here");
       expect(text()).not.toContain("Next steps");
     }
+  });
+});
+
+/* -------- Recent advisories (issue #347) -------- */
+
+describe("Recent advisories section (issue #347)", () => {
+  const source = {
+    kind: "rss",
+    config: { feed_url: "https://www.wmuk.org/wmuk-news.rss" },
+    created_at: "2026-09-22T16:13:36.000Z",
+    enabled: true,
+  };
+  const issued = {
+    source_url: "https://www.wmuk.org/wmuk-news/2026-09-19/issued",
+    title: "Boil water advisory issued for many Kalamazoo customers",
+    summary: "Covers a wide swath of the city.",
+    status: "active",
+    scope: "system_wide",
+    published_on: "2026-09-19",
+    first_seen_at: "2026-09-22T16:23:10.000Z",
+  };
+  const lifted = {
+    ...issued,
+    source_url: "https://www.wmuk.org/wmuk-news/2026-09-21/lifted",
+    title: "Boil water advisory lifted for affected Kalamazoo customers",
+    status: "lifted",
+    scope: "unknown",
+    published_on: "2026-09-21",
+  };
+
+  it("renders nothing for a city Hearth doesn't watch", async () => {
+    setFakeTable("water_advisory_sources", null);
+    render(cwsNoCcrFindings());
+    await flushEffects();
+    expect(text()).not.toContain("Recent advisories");
+  });
+
+  it("renders the quiet empty line for a watched city with nothing recorded", async () => {
+    setFakeTable("water_advisory_sources", source);
+    setFakeTable("water_advisories", []);
+    render(cwsNoCcrFindings());
+    await flushEffects();
+    expect(text()).toContain("Recent advisories");
+    expect(text()).toContain("No boil water advisories recorded since Hearth began watching on Sep 22, 2026");
+    expect(text()).toContain("WMUK's news feed");
+  });
+
+  it("pairs issue + lift into one closed item with both dates and a notice link", async () => {
+    setFakeTable("water_advisory_sources", source);
+    setFakeTable("water_advisories", [lifted, issued]);
+    render(cwsNoCcrFindings());
+    await flushEffects();
+    expect(text()).toContain("Issued Sep 19, 2026 · Lifted Sep 21, 2026");
+    expect(text()).not.toContain("Active now");
+    const link = container.querySelector(`a[href="${issued.source_url}"]`);
+    expect(link?.textContent).toContain("Read the notice");
+  });
+
+  it("features an open advisory with the Active now chip and the guidance line", async () => {
+    setFakeTable("water_advisory_sources", source);
+    setFakeTable("water_advisories", [{ ...issued, published_on: new Date().toISOString().slice(0, 10) }]);
+    render(cwsNoCcrFindings());
+    await flushEffects();
+    expect(text()).toContain("Active now");
+    expect(text()).toContain("boil tap water for two minutes");
+    expect(text()).toContain("Covers a wide swath of the city.");
+  });
+
+  it("surfaces a read failure rather than an empty state", async () => {
+    setFakeTable("water_advisory_sources", source);
+    setFakeTable("water_advisories", null, { message: "permission denied" });
+    render(cwsNoCcrFindings());
+    await flushEffects();
+    expect(text()).toContain("Couldn’t load advisories right now");
   });
 });

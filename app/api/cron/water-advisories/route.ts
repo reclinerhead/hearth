@@ -27,7 +27,9 @@
  * /api/cron/* so the cookie-less cron request reaches the handler.
  */
 
+import { revalidatePath } from "next/cache";
 import { siteUrl } from "@/lib/public-pages/site-url";
+import { resolveWaterSystemEntryByPwsid } from "@/lib/public-pages/slugs";
 import { createServiceClient } from "@/lib/supabase/service";
 import {
   fetchOpenCitiesAdvisories,
@@ -401,6 +403,19 @@ async function processSource(
       .update(patch)
       .eq("source_url", source_url);
     if (error) throw new Error(`advisory update: ${error.message}`);
+  }
+
+  // The public water page (SSG + 24h ISR) renders these rows. Regenerate
+  // it only when this run actually recorded something new or changed, so
+  // an advisory shows up within the half hour while the page still never
+  // rebuilds on a schedule (issue #347). Sources outside the slug
+  // registry have no public page to refresh.
+  if (plan.counts.new + plan.counts.changed > 0) {
+    const entry = resolveWaterSystemEntryByPwsid(source.pwsid);
+    if (entry) {
+      revalidatePath(`/water/${entry.slug}`);
+      console.info(`${tag} revalidated /water/${entry.slug}`);
+    }
   }
 
   const notifiable = plan.events.filter((e) => e.notifiable);

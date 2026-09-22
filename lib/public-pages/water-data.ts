@@ -38,7 +38,46 @@ import {
   createSupabaseCcrCacheStore,
   resolveCcrHistory,
 } from "@/lib/habitat/modules/water-quality-awareness/caches/ccr-cache";
+import { createServiceClient } from "@/lib/supabase/service";
+import type { TimelineRow } from "@/lib/water-advisories/timeline";
 import type { PublicWaterSummaryInput } from "./water-summary";
+
+/**
+ * The watcher's advisory rows for a PWSID (issue #347): the source row
+ * (so the page can say what it watches and since when) plus the recent
+ * advisories. Same service-role-at-generation-time posture as the other
+ * reads — the PWSID comes from the slug allowlist. Soft-fails to null
+ * (distinct from "watched, nothing recorded") so an outage never renders
+ * as "no advisories".
+ */
+export async function resolveAdvisories(
+  pwsid: string,
+): Promise<PublicWaterSummaryInput["advisories"]> {
+  const supabase = createServiceClient();
+  const { data: source, error: sourceError } = await supabase
+    .from("water_advisory_sources")
+    .select("kind, config, created_at, enabled")
+    .eq("pwsid", pwsid)
+    .maybeSingle();
+  if (sourceError) return null;
+  if (!source || !source.enabled) return { watched: false };
+
+  const { data: rows, error } = await supabase
+    .from("water_advisories")
+    .select("source_url, title, summary, status, scope, published_on, first_seen_at")
+    .eq("pwsid", pwsid)
+    .order("first_seen_at", { ascending: false })
+    .limit(20);
+  if (error) return null;
+
+  return {
+    watched: true,
+    sourceKind: source.kind as string,
+    sourceConfig: (source.config ?? {}) as Record<string, unknown>,
+    watchingSince: source.created_at as string,
+    rows: (rows ?? []) as TimelineRow[],
+  };
+}
 
 /**
  * Load everything the public page needs for one PWSID. Returns null
@@ -61,13 +100,15 @@ export async function loadPublicWaterSystem(
   );
   if (!record) return null;
 
-  const [violationsResult, lcrResult, ccrResult] = await Promise.allSettled([
-    resolveViolations(pwsid, createSupabaseViolationsCacheStore()),
-    resolveLcrSamples(pwsid, createSupabaseLcrCacheStore()),
-    // Every uploaded year, not just the latest — the public page renders
-    // the same year-over-year trends the in-app finding shows (issue #303).
-    resolveCcrHistory(pwsid, createSupabaseCcrCacheStore()),
-  ]);
+  const [violationsResult, lcrResult, ccrResult, advisoriesResult] =
+    await Promise.allSettled([
+      resolveViolations(pwsid, createSupabaseViolationsCacheStore()),
+      resolveLcrSamples(pwsid, createSupabaseLcrCacheStore()),
+      // Every uploaded year, not just the latest — the public page renders
+      // the same year-over-year trends the in-app finding shows (issue #303).
+      resolveCcrHistory(pwsid, createSupabaseCcrCacheStore()),
+      resolveAdvisories(pwsid),
+    ]);
 
   const violations =
     violationsResult.status === "fulfilled"
@@ -77,11 +118,14 @@ export async function loadPublicWaterSystem(
     lcrResult.status === "fulfilled" ? lcrResult.value.records : null;
   const ccrRows =
     ccrResult.status === "fulfilled" ? ccrResult.value.rows : [];
+  const advisories =
+    advisoriesResult.status === "fulfilled" ? advisoriesResult.value : null;
 
   return {
     record,
     violations,
     lcrSamples,
+    advisories,
     ccrYears: ccrRows.map((row) => ({
       reportYear: row.report_year,
       publishedDate: row.published_date,

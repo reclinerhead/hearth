@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPublicWaterSummary } from "./water-summary";
+import type { TimelineRow } from "@/lib/water-advisories/timeline";
 import type { EnvirofactsWaterSystemRecord } from "@/lib/habitat/modules/water-quality-awareness/sources/envirofacts";
 import type { SdwisViolationRecord } from "@/lib/habitat/modules/water-quality-awareness/sources/sdwis-violations";
 import type { SdwisLcrSampleRecord } from "@/lib/habitat/modules/water-quality-awareness/sources/sdwis-lcr-samples";
@@ -777,6 +778,91 @@ describe("PFAS block (issue #303 — real list with trends)", () => {
       now: NOW,
     });
     expect(s.pfas).toEqual({ kind: "none_reported" });
+  });
+});
+
+describe("advisories block (issue #347)", () => {
+  const base = { record, violations: [], lcrSamples: [], ccrYears: [], now: NOW };
+  const issued = {
+    source_url: "https://www.wmuk.org/wmuk-news/2026-06-20/boil-water-advisory-issued-for-many-kalamazoo-customers",
+    title: "Boil water advisory issued for many Kalamazoo customers",
+    summary: "The city of Kalamazoo issued the advisory, which covers a wide swath of the city, on Saturday after concerning results from bacterial tests.",
+    status: "active" as const,
+    scope: "system_wide" as const,
+    published_on: "2026-06-20",
+    first_seen_at: "2026-06-20T20:00:00.000Z",
+  };
+  const lifted = {
+    ...issued,
+    source_url: "https://www.wmuk.org/wmuk-news/2026-06-22/boil-water-advisory-lifted-for-affected-kalamazoo-customers",
+    title: "Boil water advisory lifted for affected Kalamazoo customers",
+    summary: "The advisory was issued on Saturday after a city water sample tested positive for E. coli.",
+    status: "lifted" as const,
+    scope: "unknown" as const,
+    published_on: "2026-06-22",
+    first_seen_at: "2026-06-22T14:00:00.000Z",
+  };
+  const watched = (rows: TimelineRow[]) => ({
+    watched: true as const,
+    sourceKind: "rss",
+    sourceConfig: { feed_url: "https://www.wmuk.org/wmuk-news.rss" },
+    watchingSince: "2026-06-01T12:00:00.000Z",
+    rows,
+  });
+
+  it("is not_watched when omitted or when no source exists", () => {
+    expect(buildPublicWaterSummary(base).advisories).toEqual({ kind: "not_watched" });
+    expect(buildPublicWaterSummary({ ...base, advisories: { watched: false } }).advisories).toEqual({
+      kind: "not_watched",
+    });
+  });
+
+  it("is unavailable when the read soft-failed — never rendered as 'no advisories'", () => {
+    expect(buildPublicWaterSummary({ ...base, advisories: null }).advisories).toEqual({ kind: "unavailable" });
+  });
+
+  it("pairs issue + lift, carries dates and links, and drops the summary once closed", () => {
+    const s = buildPublicWaterSummary({ ...base, advisories: watched([lifted, issued]) });
+    expect(s.advisories.kind).toBe("watched");
+    if (s.advisories.kind !== "watched") return;
+    expect(s.advisories.sourceNote).toMatch(/WMUK's news feed/);
+    expect(s.advisories.watchingSince).toBe("2026-06-01");
+    expect(s.advisories.items).toEqual([
+      expect.objectContaining({
+        title: issued.title,
+        summary: null,
+        issuedOn: "2026-06-20",
+        liftedOn: "2026-06-22",
+        sourceUrl: issued.source_url,
+        liftedSourceUrl: lifted.source_url,
+        open: false,
+      }),
+    ]);
+  });
+
+  it("an open advisory carries its summary, capped", () => {
+    const long = { ...issued, published_on: "2026-06-28", summary: "x".repeat(400) };
+    const s = buildPublicWaterSummary({ ...base, advisories: watched([long]) });
+    if (s.advisories.kind !== "watched") throw new Error("expected watched");
+    const [item] = s.advisories.items;
+    expect(item.open).toBe(true);
+    expect(item.summary).not.toBeNull();
+    expect(item.summary!.length).toBeLessThanOrEqual(240);
+    expect(item.summary!.endsWith("…")).toBe(true);
+  });
+
+  it("caps long titles", () => {
+    const long = { ...issued, title: "Boil water advisory ".repeat(20) };
+    const s = buildPublicWaterSummary({ ...base, advisories: watched([long]) });
+    if (s.advisories.kind !== "watched") throw new Error("expected watched");
+    expect(s.advisories.items[0].title.length).toBeLessThanOrEqual(160);
+  });
+
+  it("never serializes a PWSID or the raw row", () => {
+    const s = buildPublicWaterSummary({ ...base, advisories: watched([issued]) });
+    const json = JSON.stringify(s.advisories);
+    expect(json).not.toContain("MI0003520");
+    expect(json).not.toContain("first_seen_at");
   });
 });
 

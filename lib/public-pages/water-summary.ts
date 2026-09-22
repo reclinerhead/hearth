@@ -76,6 +76,12 @@ import {
   type ContaminantHistory,
   type TrendDirection,
 } from "@/lib/habitat/water-quality/contaminants/trends";
+import {
+  buildAdvisoryTimeline,
+  describeAdvisorySource,
+  type TimelineRow,
+} from "@/lib/water-advisories/timeline";
+import type { AdvisoryScope, AdvisoryStatus } from "@/lib/water-advisories/types";
 import type { EnvirofactsWaterSystemRecord } from "@/lib/habitat/modules/water-quality-awareness/sources/envirofacts";
 import type { SdwisViolationRecord } from "@/lib/habitat/modules/water-quality-awareness/sources/sdwis-violations";
 import type { SdwisLcrSampleRecord } from "@/lib/habitat/modules/water-quality-awareness/sources/sdwis-lcr-samples";
@@ -103,9 +109,45 @@ export type PublicWaterSummaryInput = {
     extractedAt: string;
     extractedData: CcrExtractionResult;
   }>;
+  /**
+   * The watcher's advisory data for the system (issue #347). `null` = the
+   * read soft-failed (distinct from "not watched" and from "watched, nothing
+   * recorded"); `{ watched: false }` = no watcher source for this PWSID.
+   * Optional so callers/tests that predate advisories keep working.
+   */
+  advisories?:
+    | null
+    | { watched: false }
+    | {
+        watched: true;
+        sourceKind: string;
+        sourceConfig: Record<string, unknown>;
+        /** ISO timestamp the source row was created. */
+        watchingSince: string;
+        rows: TimelineRow[];
+      };
   /** Reference time, injected so tests can pin "now". */
   now?: Date;
 };
+
+/** One advisory on the public page — title-only except for an open one. */
+export type PublicAdvisoryItem = {
+  key: string;
+  /** The source's own title, capped — third-party text, escaped by React. */
+  title: string;
+  /** Present only on an open advisory, capped. */
+  summary: string | null;
+  scope: AdvisoryScope;
+  status: AdvisoryStatus;
+  issuedOn: string | null;
+  liftedOn: string | null;
+  sourceUrl: string;
+  liftedSourceUrl: string | null;
+  open: boolean;
+};
+
+export const PUBLIC_ADVISORY_TITLE_MAX = 160;
+export const PUBLIC_ADVISORY_SUMMARY_MAX = 240;
 
 /** One lead-or-copper reading for the public compliance block. */
 export type PublicMetalReading = {
@@ -286,6 +328,23 @@ export type PublicWaterSummary = {
         personalized: PersonalizedRemediationRow[];
         combination: RemediationCombination;
       };
+  /**
+   * Recent boil-water advisories from the watcher (issue #347). Rendered
+   * only for systems Hearth watches; `unavailable` when the read failed at
+   * generation time (an outage must never render as "no advisories").
+   */
+  advisories:
+    | { kind: "not_watched" }
+    | { kind: "unavailable" }
+    | {
+        kind: "watched";
+        /** Our own sentence about the source (city page vs. a newsroom feed). */
+        sourceNote: string;
+        /** ISO calendar date Hearth began watching. */
+        watchingSince: string;
+        /** Oldest first, newest at the bottom; open items featured. */
+        items: PublicAdvisoryItem[];
+      };
 };
 
 const SOURCE_LABELS: Record<
@@ -463,6 +522,8 @@ export function buildPublicWaterSummary(
   const utilityContact: PublicWaterSummary["utilityContact"] =
     admin || freeTesting ? { admin, freeTesting } : null;
 
+  const advisories = buildAdvisoriesBlock(input.advisories, now);
+
   return {
     identity,
     compliance,
@@ -472,6 +533,53 @@ export function buildPublicWaterSummary(
     ccr: ccrBlock,
     utilityContact,
     remediation,
+    advisories,
+  };
+}
+
+/**
+ * Recent advisories for the public page (issue #347). The timeline
+ * derivation is shared with the in-app finding; this layer applies the
+ * public-page text discipline: titles capped, summary only on an open
+ * advisory and capped, nothing else from the scraped row rides along.
+ * The text is third-party (a city or a newsroom), not user-contributed,
+ * so hard rule 4's injection concern is lighter — but it is still
+ * external free text on an indexed ToddTech page, so it is capped and
+ * attributed, and the page links out rather than quoting more.
+ */
+function buildAdvisoriesBlock(
+  input: PublicWaterSummaryInput["advisories"],
+  now: Date,
+): PublicWaterSummary["advisories"] {
+  if (input === undefined || input === null) {
+    return input === null ? { kind: "unavailable" } : { kind: "not_watched" };
+  }
+  if (!input.watched) return { kind: "not_watched" };
+
+  const cap = (s: string, n: number) =>
+    s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`;
+
+  const items: PublicAdvisoryItem[] = buildAdvisoryTimeline(
+    input.rows,
+    now.toISOString(),
+  ).map((t) => ({
+    key: t.key,
+    title: cap(t.title, PUBLIC_ADVISORY_TITLE_MAX),
+    summary: t.open && t.summary ? cap(t.summary, PUBLIC_ADVISORY_SUMMARY_MAX) : null,
+    scope: t.scope,
+    status: t.status,
+    issuedOn: t.issuedOn,
+    liftedOn: t.liftedOn,
+    sourceUrl: t.sourceUrl,
+    liftedSourceUrl: t.liftedSourceUrl,
+    open: t.open,
+  }));
+
+  return {
+    kind: "watched",
+    sourceNote: describeAdvisorySource(input.sourceKind, input.sourceConfig),
+    watchingSince: input.watchingSince.slice(0, 10),
+    items,
   };
 }
 
