@@ -101,6 +101,8 @@ export type AdvisoryEmailInput = {
   /** Who added the subscriber, for the "why am I getting this" line. */
   addedBy: string;
   unsubscribeUrl: string;
+  /** The city's own alert signup, when it has one (issue #337). */
+  officialAlerts?: { url: string; note: string | null } | null;
   /** Prefixes the subject and adds a banner line; used by "Send test email". */
   test?: boolean;
 };
@@ -117,6 +119,9 @@ export function buildAdvisoryEmail(input: AdvisoryEmailInput): EmailMessage {
   const testNote = input.test
     ? "This is a test message sent from Hearth's admin page. No advisory was issued."
     : null;
+  const official = input.officialAlerts
+    ? `${place.shortPlace} also offers its own alerts: ${input.officialAlerts.url}${input.officialAlerts.note ? ` (${input.officialAlerts.note})` : ""}`
+    : null;
 
   const textParts = [
     advisory.title,
@@ -126,8 +131,9 @@ export function buildAdvisoryEmail(input: AdvisoryEmailInput): EmailMessage {
     "",
     advisory.summary ? `"${advisory.summary}" — ${attribution}` : `— ${attribution}`,
     "",
-    `Read the city's notice: ${advisory.source_url}`,
+    `Read the notice: ${advisory.source_url}`,
     ...(event === "lifted" ? [] : ["", GUIDANCE]),
+    ...(official ? ["", official] : []),
     "",
     why,
     `Unsubscribe: ${input.unsubscribeUrl}`,
@@ -144,8 +150,11 @@ export function buildAdvisoryEmail(input: AdvisoryEmailInput): EmailMessage {
       advisory.summary
         ? `<blockquote style="margin:16px 0;padding:12px 16px;border-left:3px solid #d9a441;background:#141a27">${escapeHtml(advisory.summary)}<br><span style="font-size:13px;color:#8a857c">— ${escapeHtml(attribution)}</span></blockquote>`
         : `<p style="font-size:13px;color:#8a857c">— ${escapeHtml(attribution)}</p>`,
-      `<p><a href="${escapeHtml(advisory.source_url)}" style="color:#f0c97a">Read the city's notice</a></p>`,
+      `<p><a href="${escapeHtml(advisory.source_url)}" style="color:#f0c97a">Read the notice</a></p>`,
       event === "lifted" ? "" : `<p>${escapeHtml(GUIDANCE)}</p>`,
+      input.officialAlerts
+        ? `<p style="font-size:14px;color:#c9c3b8">${escapeHtml(place.shortPlace)} also offers its own alerts: <a href="${escapeHtml(input.officialAlerts.url)}" style="color:#f0c97a">${escapeHtml(input.officialAlerts.url)}</a>${input.officialAlerts.note ? ` <span style="color:#8a857c">(${escapeHtml(input.officialAlerts.note)})</span>` : ""}</p>`
+        : "",
       `<p style="margin-top:28px;font-size:13px;color:#8a857c">${escapeHtml(why)} <a href="${escapeHtml(input.unsubscribeUrl)}" style="color:#8a857c">Unsubscribe</a>.</p>`,
     ].join(""),
   );

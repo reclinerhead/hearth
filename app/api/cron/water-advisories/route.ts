@@ -33,6 +33,7 @@ import {
   fetchOpenCitiesAdvisories,
   openCitiesListConfigSchema,
 } from "@/lib/water-advisories/adapters/opencities-list";
+import { fetchRssAdvisories, rssConfigSchema } from "@/lib/water-advisories/adapters/rss";
 import { classify } from "@/lib/water-advisories/classify";
 import {
   buildAdvisoryEmail,
@@ -63,7 +64,17 @@ type SourceRow = {
   enabled: boolean;
   consecutive_failures: number;
   failure_alerted_at: string | null;
+  official_alerts_url: string | null;
+  official_alerts_note: string | null;
 };
+
+/** The source's human-facing page/feed, for the failure record and the alarm. */
+function sourceUrl(source: SourceRow): string | null {
+  const c = source.config;
+  if (typeof c.list_url === "string") return c.list_url;
+  if (typeof c.feed_url === "string") return c.feed_url;
+  return null;
+}
 
 type SubscriberRow = {
   id: string;
@@ -114,6 +125,17 @@ async function runAdapter(
         parsed,
         systemWidePhrases: config.system_wide_phrases ?? [],
         listUrl: config.list_url,
+      };
+    }
+    case "rss": {
+      // Zero *matching* items is a normal outcome here (nothing current);
+      // the adapter itself throws on zero raw items / non-feed bodies.
+      const config = rssConfigSchema.parse(source.config);
+      const parsed = await fetchRssAdvisories(config);
+      return {
+        parsed,
+        systemWidePhrases: config.system_wide_phrases ?? [],
+        listUrl: config.feed_url,
       };
     }
     default:
@@ -288,6 +310,9 @@ async function notifySubscribers(
           place,
           addedBy: sub.added_by_label,
           unsubscribeUrl: `${base}/api/advisories/unsubscribe?token=${encodeURIComponent(sub.unsubscribe_token)}`,
+          officialAlerts: source.official_alerts_url
+            ? { url: source.official_alerts_url, note: source.official_alerts_note }
+            : null,
         });
         const providerId = await sendEmail(sub.email, message);
         await supabase
@@ -337,9 +362,7 @@ async function processSource(
   } catch (err) {
     const message = errorMessage(err);
     console.error(`${tag} fetch/parse failed:`, message);
-    const listUrl =
-      typeof source.config.list_url === "string" ? source.config.list_url : null;
-    const { alerted } = await recordFailure(supabase, source, place, listUrl, message, opts);
+    const { alerted } = await recordFailure(supabase, source, place, sourceUrl(source), message, opts);
     return {
       pwsid: source.pwsid,
       status: "failed",
@@ -445,7 +468,9 @@ export async function GET(request: Request): Promise<Response> {
   const supabase = createServiceClient();
   const { data: sourceRows, error } = await supabase
     .from("water_advisory_sources")
-    .select("pwsid, kind, config, enabled, consecutive_failures, failure_alerted_at")
+    .select(
+      "pwsid, kind, config, enabled, consecutive_failures, failure_alerted_at, official_alerts_url, official_alerts_note",
+    )
     .eq("enabled", true);
   if (error) {
     console.error("[water-advisories] source read failed:", error.message);

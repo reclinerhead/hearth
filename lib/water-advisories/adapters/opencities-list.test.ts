@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { fetchOpenCitiesAdvisories, resolveFetchTarget } from "./opencities-list";
+import { resolveFetchTarget } from "./fetch";
+import { fetchOpenCitiesAdvisories } from "./opencities-list";
 
 const LIST_HTML = readFileSync(
   join(__dirname, "..", "fixtures", "kalamazoo-list.html"),
@@ -36,20 +37,25 @@ afterEach(() => {
 describe("resolveFetchTarget", () => {
   it("fetches directly when no proxy template is configured", () => {
     delete process.env.WATER_ADVISORY_FETCH_PROXY_URL;
-    expect(resolveFetchTarget(LIST_URL)).toEqual({ target: LIST_URL, viaProxy: false });
+    expect(resolveFetchTarget(LIST_URL, true)).toEqual({ target: LIST_URL, viaProxy: false });
   });
 
-  it("substitutes the encoded target into the template", () => {
+  it("substitutes the encoded target into the template when the source opts in", () => {
     process.env.WATER_ADVISORY_FETCH_PROXY_URL = "https://proxy.example/?key=k&url={url}";
-    expect(resolveFetchTarget(LIST_URL)).toEqual({
+    expect(resolveFetchTarget(LIST_URL, true)).toEqual({
       target: `https://proxy.example/?key=k&url=${encodeURIComponent(LIST_URL)}`,
       viaProxy: true,
     });
   });
 
+  it("a source that does not opt in fetches directly even with a template set", () => {
+    process.env.WATER_ADVISORY_FETCH_PROXY_URL = "https://proxy.example/?key=k&url={url}";
+    expect(resolveFetchTarget(LIST_URL, false)).toEqual({ target: LIST_URL, viaProxy: false });
+  });
+
   it("ignores a template that has no {url} placeholder", () => {
     process.env.WATER_ADVISORY_FETCH_PROXY_URL = "https://proxy.example/";
-    expect(resolveFetchTarget(LIST_URL).viaProxy).toBe(false);
+    expect(resolveFetchTarget(LIST_URL, true).viaProxy).toBe(false);
   });
 });
 
@@ -104,7 +110,7 @@ describe("fetchOpenCitiesAdvisories", () => {
     expect(calls).toHaveLength(3);
   });
 
-  it("routes every fetch through the proxy template when configured", async () => {
+  it("routes every fetch through the proxy template when the source opts in", async () => {
     process.env.WATER_ADVISORY_FETCH_PROXY_URL = "https://proxy.example/?url={url}";
     const calls: string[] = [];
     const fetchImpl = fakeFetch((url) => {
@@ -112,7 +118,7 @@ describe("fetchOpenCitiesAdvisories", () => {
       return { status: 200, body: LIST_HTML };
     });
     await fetchOpenCitiesAdvisories(
-      { list_url: LIST_URL },
+      { list_url: LIST_URL, use_fetch_proxy: true },
       { knownUrls: new Set(["x"]), fetchImpl },
     ).catch(() => undefined);
     expect(calls[0]).toBe(`https://proxy.example/?url=${encodeURIComponent(LIST_URL)}`);

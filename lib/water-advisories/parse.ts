@@ -68,10 +68,12 @@ export function decodeEntities(input: string): string {
   );
 }
 
-/** Strip tags, decode entities, collapse whitespace. */
+/** Strip tags, decode entities, collapse whitespace (and the space a
+ *  stripped inline tag leaves before punctuation: "Elm St</b>." → "Elm St."). */
 export function cleanText(html: string): string {
   return decodeEntities(html.replace(/<[^>]+>/g, " "))
     .replace(/\s+/g, " ")
+    .replace(/\s+([.,;:!?])/g, "$1")
     .trim();
 }
 

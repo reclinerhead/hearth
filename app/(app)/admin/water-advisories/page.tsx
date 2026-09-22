@@ -30,7 +30,7 @@ export default async function WaterAdvisoriesAdminPage() {
     supabase
       .from("water_advisory_sources")
       .select(
-        "pwsid, kind, config, enabled, last_run_at, last_ok_at, consecutive_failures, last_error, failure_alerted_at",
+        "pwsid, kind, config, enabled, last_run_at, last_ok_at, consecutive_failures, last_error, failure_alerted_at, official_alerts_url, official_alerts_note",
       )
       .order("pwsid"),
     supabase
@@ -71,7 +71,14 @@ export default async function WaterAdvisoriesAdminPage() {
       shortPlace: place.shortPlace,
       placeName: place.placeName,
       kind: s.kind as string,
-      listUrl: typeof config.list_url === "string" ? config.list_url : null,
+      listUrl:
+        typeof config.list_url === "string"
+          ? config.list_url
+          : typeof config.feed_url === "string"
+            ? config.feed_url
+            : null,
+      officialAlertsUrl: (s.official_alerts_url as string | null) ?? null,
+      officialAlertsNote: (s.official_alerts_note as string | null) ?? null,
       enabled: Boolean(s.enabled),
       lastRunAt: (s.last_run_at as string | null) ?? null,
       lastOkAt: (s.last_ok_at as string | null) ?? null,

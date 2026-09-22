@@ -109,8 +109,9 @@ describe("text helpers", () => {
     );
   });
 
-  it("strips tags and collapses whitespace", () => {
+  it("strips tags and collapses whitespace, including before punctuation", () => {
     expect(cleanText("  <b>Boil</b>\n\t water   <br/>now ")).toBe("Boil water now");
+    expect(cleanText("<p>Advisory for <b>Elm St</b>.</p>")).toBe("Advisory for Elm St.");
   });
 
   it("normalizes URLs for identity comparison", () => {
