@@ -166,7 +166,10 @@ export function planAdvisoryRun(input: PlanInput): AdvisoryPlan {
       on_emergency_banner: p.on_emergency_banner,
       content_hash: contentHash,
       last_seen_at: input.nowIso,
-      raw: p.raw,
+      // Merge, don't replace: the detail page is only fetched on first
+      // sight, so its fields (detail_title, …) live only in the stored
+      // capture. The fresh parse wins for the keys it carries.
+      raw: { ...prev.raw, ...p.raw },
     };
     if (changed) upsert.last_changed_at = input.nowIso;
     upserts.push(upsert);

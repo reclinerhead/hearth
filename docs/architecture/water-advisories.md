@@ -74,6 +74,7 @@ Bias is toward over-notifying: `unknown` is treated as district-wide by the plan
 - **Events.** `issued` — a new URL with status active/scheduled/unknown. `lifted` — a new URL with status lifted, or an existing row whose status flips to lifted (takes precedence over updated). `updated` — an existing URL whose `content_hash` (normalized title + summary; status is not part of it) changed. An entry that disappears from the page is left alone; it never notifies.
 - **Notifiable** = scope is `system_wide` or `unknown`. Localized events are recorded and shown on the admin page but not sent — **district-wide only for now**.
 - **Scope ratchets up.** Once a row is district-wide (e.g. it was on the banner), a later run that no longer sees the banner does not downgrade it.
+- **`raw` merges.** The stored capture is merged under the fresh parse on existing rows, so detail-page fields read only on first sight (`detail_title`) survive later runs; the fresh parse wins for the keys it carries.
 - **Idempotency key** is `(advisory, subscriber, channel, event, content_hash)`; the same content can never produce the same event twice.
 
 ## Notifications and the dry-run rail

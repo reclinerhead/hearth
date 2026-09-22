@@ -34,6 +34,7 @@ function stored(
     content_hash: hashAdvisoryContent(title, summary),
     published_on: "2026-09-19",
     on_emergency_banner: false,
+    raw: {},
     ...overrides,
   };
 }
@@ -208,6 +209,27 @@ describe("planAdvisoryRun — scope handling", () => {
       nowIso: NOW,
     });
     expect(plan.upserts[0].scope).toBe("system_wide");
+  });
+
+  it("merges the stored raw capture under the fresh parse on existing rows", () => {
+    // The detail page is fetched only on first sight, so detail_title
+    // exists only in the stored capture; a later run must not wipe it.
+    const plan = planAdvisoryRun({
+      stored: [
+        stored({
+          source_url: URL_A,
+          raw: { list_title: "old", detail_title: "Boil Water Advisory LIFTED: Districts" },
+        }),
+      ],
+      parsed: [classified({ source_url: URL_A, raw: { list_title: "new" } })],
+      nowIso: NOW,
+    });
+    expect(plan.upserts[0].raw).toEqual({
+      list_title: "new",
+      detail_title: "Boil Water Advisory LIFTED: Districts",
+    });
+    // raw alone never counts as a change.
+    expect(plan.counts.unchanged).toBe(1);
   });
 
   it("keeps a stored published_on when the parse has none", () => {

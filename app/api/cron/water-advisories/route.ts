@@ -324,7 +324,7 @@ async function processSource(
   const { data: storedRows, error: storedError } = await supabase
     .from("water_advisories")
     .select(
-      "id, source_url, title, summary, status, scope, content_hash, published_on, on_emergency_banner",
+      "id, source_url, title, summary, status, scope, content_hash, published_on, on_emergency_banner, raw",
     )
     .eq("pwsid", source.pwsid);
   if (storedError) throw new Error(`stored read: ${storedError.message}`);

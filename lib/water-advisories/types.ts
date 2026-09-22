@@ -46,6 +46,9 @@ export type StoredAdvisory = {
   content_hash: string;
   published_on: string | null;
   on_emergency_banner: boolean;
+  /** Prior capture; merged under the new parse so detail-page fields
+   *  (read only on first sight) survive later runs. */
+  raw: Record<string, unknown>;
 };
 
 export type AdvisoryEvent = {
