@@ -106,7 +106,9 @@ Resend via the `resend` package; `RESEND_API_KEY` + `WATER_ADVISORY_FROM_EMAIL` 
 
 ## Watcher health and the alarm
 
-Every run updates the source's health columns. A fetch/parse failure (or a DB failure after the fetch) increments `consecutive_failures` and stores `last_error`; a success resets both. When failures reach `WATER_ADVISORY_FAILURE_ALERT_AFTER` (default 2 — about an hour at the 30-minute cadence) the route emails `WATER_ADVISORY_ALERT_EMAIL` once (`failure_alerted_at`), and once more when a run succeeds again. This is independent of the notify switch: silence must never look like "no advisory."
+Every run updates the source's health columns. A fetch/parse failure (or a DB failure after the fetch) increments `consecutive_failures` and stores `last_error`; a success resets both. When failures reach `WATER_ADVISORY_FAILURE_ALERT_AFTER` (default 2 — about an hour at the 30-minute cadence) the route emails `WATER_ADVISORY_ALERT_EMAIL` once (`failure_alerted_at`), and once more when a run succeeds again. This is independent of the notify switch: silence must never look like "no advisory." Both emails state **how long the watcher has been blind** (since `last_ok_at`, in Eastern time) so a nightly window and a random blip look different in the inbox without Vercel logs (issue #349).
+
+**One in-run retry, network failures only** ([`adapters/fetch.ts`](../../lib/water-advisories/adapters/fetch.ts)). A connect timeout, reset, or DNS hiccup against a single-homed civic origin is usually a blip — Portage (one IPv4 address, no CDN) flapped overnight on 2026-09-23 with every re-run succeeding. `fetchText` therefore retries such failures once after a short pause and logs the outcome; a run that needed the retry is a late run, not a failed one. **HTTP responses are never retried**: a 403 (bot wall) or a 5xx is the origin's decision, and retrying is how an address earns a permanent block. The alarm threshold is unchanged — an hour of real blindness still emails.
 
 ## Render surfaces: the finding and the public page (issue #347)
 

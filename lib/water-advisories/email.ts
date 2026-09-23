@@ -190,21 +190,51 @@ export function buildConfirmationEmail(input: {
   return { subject, text, html };
 }
 
+/** "Sep 23, 4:00 AM ET" — the house is in Michigan; the alarm reader is too. */
+function formatEasternTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/Detroit",
+  })} ET`;
+}
+
+/** "about 2 hours" / "about 35 minutes" between two ISO timestamps; null if unknown. */
+export function describeOutage(lastOkAt: string | null, nowIso: string): string | null {
+  if (!lastOkAt) return null;
+  const ms = Date.parse(nowIso) - Date.parse(lastOkAt);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 90) return `about ${minutes} minute${minutes === 1 ? "" : "s"}`;
+  const hours = Math.round(minutes / 30) / 2;
+  return `about ${hours} hour${hours === 1 ? "" : "s"}`;
+}
+
 export function buildWatcherAlarmEmail(input: {
   place: { shortPlace: string; placeName: string };
   recovered: boolean;
   consecutiveFailures: number;
   lastError: string | null;
   listUrl: string | null;
+  /** The last successful run before this outage (issue #349). */
+  lastOkAt: string | null;
+  nowIso: string;
 }): EmailMessage {
+  const outage = describeOutage(input.lastOkAt, input.nowIso);
+  const since = input.lastOkAt ? formatEasternTime(input.lastOkAt) : null;
+
   if (input.recovered) {
     const subject = `Water advisory watcher recovered — ${input.place.shortPlace}`;
-    const text = `The ${input.place.placeName} advisory watcher is reading the city page again after ${input.consecutiveFailures} consecutive failure(s).`;
+    const text = `The ${input.place.placeName} advisory watcher is reading its source again after ${input.consecutiveFailures} consecutive failure(s)${outage && since ? ` — blind for ${outage}, since ${since}` : ""}.`;
     return { subject, text, html: shell(`<p>${escapeHtml(text)}</p>`) };
   }
   const subject = `Water advisory watcher is blind — ${input.place.shortPlace}`;
   const lines = [
-    `The ${input.place.placeName} advisory watcher has failed ${input.consecutiveFailures} runs in a row. Until it recovers, Hearth cannot see new advisories for this city.`,
+    `The ${input.place.placeName} advisory watcher has failed ${input.consecutiveFailures} runs in a row${outage && since ? ` — blind for ${outage}, since its last good run at ${since}` : ""}. Until it recovers, Hearth cannot see new advisories for this city.`,
     "",
     `Last error: ${input.lastError ?? "unknown"}`,
     ...(input.listUrl ? ["", `Source page: ${input.listUrl}`] : []),
