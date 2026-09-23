@@ -66,6 +66,7 @@ type SourceRow = {
   enabled: boolean;
   consecutive_failures: number;
   failure_alerted_at: string | null;
+  last_ok_at: string | null;
   official_alerts_url: string | null;
   official_alerts_note: string | null;
 };
@@ -181,6 +182,8 @@ async function recordFailure(
           consecutiveFailures: consecutive,
           lastError: message,
           listUrl,
+          lastOkAt: source.last_ok_at,
+          nowIso: opts.nowIso,
         }),
       );
       patch.failure_alerted_at = opts.nowIso;
@@ -216,6 +219,8 @@ async function recordSuccess(
           consecutiveFailures: source.consecutive_failures,
           lastError: null,
           listUrl: null,
+          lastOkAt: source.last_ok_at,
+          nowIso: opts.nowIso,
         }),
       );
     } catch (err) {
@@ -484,7 +489,7 @@ export async function GET(request: Request): Promise<Response> {
   const { data: sourceRows, error } = await supabase
     .from("water_advisory_sources")
     .select(
-      "pwsid, kind, config, enabled, consecutive_failures, failure_alerted_at, official_alerts_url, official_alerts_note",
+      "pwsid, kind, config, enabled, consecutive_failures, failure_alerted_at, last_ok_at, official_alerts_url, official_alerts_note",
     )
     .eq("enabled", true);
   if (error) {

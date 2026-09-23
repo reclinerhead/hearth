@@ -42,7 +42,30 @@ export type FetchTextOptions = {
   useProxy?: boolean;
   /** Override the Accept header (feeds want XML first). */
   accept?: string;
+  /** Pause before the single retry of a network-level failure (tests pass 0). */
+  retryDelayMs?: number;
 };
+
+// One retry, network-level failures only. A connect timeout / reset on a
+// single-homed civic origin is usually a blip (Portage flapped overnight
+// on 2026-09-23 with every re-run succeeding — issue #349); a second
+// attempt a moment later turns a false "failed run" into a late one.
+// HTTP responses are never retried: a 403 or a 5xx is the origin's
+// decision, and retrying is how an address earns a permanent block.
+const NETWORK_RETRY_ATTEMPTS = 2;
+const DEFAULT_RETRY_DELAY_MS = 1_500;
+
+function describeNetworkError(url: string, err: unknown): string {
+  // undici wraps network-level failures as a bare "fetch failed" with the
+  // real reason on `cause` (ECONNRESET, ENOTFOUND, a connect timeout…).
+  // Surface it so a transient blip and a real outage read differently on
+  // the admin page and in the alarm (issue #347).
+  const cause =
+    err instanceof Error && err.cause instanceof Error ? err.cause.message : null;
+  const name = err instanceof Error ? err.name : "Error";
+  const msg = err instanceof Error ? err.message : String(err);
+  return `GET ${url} → ${name === "TimeoutError" ? "timed out" : msg}${cause ? ` (${cause})` : ""}`;
+}
 
 /**
  * GET a text body. Throws on non-2xx and on a bot-wall page served with a
@@ -55,26 +78,31 @@ export async function fetchText(url: string, opts: FetchTextOptions = {}): Promi
   const headers = viaProxy
     ? undefined // the proxy supplies its own browser fingerprint
     : { ...BROWSER_HEADERS, ...(opts.accept ? { accept: opts.accept } : {}) };
-  let res: Response;
-  try {
-    res = await fetchImpl(target, {
-      headers,
-      redirect: "follow",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-  } catch (err) {
-    // undici wraps network-level failures as a bare "fetch failed" with
-    // the real reason on `cause` (ECONNRESET, ENOTFOUND, a TLS error…).
-    // Surface it so a transient blip and a real outage read differently
-    // on the admin page and in the alarm (issue #347).
-    const cause =
-      err instanceof Error && err.cause instanceof Error ? err.cause.message : null;
-    const name = err instanceof Error ? err.name : "Error";
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `GET ${url} → ${name === "TimeoutError" ? "timed out" : msg}${cause ? ` (${cause})` : ""}`,
-    );
+  const retryDelayMs = opts.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+
+  let res: Response | null = null;
+  let lastNetworkError: string | null = null;
+  for (let attempt = 1; attempt <= NETWORK_RETRY_ATTEMPTS; attempt++) {
+    try {
+      res = await fetchImpl(target, {
+        headers,
+        redirect: "follow",
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (attempt > 1) {
+        console.info(`[water-advisories] retry succeeded for ${url} after: ${lastNetworkError}`);
+      }
+      break;
+    } catch (err) {
+      lastNetworkError = describeNetworkError(url, err);
+      if (attempt < NETWORK_RETRY_ATTEMPTS) {
+        console.warn(`[water-advisories] attempt ${attempt} failed, retrying once: ${lastNetworkError}`);
+        if (retryDelayMs > 0) await new Promise((r) => setTimeout(r, retryDelayMs));
+      }
+    }
   }
+  if (!res) throw new Error(`${lastNetworkError} — failed ${NETWORK_RETRY_ATTEMPTS} attempts`);
+
   const body = await res.text();
   const botWall = /Access Denied|errors\.edgesuite\.net|Reference&#32;#|Reference #/i.test(
     body.slice(0, 4_000),
