@@ -195,6 +195,55 @@ describe("fetchOpenCitiesAdvisories — detail pacing through the relay (issue #
     expect(h.log).toEqual(["list", "detail", "detail", "detail"]);
   });
 
+  it("re-reads the open advisories the route names, after the unseen URLs, under the same cap (issue #355)", async () => {
+    process.env.WATER_ADVISORY_FETCH_PROXY_URL = "https://relay.example/fetch?key=k&url={url}";
+    const order: string[] = [];
+    const fetchImpl = fakeFetch((url) => {
+      const target = decodeURIComponent(url.slice(url.indexOf("url=") + 4));
+      if (target === LIST_URL) return { status: 200, body: longList(4) };
+      order.push(target.slice(target.lastIndexOf("/") + 1));
+      return {
+        status: 200,
+        body: `<h1 class='oc-page-title '>Boil Water Advisory LIFTED: ${target.slice(-1)} Main St</h1><p class="published-on">Published on September 19, 2026</p><h2>This advisory has been lifted.</h2><p>Flush your lines.</p>`,
+      };
+    });
+    const parsed = await fetchOpenCitiesAdvisories(
+      { list_url: LIST_URL, use_fetch_proxy: true },
+      {
+        // 0, 1, 2 are stored; 1 is open (re-read); 3 is new.
+        knownUrls: new Set([`${LIST_URL}/Advisory-0`, `${LIST_URL}/Advisory-1`, `${LIST_URL}/Advisory-2`]),
+        refreshUrls: new Set([`${LIST_URL}/Advisory-1`]),
+        fetchImpl,
+        sleep: async () => {},
+      },
+    );
+    expect(order).toEqual(["Advisory-3", "Advisory-1"]);
+    const reread = parsed.find((p) => p.source_url.endsWith("Advisory-1"));
+    expect(reread?.detail).toEqual({
+      title: "Boil Water Advisory LIFTED: 1 Main St",
+      lead: "This advisory has been lifted. Flush your lines.",
+    });
+    expect(reread?.raw).toMatchObject({
+      detail_title: "Boil Water Advisory LIFTED: 1 Main St",
+      detail_lead: "This advisory has been lifted. Flush your lines.",
+    });
+    // Known and not open: no read, no detail — the route carries the stored capture forward.
+    expect(parsed.find((p) => p.source_url.endsWith("Advisory-0"))?.detail).toBeUndefined();
+  });
+
+  it("a failed re-read leaves detail unset and records the error", async () => {
+    delete process.env.WATER_ADVISORY_FETCH_PROXY_URL;
+    const fetchImpl = fakeFetch((url) =>
+      url === LIST_URL ? { status: 200, body: longList(1) } : { status: 504, body: "upstream-timeout" },
+    );
+    const parsed = await fetchOpenCitiesAdvisories(
+      { list_url: LIST_URL },
+      { knownUrls: new Set([`${LIST_URL}/Advisory-0`]), refreshUrls: new Set([`${LIST_URL}/Advisory-0`]), fetchImpl },
+    );
+    expect(parsed[0].detail).toBeUndefined();
+    expect(parsed[0].raw.detail_error).toMatch(/504/);
+  });
+
   it("never pauses for known URLs — only fetched details are paced", async () => {
     process.env.WATER_ADVISORY_FETCH_PROXY_URL = "https://relay.example/fetch?key=k&url={url}";
     const h = harness(longList(3));

@@ -7,8 +7,9 @@
  * This is the only I/O in the parsing path. The HTML → entries work is
  * in ../parse.ts (pure, fixture-tested); this file is the fetch shell:
  * headers, timeout, the bot-wall check, the zero-entries rule, and the
- * best-effort detail fetch that reads "Published on" for URLs the
- * watcher hasn't seen before.
+ * best-effort detail fetch that reads "Published on", the page heading
+ * and the lead — for URLs the watcher hasn't seen before and for the
+ * open advisories the route asks it to re-read (issue #355).
  *
  * Adapter contract (shared with future kinds — see the spoke):
  *   fetchAdvisories(config, { knownUrls, fetchImpl? }) → ParsedAdvisory[]
@@ -22,6 +23,7 @@
 import { z } from "zod";
 import {
   normalizeUrl,
+  parseDetailLead,
   parseDetailTitle,
   parseEmergencyBanner,
   parseOpenCitiesList,
@@ -39,26 +41,31 @@ export const openCitiesListConfigSchema = z.object({
 export type OpenCitiesListConfig = z.infer<typeof openCitiesListConfigSchema>;
 
 export type AdapterContext = {
-  /** Normalized URLs already stored for this source — detail pages are fetched only for the rest. */
+  /** Normalized URLs already stored for this source. */
   knownUrls: ReadonlySet<string>;
+  /** Stored URLs whose detail page should be re-read this run (the open
+   *  advisories — see detail.ts). Read after the unseen URLs, under the
+   *  same cap. */
+  refreshUrls?: ReadonlySet<string>;
   fetchImpl?: typeof fetch;
   /** The pause between proxied detail fetches (tests inject one that records and resolves at once). */
   sleep?: (ms: number) => Promise<void>;
 };
 
 // Bound the per-run detail fetches so a first seed of a long list can't
-// blow the route's maxDuration. published_on is read on first sight only,
-// so an entry past the cap keeps a null date; in practice the cap is only
-// reachable on the silent seed run (the list carries a handful of items).
+// blow the route's maxDuration. Unseen URLs are read first (published_on
+// is read on first sight only, so an entry past the cap keeps a null
+// date), then the open advisories the route asks to re-read; in practice
+// the cap is only reachable on the silent seed run (the list carries a
+// handful of items).
 const MAX_DETAIL_FETCHES = 12;
 
 // Through toddtech-web-relay (issue #353): the relay admits one fetch per
 // upstream host every 3 s across all tenants and gives Hearth 10 a minute.
-// A burst comes back 429 `host-throttled`, and a detail URL is never
-// fetched again once stored, so an unpaced run would leave dates null for
-// good, not just late. Pace every proxied detail fetch (the list fetch
-// counts against the same host gate) and cap them so the pauses fit the
-// route's 60 s budget.
+// A burst comes back 429 `host-throttled`, and an unseen URL's date is
+// read once, so an unpaced run would leave dates null for good, not just
+// late. Pace every proxied detail fetch (the list fetch counts against the
+// same host gate) and cap them so the pauses fit the route's 60 s budget.
 export const PROXY_DETAIL_PACE_MS = 3_200;
 export const PROXY_MAX_DETAIL_FETCHES = 8;
 
@@ -114,18 +121,28 @@ export async function fetchOpenCitiesAdvisories(
     });
   }
 
-  // Detail pages: only for URLs the store hasn't seen, best-effort, capped.
+  // Detail pages: unseen URLs first, then the open advisories to re-read;
+  // best-effort, capped. A failure leaves `detail` unset so the route
+  // carries the stored capture forward (detail.ts) instead of letting a
+  // bad run change the hash or the status.
+  const refresh = ctx.refreshUrls ?? new Set<string>();
+  const unseen = parsed.filter((p) => !ctx.knownUrls.has(p.source_url));
+  const reread = parsed.filter(
+    (p) => ctx.knownUrls.has(p.source_url) && refresh.has(p.source_url),
+  );
   let detailFetches = 0;
-  for (const p of parsed) {
-    if (ctx.knownUrls.has(p.source_url)) continue;
+  for (const p of [...unseen, ...reread]) {
     if (detailFetches >= maxDetailFetches) break;
     detailFetches++;
     if (viaProxy) await sleep(PROXY_DETAIL_PACE_MS);
     try {
-      const detail = await fetchText(p.source_url, fetchOpts);
-      p.published_on = parsePublishedOn(detail);
-      const detailTitle = parseDetailTitle(detail);
-      if (detailTitle) p.raw.detail_title = detailTitle;
+      const html = await fetchText(p.source_url, fetchOpts);
+      p.published_on = parsePublishedOn(html);
+      const title = parseDetailTitle(html);
+      const lead = parseDetailLead(html);
+      p.detail = { title, lead };
+      if (title) p.raw.detail_title = title;
+      if (lead) p.raw.detail_lead = lead;
     } catch (err) {
       p.raw.detail_error = err instanceof Error ? err.message : String(err);
     }

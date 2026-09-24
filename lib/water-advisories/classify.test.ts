@@ -66,6 +66,51 @@ describe("classifyStatus", () => {
   });
 });
 
+describe("classifyStatus — the advisory's own page (issue #355)", () => {
+  // The LOW/HIGH row as seeded on 2026-09-24: the list entry never changed,
+  // the page was edited in place on 2026-09-21.
+  const LIFTED_PAGE = {
+    title: "Boil Water Advisory LIFTED: LOW and HIGH Pressure Districts",
+    lead: "This advisory has been lifted. As of Monday, September 21, 2026, at 7:00 am, the boil water advisory issued September 19, 2026, has been lifted by the City of Kalamazoo.",
+  };
+
+  it("reads a lift from the page heading when the list entry still says active", () => {
+    expect(classifyStatus(DISTRICT.title, DISTRICT.summary, LIFTED_PAGE)).toBe("lifted");
+    expect(classify({ ...DISTRICT, detail: LIFTED_PAGE })).toMatchObject({
+      status: "lifted",
+      scope: "system_wide",
+    });
+  });
+
+  it("reads a lift from the lead alone when the heading was not retitled", () => {
+    expect(
+      classifyStatus(DISTRICT.title, DISTRICT.summary, { title: DISTRICT.title, lead: LIFTED_PAGE.lead }),
+    ).toBe("lifted");
+    expect(
+      classifyStatus(DISTRICT.title, DISTRICT.summary, { title: null, lead: "The advisory was rescinded at noon." }),
+    ).toBe("lifted");
+  });
+
+  it("without the page, the same list entry is still active (pre-#355 behavior)", () => {
+    expect(classifyStatus(DISTRICT.title, DISTRICT.summary)).toBe("active");
+    expect(classifyStatus(DISTRICT.title, DISTRICT.summary, { title: null, lead: null })).toBe("active");
+  });
+
+  it("a neutral page does not override a scheduled or active list title", () => {
+    const neutral = {
+      title: "Scheduled Boil Water Advisory: Baker St",
+      lead: "A precautionary boil water advisory will be issued on Wednesday for 1405, 1419, and 1427 Baker Street.",
+    };
+    expect(classifyStatus(BAKER.title, BAKER.summary, neutral)).toBe("scheduled");
+    expect(
+      classifyStatus(DISTRICT.title, DISTRICT.summary, {
+        title: DISTRICT.title,
+        lead: "Sunday, September 20 Update: Samples analyzed this morning showed no detections of E. coli.",
+      }),
+    ).toBe("active");
+  });
+});
+
 describe("classifyScope", () => {
   it("district-wide via the pressure-district phrase", () => {
     expect(classifyScope(DISTRICT)).toBe("system_wide");

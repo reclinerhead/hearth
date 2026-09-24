@@ -26,6 +26,7 @@
 
 import { createHash } from "node:crypto";
 import type {
+  AdvisoryDetail,
   AdvisoryEvent,
   AdvisoryScope,
   AdvisoryStatus,
@@ -65,13 +66,24 @@ export type PlanInput = {
   nowIso: string;
 };
 
-/** SHA-256 over the normalized title + summary. Status is not included —
- *  a status flip is its own event, not an "update". */
-export function hashAdvisoryContent(title: string, summary: string): string {
+/**
+ * SHA-256 over the normalized title + summary, plus the detail page's
+ * heading and lead when the advisory has one (issue #355). Status is not
+ * included — a status flip is its own event, not an "update". With no
+ * detail the digest is byte-identical to the pre-#355 formula, so rows
+ * from sources without detail pages (RSS) never re-hash on deploy.
+ */
+export function hashAdvisoryContent(
+  title: string,
+  summary: string,
+  detail?: AdvisoryDetail,
+): string {
   const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
-  return createHash("sha256")
-    .update(`${norm(title)}\n${norm(summary)}`)
-    .digest("hex");
+  const hash = createHash("sha256").update(`${norm(title)}\n${norm(summary)}`);
+  if (detail) {
+    hash.update(`\n${norm(detail.title ?? "")}\n${norm(detail.lead ?? "")}`);
+  }
+  return hash.digest("hex");
 }
 
 export function isNotifiableScope(scope: AdvisoryScope): boolean {
@@ -104,7 +116,7 @@ export function planAdvisoryRun(input: PlanInput): AdvisoryPlan {
   }
 
   for (const p of seen.values()) {
-    const contentHash = hashAdvisoryContent(p.title, p.summary);
+    const contentHash = hashAdvisoryContent(p.title, p.summary, p.detail);
     const prev = storedByUrl.get(p.source_url);
 
     if (!prev) {
@@ -166,9 +178,10 @@ export function planAdvisoryRun(input: PlanInput): AdvisoryPlan {
       on_emergency_banner: p.on_emergency_banner,
       content_hash: contentHash,
       last_seen_at: input.nowIso,
-      // Merge, don't replace: the detail page is only fetched on first
-      // sight, so its fields (detail_title, …) live only in the stored
-      // capture. The fresh parse wins for the keys it carries.
+      // Merge, don't replace: the detail page is re-read only while the
+      // advisory is open, so on other runs its fields (detail_title, …)
+      // live only in the stored capture. The fresh parse wins for the
+      // keys it carries.
       raw: { ...prev.raw, ...p.raw },
     };
     if (changed) upsert.last_changed_at = input.nowIso;

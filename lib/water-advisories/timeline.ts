@@ -61,7 +61,9 @@ export type TimelineOptions = {
 };
 
 const DEFAULT_LIMIT = 4;
-const DEFAULT_OPEN_WINDOW_DAYS = 14;
+/** Days after issue during which an unpaired active/scheduled row counts as open.
+ *  The watcher re-reads an open row's detail page for the same window (detail.ts). */
+export const DEFAULT_OPEN_WINDOW_DAYS = 14;
 
 /** The calendar date a row represents: the source's published date, else when Hearth first saw it. */
 export function rowDate(row: Pick<TimelineRow, "published_on" | "first_seen_at">): string {
@@ -137,7 +139,7 @@ function tokensOverlap(a: string, b: string): boolean {
   return false;
 }
 
-function daysBetween(fromIsoDate: string, toIso: string): number {
+export function daysBetween(fromIsoDate: string, toIso: string): number {
   const from = Date.parse(`${fromIsoDate}T00:00:00Z`);
   const to = Date.parse(toIso);
   if (Number.isNaN(from) || Number.isNaN(to)) return Number.POSITIVE_INFINITY;

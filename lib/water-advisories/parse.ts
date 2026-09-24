@@ -182,10 +182,45 @@ export function parsePublishedOn(html: string): string | null {
   return `${m[3]}-${month}-${day}`;
 }
 
+const DETAIL_TITLE_RE =
+  /<h1[^>]*class=['"][^'"]*oc-page-title[^'"]*['"][^>]*>([\s\S]*?)<\/h1>/i;
+
 /** The detail page's h1 (the city's page title, which can differ from the list title). */
 export function parseDetailTitle(html: string): string | null {
-  const m = /<h1[^>]*class=['"][^'"]*oc-page-title[^'"]*['"][^>]*>([\s\S]*?)<\/h1>/i.exec(
-    html,
-  );
+  const m = DETAIL_TITLE_RE.exec(html);
   return m ? cleanText(m[1]) : null;
+}
+
+export const DETAIL_LEAD_MAX = 400;
+const DETAIL_LEAD_BLOCKS = 2;
+// How far past the h1 to look for the lead. The article body follows the
+// heading directly; the bound keeps a page with no body from reading its
+// footer as the lead.
+const DETAIL_LEAD_SCAN = 60_000;
+
+/**
+ * The detail page's lead (issue #355): the text of the first two
+ * text-bearing `h2` / `h3` / `p` blocks after the page title, skipping the
+ * "Published on" line, joined with a space and capped at DETAIL_LEAD_MAX.
+ * Kalamazoo prepends its updates here ("This advisory has been lifted.",
+ * "Sunday, September 20 Update: …"), so the lead is where an in-place edit
+ * shows first. Null when the title or any body text is missing.
+ */
+export function parseDetailLead(html: string): string | null {
+  const titleMatch = DETAIL_TITLE_RE.exec(html);
+  if (!titleMatch) return null;
+  const start = titleMatch.index + titleMatch[0].length;
+  const region = html.slice(start, start + DETAIL_LEAD_SCAN);
+
+  const blockRe = /<(h2|h3|p)\b([^>]*)>([\s\S]*?)<\/\1>/gi;
+  const blocks: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = blockRe.exec(region)) !== null && blocks.length < DETAIL_LEAD_BLOCKS) {
+    if (/published-on/i.test(m[2])) continue;
+    const text = cleanText(m[3]);
+    if (text.length === 0) continue;
+    blocks.push(text);
+  }
+  if (blocks.length === 0) return null;
+  return blocks.join(" ").slice(0, DETAIL_LEAD_MAX).trim();
 }

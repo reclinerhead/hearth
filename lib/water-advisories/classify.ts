@@ -19,6 +19,7 @@
  */
 
 import type {
+  AdvisoryDetail,
   AdvisoryScope,
   AdvisoryStatus,
   ClassifiedAdvisory,
@@ -44,12 +45,30 @@ const STREET_TOKEN =
 const HOUSE_NUMBER_RANGE = /\b\d{2,5}\s*(?:–|-|to|through)\s*\d{2,5}\b/i;
 const HOUSE_NUMBER_LIST = /\b\d{3,5},\s*(?:\d{3,5}|and\b)/i;
 
-export function classifyStatus(title: string, summary: string): AdvisoryStatus {
+const TITLE_LIFTED = /\b(lifted|rescinded)\b/;
+// "This advisory has been lifted." with a title that doesn't say so.
+const BODY_LIFTED = /\b(has been|is|was) (lifted|rescinded)\b/;
+
+/**
+ * Status from the title, then the summary. When the advisory's own page
+ * has been read (`detail`), its heading and lead are checked for a lift
+ * FIRST: Kalamazoo lifts an advisory by editing that page in place while
+ * the list entry keeps its original wording (issue #355). Everything
+ * other than "lifted" still reads the list fields only.
+ */
+export function classifyStatus(
+  title: string,
+  summary: string,
+  detail?: AdvisoryDetail,
+): AdvisoryStatus {
   const t = title.toLowerCase();
   const s = summary.toLowerCase();
-  if (/\blifted\b/.test(t) || /\brescinded\b/.test(t)) return "lifted";
-  // "This advisory has been lifted." with a title that doesn't say so.
-  if (/\b(has been|is|was) (lifted|rescinded)\b/.test(s)) return "lifted";
+  if (detail) {
+    if (detail.title && TITLE_LIFTED.test(detail.title.toLowerCase())) return "lifted";
+    if (detail.lead && BODY_LIFTED.test(detail.lead.toLowerCase())) return "lifted";
+  }
+  if (TITLE_LIFTED.test(t)) return "lifted";
+  if (BODY_LIFTED.test(s)) return "lifted";
   if (/\bscheduled\b/.test(t)) return "scheduled";
   if (/\b(advisory|order|notice|do not (drink|use))\b/.test(t)) return "active";
   return "unknown";
@@ -95,7 +114,7 @@ export function classify(
 ): ClassifiedAdvisory {
   return {
     ...advisory,
-    status: classifyStatus(advisory.title, advisory.summary),
+    status: classifyStatus(advisory.title, advisory.summary, advisory.detail),
     scope: classifyScope(advisory, options),
   };
 }
