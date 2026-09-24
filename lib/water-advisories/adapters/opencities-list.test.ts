@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveFetchTarget } from "./fetch";
-import { fetchOpenCitiesAdvisories } from "./opencities-list";
+import {
+  fetchOpenCitiesAdvisories,
+  PROXY_DETAIL_PACE_MS,
+  PROXY_MAX_DETAIL_FETCHES,
+} from "./opencities-list";
 
 const LIST_HTML = readFileSync(
   join(__dirname, "..", "fixtures", "kalamazoo-list.html"),
@@ -119,9 +123,89 @@ describe("fetchOpenCitiesAdvisories", () => {
     });
     await fetchOpenCitiesAdvisories(
       { list_url: LIST_URL, use_fetch_proxy: true },
-      { knownUrls: new Set(["x"]), fetchImpl },
+      { knownUrls: new Set(["x"]), fetchImpl, sleep: async () => {} },
     ).catch(() => undefined);
     expect(calls[0]).toBe(`https://proxy.example/?url=${encodeURIComponent(LIST_URL)}`);
     expect(calls.every((c) => c.startsWith("https://proxy.example/"))).toBe(true);
+  });
+});
+
+describe("fetchOpenCitiesAdvisories — detail pacing through the relay (issue #353)", () => {
+  /** A list page with `n` entries, none of them known to the store. */
+  function longList(n: number): string {
+    return Array.from(
+      { length: n },
+      (_, i) =>
+        `<div class="list-item-container"><article><a href="${LIST_URL}/Advisory-${i}"><h2 class="list-item-title">Boil Water Advisory: ${i} Main St</h2><p>Summary ${i}</p></a></article></div>`,
+    ).join("\n");
+  }
+
+  const DETAIL = `<h1 class='oc-page-title '>Detail</h1><p class="published-on">Published on September 19, 2026</p>`;
+
+  /** Records the timeline of fetches and pauses so the ordering can be asserted. */
+  function harness(listHtml: string) {
+    const log: string[] = [];
+    const fetchImpl = fakeFetch((url) => {
+      const isList = url === LIST_URL || url.endsWith(encodeURIComponent(LIST_URL));
+      log.push(isList ? "list" : "detail");
+      return { status: 200, body: isList ? listHtml : DETAIL };
+    });
+    const sleep = async (ms: number) => {
+      log.push(`sleep ${ms}`);
+    };
+    return { log, fetchImpl, sleep };
+  }
+
+  it("pauses PROXY_DETAIL_PACE_MS before every proxied detail fetch and stops at PROXY_MAX_DETAIL_FETCHES", async () => {
+    process.env.WATER_ADVISORY_FETCH_PROXY_URL = "https://relay.example/fetch?key=k&url={url}";
+    const h = harness(longList(12));
+    const parsed = await fetchOpenCitiesAdvisories(
+      { list_url: LIST_URL, use_fetch_proxy: true },
+      { knownUrls: new Set(), fetchImpl: h.fetchImpl, sleep: h.sleep },
+    );
+
+    expect(PROXY_DETAIL_PACE_MS).toBe(3_200);
+    expect(PROXY_MAX_DETAIL_FETCHES).toBe(8);
+    expect(h.log).toEqual([
+      "list",
+      ...Array.from({ length: PROXY_MAX_DETAIL_FETCHES }, () => [`sleep ${PROXY_DETAIL_PACE_MS}`, "detail"]).flat(),
+    ]);
+    // Entries past the cap keep a null date rather than failing the run.
+    expect(parsed.filter((p) => p.published_on === "2026-09-19")).toHaveLength(PROXY_MAX_DETAIL_FETCHES);
+    expect(parsed.filter((p) => p.published_on === null)).toHaveLength(12 - PROXY_MAX_DETAIL_FETCHES);
+  });
+
+  it("a direct fetch keeps today's behavior: no pauses, cap 12", async () => {
+    process.env.WATER_ADVISORY_FETCH_PROXY_URL = "https://relay.example/fetch?key=k&url={url}";
+    const h = harness(longList(14));
+    await fetchOpenCitiesAdvisories(
+      { list_url: LIST_URL }, // no use_fetch_proxy
+      { knownUrls: new Set(), fetchImpl: h.fetchImpl, sleep: h.sleep },
+    );
+    expect(h.log).toEqual(["list", ...Array.from({ length: 12 }, () => "detail")]);
+  });
+
+  it("an opted-in source with no proxy template configured also fetches directly and unpaced", async () => {
+    delete process.env.WATER_ADVISORY_FETCH_PROXY_URL;
+    const h = harness(longList(3));
+    await fetchOpenCitiesAdvisories(
+      { list_url: LIST_URL, use_fetch_proxy: true },
+      { knownUrls: new Set(), fetchImpl: h.fetchImpl, sleep: h.sleep },
+    );
+    expect(h.log).toEqual(["list", "detail", "detail", "detail"]);
+  });
+
+  it("never pauses for known URLs — only fetched details are paced", async () => {
+    process.env.WATER_ADVISORY_FETCH_PROXY_URL = "https://relay.example/fetch?key=k&url={url}";
+    const h = harness(longList(3));
+    await fetchOpenCitiesAdvisories(
+      { list_url: LIST_URL, use_fetch_proxy: true },
+      {
+        knownUrls: new Set([`${LIST_URL}/Advisory-0`, `${LIST_URL}/Advisory-2`]),
+        fetchImpl: h.fetchImpl,
+        sleep: h.sleep,
+      },
+    );
+    expect(h.log).toEqual(["list", `sleep ${PROXY_DETAIL_PACE_MS}`, "detail"]);
   });
 });

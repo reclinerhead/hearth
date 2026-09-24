@@ -28,7 +28,7 @@ import {
   parsePublishedOn,
 } from "../parse";
 import type { ParsedAdvisory } from "../types";
-import { fetchText } from "./fetch";
+import { fetchText, resolveFetchTarget } from "./fetch";
 
 export const openCitiesListConfigSchema = z.object({
   list_url: z.url(),
@@ -42,6 +42,8 @@ export type AdapterContext = {
   /** Normalized URLs already stored for this source — detail pages are fetched only for the rest. */
   knownUrls: ReadonlySet<string>;
   fetchImpl?: typeof fetch;
+  /** The pause between proxied detail fetches (tests inject one that records and resolves at once). */
+  sleep?: (ms: number) => Promise<void>;
 };
 
 // Bound the per-run detail fetches so a first seed of a long list can't
@@ -50,11 +52,27 @@ export type AdapterContext = {
 // reachable on the silent seed run (the list carries a handful of items).
 const MAX_DETAIL_FETCHES = 12;
 
+// Through toddtech-web-relay (issue #353): the relay admits one fetch per
+// upstream host every 3 s across all tenants and gives Hearth 10 a minute.
+// A burst comes back 429 `host-throttled`, and a detail URL is never
+// fetched again once stored, so an unpaced run would leave dates null for
+// good, not just late. Pace every proxied detail fetch (the list fetch
+// counts against the same host gate) and cap them so the pauses fit the
+// route's 60 s budget.
+export const PROXY_DETAIL_PACE_MS = 3_200;
+export const PROXY_MAX_DETAIL_FETCHES = 8;
+
+const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export async function fetchOpenCitiesAdvisories(
   config: OpenCitiesListConfig,
   ctx: AdapterContext,
 ): Promise<ParsedAdvisory[]> {
-  const fetchOpts = { fetchImpl: ctx.fetchImpl, useProxy: config.use_fetch_proxy ?? false };
+  const useProxy = config.use_fetch_proxy ?? false;
+  const fetchOpts = { fetchImpl: ctx.fetchImpl, useProxy };
+  const { viaProxy } = resolveFetchTarget(config.list_url, useProxy);
+  const sleep = ctx.sleep ?? defaultSleep;
+  const maxDetailFetches = viaProxy ? PROXY_MAX_DETAIL_FETCHES : MAX_DETAIL_FETCHES;
   const html = await fetchText(config.list_url, fetchOpts);
 
   const entries = parseOpenCitiesList(html);
@@ -100,8 +118,9 @@ export async function fetchOpenCitiesAdvisories(
   let detailFetches = 0;
   for (const p of parsed) {
     if (ctx.knownUrls.has(p.source_url)) continue;
-    if (detailFetches >= MAX_DETAIL_FETCHES) break;
+    if (detailFetches >= maxDetailFetches) break;
     detailFetches++;
+    if (viaProxy) await sleep(PROXY_DETAIL_PACE_MS);
     try {
       const detail = await fetchText(p.source_url, fetchOpts);
       p.published_on = parsePublishedOn(detail);
