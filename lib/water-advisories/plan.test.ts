@@ -34,6 +34,7 @@ function stored(
     content_hash: hashAdvisoryContent(title, summary),
     published_on: "2026-09-19",
     on_emergency_banner: false,
+    first_seen_at: EARLIER,
     raw: {},
     ...overrides,
   };
@@ -42,12 +43,36 @@ function stored(
 const URL_A = "https://city.gov/advisories/a";
 const URL_B = "https://city.gov/advisories/b";
 
+const LIFTED_PAGE = {
+  title: "Boil Water Advisory LIFTED: LOW and HIGH Pressure Districts",
+  lead: "This advisory has been lifted.",
+};
+
 describe("hashAdvisoryContent", () => {
   it("is stable across whitespace and case differences", () => {
     expect(hashAdvisoryContent("Boil  Water", " e. coli ")).toBe(
       hashAdvisoryContent("boil water", "E. COLI"),
     );
     expect(hashAdvisoryContent("a", "b")).not.toBe(hashAdvisoryContent("a", "c"));
+  });
+
+  it("without a detail page the digest is byte-identical to the pre-#355 formula", () => {
+    // Pinned so a Portage (RSS) row can never re-hash — and fire a spurious
+    // "updated" — on a deploy that changes the detail inputs.
+    expect(
+      hashAdvisoryContent(
+        "Boil Water Advisory - Sept 10",
+        "The precautionary boil water advisory for the Oakland Drive area has been lifted.",
+      ),
+    ).toBe("3e97c3af60e78d3aae28df85e19a8cf39584ce1ed54d9619aec20939cc8ea7ee");
+  });
+
+  it("folds the detail heading and lead in when present", () => {
+    const listOnly = hashAdvisoryContent("t", "s");
+    const withPage = hashAdvisoryContent("t", "s", LIFTED_PAGE);
+    expect(withPage).not.toBe(listOnly);
+    expect(hashAdvisoryContent("t", "s", { ...LIFTED_PAGE, lead: " this  advisory has been lifted. " })).toBe(withPage);
+    expect(hashAdvisoryContent("t", "s", { title: LIFTED_PAGE.title, lead: "Sunday update." })).not.toBe(withPage);
   });
 });
 
@@ -146,6 +171,57 @@ describe("planAdvisoryRun — events", () => {
     expect(plan.upserts[0].first_seen_at).toBeUndefined();
   });
 
+  it("an in-place lift on the advisory's own page is a lifted event (issue #355)", () => {
+    // The list entry is unchanged; only the detail page (read this run)
+    // says lifted, and the classifier has already stamped the status.
+    const plan = planAdvisoryRun({
+      stored: [stored({ source_url: URL_A })],
+      parsed: [
+        classified({
+          source_url: URL_A,
+          status: "lifted",
+          detail: LIFTED_PAGE,
+          raw: { detail_title: LIFTED_PAGE.title, detail_lead: LIFTED_PAGE.lead },
+        }),
+      ],
+      nowIso: NOW,
+    });
+    expect(plan.events).toEqual([
+      expect.objectContaining({ kind: "lifted", source_url: URL_A, notifiable: true }),
+    ]);
+    expect(plan.upserts[0]).toMatchObject({ status: "lifted", title: "Boil Water Advisory: LOW and HIGH Pressure Districts" });
+  });
+
+  it("an edited lead on the advisory's own page is an updated event; the same lead carried forward is not", () => {
+    const page = { title: "Boil Water Advisory: LOW and HIGH Pressure Districts", lead: "Samples pending." };
+    const row = stored({
+      source_url: URL_A,
+      content_hash: hashAdvisoryContent("Boil Water Advisory: LOW and HIGH Pressure Districts", "E. coli found.", page),
+      raw: { detail_title: page.title, detail_lead: page.lead },
+    });
+    const same = planAdvisoryRun({
+      stored: [row],
+      parsed: [classified({ source_url: URL_A, detail: page })],
+      nowIso: NOW,
+    });
+    expect(same.events).toEqual([]);
+    expect(same.counts.unchanged).toBe(1);
+
+    const edited = planAdvisoryRun({
+      stored: [row],
+      parsed: [
+        classified({
+          source_url: URL_A,
+          detail: { ...page, lead: "Sunday, September 20 Update: no detections of E. coli." },
+        }),
+      ],
+      nowIso: NOW,
+    });
+    expect(edited.events).toEqual([
+      expect.objectContaining({ kind: "updated", source_url: URL_A, notifiable: true }),
+    ]);
+  });
+
   it("a changed summary on an existing row is an updated event", () => {
     const plan = planAdvisoryRun({
       stored: [stored({ source_url: URL_A })],
@@ -212,8 +288,9 @@ describe("planAdvisoryRun — scope handling", () => {
   });
 
   it("merges the stored raw capture under the fresh parse on existing rows", () => {
-    // The detail page is fetched only on first sight, so detail_title
-    // exists only in the stored capture; a later run must not wipe it.
+    // The detail page is re-read only while the advisory is open, so on
+    // other runs detail_title exists only in the stored capture; the run
+    // must not wipe it.
     const plan = planAdvisoryRun({
       stored: [
         stored({

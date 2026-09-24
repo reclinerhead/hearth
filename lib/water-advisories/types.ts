@@ -15,6 +15,19 @@ export type AdvisoryEventKind = "issued" | "updated" | "lifted";
 export type SourceKind = "opencities_list" | "rss";
 
 /**
+ * What the advisory's own page says, when the adapter has read it (issue
+ * #355). The OpenCities list entry's title and blurb are a separate field
+ * the city does not maintain — Kalamazoo lifts an advisory by editing the
+ * detail page in place — so status and the content hash read these
+ * first. Persisted in `raw` as `detail_title` / `detail_lead`; this is the
+ * typed in-run carrier. Absent for sources that have no detail page (RSS).
+ */
+export type AdvisoryDetail = {
+  title: string | null;
+  lead: string | null;
+};
+
+/**
  * What an adapter hands back for one advisory, before classification.
  * `published_on` is an ISO date (`YYYY-MM-DD`) or null when the source
  * doesn't print one for that entry.
@@ -25,6 +38,9 @@ export type ParsedAdvisory = {
   summary: string;
   published_on: string | null;
   on_emergency_banner: boolean;
+  /** Set when the detail page was read this run, or carried forward from
+   *  the stored capture when it was not (see detail.ts). */
+  detail?: AdvisoryDetail;
   /** Adapter-specific capture for debugging parser drift. */
   raw: Record<string, unknown>;
 };
@@ -46,8 +62,9 @@ export type StoredAdvisory = {
   content_hash: string;
   published_on: string | null;
   on_emergency_banner: boolean;
+  first_seen_at: string;
   /** Prior capture; merged under the new parse so detail-page fields
-   *  (read only on first sight) survive later runs. */
+   *  survive a run that did not re-read the page. */
   raw: Record<string, unknown>;
 };
 

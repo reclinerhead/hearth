@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import {
   cleanText,
   decodeEntities,
+  DETAIL_LEAD_MAX,
   normalizeUrl,
+  parseDetailLead,
   parseDetailTitle,
   parseEmergencyBanner,
   parseOpenCitiesList,
@@ -99,6 +101,32 @@ describe("parseDetailTitle", () => {
     expect(parseDetailTitle(DETAIL_HTML)).toBe(
       "Boil Water Advisory LIFTED: LOW and HIGH Pressure Districts",
     );
+  });
+});
+
+describe("parseDetailLead (issue #355)", () => {
+  it("reads the first two body blocks after the title, skipping the published-on line", () => {
+    const lead = parseDetailLead(DETAIL_HTML);
+    expect(lead).not.toBeNull();
+    expect(lead!.startsWith("This advisory has been lifted. As of Monday, September 21, 2026")).toBe(true);
+    expect(lead).not.toMatch(/Published on/);
+    expect(lead!.length).toBeLessThanOrEqual(DETAIL_LEAD_MAX);
+  });
+
+  it("skips empty blocks and caps the length", () => {
+    const long = "x".repeat(DETAIL_LEAD_MAX + 50);
+    const html = `<h1 class='oc-page-title '>T</h1><p class="published-on small-text">Published on March 4, 2027</p><p>&nbsp;</p><h2>Update:</h2><p>${long}</p><p>never read</p>`;
+    const lead = parseDetailLead(html);
+    expect(lead!.startsWith("Update: xxx")).toBe(true);
+    expect(lead!.length).toBe(DETAIL_LEAD_MAX);
+    expect(lead).not.toMatch(/never read/);
+  });
+
+  it("returns null without a page title or without any body text", () => {
+    expect(parseDetailLead("<p>no title here</p>")).toBeNull();
+    expect(
+      parseDetailLead(`<h1 class='oc-page-title '>T</h1><p class="published-on">Published on March 4, 2027</p>`),
+    ).toBeNull();
   });
 });
 

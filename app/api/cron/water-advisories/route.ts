@@ -44,6 +44,11 @@ import {
 } from "@/lib/water-advisories/alarm";
 import { classify } from "@/lib/water-advisories/classify";
 import {
+  carryForwardDetail,
+  detailFromRaw,
+  selectRefreshUrls,
+} from "@/lib/water-advisories/detail";
+import {
   buildAdvisoryEmail,
   buildWatcherAlarmEmail,
   isEmailConfigured,
@@ -128,11 +133,12 @@ function errorMessage(err: unknown): string {
 async function runAdapter(
   source: SourceRow,
   knownUrls: ReadonlySet<string>,
+  refreshUrls: ReadonlySet<string>,
 ): Promise<{ parsed: ParsedAdvisory[]; systemWidePhrases: string[]; listUrl: string }> {
   switch (source.kind) {
     case "opencities_list": {
       const config = openCitiesListConfigSchema.parse(source.config);
-      const parsed = await fetchOpenCitiesAdvisories(config, { knownUrls });
+      const parsed = await fetchOpenCitiesAdvisories(config, { knownUrls, refreshUrls });
       return {
         parsed,
         systemWidePhrases: config.system_wide_phrases ?? [],
@@ -325,11 +331,15 @@ async function notifySubscribers(
       }
 
       try {
+        // Quote the advisory's own page when it has one: after an in-place
+        // lift the list blurb still says "do not drink without boiling",
+        // which must not appear under a "lifted" subject (issue #355).
+        const lead = detailFromRaw(advisory.raw)?.lead;
         const message = buildAdvisoryEmail({
           event: event.kind,
           advisory: {
             title: advisory.title,
-            summary: advisory.summary,
+            summary: lead ?? advisory.summary,
             published_on: advisory.published_on,
             source_url: advisory.source_url,
           },
@@ -375,16 +385,19 @@ async function processSource(
   const { data: storedRows, error: storedError } = await supabase
     .from("water_advisories")
     .select(
-      "id, source_url, title, summary, status, scope, content_hash, published_on, on_emergency_banner, raw",
+      "id, source_url, title, summary, status, scope, content_hash, published_on, on_emergency_banner, first_seen_at, raw",
     )
     .eq("pwsid", source.pwsid);
   if (storedError) throw new Error(`stored read: ${storedError.message}`);
   const stored = (storedRows ?? []) as StoredAdvisory[];
   const knownUrls = new Set(stored.map((s) => s.source_url));
+  // Open advisories get their own page re-read each run: the city lifts
+  // one by editing that page in place (issue #355).
+  const refreshUrls = selectRefreshUrls(stored, opts.nowIso);
 
   let adapterResult: Awaited<ReturnType<typeof runAdapter>>;
   try {
-    adapterResult = await runAdapter(source, knownUrls);
+    adapterResult = await runAdapter(source, knownUrls, refreshUrls);
   } catch (err) {
     const message = errorMessage(err);
     console.error(`${tag} fetch/parse failed:`, message);
@@ -398,7 +411,9 @@ async function processSource(
     };
   }
 
-  const classified = adapterResult.parsed.map((p) =>
+  // An entry whose page was not read this run keeps the stored detail, so
+  // a failed re-read never changes the hash or the status.
+  const classified = carryForwardDetail(adapterResult.parsed, stored).map((p) =>
     classify(p, { systemWidePhrases: adapterResult.systemWidePhrases }),
   );
   const plan = planAdvisoryRun({ stored, parsed: classified, nowIso: opts.nowIso });
