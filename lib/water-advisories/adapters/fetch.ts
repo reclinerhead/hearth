@@ -9,6 +9,10 @@
  */
 
 const FETCH_TIMEOUT_MS = 20_000;
+// toddtech-web-relay gives up on the origin at 20 s and answers 504
+// `upstream-timeout`; waiting a little longer means Hearth records the
+// relay's verdict instead of racing it with its own abort (issue #353).
+const PROXY_FETCH_TIMEOUT_MS = 25_000;
 
 const BROWSER_HEADERS: Record<string, string> = {
   "user-agent":
@@ -22,7 +26,7 @@ const BROWSER_HEADERS: Record<string, string> = {
  * cloud egress range we tested (Vercel/AWS, GitHub Actions/Azure, a
  * Cloudflare Worker) while a home connection running the same fetch gets
  * the page. When `WATER_ADVISORY_FETCH_PROXY_URL` is set it is a template
- * such as `https://api.example.com/?api_key=…&url={url}`; a source whose
+ * such as `https://<relay-host>/fetch?key=…&url={url}`; a source whose
  * config says `use_fetch_proxy: true` has `{url}` replaced with its
  * encoded target and the request goes to the proxy instead.
  */
@@ -87,7 +91,7 @@ export async function fetchText(url: string, opts: FetchTextOptions = {}): Promi
       res = await fetchImpl(target, {
         headers,
         redirect: "follow",
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        signal: AbortSignal.timeout(viaProxy ? PROXY_FETCH_TIMEOUT_MS : FETCH_TIMEOUT_MS),
       });
       if (attempt > 1) {
         console.info(`[water-advisories] retry succeeded for ${url} after: ${lastNetworkError}`);
@@ -114,7 +118,10 @@ export async function fetchText(url: string, opts: FetchTextOptions = {}): Promi
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 160);
-    const served = res.headers.get("server") ?? "";
+    // The relay forwards only content-type/etag/last-modified from the
+    // origin and reports the origin's `server` separately, so a bot wall
+    // seen through it still names Akamai.
+    const served = res.headers.get("server") ?? res.headers.get("x-relay-upstream-server") ?? "";
     throw new Error(
       `GET ${url} → ${res.status}${botWall ? " bot wall" : ""}${served ? ` (server: ${served})` : ""}${excerpt ? ` — ${excerpt}` : ""}`,
     );

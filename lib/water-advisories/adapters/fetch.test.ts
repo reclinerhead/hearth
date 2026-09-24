@@ -59,6 +59,26 @@ describe("fetchText — network-level retry (issue #349)", () => {
     expect(s.calls()).toBe(1);
   });
 
+  it("names the origin's server from x-relay-upstream-server when the relay omits `server` (issue #353)", async () => {
+    const fetchImpl = (async () =>
+      new Response("<HTML><H1>Access Denied</H1>Reference&#32;&#35;18&#46;8eaa</HTML>", {
+        status: 403,
+        headers: { "x-relay-upstream-server": "AkamaiGHost", "x-relay-upstream-status": "403" },
+      })) as typeof fetch;
+    await expect(fetchText(URL_, { fetchImpl, retryDelayMs: 0 })).rejects.toThrow(
+      /→ 403 bot wall \(server: AkamaiGHost\)/,
+    );
+  });
+
+  it("prefers the response's own `server` header over the relay's upstream one", async () => {
+    const fetchImpl = (async () =>
+      new Response("busy", {
+        status: 503,
+        headers: { server: "nginx", "x-relay-upstream-server": "AkamaiGHost" },
+      })) as typeof fetch;
+    await expect(fetchText(URL_, { fetchImpl, retryDelayMs: 0 })).rejects.toThrow(/→ 503 \(server: nginx\)/);
+  });
+
   it("labels our own overall timeout as 'timed out'", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const abort = new Error("The operation was aborted due to timeout");
