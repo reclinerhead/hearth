@@ -19,9 +19,10 @@
  *     planned send is logged and nothing is sent or recorded.
  *   - Idempotent sends. A water_advisory_notifications row is inserted
  *     BEFORE the provider call; the unique key rejects a repeat.
- *   - Alarm on blindness. Consecutive failures past the threshold email
- *     WATER_ADVISORY_ALERT_EMAIL once, with a recovery note when a run
- *     succeeds again. A parse that yields zero entries is a failure.
+ *   - Alarm on blindness. Consecutive failures past the threshold (default
+ *     6 runs ≈ 3 h) email WATER_ADVISORY_ALERT_EMAIL, at most once per
+ *     source per cooldown (default 24 h); recovery notes are opt-in.
+ *     A parse that yields zero entries is a failure.
  *
  * AUTH: bearer CRON_SECRET, same as the storage sweep; the proxy exempts
  * /api/cron/* so the cookie-less cron request reaches the handler.
@@ -36,6 +37,11 @@ import {
   openCitiesListConfigSchema,
 } from "@/lib/water-advisories/adapters/opencities-list";
 import { fetchRssAdvisories, rssConfigSchema } from "@/lib/water-advisories/adapters/rss";
+import {
+  DEFAULT_ALARM_COOLDOWN_HOURS,
+  DEFAULT_FAILURE_ALERT_AFTER,
+  shouldSendAlarm,
+} from "@/lib/water-advisories/alarm";
 import { classify } from "@/lib/water-advisories/classify";
 import {
   buildAdvisoryEmail,
@@ -55,7 +61,6 @@ import type {
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const DEFAULT_FAILURE_ALERT_AFTER = 2;
 
 type ServiceClient = ReturnType<typeof createServiceClient>;
 
@@ -91,6 +96,10 @@ type RunOptions = {
   notifyEnabled: boolean;
   alertEmail: string | null;
   failureAlertAfter: number;
+  /** Minimum hours between alarms for one source (issue #351). */
+  alarmCooldownHours: number;
+  /** Recovery notes are opt-in; the admin page's health line is the default signal. */
+  recoveryEmails: boolean;
   nowIso: string;
 };
 
@@ -168,10 +177,15 @@ async function recordFailure(
 
   let alerted = false;
   const shouldAlert =
-    consecutive >= opts.failureAlertAfter &&
-    !source.failure_alerted_at &&
     opts.alertEmail &&
-    isEmailConfigured();
+    isEmailConfigured() &&
+    shouldSendAlarm({
+      consecutiveFailures: consecutive,
+      threshold: opts.failureAlertAfter,
+      failureAlertedAt: source.failure_alerted_at,
+      nowIso: opts.nowIso,
+      cooldownHours: opts.alarmCooldownHours,
+    });
   if (shouldAlert) {
     try {
       await sendEmail(
@@ -209,7 +223,13 @@ async function recordSuccess(
   place: PlaceNames,
   opts: RunOptions,
 ): Promise<void> {
-  if (source.failure_alerted_at && opts.alertEmail && isEmailConfigured()) {
+  // A recovery note only when the outage actually alarmed AND recovery
+  // emails are opted in. failure_alerted_at is left in place on purpose:
+  // it anchors the alarm cooldown so a source that recovers and fails
+  // again an hour later doesn't alarm twice (issue #351).
+  const alarmedThisOutage =
+    source.consecutive_failures > 0 && source.failure_alerted_at !== null;
+  if (alarmedThisOutage && opts.recoveryEmails && opts.alertEmail && isEmailConfigured()) {
     try {
       await sendEmail(
         opts.alertEmail,
@@ -234,7 +254,6 @@ async function recordSuccess(
       last_ok_at: opts.nowIso,
       consecutive_failures: 0,
       last_error: null,
-      failure_alerted_at: null,
       updated_at: opts.nowIso,
     })
     .eq("pwsid", source.pwsid);
@@ -477,6 +496,8 @@ export async function GET(request: Request): Promise<Response> {
     notifyEnabled: process.env.WATER_ADVISORY_NOTIFY_ENABLED === "true",
     alertEmail: process.env.WATER_ADVISORY_ALERT_EMAIL || null,
     failureAlertAfter: envInt("WATER_ADVISORY_FAILURE_ALERT_AFTER", DEFAULT_FAILURE_ALERT_AFTER),
+    alarmCooldownHours: envInt("WATER_ADVISORY_ALARM_COOLDOWN_HOURS", DEFAULT_ALARM_COOLDOWN_HOURS),
+    recoveryEmails: process.env.WATER_ADVISORY_RECOVERY_EMAILS === "true",
     nowIso: new Date().toISOString(),
   };
   if (opts.notifyEnabled && !isEmailConfigured()) {
