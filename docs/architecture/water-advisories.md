@@ -106,7 +106,7 @@ Resend via the `resend` package; `RESEND_API_KEY` + `WATER_ADVISORY_FROM_EMAIL` 
 
 ## Watcher health and the alarm
 
-Every run updates the source's health columns. A fetch/parse failure (or a DB failure after the fetch) increments `consecutive_failures` and stores `last_error`; a success resets both. When failures reach `WATER_ADVISORY_FAILURE_ALERT_AFTER` (default 2 — about an hour at the 30-minute cadence) the route emails `WATER_ADVISORY_ALERT_EMAIL` once (`failure_alerted_at`), and once more when a run succeeds again. This is independent of the notify switch: silence must never look like "no advisory." Both emails state **how long the watcher has been blind** (since `last_ok_at`, in Eastern time) so a nightly window and a random blip look different in the inbox without Vercel logs (issue #349).
+Every run updates the source's health columns. A fetch/parse failure (or a DB failure after the fetch) increments `consecutive_failures` and stores `last_error`; a success resets both. The alarm decision is the pure `shouldSendAlarm` in [`alarm.ts`](../../lib/water-advisories/alarm.ts) (issue #351): when failures reach `WATER_ADVISORY_FAILURE_ALERT_AFTER` (default **6** — about three hours at the 30-minute cadence) the route emails `WATER_ADVISORY_ALERT_EMAIL` and stamps `failure_alerted_at`; that stamp is the **cooldown anchor** and is deliberately not cleared on recovery, so a source that flaps (Portage's origin drops Vercel's connections in hour-long windows) alarms at most once per `WATER_ADVISORY_ALARM_COOLDOWN_HOURS` (default 24). Recovery notes are **opt-in** (`WATER_ADVISORY_RECOVERY_EMAILS=true`); the admin page's health line is the default recovery signal. An alarm means "broken for hours", never "one run failed". This is independent of the notify switch: silence must never look like "no advisory." The alarm (and the opt-in recovery note) state **how long the watcher has been blind** (since `last_ok_at`, in Eastern time) so a nightly window and a random blip look different in the inbox without Vercel logs (issue #349).
 
 **One in-run retry, network failures only** ([`adapters/fetch.ts`](../../lib/water-advisories/adapters/fetch.ts)). A connect timeout, reset, or DNS hiccup against a single-homed civic origin is usually a blip — Portage (one IPv4 address, no CDN) flapped overnight on 2026-09-23 with every re-run succeeding. `fetchText` therefore retries such failures once after a short pause and logs the outcome; a run that needed the retry is a late run, not a failed one. **HTTP responses are never retried**: a 403 (bot wall) or a 5xx is the origin's decision, and retrying is how an address earns a permanent block. The alarm threshold is unchanged — an hour of real blindness still emails.
 
@@ -137,7 +137,9 @@ Timestamps on the page are formatted **after mount** (the `When` component): the
 | `CRON_SECRET` | — (required) | Bearer token, shared with the storage sweep. |
 | `RESEND_API_KEY` / `WATER_ADVISORY_FROM_EMAIL` | — | Resend credentials + verified sender. Required for any email. |
 | `WATER_ADVISORY_ALERT_EMAIL` | — | Recipient of the watcher-blind alarm. |
-| `WATER_ADVISORY_FAILURE_ALERT_AFTER` | `2` | Consecutive failures before the alarm. |
+| `WATER_ADVISORY_FAILURE_ALERT_AFTER` | `6` | Consecutive failures before the alarm (~3 h). |
+| `WATER_ADVISORY_ALARM_COOLDOWN_HOURS` | `24` | Minimum time between alarms for one source. |
+| `WATER_ADVISORY_RECOVERY_EMAILS` | unset (off) | `"true"` sends a recovery note after an alarmed outage. |
 | `WATER_ADVISORY_FETCH_PROXY_URL` | unset (direct) | Proxy template with `{url}`; used only by sources with `use_fetch_proxy: true`. Needed before Kalamazoo can return to its city page. |
 | `WATER_ADVISORY_NOTIFY_ENABLED` | unset (dry-run) | `"true"` enables subscriber sends. |
 
