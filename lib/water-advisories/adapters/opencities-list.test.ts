@@ -14,6 +14,11 @@ const LIST_HTML = readFileSync(
 );
 const LIST_URL =
   "https://www.kalamazoocity.org/Residents/Water-Sewer-Service/Boil-Water-Advisories";
+// The list page captured 2026-10-12 once it had emptied (issue #360).
+const EMPTY_LIST_HTML = readFileSync(
+  join(__dirname, "..", "fixtures", "kalamazoo-list-empty.html"),
+  "utf8",
+);
 
 // The stub Akamai serves to cloud egress ranges (observed from Vercel on
 // 2026-09-22): a 403 whose body carries "Access Denied" and a reference id.
@@ -84,6 +89,48 @@ describe("fetchOpenCitiesAdvisories", () => {
     await expect(
       fetchOpenCitiesAdvisories({ list_url: LIST_URL }, { knownUrls: new Set(), fetchImpl }),
     ).rejects.toThrow(/parsed zero list entries/);
+  });
+
+  it("treats the list's own empty state as a successful run with nothing on it (issue #360)", async () => {
+    const calls: string[] = [];
+    const fetchImpl = fakeFetch((url) => {
+      calls.push(url);
+      return { status: 200, body: EMPTY_LIST_HTML };
+    });
+    await expect(
+      fetchOpenCitiesAdvisories({ list_url: LIST_URL }, { knownUrls: new Set(), fetchImpl }),
+    ).resolves.toEqual([]);
+    expect(calls).toEqual([LIST_URL]);
+  });
+
+  it("still throws for the empty page once its no-results marker is gone (a template change)", async () => {
+    const stripped = EMPTY_LIST_HTML.replace(/no-item-text/g, "renamed-by-the-city");
+    const fetchImpl = fakeFetch(() => ({ status: 200, body: stripped }));
+    await expect(
+      fetchOpenCitiesAdvisories({ list_url: LIST_URL }, { knownUrls: new Set(), fetchImpl }),
+    ).rejects.toThrow(/parsed zero list entries/);
+  });
+
+  it("returns a banner advisory under the list URL even when the list itself is empty", async () => {
+    // The city's real banner block (two boxes: an unrelated notice and the
+    // Sept 21 district-wide lift), lifted from the populated capture.
+    const start = LIST_HTML.indexOf('<div class="oc-emergency-announcement-container">');
+    const end = LIST_HTML.indexOf('<div class="background-container">', start);
+    const page = EMPTY_LIST_HTML.replace(/<body[^>]*>/i, (open) => open + LIST_HTML.slice(start, end));
+    const fetchImpl = fakeFetch((url) =>
+      url === LIST_URL
+        ? { status: 200, body: page }
+        : { status: 200, body: `<h1 class='oc-page-title '>Detail</h1>` },
+    );
+    const parsed = await fetchOpenCitiesAdvisories(
+      { list_url: LIST_URL },
+      { knownUrls: new Set(), fetchImpl },
+    );
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]).toMatchObject({
+      source_url: `${LIST_URL}/Boil-Water-Advisory-LIFTED-LOW-and-HIGH-Pressure-Districts`,
+      on_emergency_banner: true,
+    });
   });
 
   it("parses the fixture, folds the banner-only lift in, and skips detail pages for known URLs", async () => {
