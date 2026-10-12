@@ -40,6 +40,11 @@ import {
 } from "@/lib/habitat/modules/water-quality-awareness/caches/ccr-cache";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { TimelineRow } from "@/lib/water-advisories/timeline";
+import {
+  ADVISORY_FEED_READ_MARGIN_DAYS,
+  ADVISORY_FEED_WINDOW_DAYS,
+  type AdvisoryFeedInput,
+} from "./advisory-feed";
 import type { PublicWaterSummaryInput } from "./water-summary";
 
 /**
@@ -75,6 +80,59 @@ export async function resolveAdvisories(
     sourceKind: source.kind as string,
     sourceConfig: (source.config ?? {}) as Record<string, unknown>,
     watchingSince: source.created_at as string,
+    rows: (rows ?? []) as TimelineRow[],
+  };
+}
+
+/** Safety bound on the feed's read; the window, not this, is what limits it in practice. */
+const ADVISORY_FEED_READ_ROW_LIMIT = 500;
+
+/**
+ * The watcher's rows for the JSON advisories feed (issue #358). Same
+ * posture as `resolveAdvisories` — service role at generation time, the
+ * PWSID from the slug allowlist, soft-fail to null — but it also reads
+ * the source's health timestamps, and it reads a date window (the feed's
+ * window plus a pairing margin) instead of the page's 20 most recent rows.
+ *
+ * `first_seen_at` bounds the read, on the `(pwsid, first_seen_at desc)`
+ * index. A row is never seen before it is published, so every row whose
+ * display date falls in the window was first seen inside it; the margin
+ * covers an issue posted shortly before the window whose lift lands in
+ * it. Rows first seen recently but published long ago (a seed run) come
+ * back too, and the builder windows them out by their display date.
+ */
+export async function resolveAdvisoryFeed(
+  pwsid: string,
+  now: Date,
+): Promise<AdvisoryFeedInput> {
+  const supabase = createServiceClient();
+  const { data: source, error: sourceError } = await supabase
+    .from("water_advisory_sources")
+    .select("kind, config, created_at, enabled, last_run_at, last_ok_at")
+    .eq("pwsid", pwsid)
+    .maybeSingle();
+  if (sourceError) return null;
+  if (!source || !source.enabled) return { watched: false };
+
+  const since = new Date(
+    now.getTime() - (ADVISORY_FEED_WINDOW_DAYS + ADVISORY_FEED_READ_MARGIN_DAYS) * 86_400_000,
+  ).toISOString();
+  const { data: rows, error } = await supabase
+    .from("water_advisories")
+    .select("source_url, title, summary, status, scope, published_on, first_seen_at")
+    .eq("pwsid", pwsid)
+    .gte("first_seen_at", since)
+    .order("first_seen_at", { ascending: false })
+    .limit(ADVISORY_FEED_READ_ROW_LIMIT);
+  if (error) return null;
+
+  return {
+    watched: true,
+    sourceKind: source.kind as string,
+    sourceConfig: (source.config ?? {}) as Record<string, unknown>,
+    watchingSince: source.created_at as string,
+    lastRunAt: (source.last_run_at as string | null) ?? null,
+    lastOkAt: (source.last_ok_at as string | null) ?? null,
     rows: (rows ?? []) as TimelineRow[],
   };
 }

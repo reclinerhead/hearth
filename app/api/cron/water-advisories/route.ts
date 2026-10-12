@@ -447,13 +447,16 @@ async function processSource(
   // The public water page (SSG + 24h ISR) renders these rows. Regenerate
   // it only when this run actually recorded something new or changed, so
   // an advisory shows up within the half hour while the page still never
-  // rebuilds on a schedule (issue #347). Sources outside the slug
-  // registry have no public page to refresh.
+  // rebuilds on a schedule (issue #347). The JSON feed (issue #358) is
+  // refreshed on the same signal; it also regenerates on its own short
+  // timer so its watcher timestamps stay current. Sources outside the
+  // slug registry have neither surface to refresh.
   if (plan.counts.new + plan.counts.changed > 0) {
     const entry = resolveWaterSystemEntryByPwsid(source.pwsid);
     if (entry) {
       revalidatePath(`/water/${entry.slug}`);
-      console.info(`${tag} revalidated /water/${entry.slug}`);
+      revalidatePath(`/api/water/${entry.slug}/advisories`);
+      console.info(`${tag} revalidated /water/${entry.slug} and its advisories feed`);
     }
   }
 
