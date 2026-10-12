@@ -79,6 +79,7 @@ import {
 import {
   buildAdvisoryTimeline,
   describeAdvisorySource,
+  type AdvisoryTimelineItem,
   type TimelineRow,
 } from "@/lib/water-advisories/timeline";
 import type { AdvisoryScope, AdvisoryStatus } from "@/lib/water-advisories/types";
@@ -148,6 +149,31 @@ export type PublicAdvisoryItem = {
 
 export const PUBLIC_ADVISORY_TITLE_MAX = 160;
 export const PUBLIC_ADVISORY_SUMMARY_MAX = 240;
+
+function capPublicText(s: string, n: number): string {
+  return s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`;
+}
+
+/**
+ * The public text discipline for one advisory: title capped, summary
+ * only on an open advisory and capped, nothing else from the scraped row.
+ * Shared by the page's advisories block (issue #347) and the JSON feed
+ * (issue #358, `advisory-feed.ts`) so the two public surfaces can't drift.
+ */
+export function toPublicAdvisoryItem(t: AdvisoryTimelineItem): PublicAdvisoryItem {
+  return {
+    key: t.key,
+    title: capPublicText(t.title, PUBLIC_ADVISORY_TITLE_MAX),
+    summary: t.open && t.summary ? capPublicText(t.summary, PUBLIC_ADVISORY_SUMMARY_MAX) : null,
+    scope: t.scope,
+    status: t.status,
+    issuedOn: t.issuedOn,
+    liftedOn: t.liftedOn,
+    sourceUrl: t.sourceUrl,
+    liftedSourceUrl: t.liftedSourceUrl,
+    open: t.open,
+  };
+}
 
 /** One lead-or-copper reading for the public compliance block. */
 export type PublicMetalReading = {
@@ -556,24 +582,10 @@ function buildAdvisoriesBlock(
   }
   if (!input.watched) return { kind: "not_watched" };
 
-  const cap = (s: string, n: number) =>
-    s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`;
-
   const items: PublicAdvisoryItem[] = buildAdvisoryTimeline(
     input.rows,
     now.toISOString(),
-  ).map((t) => ({
-    key: t.key,
-    title: cap(t.title, PUBLIC_ADVISORY_TITLE_MAX),
-    summary: t.open && t.summary ? cap(t.summary, PUBLIC_ADVISORY_SUMMARY_MAX) : null,
-    scope: t.scope,
-    status: t.status,
-    issuedOn: t.issuedOn,
-    liftedOn: t.liftedOn,
-    sourceUrl: t.sourceUrl,
-    liftedSourceUrl: t.liftedSourceUrl,
-    open: t.open,
-  }));
+  ).map(toPublicAdvisoryItem);
 
   return {
     kind: "watched",

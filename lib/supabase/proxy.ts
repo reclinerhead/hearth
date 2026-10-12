@@ -59,12 +59,17 @@ export async function updateSession(request: NextRequest) {
   // water advisory emails (issue #331). The recipient is a neighbor, not
   // a Hearth user, so there is no session; the random token in the query
   // string is the capability and the handlers validate it.
+  //
+  // /api/water/* is the public JSON advisories feed (issue #358): the
+  // same data as the /water/* pages, static per allowlisted slug, polled
+  // by consumers with no session (Home Assistant).
   const isPublicRoute =
     pathname === "/" ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/auth") ||
     pathname.startsWith("/api/cron") ||
     pathname.startsWith("/api/advisories/") ||
+    pathname.startsWith("/api/water/") ||
     pathname === "/how-it-works" ||
     pathname === "/water" ||
     pathname.startsWith("/water/") ||
