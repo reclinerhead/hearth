@@ -8,9 +8,11 @@
  * city changes its template, `parse.test.ts` fails before production
  * does (and the watcher's zero-entries rule alarms in production).
  *
- * Three shapes are read:
+ * Four shapes are read:
  *   - list entries:  div.list-item-container > article > a[href]
  *                       > h2.list-item-title + p
+ *   - the list's empty state (issue #360): p.no-item-text ("No results
+ *                    found…") beside the widget's ContentListFilters script
  *   - the site-wide emergency banner:
  *                    div.oc-emergency-announcement-container
  *                      > .emergency-message-box.oc-emergency-severity-NN
@@ -118,6 +120,25 @@ export function parseOpenCitiesList(html: string): ListEntry[] {
     });
   }
   return out;
+}
+
+/**
+ * True when the page is an OpenCities content list that rendered its
+ * empty state (issue #360): no list entries, the widget's "no results"
+ * paragraph (`<p class="no-item-text"> No results found. Please try
+ * searching again. </p>`), and the widget's own
+ * `OpenCities.Settings.ContentListFilters` script, which every rendering
+ * of the list carries (populated or not). Requiring both markers keeps a
+ * maintenance, error, or challenge page — which carries neither — reading
+ * as a broken page, so the zero-entries alarm still catches a template
+ * change or a bot wall.
+ */
+export function isOpenCitiesEmptyList(html: string): boolean {
+  return (
+    /<p\b[^>]*\bclass="[^"]*\bno-item-text\b[^"]*"/i.test(html) &&
+    html.includes("OpenCities.Settings.ContentListFilters") &&
+    parseOpenCitiesList(html).length === 0
+  );
 }
 
 /**

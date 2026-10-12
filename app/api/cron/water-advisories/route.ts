@@ -22,7 +22,8 @@
  *   - Alarm on blindness. Consecutive failures past the threshold (default
  *     6 runs ≈ 3 h) email WATER_ADVISORY_ALERT_EMAIL, at most once per
  *     source per cooldown (default 24 h); recovery notes are opt-in.
- *     A parse that yields zero entries is a failure.
+ *     A parse that yields zero entries is a failure, unless the page is
+ *     the list's own empty state (issue #360) — then the run succeeded.
  *
  * AUTH: bearer CRON_SECRET, same as the storage sweep; the proxy exempts
  * /api/cron/* so the cookie-less cron request reaches the handler.

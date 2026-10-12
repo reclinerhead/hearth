@@ -14,14 +14,18 @@
  * Adapter contract (shared with future kinds — see the spoke):
  *   fetchAdvisories(config, { knownUrls, fetchImpl? }) → ParsedAdvisory[]
  * Throws on anything that should count as a watcher failure: non-2xx,
- * a bot-wall page, or a page that parsed to zero entries (the list has
- * never been empty; zero means the markup changed or we got a challenge
- * page). A detail-page failure is NOT a run failure — published_on is
- * simply null for that entry.
+ * a bot-wall page, or a page that parsed to zero entries WITHOUT the
+ * list's own empty-state marker (zero entries and no marker means the
+ * markup changed or we got a challenge page). An empty list is a real
+ * state — Kalamazoo's emptied on 2026-10-12 once its last advisory was
+ * lifted (issue #360) — and is a successful run: banner advisories under
+ * the list URL, if any, are still returned. A detail-page failure is NOT
+ * a run failure — published_on is simply null for that entry.
  */
 
 import { z } from "zod";
 import {
+  isOpenCitiesEmptyList,
   normalizeUrl,
   parseDetailLead,
   parseDetailTitle,
@@ -83,7 +87,7 @@ export async function fetchOpenCitiesAdvisories(
   const html = await fetchText(config.list_url, fetchOpts);
 
   const entries = parseOpenCitiesList(html);
-  if (entries.length === 0) {
+  if (entries.length === 0 && !isOpenCitiesEmptyList(html)) {
     throw new Error(
       `parsed zero list entries from ${config.list_url} — markup changed or challenge page`,
     );

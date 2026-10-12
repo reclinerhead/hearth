@@ -5,6 +5,7 @@ import {
   cleanText,
   decodeEntities,
   DETAIL_LEAD_MAX,
+  isOpenCitiesEmptyList,
   normalizeUrl,
   parseDetailLead,
   parseDetailTitle,
@@ -23,6 +24,12 @@ const LIST_HTML = readFileSync(
 );
 const DETAIL_HTML = readFileSync(
   join(__dirname, "fixtures", "kalamazoo-detail.html"),
+  "utf8",
+);
+// The same list page captured 2026-10-12 with nothing on it (issue #360):
+// OpenCities renders "No results found. Please try searching again."
+const EMPTY_LIST_HTML = readFileSync(
+  join(__dirname, "fixtures", "kalamazoo-list-empty.html"),
   "utf8",
 );
 
@@ -54,6 +61,39 @@ describe("parseOpenCitiesList", () => {
 
   it("returns an empty list for a page without the list markup", () => {
     expect(parseOpenCitiesList("<html><body>Access Denied</body></html>")).toEqual([]);
+  });
+
+  it("parses the empty-state capture to no entries", () => {
+    expect(parseOpenCitiesList(EMPTY_LIST_HTML)).toEqual([]);
+  });
+});
+
+describe("isOpenCitiesEmptyList (issue #360)", () => {
+  it("recognises the list's own empty state", () => {
+    expect(isOpenCitiesEmptyList(EMPTY_LIST_HTML)).toBe(true);
+  });
+
+  it("is false for the populated list", () => {
+    expect(isOpenCitiesEmptyList(LIST_HTML)).toBe(false);
+  });
+
+  it("is false for a page with neither marker (maintenance, challenge, denial)", () => {
+    expect(isOpenCitiesEmptyList("<html><body>Maintenance</body></html>")).toBe(false);
+    expect(isOpenCitiesEmptyList("<HTML><BODY><H1>Access Denied</H1></BODY></HTML>")).toBe(false);
+  });
+
+  it("requires both markers: the no-results paragraph alone is not enough", () => {
+    expect(isOpenCitiesEmptyList(`<p class="no-item-text"> No results found. </p>`)).toBe(false);
+  });
+
+  it("requires both markers: the list widget's script alone is not enough", () => {
+    expect(
+      isOpenCitiesEmptyList(`<script>OpenCities.Settings.ContentListFilters['x'] = {};</script>`),
+    ).toBe(false);
+  });
+
+  it("is false when entries are present even if the marker is too", () => {
+    expect(isOpenCitiesEmptyList(`${LIST_HTML}<p class="no-item-text">No results found.</p>`)).toBe(false);
   });
 });
 
