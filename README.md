@@ -2,6 +2,12 @@
 
 Hearth is a homeowner knowledge app. It ingests the paper trail of a house (receipts, permits, manuals, photos, video), turns it into a structured inventory with AI-extracted facts, and then goes looking for the things a homeowner does not know to ask about: flood zones, radon risk, nearby Superfund sites, drinking water quality, and the maintenance a house actually needs. The output is a dashboard that reads like a briefing rather than a filing cabinet.
 
+
+
+https://github.com/user-attachments/assets/7c64e35c-45f2-4cb4-8f60-75ef16a9db29
+
+
+
 ## How it's built
 
 - **Next.js App Router** with React Server Components and server actions. The whole app is TypeScript in strict mode on Tailwind CSS v4 with a token-driven design system.
