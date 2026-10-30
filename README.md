@@ -2,6 +2,8 @@
 
 Hearth is a homeowner knowledge app. It ingests the paper trail of a house (receipts, appliance nameplates, registrations, photos, video), turns it into a structured inventory with AI-extracted facts, and then goes looking for the things a homeowner does not know to ask about: flood zones, radon risk, nearby Superfund sites, drinking water quality, and the maintenance a house actually needs. The output is a dashboard that reads like a briefing rather than a filing cabinet.
 
+It started with one idea that is still at the center of the app: a 20-second video of you pointing at the water shutoff is worth more than any manual at 2am, with water on the floor and wet hands. Hearth records those videos and keeps them one tap away.
+
 ## Try it live
 
 The app itself is invite-only, but its public water quality pages need no account. They run on the same data and the same classification logic the app uses for a signed-in household, keyed to a place instead of a house.
@@ -20,9 +22,16 @@ https://github.com/user-attachments/assets/7c64e35c-45f2-4cb4-8f60-75ef16a9db29
 
 ## What it does
 
+### Be ready for an emergency
+
+- **Record the shutoffs.** Film where the water main, the gas meter, or the electrical panel is and how to shut it off, either recorded live with the phone's rear camera or picked from the camera roll. Clips are filed as water, gas, electrical, or other, with an optional label ("Main shutoff in basement," "Outside faucets").
+- **One tap away.** Saved videos sit in an Emergencies panel near the top of the dashboard, above the habitat findings. On a phone it is the first panel after the house summary. Each category gets a single large tile with its icon filling the frame, so there's no doubt which one is water and which is gas. Tap it and the video plays. A category can hold more than one clip, but one is always the primary, and if the primary is deleted the newest remaining clip takes its place. Empty categories show an "Add a water video" row, so the gaps are obvious.
+- **A player for wet hands.** The player is custom-built: a large center play button, a tall scrubber, a fullscreen toggle, and tap-anywhere-to-play. It has no volume, speed, or skip controls to fumble, and the controls hide while the video plays.
+- **Small enough to load fast.** Videos are compressed in the browser before upload (1280 px on the long side, about 2 Mbps, two minutes at most) with a poster frame. They are saved as WebM or MP4 depending on what the phone's browser can record, so they play on both iPhone and Android. They live in their own private storage bucket and are served through cached signed URLs.
+
 ### Capture
 
-- **Smart Uploader.** Point a phone at an appliance nameplate, a receipt, or a vehicle registration. The photo is classified, the structured record is extracted (manufacturer, model, serial, price, dates), and the result is merged into the inventory, either creating an item or filling in one that already exists. Multi-page receipts and short emergency-procedure videos ("here is the water shutoff") attach to the item they belong to.
+- **Smart Uploader.** Point a phone at an appliance nameplate, a receipt, or a vehicle registration. The photo is classified, the structured record is extracted (manufacturer, model, serial, price, dates), and the result is merged into the inventory, either creating an item or filling in one that already exists. Multi-page receipts are supported, and the same uploader records emergency videos.
 - **Serial-number and VIN decode.** A separate pipeline decodes the manufacture date hidden in an appliance serial number. It uses a reasoning model on purpose, because a fast model would invent a plausible encoding rule and apply it confidently. The date is saved only when the decode comes back high-confidence. Vehicles get a VIN decode.
 
 ### Understand
@@ -71,6 +80,7 @@ Radon and flood zones are simpler single-answer modules. The FEMA module is buil
 
 ## Design ideas
 
+- **Built for the bad moment.** The emergency surface is designed for someone stressed, possibly in the dark, with wet hands. It sits near the top of the dashboard, uses big unmistakable tiles, and plays in a player that offers only the controls that matter.
 - **Awareness, not alarm.** Show the regulator's verdict and the raw numbers behind it, so the homeowner can decide for themselves. Detected doesn't mean dangerous, and compliant doesn't mean nothing was found.
 - **Show the work.** Every finding carries a first-person log of how it was produced, with sources cited. The public [methodology page](https://hearth.toddtech.llc/how-it-works) documents every classification rule, and changing a rule without updating the page counts as a regression.
 - **Never turn missing data into good news.** A failed fetch and an empty result are different states all the way through the code. When data is missing, the result is neutral, not favorable. Trends never claim more history than the records hold.
@@ -92,7 +102,7 @@ Radon and flood zones are simpler single-answer modules. The FEMA module is buil
 | Email | Resend |
 | Maps | Mapbox address autofill and geocoding |
 | Public data | EPA Envirofacts (SEMS, SDWIS, water system inventory), EPA CWS service areas, EPA radon zones, FEMA NFHL |
-| Documents | pdf.js for rendering uploaded PDFs in the browser; headless Chromium (Puppeteer) for generated PDF reports |
+| Documents and media | pdf.js for rendering uploaded PDFs in the browser; MediaRecorder and canvas for in-browser video compression; headless Chromium (Puppeteer) for generated PDF reports |
 | Testing and CI | Vitest on pure logic, run by GitHub Actions on every pull request |
 | Hosting | Vercel: a preview deployment per branch, production on merge to `main` |
 
@@ -113,7 +123,7 @@ Hearth is built solo, issue by issue. Every non-trivial change starts as a GitHu
 - [docs/architecture/](docs/architecture/) holds the spokes, one per domain, each a standalone description of what is built and why. [habitat.md](docs/architecture/habitat.md) covers the Superfund and water quality modules in depth; [public-pages.md](docs/architecture/public-pages.md) and [water-advisories.md](docs/architecture/water-advisories.md) cover the public pages and the watcher.
 - [lib/habitat/](lib/habitat/) is the public-data framework: the module contract, the orchestrator, and the EPA and FEMA modules.
 - [lib/water-advisories/](lib/water-advisories/) is the advisory watcher: adapters, the pure classifier and diff, and their fixtures.
-- [lib/documents/](lib/documents/) is document ingestion: capture, classification, extraction, and the serial-number decode pipeline.
+- [lib/documents/](lib/documents/) is document ingestion: capture, classification, extraction, emergency-video compression and primary-clip rules, and the serial-number decode pipeline. [ingestion.md](docs/architecture/ingestion.md) documents the emergency video flow end to end.
 - [workflows/](workflows/) holds the durable jobs built on Vercel Workflow.
 - [docs/architecture/storage-reconciliation.md](docs/architecture/storage-reconciliation.md) is the reliability story: how orphaned storage objects are detected and removed safely.
 
