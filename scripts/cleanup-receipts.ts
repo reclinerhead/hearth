@@ -37,7 +37,7 @@ function loadEnvLocal() {
     raw = readFileSync(resolve(process.cwd(), ".env.local"), "utf8");
   } catch {
     console.error(
-      "Could not read .env.local in the current directory. Run this from the repo root (C:\\WEBDEV\\hearth).",
+      "Could not read .env.local in the current directory. Run this from the repo root (~/projects/hearth).",
     );
     process.exit(1);
   }

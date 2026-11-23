@@ -18,7 +18,7 @@ These are non-obvious constraints from how Hearth is set up. Claude Code must re
 
 **File and directory conventions.**
 
-- Project root is `C:\WEBDEV\hearth` (Windows / PowerShell development environment).
+- Project root is `~/projects/hearth` (WSL2 / Bash development environment, on the Linux filesystem).
 - Flat structure — `app/`, `lib/`, `types/` at root. No `src/` directory. Do not introduce one.
 - Package manager is `pnpm`. Do not use `npm` or `yarn` commands.
 - Route protection uses `proxy.ts` (not `middleware.ts`) and `lib/supabase/proxy.ts`. Do not rename or replace with the older `middleware.ts` convention.
